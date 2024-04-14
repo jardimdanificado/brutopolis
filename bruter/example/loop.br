@@ -1,0 +1,44 @@
+vm.safe;
+
+lua.eval "print('Hello from Lua!')";
+
+set a 45;
+set b 5;
+
+set c from [] 1 2 3 4 5 6 7 8 9 10;
+
+while {> $a 0} 
+{
+    set a (- $a 1);
+    print a = $a;
+};
+
+for {set i 0} {< $i 10} {set i (+ $i 1)} 
+{
+    print $i;
+    if (< $i 5)
+    {
+        if {== $i 4}
+        {
+            set i 10;
+        };
+    };
+};
+
+for value in $c
+{
+    print value = $value;
+};
+
+for name value in $c
+{
+    print name = $name;
+    print value = $value;
+};
+
+print $i;
+print $a;
+print $b;
+
+
+print job done;

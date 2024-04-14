@@ -1,0 +1,6 @@
+// this file "import" a fake module;
+bruter.include ./resource/fakemodule.br;
+print $fakemodule;
+set result (fakemodule.fakeFunction 1 2);
+
+print $result;

@@ -1,0 +1,58 @@
+using math;
+
+set a 45;
+set b 5;
+
+if (< $a $b) 
+{
+    print `$a > $b`;
+}
+else 
+{
+    // heh just showing that keynested strings can be sentence enclosed;
+    if (== $a $b) ((((({print `$a == $b`;})))))
+    else 
+    {
+        print `$a < $b`;
+    };
+};
+
+set c false;
+set d true;
+
+
+// this is a "and" statement;
+if (== (:$c) (:$d)) 
+{
+    print `$a == $b`;
+}
+else 
+{
+    // "or" statement;
+    if (:$c;:$d) 
+    {
+        print `$a != $b`;
+    }
+    else 
+    {
+        print `wtf`;
+    };
+};
+
+// another way of doing "or" statement;
+if (<  $a $b;
+    == $a $b;
+    >  $a $b) 
+{
+    print `wtf2`;
+}
+else 
+{
+    print `wtf3`;
+};
+
+set e 51;
+// only the value of the last statement is returned, the rest are ignored because they are nil;
+// : is a return statement just like return;
+set f (:$v;:$h;:$v;:$e);
+print f = $f;

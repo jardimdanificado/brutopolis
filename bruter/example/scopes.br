@@ -1,0 +1,10 @@
+(lua.eval `return "//"`) asdnaskdn `dasdasdasD`dasdadasd;
+using math;
+set a (+ 1 2 3 (/ 4 8) 5 6 7 (- (+ (+ 4 4) 8) (+ 3 3)) 9 10);
+set b (+ 4 4);
+set c (3);
+set d (return 55;help;); // just the first command return a value, all other commands run but dont return a value;
+print `$a variable value is = ` $a;
+print `$b variable value is = ` $b;
+print `$c variable value is = ` $c;
+print `$d variable value is = ` $d;
