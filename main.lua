@@ -72,9 +72,20 @@ local function createWalls(room)
     return room;
 end
 
+local Door = function()
+    local self = {};
+    self.x = 0;
+    self.y = 0;
+    self.direction = "left";
+    self.closed = true;
+    self.locked = false;
+    self.lockLevel = 0;
+    return self;
+end
+
 local generateDoors = function(room) -- one door at each wall
     local doors = {};
-    table.insert(doors, {x = 1, y = br.utils.random(2, #room[1] - 1), direction = "left"});
+    table.insert(doors, {x = 1, y = br.utils.random(2, #room[1] - 1), direction = "left", closed = false, locked = false});
     table.insert(doors, {x = #room, y = br.utils.random(2, #room[1] - 1), direction = "right"});
     table.insert(doors, {x = br.utils.random(2, #room - 1), y = 1, direction = "up"});
     table.insert(doors, {x = br.utils.random(2, #room - 1), y = #room[1], direction = "down"});
