@@ -1,0 +1,8 @@
+main
+*.exe
+*.appimage
+*.br.c
+*.br.o
+*.br.so
+example/test
+example/test.txt
