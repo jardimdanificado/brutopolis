@@ -129,8 +129,8 @@ local function printRoom(world,roomx,roomy)
         end
     end
 
-    for x = 1, #temproom do
-        for y = 1, #temproom[1] do
+    for y = 1, #temproom[1] do
+        for x = 1, #temproom do
             io.write(string.char(temproom[x][y]));
         end
         io.write("\n");
@@ -141,8 +141,55 @@ local world = {};
 world.creatures = {};
 world.map = createMap(config.mapSize.x, config.mapSize.y);
 
-local player = Creature();
+local player = Creature("player");
 player.position = {x = 3, y = 3};
 table.insert(world.creatures, player);
 printRoom(world,1,1);
+
+local function move(creatureName, direction)
+    local creature = nil;
+
+    for x = 1, #world.creatures do
+        if world.creatures[x].name == creatureName then
+            creature = world.creatures[x];
+        end
+    end
+    if creature == nil then
+        print("Creature not found");
+        return;
+    end
+
+    local room = world.map[creature.room.x][creature.room.y];
+
+    local x = creature.position.x;
+    local y = creature.position.y;
+
+    if direction == "up" then
+        if room.map[x][y - 1] == 32 then
+            creature.position.y = y - 1;
+        end
+    elseif direction == "down" then
+        if room.map[x][y + 1] == 32 then
+            creature.position.y = y + 1;
+        end
+    elseif direction == "left" then
+        if room.map[x - 1][y] == 32 then
+            creature.position.x = x - 1;
+        end
+    elseif direction == "right" then
+        if room.map[x + 1][y] == 32 then
+            creature.position.x = x + 1;
+        end
+    end
+    
+    printRoom(world,creature.room.x,creature.room.y);
+end
+
+br.world = world;
+br.player = player;
+
+br.move = move;
+
+br.repl();
+
 --br.help(world.map[1][1].map);
