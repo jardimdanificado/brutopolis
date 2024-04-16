@@ -47,6 +47,12 @@ if br.utils.table.includes(arg, "-o") or br.utils.table.includes(arg, "--output"
     table.remove(arg, temp)
 end
 
+if br.utils.table.includes(arg, "--oneliner") then
+    br.vm.oneliner = true;
+    local position = br.utils.table.find(arg, "--oneliner");
+    table.remove(arg, position);
+end
+
 -- check for help and version flags
 -- check for help and version flags
 -- check for help and version flags

@@ -26,7 +26,7 @@ local br =
     vm = 
     {
         -- version
-        version = "0.2.6t",
+        version = "0.2.7",
         -- source and outputs
         source = "",
         outputpath = "",
@@ -35,7 +35,8 @@ local br =
         -- debug mode
         debug = false,
         funcdata = {},
-        preprocessors = {}
+        preprocessors = {},
+        oneliner = false
     },
 }
 
@@ -303,27 +304,34 @@ br.repl = function(message, inputFunction)
         io.write("br> ");
         local buffer = inputFunction();
         local clearbuffer = br.utils.string.replace(buffer, "%s+", "");
-        local ok = true;
-
-        if br.utils.string.includes(buffer, "`") then
-            for i = 1, #buffer do
-                if buffer:sub(i, i) == "`" then
-                    count = count + 1;
+        
+        if not br.vm.oneliner then 
+            local ok = true;
+            if br.utils.string.includes(buffer, "`") then
+                for i = 1, #buffer do
+                    if buffer:sub(i, i) == "`" then
+                        count = count + 1;
+                    end
+                end
+    
+                if count % 2 ~= 0 then
+                    ok = false;
+                else
+                    count = 0;
                 end
             end
-
-            if count % 2 ~= 0 then
-                ok = false;
+    
+            if string.byte(clearbuffer,#clearbuffer) == 59 and ok then
+                br.vm.parse(line .. buffer);
+                line = "";
             else
-                count = 0;
+                line = line .. buffer;
             end
-        end
-
-        if string.byte(clearbuffer,#clearbuffer) == 59 and ok then
-            br.vm.parse(line .. buffer);
-            line = "";
         else
-            line = line .. buffer;
+            if string.byte(clearbuffer,#clearbuffer) ~= 59 then
+                buffer = buffer .. ";";
+            end
+            br.vm.parse(buffer);
         end
     end
 end
@@ -857,6 +865,13 @@ end
 
 br["len"] = function(a)
     return #a;
+end
+
+br["shortcut"] = function(name, ...)
+    local cmd = table.concat({...}, " ");
+    br[name] = function()
+        br.vm.parse(cmd);
+    end;
 end
 
 if not package.terrapath then

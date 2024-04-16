@@ -1,4 +1,7 @@
 local br = require("bruter.bruter");
+br.vm.oneliner = true;
+
+
 local config = require("data.config");
 
 local Needs = require("types.Needs");
@@ -88,19 +91,19 @@ br.mv = function(direction)
     end
 end
 
-br.mvu = function()
+br.w = function()
     move("up");
 end
 
-br.mvd = function()
+br.s = function()
     move("down");
 end
 
-br.mvl = function()
+br.a = function()
     move("left");
 end
 
-br.mvr = function()
+br.d = function()
     move("right");
 end
 
@@ -110,5 +113,3 @@ br.player = player;
 br.move = move;
 
 br.repl();
-
---br.help(world.map[1][1].map);
