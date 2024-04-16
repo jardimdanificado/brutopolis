@@ -73,17 +73,83 @@ local function creatureCheckNeeds(creature, world)
             print(creature.name .. " is bursting to poo");
         end
     end
+
+    if creature.needs.current.happiness < 100 then
+        if creature.needs.current.happiness <= 0 then
+            creature.status = "dead";
+            print(creature.name .. " has died from sadness");
+            return;
+        elseif creature.needs.current.happiness < 75 then
+            print(creature.name .. " is sad");
+        end
+    end
 end
 
-local function creatureMove(creature, direction)
+local function creatureMove(creature, world, direction)
+    local room = world.map[creature.room.x][creature.room.y];
     if direction == "up" then
-        creature.position.y = creature.position.y - 1;
+        if room.map[creature.position.x][creature.position.y - 1] == 32 then
+            creature.position.y = creature.position.y - 1;
+        elseif room.map[creature.position.x][creature.position.y - 1] == 48 then
+            if world.map[creature.room.x][creature.room.y - 1] then -- if room exists
+                creature.room.y = creature.room.y - 1;
+                creature.position.y = #world.map[creature.room.x][creature.room.y][1];
+                --find door in new room using the door list
+                for x = 1, #world.map[creature.room.x][creature.room.y].doors do
+                    if world.map[creature.room.x][creature.room.y].doors[x].direction == "down" then
+                        creature.position.x = world.map[creature.room.x][creature.room.y].doors[x].x;
+                        creature.position.y = world.map[creature.room.x][creature.room.y].doors[x].y;
+                    end
+                end
+            end
+        
+        end
     elseif direction == "down" then
-        creature.position.y = creature.position.y + 1;
+        if room.map[creature.position.x][creature.position.y + 1] == 32 then
+            creature.position.y = creature.position.y + 1;
+        elseif room.map[creature.position.x][creature.position.y + 1] == 48 then
+            if world.map[creature.room.x][creature.room.y + 1] then -- if room exists
+                creature.room.y = creature.room.y + 1;
+                creature.position.y = 1;
+                --find door in new room using the door list
+                for x = 1, #world.map[creature.room.x][creature.room.y].doors do
+                    if world.map[creature.room.x][creature.room.y].doors[x].direction == "up" then
+                        creature.position.x = world.map[creature.room.x][creature.room.y].doors[x].x;
+                        creature.position.y = world.map[creature.room.x][creature.room.y].doors[x].y;
+                    end
+                end
+            end
+        end
     elseif direction == "left" then
-        creature.position.x = creature.position.x - 1;
+        if room.map[creature.position.x - 1][creature.position.y] == 32 then
+            creature.position.x = creature.position.x - 1;
+        elseif room.map[creature.position.x - 1][creature.position.y] == 48 then
+            if world.map[creature.room.x - 1][creature.room.y] then -- if room exists
+                creature.room.x = creature.room.x - 1;
+                creature.position.x = #world.map[creature.room.x][creature.room.y];
+                for x = 1, #world.map[creature.room.x][creature.room.y].doors do
+                    if world.map[creature.room.x][creature.room.y].doors[x].direction == "right" then
+                        creature.position.x = world.map[creature.room.x][creature.room.y].doors[x].x;
+                        creature.position.y = world.map[creature.room.x][creature.room.y].doors[x].y;
+                    end
+                end
+            end
+        end
     elseif direction == "right" then
-        creature.position.x = creature.position.x + 1;
+        if room.map[creature.position.x + 1][creature.position.y] == 32 then
+            creature.position.x = creature.position.x + 1;
+        elseif room.map[creature.position.x + 1][creature.position.y] == 48 then
+            if world.map[creature.room.x + 1][creature.room.y] then -- if room exists
+                creature.room.x = creature.room.x + 1;
+                creature.position.x = 1;
+                for x = 1, #world.map[creature.room.x][creature.room.y].doors do
+                    if world.map[creature.room.x][creature.room.y].doors[x].direction == "left" then
+                        creature.position.x = world.map[creature.room.x][creature.room.y].doors[x].x;
+                        creature.position.y = world.map[creature.room.x][creature.room.y].doors[x].y;
+                    end
+                end
+            end
+        end
     end
 end
 
@@ -109,6 +175,7 @@ local function Creature(name)
     
     self.passTurn = creaturePassTurn;
     self.checkNeeds = creatureCheckNeeds;
+    self.move = creatureMove;
     
     self.items = {};
 

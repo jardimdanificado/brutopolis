@@ -10,6 +10,8 @@ local function Skills(defaultValue)
     self.see = defaultValue or 1;
     self.smell = defaultValue or 1;
     self.taste = defaultValue or 1;
+    self.touch = defaultValue or 1;
+    self.manipulate = defaultValue or 1;
 
     self.unarmed = defaultValue or 1;
     self.lockpick = defaultValue or 1;
