@@ -1,7 +1,7 @@
 local config = {};
 
 config.title = "brutopolis";
-config.version = "0.0.1";
+config.version = "0.0.2";
 
 config.mapSize = {x = 16, y = 16};
 config.minRoomSize = {x = 5, y = 5};

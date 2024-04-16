@@ -32,7 +32,7 @@ local function Room(minSize, maxSize)
     };
     self.map = createWalls(br.utils.matrix.new(self.size.x, self.size.y, 32));
     self.doors = generateDoors(self.map);
-    self.items = br.utils.matrix.new(self.size.x, self.size.y, {});
+    self.items = {};
     return self;
 end
 

@@ -1,3 +1,4 @@
+local br = require("bruter.bruter")
 local Needs = require("types.Needs");
 local Skills = require("types.Skills");
 local Personality = require("types.Personality");
@@ -25,8 +26,8 @@ local function creatureCheckNeeds(creature, world)
 
     if creature.needs.current.food < 100 then
         if creature.needs.current.food <= 0 then
-            creature.status = "dead";
-            print(creature.name .. " has starved to death");
+            creature.health = creature.health - 10;
+            print(creature.name .. " is starving to death");
             return;
         elseif creature.needs.current.food < 75 then
             print(creature.name .. " is starving");
@@ -35,8 +36,8 @@ local function creatureCheckNeeds(creature, world)
 
     if creature.needs.current.water < 100 then
         if creature.needs.current.water <= 0 then
-            creature.status = "dead";
-            print(creature.name .. " has died from dehydration");
+            creature.health = creature.health - 15;
+            print(creature.name .. " is dehydrating to death");
             return;
         elseif creature.needs.current.water < 75 then
             print(creature.name .. " is dehydrated");
@@ -45,9 +46,8 @@ local function creatureCheckNeeds(creature, world)
 
     if creature.needs.current.sleep <= 100 then
         if creature.needs.current.sleep <= 0 then
-            creature.status = "dead";
-            print(creature.name .. " has died from lack of sleep");
-            return;
+            creature.health = creature.health - 5;
+            print(creature.name .. " is dying from lack of sleep");
         elseif creature.needs.current.sleep < 75 then
             print(creature.name .. " is exhausted");
         end
@@ -57,6 +57,7 @@ local function creatureCheckNeeds(creature, world)
         if creature.needs.current.pee >= 100 then
             creature.needs.current.hygiene = creature.needs.current.hygiene - 100;
             creature.needs.current.pee = 0;
+            table.insert(world.map[creature.room.x][creature.room.y].items, Item(creature.name .. "'s pee", "pee", creature.name, br.utils.table.clone(creature.position), br.utils.table.clone(creature.room)));
             print(creature.name .. " has wet itself");
         elseif creature.needs.current.water < 75 then
             print(creature.name .. " is bursting to pee");
@@ -67,7 +68,7 @@ local function creatureCheckNeeds(creature, world)
         if creature.needs.current.poo >= 100 then
             creature.needs.current.hygiene = creature.needs.current.hygiene - 100;
             creature.needs.current.poo = 0;
-            table.insert(world.map[creature.room.x][creature.room.y].items, Item("poo"));
+            table.insert(world.map[creature.room.x][creature.room.y].items, Item(creature.name .. "'s shit", "shit", creature.name, br.utils.table.clone(creature.position), br.utils.table.clone(creature.room)));
             print(creature.name .. " has soiled itself");
         else
             print(creature.name .. " is bursting to poo");
@@ -76,9 +77,8 @@ local function creatureCheckNeeds(creature, world)
 
     if creature.needs.current.happiness < 100 then
         if creature.needs.current.happiness <= 0 then
-            creature.status = "dead";
-            print(creature.name .. " has died from sadness");
-            return;
+            creature.health = creature.health - 10;
+            print(creature.name .. " is dying inside");
         elseif creature.needs.current.happiness < 75 then
             print(creature.name .. " is sad");
         end
@@ -124,7 +124,7 @@ local function creatureMove(creature, world, direction)
         if room.map[creature.position.x - 1][creature.position.y] == 32 then
             creature.position.x = creature.position.x - 1;
         elseif room.map[creature.position.x - 1][creature.position.y] == 48 then
-            if world.map[creature.room.x - 1][creature.room.y] then -- if room exists
+            if world.map[creature.room.x - 1] and world.map[creature.room.x - 1][creature.room.y] then -- if room exists
                 creature.room.x = creature.room.x - 1;
                 creature.position.x = #world.map[creature.room.x][creature.room.y];
                 for x = 1, #world.map[creature.room.x][creature.room.y].doors do
@@ -139,7 +139,7 @@ local function creatureMove(creature, world, direction)
         if room.map[creature.position.x + 1][creature.position.y] == 32 then
             creature.position.x = creature.position.x + 1;
         elseif room.map[creature.position.x + 1][creature.position.y] == 48 then
-            if world.map[creature.room.x + 1][creature.room.y] then -- if room exists
+            if world.map[creature.room.x + 1] and world.map[creature.room.x + 1][creature.room.y] then -- if room exists
                 creature.room.x = creature.room.x + 1;
                 creature.position.x = 1;
                 for x = 1, #world.map[creature.room.x][creature.room.y].doors do
