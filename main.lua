@@ -12,8 +12,9 @@ local Room = require("types.Room");
 
 local Creature = require("types.Creature");
 
+local items = require("data.items");
+
 local function checkPlayer()
-    --creatureCheckNeeds(br.player);
     if br.player.health <= 0 then
         print("Game Over");
         os.exit();
@@ -37,8 +38,8 @@ local function printRoom(world,roomx,roomy)
     local temproom = br.utils.table.clone(room.map);
 
     for x = 1, #world.creatures do
-        if world.creatures[x].room.x == roomx and world.creatures[x].room.y == roomy then
-            temproom[world.creatures[x].position.x][world.creatures[x].position.y] = 64;
+        if world.creatures[x].position.global.x == roomx and world.creatures[x].position.global.y == roomy then
+            temproom[world.creatures[x].position["local"].x][world.creatures[x].position["local"].y] = 64;
         end
     end
 
@@ -57,12 +58,12 @@ world.creatures = {};
 world.map = createMap(config.mapSize.x, config.mapSize.y);
 
 local player = Creature("player");
-player.position = {x = 3, y = 3};
+player.position["local"] = {x = 3, y = 3};
 table.insert(world.creatures, player);
 printRoom(world,1,1);
 
 br.redraw = function()
-    printRoom(world,player.room.x,player.room.y);
+    printRoom(world,player.position.global.x,player.position.global.y);
 end
 
 local function move(direction)
@@ -77,6 +78,10 @@ local function move(direction)
 
     checkPlayer();
     br.redraw();
+end
+
+br.consume = function(item)
+    player:consume(item);
 end
 
 br.mv = function(direction)
@@ -109,6 +114,15 @@ end
 
 br.world = world;
 br.player = player;
+br.player.items[1] = items.bottle(br.player.position, {
+    items.water(br.player.position), 
+    items.water(br.player.position),
+    items.water(br.player.position),
+    items.water(br.player.position),
+    items.water(br.player.position)}
+);
+
+br.inventory = br.player.items;
 
 br.move = move;
 

@@ -2,6 +2,7 @@ local br = require("bruter.bruter")
 local Needs = require("types.Needs");
 local Skills = require("types.Skills");
 local Personality = require("types.Personality");
+local Position = require("types.Position");
 
 local Item = require("types.Item");
 
@@ -57,7 +58,7 @@ local function creatureCheckNeeds(creature, world)
         if creature.needs.current.pee >= 100 then
             creature.needs.current.hygiene = creature.needs.current.hygiene - 100;
             creature.needs.current.pee = 0;
-            table.insert(world.map[creature.room.x][creature.room.y].items, Item(creature.name .. "'s pee", "pee", creature.name, br.utils.table.clone(creature.position), br.utils.table.clone(creature.room)));
+            table.insert(world.map[creature.position["global"].x][creature.position["global"].y].items, Item(creature.name .. "'s pee", "pee", creature.name, br.utils.table.clone(creature.position), br.utils.table.clone(creature.room)));
             print(creature.name .. " has wet itself");
         elseif creature.needs.current.water < 75 then
             print(creature.name .. " is bursting to pee");
@@ -68,7 +69,7 @@ local function creatureCheckNeeds(creature, world)
         if creature.needs.current.poo >= 100 then
             creature.needs.current.hygiene = creature.needs.current.hygiene - 100;
             creature.needs.current.poo = 0;
-            table.insert(world.map[creature.room.x][creature.room.y].items, Item(creature.name .. "'s shit", "shit", creature.name, br.utils.table.clone(creature.position), br.utils.table.clone(creature.room)));
+            table.insert(world.map[creature.position["global"].x][creature.position["global"].y].items, Item(creature.name .. "'s shit", "shit", creature.name, br.utils.table.clone(creature.position), br.utils.table.clone(creature.room)));
             print(creature.name .. " has soiled itself");
         else
             print(creature.name .. " is bursting to poo");
@@ -86,69 +87,85 @@ local function creatureCheckNeeds(creature, world)
 end
 
 local function creatureMove(creature, world, direction)
-    local room = world.map[creature.room.x][creature.room.y];
+    local room = world.map[creature.position["global"].x][creature.position["global"].y];
     if direction == "up" then
-        if room.map[creature.position.x][creature.position.y - 1] == 32 then
-            creature.position.y = creature.position.y - 1;
-        elseif room.map[creature.position.x][creature.position.y - 1] == 48 then
-            if world.map[creature.room.x][creature.room.y - 1] then -- if room exists
-                creature.room.y = creature.room.y - 1;
-                creature.position.y = #world.map[creature.room.x][creature.room.y][1];
+        if room.map[creature.position["local"].x][creature.position["local"].y - 1] == 32 then
+            creature.position["local"].y = creature.position["local"].y - 1;
+        elseif room.map[creature.position["local"].x][creature.position["local"].y - 1] == 48 then
+            if world.map[creature.position["global"].x][creature.position["global"].y - 1] then -- if room exists
+                creature.position["global"].y = creature.position["global"].y - 1;
+                creature.position["local"].y = #world.map[creature.position["global"].x][creature.position["global"].y][1];
                 --find door in new room using the door list
-                for x = 1, #world.map[creature.room.x][creature.room.y].doors do
-                    if world.map[creature.room.x][creature.room.y].doors[x].direction == "down" then
-                        creature.position.x = world.map[creature.room.x][creature.room.y].doors[x].x;
-                        creature.position.y = world.map[creature.room.x][creature.room.y].doors[x].y;
+                for x = 1, #world.map[creature.position["global"].x][creature.position["global"].y].doors do
+                    if world.map[creature.position["global"].x][creature.position["global"].y].doors[x].direction == "down" then
+                        creature.position["local"].x = world.map[creature.position["global"].x][creature.position["global"].y].doors[x].x;
+                        creature.position["local"].y = world.map[creature.position["global"].x][creature.position["global"].y].doors[x].y;
                     end
                 end
             end
         
         end
     elseif direction == "down" then
-        if room.map[creature.position.x][creature.position.y + 1] == 32 then
-            creature.position.y = creature.position.y + 1;
-        elseif room.map[creature.position.x][creature.position.y + 1] == 48 then
-            if world.map[creature.room.x][creature.room.y + 1] then -- if room exists
-                creature.room.y = creature.room.y + 1;
-                creature.position.y = 1;
+        if room.map[creature.position["local"].x][creature.position["local"].y + 1] == 32 then
+            creature.position["local"].y = creature.position["local"].y + 1;
+        elseif room.map[creature.position["local"].x][creature.position["local"].y + 1] == 48 then
+            if world.map[creature.position["global"].x][creature.position["global"].y + 1] then -- if room exists
+                creature.position["global"].y = creature.position["global"].y + 1;
+                creature.position["local"].y = 1;
                 --find door in new room using the door list
-                for x = 1, #world.map[creature.room.x][creature.room.y].doors do
-                    if world.map[creature.room.x][creature.room.y].doors[x].direction == "up" then
-                        creature.position.x = world.map[creature.room.x][creature.room.y].doors[x].x;
-                        creature.position.y = world.map[creature.room.x][creature.room.y].doors[x].y;
+                for x = 1, #world.map[creature.position["global"].x][creature.position["global"].y].doors do
+                    if world.map[creature.position["global"].x][creature.position["global"].y].doors[x].direction == "up" then
+                        creature.position["local"].x = world.map[creature.position["global"].x][creature.position["global"].y].doors[x].x;
+                        creature.position["local"].y = world.map[creature.position["global"].x][creature.position["global"].y].doors[x].y;
                     end
                 end
             end
         end
     elseif direction == "left" then
-        if room.map[creature.position.x - 1][creature.position.y] == 32 then
-            creature.position.x = creature.position.x - 1;
-        elseif room.map[creature.position.x - 1][creature.position.y] == 48 then
-            if world.map[creature.room.x - 1] and world.map[creature.room.x - 1][creature.room.y] then -- if room exists
-                creature.room.x = creature.room.x - 1;
-                creature.position.x = #world.map[creature.room.x][creature.room.y];
-                for x = 1, #world.map[creature.room.x][creature.room.y].doors do
-                    if world.map[creature.room.x][creature.room.y].doors[x].direction == "right" then
-                        creature.position.x = world.map[creature.room.x][creature.room.y].doors[x].x;
-                        creature.position.y = world.map[creature.room.x][creature.room.y].doors[x].y;
+        if room.map[creature.position["local"].x - 1][creature.position["local"].y] == 32 then
+            creature.position["local"].x = creature.position["local"].x - 1;
+        elseif room.map[creature.position["local"].x - 1][creature.position["local"].y] == 48 then
+            if world.map[creature.position["global"].x - 1] and world.map[creature.position["global"].x - 1][creature.position["global"].y] then -- if room exists
+                creature.position["global"].x = creature.position["global"].x - 1;
+                creature.position["local"].x = #world.map[creature.position["global"].x][creature.position["global"].y];
+                for x = 1, #world.map[creature.position["global"].x][creature.position["global"].y].doors do
+                    if world.map[creature.position["global"].x][creature.position["global"].y].doors[x].direction == "right" then
+                        creature.position["local"].x = world.map[creature.position["global"].x][creature.position["global"].y].doors[x].x;
+                        creature.position["local"].y = world.map[creature.position["global"].x][creature.position["global"].y].doors[x].y;
                     end
                 end
             end
         end
     elseif direction == "right" then
-        if room.map[creature.position.x + 1][creature.position.y] == 32 then
-            creature.position.x = creature.position.x + 1;
-        elseif room.map[creature.position.x + 1][creature.position.y] == 48 then
-            if world.map[creature.room.x + 1] and world.map[creature.room.x + 1][creature.room.y] then -- if room exists
-                creature.room.x = creature.room.x + 1;
-                creature.position.x = 1;
-                for x = 1, #world.map[creature.room.x][creature.room.y].doors do
-                    if world.map[creature.room.x][creature.room.y].doors[x].direction == "left" then
-                        creature.position.x = world.map[creature.room.x][creature.room.y].doors[x].x;
-                        creature.position.y = world.map[creature.room.x][creature.room.y].doors[x].y;
+        if room.map[creature.position["local"].x + 1][creature.position["local"].y] == 32 then
+            creature.position["local"].x = creature.position["local"].x + 1;
+        elseif room.map[creature.position["local"].x + 1][creature.position["local"].y] == 48 then
+            if world.map[creature.position["global"].x + 1] and world.map[creature.position["global"].x + 1][creature.position["global"].y] then -- if room exists
+                creature.position["global"].x = creature.position["global"].x + 1;
+                creature.position["local"].x = 1;
+                for x = 1, #world.map[creature.position["global"].x][creature.position["global"].y].doors do
+                    if world.map[creature.position["global"].x][creature.position["global"].y].doors[x].direction == "left" then
+                        creature.position["local"].x = world.map[creature.position["global"].x][creature.position["global"].y].doors[x].x;
+                        creature.position["local"].y = world.map[creature.position["global"].x][creature.position["global"].y].doors[x].y;
                     end
                 end
             end
+        end
+    end
+end
+
+local creatureConsume = function(creature, item)
+    if item.liquidContainer then
+        if #item.items > 0 then
+            for k,v in pairs(creature.needs.current) do
+                print(k,v)
+                creature.needs.current[k] = creature.needs.current[k] + item.items[1].effect.needs.current[k];
+            end
+            table.remove(item.items, 1);
+        end
+    else
+        for k,v in pairs(creature.needs.current) do
+            creature.needs.current[k] = creature.needs.current[k] + item.effect.needs.current[k];
         end
     end
 end
@@ -162,20 +179,18 @@ local function Creature(name)
     self.memory = {}
     self.forgotten = {}
 
-    self.position = {x = 1, y = 1};
-    self.room = {x = 1, y = 1};
+    self.position = Position();
     
     self.needs = Needs();
     self.personality = Personality();
     self.skills = Skills();
-    
-    self.experience = Skills(0);
-    
+
     self.perks = {};
     
     self.passTurn = creaturePassTurn;
     self.checkNeeds = creatureCheckNeeds;
     self.move = creatureMove;
+    self.consume = creatureConsume;
     
     self.items = {};
 

@@ -10,7 +10,8 @@ local function Needs(defaultCurrent, defaultMax, defaultDecay)
         hygiene = defaultCurrent or 100,
         pee = defaultCurrent or 0,
         poo = defaultCurrent or 0,
-        happiness = defaultCurrent or 100
+        happiness = defaultCurrent or 100,
+        sanity = defaultCurrent or 100
     };
     self.max = 
     {
@@ -21,7 +22,8 @@ local function Needs(defaultCurrent, defaultMax, defaultDecay)
         hygiene = defaultMax or 100,
         pee = defaultMax or 100,
         poo = defaultMax or 100,
-        happiness = defaultMax or 100
+        happiness = defaultMax or 100,
+        sanity = defaultMax or 100
     };
     self.decay = 
     {
@@ -32,7 +34,8 @@ local function Needs(defaultCurrent, defaultMax, defaultDecay)
         hygiene = defaultDecay or -2,
         pee = defaultDecay or 3,
         poo = defaultDecay or 0.5,
-        happiness = defaultDecay or -0.5
+        happiness = defaultDecay or -0.5,
+        sanity = defaultDecay or -0.5
     };
     return self;
 end
