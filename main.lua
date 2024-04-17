@@ -84,6 +84,10 @@ br.consume = function(item)
     player:consume(item);
 end
 
+br.use = function(itemid)
+    player:consume(br.player.items[itemid]);
+end
+
 br.mv = function(direction)
     if direction == 8 or direction == 'u' then
         move("up");
