@@ -1,4 +1,4 @@
-local Knowledges = function()
+local Opinions = function()
     local self = {};
     self.people = {};
     self.places = {};
@@ -7,4 +7,4 @@ local Knowledges = function()
     return self;
 end
 
-return Knowledges;
+return Opinions;

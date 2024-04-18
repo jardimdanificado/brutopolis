@@ -1,18 +1,6 @@
 local Item = require("types.Item");
 local items = {};
 
-items.poo = function(position,creator)
-    local self = Item("poo", "poo", position);
-    self.creator = creator or "unknown";
-    self.effect.needs.current.hapiness = -10;
-    self.effect.needs.current.sanity = -10;
-    self.effect.needs.current.food = 10;
-    self.effect.needs.current.water = -5;
-    self.effect.personality.aggressiveness = -2;
-    self.effect.personality.positivity = -5;
-    return self;
-end
-
 items.water = function(position)
     local self = Item("water", "drink", position);
     self.liquid = true;
@@ -24,12 +12,26 @@ items.water = function(position)
     return self;
 end
 
+items.poo = function(position,creator)
+    local self = Item("poo", "poo", position);
+    self.creator = creator or "unknown";
+    self.effect.needs.current.hapiness = -10;
+    self.effect.needs.current.sanity = -10;
+    self.effect.needs.current.food = 10;
+    self.effect.needs.current.water = -5;
+    self.effect.needs.current.hygiene = -100;
+    self.effect.personality.aggressiveness = -2;
+    self.effect.personality.positivity = -5;
+    return self;
+end
+
 items.pee = function(position,creator)
     local self = Item("pee", "pee", position);
     self.liquid = true;
     self.creator = creator or "unknown";
     self.effect.needs.current.hapiness = -5;
     self.effect.needs.current.sanity = -10;
+    self.effect.needs.current.hygiene = -75;
     self.effect.needs.current.water = 10;
 
     self.effect.personality.aggressiveness = 1;

@@ -7,6 +7,7 @@ local Interests = function()
     self.cooking = 0;
     self.politics = 0;
     self.love = 0;
+
     return self;
 end
 

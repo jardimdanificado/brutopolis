@@ -3,7 +3,7 @@ local Needs = require("types.Needs");
 local Skills = require("types.Skills");
 local Personality = require("types.Personality");
 local Interests = require("types.Interests");
-local Knowledges = require("types.Knowledges");
+local Opinions = require("types.Opinions");
 
 local Position = require("types.Position");
 
@@ -19,6 +19,8 @@ local function creaturePassTurn(creature)
     creature.needs.current.hygiene = creature.needs.current.hygiene + creature.needs.decay.hygiene;
     creature.needs.current.pee = creature.needs.current.pee + creature.needs.decay.pee;
     creature.needs.current.poo = creature.needs.current.poo + creature.needs.decay.poo;
+    creature.needs.current.happiness = creature.needs.current.happiness + creature.needs.decay.happiness;
+    creature.needs.current.sanity = creature.needs.current.sanity + creature.needs.decay.sanity;
 end
 
 local function creatureCheckNeeds(creature, world)
@@ -41,7 +43,7 @@ local function creatureCheckNeeds(creature, world)
         end
     elseif creature.needs.current.food > (creature.needs.max.food/2) then
         creature.health = creature.health - 5;
-        print(creature.name .. " is to full");
+        print(creature.name .. " is too full");
     end
 
     if creature.needs.current.water < creature.needs.max.water then
@@ -140,7 +142,15 @@ local function creatureMove(creature, world, direction)
         reverseDirection = "left";
     end
 
-    if room.map[creature.position["local"].x + direction.x][creature.position["local"].y + direction.y] == 32 then 
+    if room.map[creature.position["local"].x + direction.x][creature.position["local"].y + direction.y] ~= 35 then 
+        if br.utils.roleta(1, 1, 1, 1, 1, 1, 2) == 2 then
+            for k,v in pairs(room.items) do
+                if v.position["local"].x == creature.position["local"].x + direction.x and v.position["local"].y == creature.position["local"].y + direction.y then
+                    room.items[k].position["local"].x = creature.position["local"].x;
+                    room.items[k].position["local"].y = creature.position["local"].y;
+                end
+            end
+        end
         creature.position["local"].x = creature.position["local"].x + direction.x;
         creature.position["local"].y = creature.position["local"].y + direction.y;
     elseif room.map[creature.position["local"].x + direction.x][creature.position["local"].y + direction.y] == 48 then
@@ -160,8 +170,6 @@ local function creatureMove(creature, world, direction)
             end
         end
     end
-
-
 end
 
 local creatureConsume = function(creature, itemid)
@@ -287,7 +295,7 @@ local function Creature(name)
     self.personality = Personality();
     self.interests = Interests();
     self.skills = Skills();
-    self.knowledges = Knowledges();
+    self.opinions = Opinions();
     
     self.passTurn = creaturePassTurn;
     self.checkNeeds = creatureCheckNeeds;
