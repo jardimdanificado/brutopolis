@@ -10,9 +10,13 @@ local Position = require("types.Position");
 local Item = require("types.Item");
 
 local function creaturePassTurn(creature)
-    for k,v in pairs(creature.needs.current) do
-        creature.needs.current[k] = creature.needs.max[k];
-    end
+    creature.needs.current.food = creature.needs.current.food + creature.needs.decay.food;
+    creature.needs.current.water = creature.needs.current.water + creature.needs.decay.water;
+    creature.needs.current.sleep = creature.needs.current.sleep + creature.needs.decay.sleep;
+    creature.needs.current.social = creature.needs.current.social + creature.needs.decay.social;
+    creature.needs.current.hygiene = creature.needs.current.hygiene + creature.needs.decay.hygiene;
+    creature.needs.current.pee = creature.needs.current.pee + creature.needs.decay.pee;
+    creature.needs.current.poo = creature.needs.current.poo + creature.needs.decay.poo;
 end
 
 local function creatureCheckNeeds(creature, world)
@@ -67,7 +71,7 @@ local function creatureCheckNeeds(creature, world)
         creature.pee(creature, world);
 
         print(creature.name .. " has wet itself");
-    elseif creature.needs.current.pee < (creature.needs.max.pee/4) then
+    elseif creature.needs.current.pee > (creature.needs.max.pee/4)*3 then
         print(creature.name .. " is bursting to pee");
     end
 

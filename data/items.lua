@@ -2,7 +2,7 @@ local Item = require("types.Item");
 local items = {};
 
 items.shit = function(position,creator)
-    local self = Item("shit",position);
+    local self = Item("shit", "shit", position);
     self.creator = creator or "unknown";
     self.effect.needs.current.hapiness = -10;
     self.effect.needs.current.sanity = -10;
@@ -39,12 +39,24 @@ items.pee = function(position,creator)
     return self;
 end
 
-items.bottle = function(position,content)
+items.bottle = function(position,content)-- 2.5 liters
     local self = Item("bottle", "liquidContainer", position);
     self.liquidContainer = true;
     self.creator = "unknown";
-    self.maxStorage = 5;
+    self.maxStorage = 25;-- 1 liquid unit = 100ml
     self.items = content;
+    return self;
+end
+
+items.corn = function(position,creator)
+    local self = Item("corn", position);
+    self.creator = creator or "unknown";
+    self.effect.needs.current.hapiness = 0.5;
+    self.effect.needs.current.sanity = 0.5;
+    self.effect.needs.current.food = 10;
+    self.effect.needs.current.water = -5;
+    self.effect.personality.aggressiveness = -2;
+    self.effect.personality.positivity = -5;
     return self;
 end
 

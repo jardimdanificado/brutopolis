@@ -68,8 +68,7 @@ br.spawn = function(creature, gx, gy, lx, ly)
     return c;
 end
 
-local player = Creature("player");
-player.position["local"] = {x = 3, y = 3};
+local player = br.spawn("player", 1, 1, 3, 3);
 table.insert(world.creatures, player);
 printRoom(world,1,1);
 
@@ -82,16 +81,18 @@ local function move(direction)
 
     creature:move(world, direction);
 
-    for x = 1, #world.creatures do
-        creature:passTurn();
-        creature:checkNeeds(world);
-    end
+    creature:passTurn();
+    creature:checkNeeds(world);
 
     checkPlayer();
     br.redraw();
 end
 
 br.use = function(itemid)
+    if itemid == nil then
+        print("use <itemid>");
+        return;
+    end
     player:consume(itemid);
 end
 
@@ -122,6 +123,9 @@ br.d = function()
 end
 
 br.world = world;
+
+
+
 br.player = player;
 br.player.items[1] = items.bottle(br.player.position, {
     items.water(br.player.position), 
@@ -156,7 +160,5 @@ end
 br.knowledges = function()
     br.help(br.player.knowledges);
 end
-
-br.move = move;
 
 br.repl();

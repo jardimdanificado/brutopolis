@@ -11,6 +11,7 @@ local Personality = function()
     self.curiosity = 0;
     self.liberality = 0;
     self.spirituality = 0;
+    self.humanity = 0;
     
     self.courage = 0;
     
