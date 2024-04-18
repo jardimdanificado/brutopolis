@@ -20,57 +20,64 @@ local function creaturePassTurn(creature)
 end
 
 local function creatureCheckNeeds(creature, world)
-    if creature.needs.current.hygiene < 100 then
-        if creature.needs.current.hygiene < 10 then
+    if creature.needs.current.hygiene < creature.needs.max.hygiene then
+        if creature.needs.current.hygiene < (creature.needs.max.hygiene/10) then
             print(creature.name .. " is disgusting");
-        else
+        elseif creature.needs.current.hygiene < (creature.needs.max.hygiene/2) then
             print(creature.name .. " is dirty");
         end
+    elseif creature.needs.current.hygiene > creature.needs.max.hygiene then
+        creature.needs.current.hygiene = creature.needs.max.hygiene;
     end
 
-    if creature.needs.current.food < 100 then
+    if creature.needs.current.food < creature.needs.max.food then
         if creature.needs.current.food <= 0 then
             creature.health = creature.health - 10;
             print(creature.name .. " is starving to death");
-            return;
-        elseif creature.needs.current.food < 75 then
+        elseif creature.needs.current.food < (creature.needs.max.food/3) then
             print(creature.name .. " is starving");
         end
+    elseif creature.needs.current.food > (creature.needs.max.food/2) then
+        creature.health = creature.health - 5;
+        print(creature.name .. " is overeating");
     end
 
-    if creature.needs.current.water < 100 then
+    if creature.needs.current.water < creature.needs.max.water then
         if creature.needs.current.water <= 0 then
             creature.health = creature.health - 15;
             print(creature.name .. " is dehydrating to death");
-            return;
-        elseif creature.needs.current.water < 75 then
+        elseif creature.needs.current.water < (creature.needs.max.water/2) then
             print(creature.name .. " is dehydrated");
         end
+    elseif creature.needs.current.water > (creature.needs.max.water*1.5) then
+        creature.health = creature.health - 10;
+        print(creature.name .. " is drowning");
     end
 
-    if creature.needs.current.sleep <= 100 then
+    if creature.needs.current.sleep <= creature.needs.max.sleep then
         if creature.needs.current.sleep <= 0 then
             creature.health = creature.health - 5;
             print(creature.name .. " is dying from lack of sleep");
-        elseif creature.needs.current.sleep < 75 then
+        elseif creature.needs.current.sleep < ((creature.needs.max.sleep/4)*3) then
             print(creature.name .. " is exhausted");
         end
+    elseif creature.needs.current.sleep > creature.needs.max.sleep then
+        creature.needs.current.sleep = creature.needs.max.sleep;
     end
 
-    if creature.needs.current.pee >= 50 then
-        if creature.needs.current.pee >= 100 then
-            creature.needs.current.hygiene = creature.needs.current.hygiene - 100;
-            creature.needs.current.pee = 0;
-            table.insert(world.map[creature.position["global"].x][creature.position["global"].y].items, Item(creature.name .. "'s pee", "pee", creature.name, br.utils.table.clone(creature.position), br.utils.table.clone(creature.room)));
-            print(creature.name .. " has wet itself");
-        elseif creature.needs.current.water < 75 then
-            print(creature.name .. " is bursting to pee");
-        end
+    print(creature.needs.current.pee, creature.needs.max.pee);
+    if creature.needs.current.pee >= creature.needs.max.pee then
+        creature.needs.current.hygiene = creature.needs.current.hygiene - creature.needs.max.hygiene;
+        creature.needs.current.pee = 0;
+        table.insert(world.map[creature.position["global"].x][creature.position["global"].y].items, Item(creature.name .. "'s pee", "pee", creature.name, br.utils.table.clone(creature.position), br.utils.table.clone(creature.room)));
+        print(creature.name .. " has wet itself");
+    elseif creature.needs.current.pee < ((creature.needs.max.pee/4)*3) then
+        print(creature.name .. " is bursting to pee");
     end
 
-    if creature.needs.current.poo >= 50 then
-        if creature.needs.current.poo >= 100 then
-            creature.needs.current.hygiene = creature.needs.current.hygiene - 100;
+    if creature.needs.current.poo >= creature.needs.max.poo/2 then
+        if creature.needs.current.poo >= creature.needs.max.poo then
+            creature.needs.current.hygiene = creature.needs.current.hygiene - creature.needs.max.hygiene;
             creature.needs.current.poo = 0;
             table.insert(world.map[creature.position["global"].x][creature.position["global"].y].items, Item(creature.name .. "'s shit", "shit", creature.name, br.utils.table.clone(creature.position), br.utils.table.clone(creature.room)));
             print(creature.name .. " has soiled itself");
@@ -79,13 +86,15 @@ local function creatureCheckNeeds(creature, world)
         end
     end
 
-    if creature.needs.current.happiness < 100 then
+    if creature.needs.current.happiness < creature.needs.current.happiness then
         if creature.needs.current.happiness <= 0 then
             creature.health = creature.health - 10;
             print(creature.name .. " is dying inside");
-        elseif creature.needs.current.happiness < 75 then
+        elseif creature.needs.current.happiness < ((creature.needs.current.happiness/4)*3) then
             print(creature.name .. " is sad");
         end
+    elseif creature.needs.current.happiness > creature.needs.max.happiness then
+        creature.needs.current.happiness = creature.needs.max.happiness;
     end
 end
 
@@ -157,7 +166,8 @@ local function creatureMove(creature, world, direction)
     end
 end
 
-local creatureConsume = function(creature, item)
+local creatureConsume = function(creature, itemid)
+    local item = creature.items[itemid];
     if item.liquidContainer then
         if #item.items > 0 then
             item = table.remove(item.items, 1);

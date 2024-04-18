@@ -80,24 +80,8 @@ local function move(direction)
     br.redraw();
 end
 
-br.consume = function(item)
-    player:consume(item);
-end
-
 br.use = function(itemid)
-    player:consume(br.player.items[itemid]);
-end
-
-br.mv = function(direction)
-    if direction == 8 or direction == 'u' then
-        move("up");
-    elseif direction == 2 or direction == 'd' then
-        move("down");
-    elseif direction == 4 or direction == 'l' then
-        move("left");
-    elseif direction == 6 or direction == 'r' then
-        move("right");
-    end
+    player:consume(itemid);
 end
 
 br.w = function()
