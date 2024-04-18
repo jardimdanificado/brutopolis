@@ -55,9 +55,37 @@ local function printRoom(world,roomx,roomy)
     end
 end
 
+
 local world = {};
 world.creatures = {};
 world.map = createMap(config.mapSize.x, config.mapSize.y);
+
+br.updatefluids = function()
+    for x = 1, #world.map do
+        for y = 1, #world.map[1] do
+            -- map all fluids and verify if there are two of more fluids in the same tile, if some, move one to a adjacent tile that exists and not a wall "#" or 32, the new tile must have less water than the original
+            for i = 1, #world.map[x][y].items do 
+                if world.map[x][y].items[i].liquid then 
+                    for j = 1, #world.map[x][y].items do
+                        if world.map[x][y].items[j].liquid 
+                        and i ~= j
+                        and world.map[x][y].items[i] ~= world.map[x][y].items[j] 
+                        and world.map[x][y].items[i].position["local"].x == world.map[x][y].items[j].position["local"].x 
+                        and world.map[x][y].items[i].position["local"].y == world.map[x][y].items[j].position["local"].y then
+                            local item = world.map[x][y].items[j];
+                            local newx = item.position["local"].x + br.utils.random(-1,1);
+                            local newy = item.position["local"].y + br.utils.random(-1,1);
+                            if newx > 0 and newx < #world.map[x][y].map and newy > 0 and newy < #world.map[x][y].map[1] and world.map[x][y].map[newx][newy] ~= 35 then
+                                item.position["local"].x = newx;
+                                item.position["local"].y = newy; 
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
 
 br.spawn = function(creature, gx, gy, lx, ly)
     local c = Creature(creature);
@@ -83,6 +111,7 @@ local function move(direction)
 
     creature:passTurn();
     creature:checkNeeds(world);
+    br.updatefluids();
 
     checkPlayer();
     br.redraw();

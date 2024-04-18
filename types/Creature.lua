@@ -9,6 +9,8 @@ local Position = require("types.Position");
 
 local Item = require("types.Item");
 
+local items = require("data.items");
+
 local function creaturePassTurn(creature)
     creature.needs.current.food = creature.needs.current.food + creature.needs.decay.food;
     creature.needs.current.water = creature.needs.current.water + creature.needs.decay.water;
@@ -79,7 +81,7 @@ local function creatureCheckNeeds(creature, world)
         if creature.needs.current.poo >= creature.needs.max.poo then
             creature.needs.current.hygiene = creature.needs.current.hygiene - creature.needs.max.hygiene;
             creature.needs.current.poo = 0;
-            local poo = Item("poo", "poo", br.utils.table.clone(creature.position));
+            local poo = items.poo(creature.position, creature.name);
             table.insert(world.map[creature.position["global"].x][creature.position["global"].y].items, poo);
             print(creature.name .. " has soiled itself");
         else
@@ -212,7 +214,7 @@ local creaturePee = function(creature, world, inside, itemid)
                     if #creature.items[itemid].items >= creature.items[itemid].maxStorage then
                         break;
                     end
-                    local pee = Item("pee", "pee", creature.position);
+                    local pee = items.pee(creature.position, creature.name);
                     table.insert(creature.items[itemid].items, pee);
                     creature.needs.current.pee = creature.needs.current.pee - 10;
                 end
@@ -221,7 +223,7 @@ local creaturePee = function(creature, world, inside, itemid)
             end
         else
             for x = 1, math.ceil(creature.needs.current.pee/10), 1 do
-                local pee = Item("pee", "pee", br.utils.table.clone(creature.position));
+                local pee = items.pee(br.utils.table.clone(creature.position), creature.name);
                 -- try to change te position of the pee to a adjacent tile
                 local direction = {x = br.utils.random(-1, 1), y = br.utils.random(-1, 1)};
                 if world.map[creature.position["global"].x] and world.map[creature.position["global"].x][creature.position["global"].y] then
@@ -236,7 +238,7 @@ local creaturePee = function(creature, world, inside, itemid)
         end
     else
         for x = 1, math.ceil(creature.needs.current.pee/10), 1 do
-            local pee = Item("pee", "pee", br.utils.table.clone(creature.position));
+            local pee = items.pee(br.utils.table.clone(creature.position), creature.name);
             -- try to change te position of the pee to a adjacent tile
             local direction = {x = br.utils.random(-1, 1), y = br.utils.random(-1, 1)};
             
@@ -248,7 +250,6 @@ local creaturePee = function(creature, world, inside, itemid)
             and world.map[creature.position["global"].x][creature.position["global"].y].map[creature.position["local"].x + direction.x][creature.position["local"].y + direction.y] ~= 35 then
                 pee.position["local"].x = creature.position["local"].x + direction.x;
                 pee.position["local"].y = creature.position["local"].y + direction.y;
-                table.insert(world.map[creature.position["global"].x][creature.position["global"].y].items, pee);
             end
 
             table.insert(world.map[creature.position["global"].x][creature.position["global"].y].items, pee);
@@ -262,7 +263,7 @@ end
 
 local creaturePoo = function(creature, world)    
     for x = 1, math.ceil(creature.needs.current.poo/20), 1 do
-        local poo = Item("poo", "poo", br.utils.table.clone(creature.position));
+        local poo = items.poo(br.utils.table.clone(creature.position), creature.name);
         table.insert(world.map[creature.position["global"].x][creature.position["global"].y].items, poo);
         creature.needs.current.poo = creature.needs.current.poo - 20;
     end
