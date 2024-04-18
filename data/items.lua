@@ -20,6 +20,7 @@ items.water = function(position)
     self.effect.needs.current.hapiness = 1;
     self.effect.needs.current.sanity = 1;
     self.effect.needs.current.water = 10;
+    self.effect.needs.current.pee = 10;
     return self;
 end
 

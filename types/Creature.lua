@@ -68,11 +68,9 @@ local function creatureCheckNeeds(creature, world)
     print(creature.needs.current.pee, creature.needs.max.pee);
     if creature.needs.current.pee >= creature.needs.max.pee then
         creature.needs.current.hygiene = creature.needs.current.hygiene - creature.needs.max.hygiene;
-        creature.needs.current.pee = 0;
-
-        local pee = Item("pee", "pee", br.utils.table.clone(creature.position));
-        table.insert(world.map[creature.position["global"].x][creature.position["global"].y].items, pee);
         
+        creature.pee(creature, world);
+
         print(creature.name .. " has wet itself");
     elseif creature.needs.current.pee < ((creature.needs.max.pee/4)*3) then
         print(creature.name .. " is bursting to pee");
@@ -170,17 +168,21 @@ local creatureConsume = function(creature, itemid)
     if item.liquidContainer then
         if #item.items > 0 then
             item = table.remove(item.items, 1);
+            
             for k,v in pairs(creature.needs.current) do
                 creature.needs.current[k] = creature.needs.current[k] + item.effect.needs.current[k];
                 creature.needs.max[k] = creature.needs.max[k] + item.effect.needs.max[k];
                 creature.needs.decay[k] = creature.needs.decay[k] + item.effect.needs.decay[k];
             end
+
             for k,v in pairs(creature.personality) do
                 creature.personality[k] = creature.personality[k] + item.effect.personality[k];
             end
+
             for k,v in pairs(creature.interests) do
                 creature.interests[k] = creature.interests[k] + item.effect.interests[k];
             end
+
             for k,v in pairs(creature.skills) do
                 creature.skills[k] = creature.skills[k] + item.effect.skills[k];
             end
@@ -200,6 +202,63 @@ local creatureConsume = function(creature, itemid)
         for k,v in pairs(creature.skills) do
             creature.skills[k] = creature.skills[k] + item.effect.skills[k];
         end
+    end
+end
+
+local creaturePee = function(creature, world, inside, itemid)    
+    if inside then
+        if inside == "inside" and itemid and creature.items[itemid] then 
+            if creature.items[itemid].liquidContainer then
+                for x = 1, math.ceil(creature.needs.current.pee/10), 1 do
+                    if #creature.items[itemid].items >= creature.items[itemid].maxStorage then
+                        break;
+                    end
+                    local pee = Item("pee", "pee", creature.position);
+                    table.insert(creature.items[itemid].items, pee);
+                    creature.needs.current.pee = creature.needs.current.pee - 10;
+                end
+            else
+                print("You can't pee on that");
+            end
+        else
+            print(math.ceil(creature.needs.current.pee/10));
+            for x = 1, math.ceil(creature.needs.current.pee/10), 1 do
+                local pee = Item("pee", "pee", br.utils.table.clone(creature.position));
+                -- try to change te position of the pee to a adjacent tile
+                local direction = {x = br.utils.random(-1, 1), y = br.utils.random(-1, 1)};
+                if world.map[creature.position["global"].x] and world.map[creature.position["global"].x][creature.position["global"].y] then
+                    if world.map[creature.position["global"].x][creature.position["global"].y].map[creature.position["local"].x + direction.x] and world.map[creature.position["global"].x][creature.position["global"].y].map[creature.position["local"].x + direction.x][creature.position["local"].y + direction.y] and world.map[creature.position["global"].x][creature.position["global"].y].map[creature.position["local"].x + direction.x][creature.position["local"].y + direction.y] ~= 35 then
+                        pee.position = br.utils.table.clone(creature.position);
+                        table.insert(world.map[creature.position["global"].x][creature.position["global"].y].items, pee);
+                    end
+                end
+                table.insert(world.map[creature.position["global"].x][creature.position["global"].y].items, pee);
+                creature.needs.current.pee = creature.needs.current.pee - 10;
+            end
+        end
+    else
+        for x = 1, math.ceil(creature.needs.current.pee/10), 1 do
+            local pee = Item("pee", "pee", br.utils.table.clone(creature.position));
+            -- try to change te position of the pee to a adjacent tile
+            local direction = {x = br.utils.random(-1, 1), y = br.utils.random(-1, 1)};
+            
+            -- checks if the tile is not a wall
+            if world.map[creature.position["global"].x][creature.position["global"].y].map[creature.position["local"].x + direction.x] 
+            
+            and world.map[creature.position["global"].x][creature.position["global"].y].map[creature.position["local"].x + direction.x][creature.position["local"].y + direction.y] 
+            
+            and world.map[creature.position["global"].x][creature.position["global"].y].map[creature.position["local"].x + direction.x][creature.position["local"].y + direction.y] ~= 35 then
+                pee.position["local"].x = creature.position["local"].x + direction.x;
+                pee.position["local"].y = creature.position["local"].y + direction.y;
+                table.insert(world.map[creature.position["global"].x][creature.position["global"].y].items, pee);
+            end
+
+            table.insert(world.map[creature.position["global"].x][creature.position["global"].y].items, pee);
+            creature.needs.current.pee = creature.needs.current.pee - 10;
+        end
+    end
+    if creature.needs.current.pee < 0 then
+        creature.needs.current.pee = 0;
     end
 end
 
@@ -223,6 +282,7 @@ local function Creature(name)
     self.checkNeeds = creatureCheckNeeds;
     self.move = creatureMove;
     self.consume = creatureConsume;
+    self.pee = creaturePee;
     
     self.items = {};
 

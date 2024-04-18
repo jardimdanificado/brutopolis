@@ -95,6 +95,10 @@ br.use = function(itemid)
     player:consume(itemid);
 end
 
+br.pee = function(...)
+    player:pee(world, ...);
+end
+
 br.w = function()
     move("up");
 end
