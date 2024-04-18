@@ -176,40 +176,80 @@ local creatureConsume = function(creature, itemid)
     local item = creature.items[itemid];
     if item.liquidContainer then
         if #item.items > 0 then
-            item = table.remove(item.items, 1);
+            local _item = table.remove(item.items, 1);
             
+            print(creature.name .. " is consuming 100ml of " .. _item.name .. " from " .. item.name);
+
             for k,v in pairs(creature.needs.current) do
-                creature.needs.current[k] = creature.needs.current[k] + item.effect.needs.current[k];
-                creature.needs.max[k] = creature.needs.max[k] + item.effect.needs.max[k];
-                creature.needs.decay[k] = creature.needs.decay[k] + item.effect.needs.decay[k];
+                creature.needs.current[k] = creature.needs.current[k] + _item.effect.needs.current[k];
+                if _item.effect.needs.current[k] ~= 0 then
+                    print(creature.name .. " " .. k ..  " changed by " .. _item.effect.needs.current[k] .. " to " .. creature.needs.current[k]);
+                end
+                creature.needs.max[k] = creature.needs.max[k] + _item.effect.needs.max[k];
+                if _item.effect.needs.max[k] ~= 0 then
+                    print(creature.name .. " " .. k ..  " changed by " .. _item.effect.needs.max[k] .. " to " .. creature.needs.max[k]);
+                end
+                creature.needs.decay[k] = creature.needs.decay[k] + _item.effect.needs.decay[k];
+                if _item.effect.needs.decay[k] ~= 0 then
+                    print(creature.name .. " " .. k ..  " changed by " .. _item.effect.needs.decay[k] .. " to " .. creature.needs.decay[k]);
+                end
             end
 
             for k,v in pairs(creature.personality) do
-                creature.personality[k] = creature.personality[k] + item.effect.personality[k];
+                creature.personality[k] = creature.personality[k] + _item.effect.personality[k];
+                if _item.effect.personality[k] ~= 0 then
+                    print(creature.name .. " " .. k ..  " changed by " .. _item.effect.personality[k] .. " to " .. creature.personality[k]);
+                end
             end
 
             for k,v in pairs(creature.interests) do
-                creature.interests[k] = creature.interests[k] + item.effect.interests[k];
+                creature.interests[k] = creature.interests[k] + _item.effect.interests[k];
+                if _item.effect.interests[k] ~= 0 then
+                    print(creature.name .. " " .. k ..  " changed by " .. _item.effect.interests[k] .. " to " .. creature.interests[k]);
+                end
             end
 
             for k,v in pairs(creature.skills) do
-                creature.skills[k] = creature.skills[k] + item.effect.skills[k];
+                creature.skills[k] = creature.skills[k] + _item.effect.skills[k];
+                if _item.effect.skills[k] ~= 0 then
+                    print(creature.name .. " " .. k ..  " changed by " .. _item.effect.skills[k] .. " to " .. creature.skills[k]);
+                end
             end
+
+            print (creature.name .. "'s " .. item.name .. " has " .. #item.items .. " content left");
         end
     else
         for k,v in pairs(creature.needs.current) do
             creature.needs.current[k] = creature.needs.current[k] + item.effect.needs.current[k];
+            if item.effect.needs.current[k] ~= 0 then
+                print(creature.name .. " " .. k ..  " changed by " .. item.effect.needs.current[k] .. " to " .. creature.needs.current[k]);
+            end
             creature.needs.max[k] = creature.needs.max[k] + item.effect.needs.max[k];
+            if item.effect.needs.max[k] ~= 0 then
+                print(creature.name .. " " .. k ..  " changed by " .. item.effect.needs.max[k] .. " to " .. creature.needs.max[k]);
+            end
             creature.needs.decay[k] = creature.needs.decay[k] + item.effect.needs.decay[k];
+            if item.effect.needs.decay[k] ~= 0 then
+                print(creature.name .. " " .. k ..  " changed by " .. item.effect.needs.decay[k] .. " to " .. creature.needs.decay[k]);
+            end
         end
         for k,v in pairs(creature.personality) do
             creature.personality[k] = creature.personality[k] + item.effect.personality[k];
+            if item.effect.personality[k] ~= 0 then
+                print(creature.name .. " " .. k ..  " changed by " .. item.effect.personality[k] .. " to " .. creature.personality[k]);
+            end
         end
         for k,v in pairs(creature.interests) do
             creature.interests[k] = creature.interests[k] + item.effect.interests[k];
+            if item.effect.interests[k] ~= 0 then
+                print(creature.name .. " " .. k ..  " changed by " .. item.effect.interests[k] .. " to " .. creature.interests[k]);
+            end
         end
         for k,v in pairs(creature.skills) do
             creature.skills[k] = creature.skills[k] + item.effect.skills[k];
+            if item.effect.skills[k] ~= 0 then
+                print(creature.name .. " " .. k ..  " changed by " .. item.effect.skills[k] .. " to " .. creature.skills[k]);
+            end
         end
     end
 end
@@ -218,14 +258,18 @@ local creaturePee = function(creature, world, inside, itemid)
     if inside then
         if inside == "inside" and itemid and creature.items[itemid] then 
             if creature.items[itemid].liquidContainer then
-                for x = 1, math.ceil(creature.needs.current.pee/10), 1 do
+                local maxamount = math.ceil(creature.needs.current.pee/10)
+                local amount = 0;
+                for x = 1, maxamount, 1 do
                     if #creature.items[itemid].items >= creature.items[itemid].maxStorage then
                         break;
                     end
                     local pee = items.pee(creature.position, creature.name);
-                    table.insert(creature.items[itemid].items, pee);
+                    table.insert(creature.items[itemid].items, 1, pee);
                     creature.needs.current.pee = creature.needs.current.pee - 10;
+                    amount = amount + 1;
                 end
+                print (creature.name .. " peed " .. amount*100 .. "ml in " .. creature.items[itemid].name);
             else
                 print("You can't pee on that");
             end

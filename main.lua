@@ -133,6 +133,7 @@ br.use = function(itemid)
         print("use <itemid>");
         return;
     end
+    print("You used " .. player.items[itemid].name);
     player:consume(itemid);
 end
 
