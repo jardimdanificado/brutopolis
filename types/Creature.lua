@@ -10,13 +10,9 @@ local Position = require("types.Position");
 local Item = require("types.Item");
 
 local function creaturePassTurn(creature)
-    creature.needs.current.food = creature.needs.current.food + creature.needs.decay.food;
-    creature.needs.current.water = creature.needs.current.water + creature.needs.decay.water;
-    creature.needs.current.sleep = creature.needs.current.sleep + creature.needs.decay.sleep;
-    creature.needs.current.social = creature.needs.current.social + creature.needs.decay.social;
-    creature.needs.current.hygiene = creature.needs.current.hygiene + creature.needs.decay.hygiene;
-    creature.needs.current.pee = creature.needs.current.pee + creature.needs.decay.pee;
-    creature.needs.current.poo = creature.needs.current.poo + creature.needs.decay.poo;
+    for k,v in pairs(creature.needs.current) do
+        creature.needs.current[k] = creature.needs.max[k];
+    end
 end
 
 local function creatureCheckNeeds(creature, world)
@@ -39,7 +35,7 @@ local function creatureCheckNeeds(creature, world)
         end
     elseif creature.needs.current.food > (creature.needs.max.food/2) then
         creature.health = creature.health - 5;
-        print(creature.name .. " is overeating");
+        print(creature.name .. " is to full");
     end
 
     if creature.needs.current.water < creature.needs.max.water then
@@ -65,14 +61,13 @@ local function creatureCheckNeeds(creature, world)
         creature.needs.current.sleep = creature.needs.max.sleep;
     end
 
-    print(creature.needs.current.pee, creature.needs.max.pee);
     if creature.needs.current.pee >= creature.needs.max.pee then
         creature.needs.current.hygiene = creature.needs.current.hygiene - creature.needs.max.hygiene;
         
         creature.pee(creature, world);
 
         print(creature.name .. " has wet itself");
-    elseif creature.needs.current.pee < ((creature.needs.max.pee/4)*3) then
+    elseif creature.needs.current.pee < (creature.needs.max.pee/4) then
         print(creature.name .. " is bursting to pee");
     end
 
@@ -221,7 +216,6 @@ local creaturePee = function(creature, world, inside, itemid)
                 print("You can't pee on that");
             end
         else
-            print(math.ceil(creature.needs.current.pee/10));
             for x = 1, math.ceil(creature.needs.current.pee/10), 1 do
                 local pee = Item("pee", "pee", br.utils.table.clone(creature.position));
                 -- try to change te position of the pee to a adjacent tile
@@ -262,6 +256,18 @@ local creaturePee = function(creature, world, inside, itemid)
     end
 end
 
+local creaturePoo = function(creature, world)    
+    for x = 1, math.ceil(creature.needs.current.poo/20), 1 do
+        local poo = Item("poo", "poo", br.utils.table.clone(creature.position));
+        table.insert(world.map[creature.position["global"].x][creature.position["global"].y].items, poo);
+        creature.needs.current.poo = creature.needs.current.poo - 20;
+    end
+
+    if creature.needs.current.poo < 0 then
+        creature.needs.current.poo = 0;
+    end
+end
+
 local function Creature(name)
     local self = {};
     
@@ -283,6 +289,7 @@ local function Creature(name)
     self.move = creatureMove;
     self.consume = creatureConsume;
     self.pee = creaturePee;
+    self.poo = creaturePoo;
     
     self.items = {};
 

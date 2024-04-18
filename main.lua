@@ -97,6 +97,12 @@ end
 
 br.pee = function(...)
     player:pee(world, ...);
+    br.redraw();
+end
+
+br.poo = function(...)
+    player:poo(world, ...);
+    br.redraw();
 end
 
 br.w = function()
