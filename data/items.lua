@@ -44,7 +44,7 @@ items.bottle = function(position,content)-- 2.5 liters
     self.liquidContainer = true;
     self.creator = "unknown";
     self.maxStorage = 25;-- 1 liquid unit = 100ml
-    self.items = content;
+    self.items = content or {};
     return self;
 end
 

@@ -19,7 +19,7 @@ local function Item(name, _type, position)
     self.liquidContainer = false;
     self.liquid = false;
     
-    self.maxStorage = 5;
+    self.maxStorage = 0;
     self.items = {};
     
     return self;

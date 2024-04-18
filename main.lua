@@ -96,6 +96,17 @@ br.spawn = function(creature, gx, gy, lx, ly)
     return c;
 end
 
+br.getitem = function(creature, itemid, filledwith)
+    local item = items[itemid](creature.position);
+    if filledwith then
+        for x = 1, item.maxStorage do
+            table.insert(item.items, items[filledwith](creature.position));
+        end
+    end
+    table.insert(creature.items, item);
+    return item;
+end
+
 local player = br.spawn("player", 1, 1, 3, 3);
 table.insert(world.creatures, player);
 printRoom(world,1,1);
@@ -156,13 +167,7 @@ br.world = world;
 
 
 br.player = player;
-br.player.items[1] = items.bottle(br.player.position, {
-    items.water(br.player.position), 
-    items.water(br.player.position),
-    items.water(br.player.position),
-    items.water(br.player.position),
-    items.water(br.player.position)}
-);
+br.getitem(player, "bottle", "water");
 
 br.inventory = br.player.items;
 
@@ -175,7 +180,35 @@ br.skills = function()
 end
 
 br.items = function()
-    br.help(br.player.items);
+    for x = 1, #br.player.items do
+        io.write(x .. ". ")
+        if br.player.items[x].maxStorage > 0 then
+            local content = {}
+            for y = 1, #br.player.items[x].items do
+                if content[br.player.items[x].items[y].name] == nil then
+                    content[br.player.items[x].items[y].name] = 1;
+                else
+                    content[br.player.items[x].items[y].name] = content[br.player.items[x].items[y].name] + 1;
+                end
+            end
+            io.write(br.player.items[x].name .. " containing ");
+            if br.player.items[x].liquidContainer then
+                local txt = "";
+                for k,v in pairs(content) do
+                    txt = txt .. v*100 .. "ml of " .. k .. ", ";
+                end
+                --remove the last , and space
+                io.write(txt:sub(1, -3));
+                io.write("\n");
+            else
+                for k,v in pairs(content) do
+                    print(v .. " " .. k .. "s");
+                end
+            end
+        else
+            print(br.player.items[x].name);
+        end
+    end
 end
 
 br.personality = function()
