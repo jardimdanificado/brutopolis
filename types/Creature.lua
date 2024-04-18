@@ -142,18 +142,7 @@ local function creatureMove(creature, world, direction)
         reverseDirection = "left";
     end
 
-    if room.map[creature.position["local"].x + direction.x][creature.position["local"].y + direction.y] ~= 35 then 
-        if br.utils.roleta(1, 1, 1, 1, 1, 1, 2) == 2 then
-            for k,v in pairs(room.items) do
-                if v.position["local"].x == creature.position["local"].x + direction.x and v.position["local"].y == creature.position["local"].y + direction.y then
-                    room.items[k].position["local"].x = creature.position["local"].x;
-                    room.items[k].position["local"].y = creature.position["local"].y;
-                end
-            end
-        end
-        creature.position["local"].x = creature.position["local"].x + direction.x;
-        creature.position["local"].y = creature.position["local"].y + direction.y;
-    elseif room.map[creature.position["local"].x + direction.x][creature.position["local"].y + direction.y] == 48 then
+    if room.map[creature.position["local"].x + direction.x][creature.position["local"].y + direction.y] == 48 then
         if world.map[creature.position["global"].x + direction.x] and world.map[creature.position["global"].x + direction.x][creature.position["global"].y + direction.y] then -- if room exists
             local index = br.utils.table.find(world.map[creature.position["global"].x][creature.position["global"].y].creatures, creature);
             table.remove(world.map[creature.position["global"].x][creature.position["global"].y].creatures, index);
@@ -169,6 +158,17 @@ local function creatureMove(creature, world, direction)
                 end
             end
         end
+    elseif room.map[creature.position["local"].x + direction.x][creature.position["local"].y + direction.y] ~= 35 then 
+        if br.utils.roleta(1, 1, 1, 1, 1, 1, 2) == 2 then
+            for k,v in pairs(room.items) do
+                if v.position["local"].x == creature.position["local"].x + direction.x and v.position["local"].y == creature.position["local"].y + direction.y then
+                    room.items[k].position["local"].x = creature.position["local"].x;
+                    room.items[k].position["local"].y = creature.position["local"].y;
+                end
+            end
+        end
+        creature.position["local"].x = creature.position["local"].x + direction.x;
+        creature.position["local"].y = creature.position["local"].y + direction.y;
     end
 end
 
@@ -216,7 +216,7 @@ local creatureConsume = function(creature, itemid)
                 end
             end
 
-            print (creature.name .. "'s " .. item.name .. " has " .. #item.items .. " content left");
+            print (creature.name .. "'s " .. item.name .. " has " .. #item.items .. "ml left");
         end
     else
         for k,v in pairs(creature.needs.current) do
