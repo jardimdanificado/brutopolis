@@ -1,8 +1,6 @@
 local br = require("bruter.bruter");
 br.vm.oneliner = true;
 
-local brutopolisPath = debug.getinfo(1).source:match("@?(.*/)");
-package.path = package.path .. ";" .. brutopolisPath .. "data/?.lua;"
 local config = require("data.config");
 
 local Needs = require("types.Needs");
