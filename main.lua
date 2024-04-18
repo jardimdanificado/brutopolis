@@ -36,6 +36,10 @@ end
 local function printRoom(world,roomx,roomy)
     local room = world.map[roomx][roomy];
     local temproom = br.utils.table.clone(room.map);
+    
+    for x = 1, #room.items do
+        temproom[room.items[x].position["local"].x][room.items[x].position["local"].y] = 42;
+    end
 
     for x = 1, #world.creatures do
         if world.creatures[x].position.global.x == roomx and world.creatures[x].position.global.y == roomy then
@@ -51,11 +55,18 @@ local function printRoom(world,roomx,roomy)
     end
 end
 
-
-
 local world = {};
 world.creatures = {};
 world.map = createMap(config.mapSize.x, config.mapSize.y);
+
+br.spawn = function(creature, gx, gy, lx, ly)
+    local c = Creature(creature);
+    c.position.global = {x = gx, y = gy};
+    c.position["local"] = {x = lx, y = ly};
+    table.insert(world.creatures, c);
+    table.insert(world.map[gx][gy].creatures, c);
+    return c;
+end
 
 local player = Creature("player");
 player.position["local"] = {x = 3, y = 3};
