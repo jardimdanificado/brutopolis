@@ -128,6 +128,30 @@ br.player.items[1] = items.bottle(br.player.position, {
 
 br.inventory = br.player.items;
 
+br.needs = function()
+    br.help(br.player.needs.current);
+end
+
+br.skills = function()
+    br.help(br.player.skills);
+end
+
+br.items = function()
+    br.help(br.player.items);
+end
+
+br.personality = function()
+    br.help(br.player.personality);
+end
+
+br.interests = function()
+    br.help(br.player.interests);
+end
+
+br.knowledges = function()
+    br.help(br.player.knowledges);
+end
+
 br.move = move;
 
 br.repl();

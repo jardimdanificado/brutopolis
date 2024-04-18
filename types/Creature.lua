@@ -2,6 +2,9 @@ local br = require("bruter.bruter")
 local Needs = require("types.Needs");
 local Skills = require("types.Skills");
 local Personality = require("types.Personality");
+local Interests = require("types.Interests");
+local Knowledges = require("types.Knowledges");
+
 local Position = require("types.Position");
 
 local Item = require("types.Item");
@@ -157,15 +160,36 @@ end
 local creatureConsume = function(creature, item)
     if item.liquidContainer then
         if #item.items > 0 then
+            item = table.remove(item.items, 1);
             for k,v in pairs(creature.needs.current) do
-                print(k,v)
-                creature.needs.current[k] = creature.needs.current[k] + item.items[1].effect.needs.current[k];
+                creature.needs.current[k] = creature.needs.current[k] + item.effect.needs.current[k];
+                creature.needs.max[k] = creature.needs.max[k] + item.effect.needs.max[k];
+                creature.needs.decay[k] = creature.needs.decay[k] + item.effect.needs.decay[k];
             end
-            table.remove(item.items, 1);
+            for k,v in pairs(creature.personality) do
+                creature.personality[k] = creature.personality[k] + item.effect.personality[k];
+            end
+            for k,v in pairs(creature.interests) do
+                creature.interests[k] = creature.interests[k] + item.effect.interests[k];
+            end
+            for k,v in pairs(creature.skills) do
+                creature.skills[k] = creature.skills[k] + item.effect.skills[k];
+            end
         end
     else
         for k,v in pairs(creature.needs.current) do
             creature.needs.current[k] = creature.needs.current[k] + item.effect.needs.current[k];
+            creature.needs.max[k] = creature.needs.max[k] + item.effect.needs.max[k];
+            creature.needs.decay[k] = creature.needs.decay[k] + item.effect.needs.decay[k];
+        end
+        for k,v in pairs(creature.personality) do
+            creature.personality[k] = creature.personality[k] + item.effect.personality[k];
+        end
+        for k,v in pairs(creature.interests) do
+            creature.interests[k] = creature.interests[k] + item.effect.interests[k];
+        end
+        for k,v in pairs(creature.skills) do
+            creature.skills[k] = creature.skills[k] + item.effect.skills[k];
         end
     end
 end
@@ -176,16 +200,15 @@ local function Creature(name)
     self.name = name;
     self.health = 100;
 
-    self.memory = {}
-    self.forgotten = {}
+    self.memory = {};
 
     self.position = Position();
     
     self.needs = Needs();
     self.personality = Personality();
+    self.interests = Interests();
     self.skills = Skills();
-
-    self.perks = {};
+    self.knowledges = Knowledges();
     
     self.passTurn = creaturePassTurn;
     self.checkNeeds = creatureCheckNeeds;
