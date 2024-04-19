@@ -21,6 +21,7 @@ local function creaturePassTurn(creature)
     creature.needs.current.poo = creature.needs.current.poo + creature.needs.decay.poo;
     creature.needs.current.happiness = creature.needs.current.happiness + creature.needs.decay.happiness;
     creature.needs.current.sanity = creature.needs.current.sanity + creature.needs.decay.sanity;
+    creature.needs.current.health = creature.needs.current.health + creature.needs.decay.health;
 end
 
 local function creatureCheckNeeds(creature, world)
@@ -36,31 +37,31 @@ local function creatureCheckNeeds(creature, world)
 
     if creature.needs.current.food < creature.needs.max.food then
         if creature.needs.current.food <= 0 then
-            creature.health = creature.health - 10;
+            creature.needs.current.health = creature.needs.current.health - 10;
             print(creature.name .. " is starving to death");
         elseif creature.needs.current.food < (creature.needs.max.food/3) then
             print(creature.name .. " is starving");
         end
     elseif creature.needs.current.food > (creature.needs.max.food/2) then
-        creature.health = creature.health - 5;
+        creature.needs.current.health = creature.needs.current.health - 5;
         print(creature.name .. " is too full");
     end
 
     if creature.needs.current.water < creature.needs.max.water then
         if creature.needs.current.water <= 0 then
-            creature.health = creature.health - 15;
+            creature.needs.current.health = creature.needs.current.health - 15;
             print(creature.name .. " is dehydrating to death");
         elseif creature.needs.current.water < (creature.needs.max.water/2) then
             print(creature.name .. " is dehydrated");
         end
     elseif creature.needs.current.water > (creature.needs.max.water*1.5) then
-        creature.health = creature.health - 10;
+        creature.needs.current.health = creature.needs.current.health - 10;
         print(creature.name .. " is drowning");
     end
 
     if creature.needs.current.sleep <= creature.needs.max.sleep then
         if creature.needs.current.sleep <= 0 then
-            creature.health = creature.health - 5;
+            creature.needs.current.health = creature.needs.current.health - 5;
             print(creature.name .. " is dying from lack of sleep");
         elseif creature.needs.current.sleep < ((creature.needs.max.sleep/4)*3) then
             print(creature.name .. " is exhausted");
@@ -93,7 +94,7 @@ local function creatureCheckNeeds(creature, world)
 
     if creature.needs.current.happiness < creature.needs.current.happiness then
         if creature.needs.current.happiness <= 0 then
-            creature.health = creature.health - 10;
+            creature.needs.current.health = creature.needs.current.health - 10;
             print(creature.name .. " is dying inside");
         elseif creature.needs.current.happiness < ((creature.needs.current.happiness/4)*3) then
             print(creature.name .. " is sad");
@@ -271,7 +272,7 @@ local creaturePee = function(creature, world, inside, itemid)
                 end
                 print (creature.name .. " peed " .. amount*100 .. "ml in " .. creature.items[itemid].name);
             else
-                print("You can't pee on that");
+                print(creature.name .. " can't pee on that");
             end
         else
             for x = 1, math.ceil(creature.needs.current.pee/10), 1 do
@@ -329,7 +330,6 @@ local function Creature(name)
     local self = {};
     
     self.name = name;
-    self.health = 100;
 
     self.memory = {};
 

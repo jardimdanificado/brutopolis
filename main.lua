@@ -14,7 +14,7 @@ local Creature = require("types.Creature");
 local items = require("data.items");
 
 local function checkPlayer()
-    if br.player.health <= 0 then
+    if br.player.needs.current.health <= 0 then
         print("Game Over");
         os.exit();
     end
@@ -88,6 +88,7 @@ end
 
 br.spawn = function(creature, gx, gy, lx, ly)
     local c = Creature(creature);
+    print(creature .. " spawned at " .. gx .. "," .. gy .. " local " .. lx .. "," .. ly)
     c.position.global = {x = gx, y = gy};
     c.position["local"] = {x = lx, y = ly};
     table.insert(world.creatures, c);
@@ -106,8 +107,7 @@ br.getitem = function(creature, itemid, filledwith)
     return item;
 end
 
-local player = br.spawn("player", 1, 1, 3, 3);
-table.insert(world.creatures, player);
+local player = br.spawn("epaminondas", 1, 1, 3, 3);
 printRoom(world,1,1);
 
 br.redraw = function()
@@ -132,7 +132,7 @@ br.use = function(itemid)
         print("use <itemid>");
         return;
     end
-    print("You used " .. player.items[itemid].name);
+    print(player.name .. " used " .. player.items[itemid].name);
     player:consume(itemid);
 end
 
@@ -168,6 +168,9 @@ br.world = world;
 
 br.player = player;
 br.getitem(player, "bottle", "water");
+for x = 1, 10 do
+    br.getitem(player, "bread");
+end
 
 br.inventory = br.player.items;
 

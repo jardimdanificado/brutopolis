@@ -34,6 +34,7 @@ local function Room(minSize, maxSize)
     self.doors = generateDoors(self.map);
     self.creatures = {};
     self.items = {};
+    self.furniture = {};
     return self;
 end
 

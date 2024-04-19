@@ -1,7 +1,4 @@
-local Needs = require("types.Needs");
-local Skills = require("types.Skills");
-local Personality = require("types.Personality")
-local Effect = require("types.Effect")
+local Effect = require("types.Effect");
 
 local function Item(name, _type, position)
     local self = {};
@@ -11,9 +8,7 @@ local function Item(name, _type, position)
     self.owner = "unknown";
     
     self.position = {global = position.global or {x = 1, y = 1}, ["local"] = position["local"] or {x = 1, y = 1}}
-    
-    self.health = 100;
-    
+        
     self.effect = Effect();
     
     self.liquidContainer = false;
@@ -21,6 +16,8 @@ local function Item(name, _type, position)
     
     self.maxStorage = 0;
     self.items = {};
+    
+    --self.block = false; -- only matters for furniture
     
     return self;
 end
