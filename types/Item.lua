@@ -16,9 +16,7 @@ local function Item(name, _type, position)
     
     self.maxStorage = 0;
     self.items = {};
-    
-    --self.block = false; -- only matters for furniture
-    
+        
     return self;
 end
 

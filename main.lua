@@ -116,15 +116,8 @@ end
 
 local function move(direction)
     local creature = player;
-
-    creature:move(world, direction);
-
-    creature:passTurn();
-    creature:checkNeeds(world);
-    br.updatefluids();
-
-    checkPlayer();
-    br.redraw();
+    creature.plan("move", {direction});
+    world.passTurn();
 end
 
 br.use = function(itemid)
@@ -133,17 +126,18 @@ br.use = function(itemid)
         return;
     end
     print(player.name .. " used " .. player.items[itemid].name);
-    player:consume(itemid);
+    player.plan("consume", {itemid});
+    world.passTurn();
 end
 
 br.pee = function(...)
-    player:pee(world, ...);
-    br.redraw();
+    player.plan("pee", {...});
+    world.passTurn();
 end
 
 br.poo = function(...)
-    player:poo(world, ...);
-    br.redraw();
+    player.plan("poo", {...});
+    world.passTurn();
 end
 
 br.w = function()
@@ -164,7 +158,18 @@ end
 
 br.world = world;
 
-
+world.passTurn = function()
+    for x = 1, #world.creatures do
+        if #world.creatures[x].planned > 0 then
+            world.creatures[x].act(world)
+        end
+        world.creatures[x]:passTurn();
+        world.creatures[x]:checkNeeds(world);
+    end
+    br.updatefluids();
+    checkPlayer();
+    br.redraw();
+end
 
 br.player = player;
 br.getitem(player, "bottle", "water");
