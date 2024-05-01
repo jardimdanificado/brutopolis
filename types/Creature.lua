@@ -378,7 +378,7 @@ local function Creature(name)
     self.act = function(world)
         if #self.planned > 0 then
             local action = table.remove(self.planned, 1);
-            self.actions[action.action](self, world, unpack(action.args));
+            self.actions[action.action](self, world, br.utils.table.unpack(action.args));
         end
     end
 

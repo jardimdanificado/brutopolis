@@ -47,9 +47,9 @@ if br.utils.table.includes(arg, "-o") or br.utils.table.includes(arg, "--output"
     table.remove(arg, temp)
 end
 
-if br.utils.table.includes(arg, "--oneliner") then
+if br.utils.table.includes(arg, "--oneliner") or br.utils.table.includes(arg, "-ol") then
     br.vm.oneliner = true;
-    local position = br.utils.table.find(arg, "--oneliner");
+    local position = br.utils.table.find(arg, "--oneliner") or br.utils.table.find(arg, "-ol");
     table.remove(arg, position);
 end
 
@@ -60,17 +60,17 @@ if br.utils.table.includes(arg, "-v") or br.utils.table.includes(arg, "--version
     print("bruter version " .. br.vm.version)
     os.exit(0)
 elseif br.utils.table.includes(arg, "--help") or br.utils.table.includes(arg,"-h") then
-    print("Usage: bruter <source file> [-o <output file>] [-h] [-v] [--help] [--version] [--debug]")
+    print("Usage: bruter <source file> [-o <output file>] [-h] [-v] [-ol] [--help] [--version] [--debug] [--oneliner]")
     print("Options:")
-    print("  --help    Display this information")
-    print("  -h        Display this information")
-    print("  --version Display the version")
-    print("  -v        Display the version")
-    print("  --output  Output the compiled file to the specified path")
-    print("  -o        Output the compiled file to the specified path")
-    print("  --debug   Enable debug mode")
-    print("  --debug-code   Enable debug code mode")
-    print("  --debug-command   Enable debug command mode")
+    print("  --help     Display this information")
+    print("  -h         Display this information")
+    print("  --version  Display the version")
+    print("  -v         Display the version")
+    print("  --output   Output the compiled file to the specified path")
+    print("  -o         Output the compiled file to the specified path")
+    print("  --debug    Enable debug mode")
+    print("  --oneliner Enable oneliner mode(linebreak acts as a semicolon)")
+    print("  -ol        Enable oneliner mode(linebreak acts as a semicolon)")
     os.exit(0)
 elseif arg[1] == nil then
     --print("No source file specified, starting in REPL instead...")

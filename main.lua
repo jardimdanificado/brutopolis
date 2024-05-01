@@ -1,6 +1,10 @@
 local br = require("bruter.bruter");
 br.vm.oneliner = true;
 
+if not package.cpath then -- if on fengari(any)
+    br.global.br = br;
+end
+
 local config = require("data.config");
 
 local Needs = require("types.Needs");
@@ -46,12 +50,15 @@ local function printRoom(world,roomx,roomy)
         end
     end
 
+    local text = "";
     for y = 1, #temproom[1] do
         for x = 1, #temproom do
-            io.write(string.char(temproom[x][y]));
+            text = text ..string.char(temproom[x][y]);
         end
-        io.write("\n");
+        text = text .. "\n";
     end
+
+    print(string.sub(text, 1, #text-1));-- print map without the last \n
 end
 
 
@@ -189,7 +196,7 @@ end
 
 br.items = function()
     for x = 1, #br.player.items do
-        io.write(x .. ". ")
+        local text = x .. ". ";
         if br.player.items[x].maxStorage > 0 then
             local content = {}
             for y = 1, #br.player.items[x].items do
@@ -199,23 +206,23 @@ br.items = function()
                     content[br.player.items[x].items[y].name] = content[br.player.items[x].items[y].name] + 1;
                 end
             end
-            io.write(br.player.items[x].name .. " containing ");
+            text = text .. br.player.items[x].name .. " containing ";
             if br.player.items[x].liquidContainer then
                 local txt = "";
                 for k,v in pairs(content) do
                     txt = txt .. v*100 .. "ml of " .. k .. ", ";
                 end
                 --remove the last , and space
-                io.write(txt:sub(1, -3));
-                io.write("\n");
+                text = text .. txt:sub(1, -3) .. "\n";
             else
                 for k,v in pairs(content) do
-                    print(v .. " " .. k .. "s");
+                    text = text .. v .. " " .. k .. "s";
                 end
             end
         else
-            print(br.player.items[x].name);
+            text = text .. br.player.items[x].name;
         end
+        print(text);
     end
 end
 
@@ -231,4 +238,6 @@ br.knowledges = function()
     br.help(br.player.knowledges);
 end
 
-br.repl();
+if io then -- if not on fengari-web(only works on nodejs fengari and lua)
+    br.repl();
+end

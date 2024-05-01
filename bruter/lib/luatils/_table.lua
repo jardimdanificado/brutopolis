@@ -104,6 +104,10 @@ _table.sort = function(_obj)
      end);
 end
 
+if not unpack then
+    unpack = table.unpack
+end
+
 _table.unpack = unpack or table.unpack
 
 _table.clone = function(obj)
