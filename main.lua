@@ -240,4 +240,6 @@ end
 
 if io then -- if not on fengari-web(only works on nodejs fengari and lua)
     br.repl();
+else
+    return br;
 end
