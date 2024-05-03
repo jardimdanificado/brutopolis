@@ -1,7 +1,7 @@
 -- bruter module
 -- bruter module
 -- bruter module
-local _bruterPath = debug.getinfo(1).source;
+local _bruterPath = package.cpath and debug.getinfo(1).source or "";
 
 if not terralib then
     --package.terrapath = package.path;
