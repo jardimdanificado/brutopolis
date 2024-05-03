@@ -27,6 +27,28 @@
                 //brutopolis code
                 fengari.load(await fetch("entrypoint.lua").then(response => response.text()))()
 
+                keyPressed = function() 
+                {
+                    if (key === 'd') 
+                    {
+                        fengari.load("br.d()")()
+                    } 
+                    else if (key === 'a') 
+                    {
+                        fengari.load("br.a()")()
+                    } 
+                    else if (key === 'w') 
+                    {
+                        fengari.load("br.w()")()
+                    } 
+                    else if (key === 's') 
+                    {
+                        fengari.load("br.s()")()
+                    }
+                    // Uncomment to prevent any default behavior.
+                    // return false;
+                }
+
                 draw = function()
                 {
                     background(220)
@@ -48,7 +70,7 @@
                             }
                         }
                     }
-                    image(imgs.human, brout.player.x * 11, brout.player.y * 11, 12, 12)
+                    image(imgs.human, brout.player.position.local.x * 11, brout.player.position.local.y * 11, 12, 12)
                 }
             }
             main()
