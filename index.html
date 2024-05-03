@@ -5,16 +5,17 @@
     <body>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.2/p5.min.js" integrity="sha512-eu9vkh+EbAsW3fMmPTj/DP5W3UegIdu0Z/OABMocvoofx43MYBkcQ9hRIVxZndV1vcCYQwBg+U1PkWl04TD0Jg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
         <script src='lib/fengari-web.js' type="text/javascript"></script>
+        <script src='data/img/img.js' type="text/javascript"></script>
         <script type="text/javascript">
             let imgs = {}
 
             preload = function()
             {
-                imgs.human = loadImage("data/img/human.png")
-                imgs.floor = loadImage("data/img/floor.png")
-                imgs.wall = loadImage("data/img/wall.png")
-                imgs.door = loadImage("data/img/door.png")
-                console.log("aoba")
+                
+                for (let key in _images)
+                {
+                    imgs[key] = loadImage("data/img/tile_" + _images[key] + ".png");
+                }
             }
 
             setup = function()
@@ -58,19 +59,23 @@
                         {
                             if (window.brout.room[x][y] == 32)
                             {
-                                image(imgs.floor, x * 11, y * 11, 12, 12)
+                                image(imgs.floor, x * 12, y * 12, 12, 12)
                             }
                             else if (window.brout.room[x][y] == 35)
                             {
-                                image(imgs.wall, x * 11, y * 11, 12, 12)
+                                image(imgs.wall, x * 12, y * 12, 12, 12)
                             }
                             else if (window.brout.room[x][y] == 48)
                             {
-                                image(imgs.door, x * 11, y * 11, 12, 12)
+                                image(imgs.door, x * 12, y * 12, 12, 12)
                             }
                         }
                     }
-                    image(imgs.human, brout.player.position.local.x * 11, brout.player.position.local.y * 11, 12, 12)
+                    for (let i = 0; i < window.brout.items.length; i++)
+                    {
+                        image(imgs[window.brout.items[i].name] || imgs["misc"], window.brout.items[i].position.x * 12, window.brout.items[i].position.y * 12, 12, 12)
+                    }
+                    image(imgs.human, brout.player.position.local.x * 12, brout.player.position.local.y * 12, 12, 12)
                 }
             }
             main()

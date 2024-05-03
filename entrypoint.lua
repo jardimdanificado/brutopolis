@@ -20,17 +20,6 @@ for x = 0, #currentRoom.map-1 do
     end
 end
 
-window.brout.player = window:Object()
-window.brout.player.position = window:Object()
-
-window.brout.player.position["local"] = window:Object()
-window.brout.player.position["local"].x = br.player.position["local"].x -1
-window.brout.player.position["local"].y = br.player.position["local"].y -1
-
-window.brout.player.position["global"] = window:Object()
-window.brout.player.position["global"].x = br.player.position["global"].x -1
-window.brout.player.position["global"].y = br.player.position["global"].y -1
-
 function br.redraw()
     window.brout = window:Object();
     window.brout.room = window:Array()
@@ -55,5 +44,16 @@ function br.redraw()
     window.brout.player.position["global"].x = br.player.position["global"].x -1
     window.brout.player.position["global"].y = br.player.position["global"].y -1
 
-    window:resizeCanvas((11 * #currentRoom.map) + 2, (11 * #currentRoom.map[1]) + 2)
+    window.brout.items = window:Array()
+    
+    for i = 0, #currentRoom.items-1 do
+        window.brout.items:push(window:Object())
+        window.brout.items[i].name = currentRoom.items[i+1].name
+        window.brout.items[i].position = window:Object()
+        window.brout.items[i].position.x = currentRoom.items[i+1].position["local"].x
+        window.brout.items[i].position.y = currentRoom.items[i+1].position["local"].y
+    end
+
+    window:resizeCanvas((12 * #currentRoom.map), (12 * #currentRoom.map[1]))
 end
+br.redraw()
