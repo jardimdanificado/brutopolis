@@ -1,7 +1,7 @@
 -- bruter module
 -- bruter module
 -- bruter module
-local _bruterPath = package.cpath and debug.getinfo(1).source or "";
+local _bruterPath = debug.getinfo(1).source;
 
 if not terralib then
     --package.terrapath = package.path;
@@ -26,7 +26,7 @@ local br =
     vm = 
     {
         -- version
-        version = "0.2.7c",
+        version = "0.2.7a",
         -- source and outputs
         source = "",
         outputpath = "",
