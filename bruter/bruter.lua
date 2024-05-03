@@ -1,4 +1,4 @@
-local bruterPath = debug.debug and (debug.getinfo(1).source:match("@?(.*/)")) or "./";
+local bruterPath = debug.debug and (debug.getinfo(1).source:match("@?(.*/)")) or "";
 
 -- if already not in the path add it
 if (package.terrapath and not (string.find(package.terrapath, bruterPath .. "lib/?/?.t", 1, true))) or (not (string.find(package.path, bruterPath .. "lib/?/?.t", 1, true))) then
