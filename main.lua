@@ -206,6 +206,22 @@ br.pick = function(direction)
     world.passTurn();
 end
 
+br.put = function(itemid, containerid, other)
+    if containerid == "in" or containerid == "inside" then
+        containerid = other;
+    end
+    player.plan("put", {itemid, containerid});
+    world.passTurn();
+end
+
+br.remove = function(itemid, containerid, other)
+    if containerid == "from" then
+        containerid = other;
+    end
+    player.plan("remove", {itemid, containerid});
+    world.passTurn();
+end
+
 br.items = function()
     for x = 1, #br.player.items do
         local text = x .. ". ";
@@ -228,8 +244,10 @@ br.items = function()
                 text = text .. txt:sub(1, -3);
             else
                 for k,v in pairs(content) do
-                    text = text .. v .. " " .. k .. "s";
+                    text = text .. v .. " " .. k .. "s, ";
                 end
+                --remove the last , and space
+                text = text:sub(1, -3);
             end
         else
             text = text .. br.player.items[x].name;

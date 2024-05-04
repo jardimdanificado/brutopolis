@@ -404,6 +404,58 @@ local creaturePick = function(creature, world, direction)
     end
 end
 
+local creaturePut = function(creature, world, itemid, containerid)
+    local container = creature.items[containerid];
+    local item = creature.items[itemid];
+    if container and item then
+        if container.maxStorage <= 0 then
+            print(creature.name .. " can't put " .. item.name .. " in " .. container.name .. " because it's not a container");        
+        elseif container.liquidContainer then 
+            if not item.liquid then
+                print(creature.name .. " can't put " .. item.name .. " in " .. container.name .. " because it's not a liquid");
+            elseif #container.items >= container.maxStorage then
+                print(creature.name .. " can't put " .. item.name .. " in " .. container.name .. " because it's full");
+            else
+                local _item = table.remove(creature.items, itemid);
+                table.insert(container.items, _item);
+                print(creature.name .. " put " .. _item.name .. " in " .. container.name);
+            end
+        elseif #container.items >= container.maxStorage then
+            print(creature.name .. " can't put " .. item.name .. " in " .. container.name .. " because it's full");
+        elseif item.maxStorage > 0 then
+            if item.liquidContainer then
+                if #item.items > 0 then
+                    local _item = table.remove(creature.items, itemid);
+                    table.insert(container.items, _item);
+                    print(creature.name .. " put " .. _item.name .. " in " .. container.name);
+                end
+            else
+                print(creature.name .. " can't put a container(" .. item.name .. ") in antoher container(" .. container.name .. ")");
+            end
+        else
+            local _item = table.remove(creature.items, itemid);
+            table.insert(container.items, _item);
+            print(creature.name .. " put " .. _item.name .. " in " .. container.name);
+        end
+    end
+end
+
+local creatureRemove = function(creature, world, itemid, containerid)
+    local container = creature.items[containerid];
+    local item = container.items[itemid];
+    if container and item then
+        if container.maxStorage <= 0 then
+            print(creature.name .. " can't remove " .. item.name .. " from " .. container.name .. " because it's not a container");
+        elseif #container.items <= 0 then
+            print(creature.name .. " can't remove " .. item.name .. " from " .. container.name .. " because it's empty");
+        else
+            local _item = table.remove(container.items, itemid);
+            table.insert(creature.items, _item);
+            print(creature.name .. " removed " .. _item.name .. " from " .. container.name);
+        end
+    end
+end
+
 local function Creature(name)
     local self = {};
     
@@ -426,7 +478,9 @@ local function Creature(name)
         poo = creaturePoo,
         sleep = creatureSleep,
         drop = creatureDrop,
-        pick = creaturePick
+        pick = creaturePick,
+        put = creaturePut,
+        remove = creatureRemove
     };
 
     self.plan = function(action, args, index)
