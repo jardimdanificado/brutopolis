@@ -365,7 +365,43 @@ local creatureSleep = function(creature, world)
         end
     end
     creature.needs.current.sleep = creature.needs.current.sleep + 10;
+end
 
+local creatureDrop = function(creature, world, itemid)
+    local item;
+    if creature.items[itemid] then
+        item = table.remove(creature.items, itemid);
+        item.position["global"] = br.utils.table.clone(creature.position["global"]);
+        item.position["local"] = br.utils.table.clone(creature.position["local"]);
+        table.insert(world.map[creature.position["global"].x][creature.position["global"].y].items, item);
+        print(creature.name .. " dropped " .. item.name);
+    end
+end
+
+local creaturePick = function(creature, world, direction)
+    local room = world.map[creature.position["global"].x][creature.position["global"].y];
+
+    if direction == "up" then
+        direction = {x = 0, y = -1};
+    elseif direction == "down" then
+        direction = {x = 0, y = 1};
+    elseif direction == "left" then
+        direction = {x = -1, y = 0};
+    elseif direction == "right" then
+        direction = {x = 1, y = 0};
+    else
+        direction = {x = 0, y = 0};
+    end
+
+    for k,v in pairs(room.items) do
+        if v.position["local"].x == creature.position["local"].x + direction.x and v.position["local"].y == creature.position["local"].y + direction.y then
+            local item = table.remove(room.items, k);
+            item.position = creature.position;
+            table.insert(creature.items, v);
+            print(creature.name .. " picked " .. item.name);
+            break;
+        end
+    end
 end
 
 local function Creature(name)
@@ -388,7 +424,9 @@ local function Creature(name)
         consume = creatureConsume,
         pee = creaturePee,
         poo = creaturePoo,
-        sleep = creatureSleep
+        sleep = creatureSleep,
+        drop = creatureDrop,
+        pick = creaturePick
     };
 
     self.plan = function(action, args, index)

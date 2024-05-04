@@ -53,6 +53,14 @@ items.bottle = function(position,content)-- 2.5 liters
     return self;
 end
 
+items.smallbox = function(position, content)
+    local self = Item("smallbox", "container", position);
+    self.creator = "unknown";
+    self.maxStorage = 12;
+    self.items = content or {};
+    return self;
+end
+
 items.corn = function(position)
     local self = Item("corn", "food", position);
     self.creator = "god";

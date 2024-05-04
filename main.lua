@@ -180,9 +180,7 @@ end
 
 br.player = player;
 br.getitem(player, "bottle", "water");
-for x = 1, 10 do
-    br.getitem(player, "bread");
-end
+br.getitem(player, "smallbox", "bread")
 
 br.inventory = br.player.items;
 
@@ -192,6 +190,20 @@ end
 
 br.skills = function()
     br.help(br.player.skills);
+end
+
+br.drop = function(itemid)
+    if itemid == nil then
+        print("drop <itemid>");
+        return;
+    end
+    player.plan("drop", {itemid});
+    world.passTurn();
+end
+
+br.pick = function(direction)
+    player.plan("pick", {direction});
+    world.passTurn();
 end
 
 br.items = function()
@@ -213,7 +225,7 @@ br.items = function()
                     txt = txt .. v*100 .. "ml of " .. k .. ", ";
                 end
                 --remove the last , and space
-                text = text .. txt:sub(1, -3) .. "\n";
+                text = text .. txt:sub(1, -3);
             else
                 for k,v in pairs(content) do
                     text = text .. v .. " " .. k .. "s";
