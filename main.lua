@@ -16,6 +16,7 @@ local Room = require("types.Room");
 local Creature = require("types.Creature");
 
 local items = require("data.items");
+local furnitures = require("data.furnitures");
 
 local function checkPlayer()
     if br.player.needs.current.health <= 0 then
@@ -219,6 +220,11 @@ br.remove = function(itemid, containerid, other)
         containerid = other;
     end
     player.plan("remove", {itemid, containerid});
+    world.passTurn();
+end
+
+br.sleep = function()
+    player.plan("sleep",{});
     world.passTurn();
 end
 

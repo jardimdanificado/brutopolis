@@ -4,6 +4,7 @@ local function Skills(defaultValue)
     self.think = defaultValue or 1;
     self.hear = defaultValue or 1;
 
+    self.crafting = defaultValue or 1;
     self.cooking = defaultValue or 1;
 
     self.unarmed = defaultValue or 1;

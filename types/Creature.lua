@@ -1,4 +1,5 @@
 local br = require("bruter.bruter")
+local Effect = require("types.Effect");
 local Needs = require("types.Needs");
 local Skills = require("types.Skills");
 local Personality = require("types.Personality");
@@ -10,6 +11,45 @@ local Position = require("types.Position");
 local Item = require("types.Item");
 
 local items = require("data.items");
+
+local sumEffect = function(creature,item)
+    if not item.effect and item then
+        item = {effect = item};
+    end
+        
+    for k,v in pairs(creature.needs.current) do
+        creature.needs.current[k] = creature.needs.current[k] + item.effect.needs.current[k];
+        if item.effect.needs.current[k] ~= 0 then
+            print(creature.name .. " " .. k ..  " changed by " .. item.effect.needs.current[k] .. " to " .. creature.needs.current[k]);
+        end
+        creature.needs.max[k] = creature.needs.max[k] + item.effect.needs.max[k];
+        if item.effect.needs.max[k] ~= 0 then
+            print(creature.name .. " " .. k ..  " changed by " .. item.effect.needs.max[k] .. " to " .. creature.needs.max[k]);
+        end
+        creature.needs.decay[k] = creature.needs.decay[k] + item.effect.needs.decay[k];
+        if item.effect.needs.decay[k] ~= 0 then
+            print(creature.name .. " " .. k ..  " changed by " .. item.effect.needs.decay[k] .. " to " .. creature.needs.decay[k]);
+        end
+    end
+    for k,v in pairs(creature.personality) do
+        creature.personality[k] = creature.personality[k] + item.effect.personality[k];
+        if item.effect.personality[k] ~= 0 then
+            print(creature.name .. " " .. k ..  " changed by " .. item.effect.personality[k] .. " to " .. creature.personality[k]);
+        end
+    end
+    for k,v in pairs(creature.interests) do
+        creature.interests[k] = creature.interests[k] + item.effect.interests[k];
+        if item.effect.interests[k] ~= 0 then
+            print(creature.name .. " " .. k ..  " changed by " .. item.effect.interests[k] .. " to " .. creature.interests[k]);
+        end
+    end
+    for k,v in pairs(creature.skills) do
+        creature.skills[k] = creature.skills[k] + item.effect.skills[k];
+        if item.effect.skills[k] ~= 0 then
+            print(creature.name .. " " .. k ..  " changed by " .. item.effect.skills[k] .. " to " .. creature.skills[k]);
+        end
+    end
+end
 
 local function creaturePassTurn(creature)
     creature.needs.current.food = creature.needs.current.food + creature.needs.decay.food;
@@ -207,77 +247,12 @@ local creatureConsume = function(creature, world, itemid)
             
             print(creature.name .. " is consuming 100ml of " .. _item.name .. " from " .. item.name);
 
-            for k,v in pairs(creature.needs.current) do
-                creature.needs.current[k] = creature.needs.current[k] + _item.effect.needs.current[k];
-                if _item.effect.needs.current[k] ~= 0 then
-                    print(creature.name .. " " .. k ..  " changed by " .. _item.effect.needs.current[k] .. " to " .. creature.needs.current[k]);
-                end
-                creature.needs.max[k] = creature.needs.max[k] + _item.effect.needs.max[k];
-                if _item.effect.needs.max[k] ~= 0 then
-                    print(creature.name .. " " .. k ..  " changed by " .. _item.effect.needs.max[k] .. " to " .. creature.needs.max[k]);
-                end
-                creature.needs.decay[k] = creature.needs.decay[k] + _item.effect.needs.decay[k];
-                if _item.effect.needs.decay[k] ~= 0 then
-                    print(creature.name .. " " .. k ..  " changed by " .. _item.effect.needs.decay[k] .. " to " .. creature.needs.decay[k]);
-                end
-            end
+            sumEffect(creature, _item);
 
-            for k,v in pairs(creature.personality) do
-                creature.personality[k] = creature.personality[k] + _item.effect.personality[k];
-                if _item.effect.personality[k] ~= 0 then
-                    print(creature.name .. " " .. k ..  " changed by " .. _item.effect.personality[k] .. " to " .. creature.personality[k]);
-                end
-            end
-
-            for k,v in pairs(creature.interests) do
-                creature.interests[k] = creature.interests[k] + _item.effect.interests[k];
-                if _item.effect.interests[k] ~= 0 then
-                    print(creature.name .. " " .. k ..  " changed by " .. _item.effect.interests[k] .. " to " .. creature.interests[k]);
-                end
-            end
-
-            for k,v in pairs(creature.skills) do
-                creature.skills[k] = creature.skills[k] + _item.effect.skills[k];
-                if _item.effect.skills[k] ~= 0 then
-                    print(creature.name .. " " .. k ..  " changed by " .. _item.effect.skills[k] .. " to " .. creature.skills[k]);
-                end
-            end
-
-            print (creature.name .. "'s " .. item.name .. " has " .. #item.items*100 .. "ml left");
+            print(creature.name .. "'s " .. item.name .. " has " .. #item.items*100 .. "ml left");
         end
     else
-        for k,v in pairs(creature.needs.current) do
-            creature.needs.current[k] = creature.needs.current[k] + item.effect.needs.current[k];
-            if item.effect.needs.current[k] ~= 0 then
-                print(creature.name .. " " .. k ..  " changed by " .. item.effect.needs.current[k] .. " to " .. creature.needs.current[k]);
-            end
-            creature.needs.max[k] = creature.needs.max[k] + item.effect.needs.max[k];
-            if item.effect.needs.max[k] ~= 0 then
-                print(creature.name .. " " .. k ..  " changed by " .. item.effect.needs.max[k] .. " to " .. creature.needs.max[k]);
-            end
-            creature.needs.decay[k] = creature.needs.decay[k] + item.effect.needs.decay[k];
-            if item.effect.needs.decay[k] ~= 0 then
-                print(creature.name .. " " .. k ..  " changed by " .. item.effect.needs.decay[k] .. " to " .. creature.needs.decay[k]);
-            end
-        end
-        for k,v in pairs(creature.personality) do
-            creature.personality[k] = creature.personality[k] + item.effect.personality[k];
-            if item.effect.personality[k] ~= 0 then
-                print(creature.name .. " " .. k ..  " changed by " .. item.effect.personality[k] .. " to " .. creature.personality[k]);
-            end
-        end
-        for k,v in pairs(creature.interests) do
-            creature.interests[k] = creature.interests[k] + item.effect.interests[k];
-            if item.effect.interests[k] ~= 0 then
-                print(creature.name .. " " .. k ..  " changed by " .. item.effect.interests[k] .. " to " .. creature.interests[k]);
-            end
-        end
-        for k,v in pairs(creature.skills) do
-            creature.skills[k] = creature.skills[k] + item.effect.skills[k];
-            if item.effect.skills[k] ~= 0 then
-                print(creature.name .. " " .. k ..  " changed by " .. item.effect.skills[k] .. " to " .. creature.skills[k]);
-            end
-        end
+        sumEffect(creature, item);
     end
 end
 
@@ -360,11 +335,49 @@ local creatureSleep = function(creature, world)
     for k,v in pairs(world.map[creature.position["global"].x][creature.position["global"].y].furniture) do
         if v.position["local"].x == creature.position["local"].x and v.position["local"].y == creature.position["local"].y then
             if v.kind == "confort" then
-                creature.needs.current.sleep = creature.needs.current.sleep + 10;
+                sumEffect(creature, v);
+                print(creature.name .. " is sleeping in a " .. v.name);
+                return;
             end
         end
     end
-    creature.needs.current.sleep = creature.needs.current.sleep + 10;
+
+    local _fx = Effect();
+    _fx.needs.current.sleep = 5;
+    _fx.needs.current.happiness = -8;
+    _fx.needs.current.social = -4;
+    _fx.needs.current.sanity = 1;
+    _fx.needs.current.hygiene = -0.2;
+    _fx.needs.current.water = -2;
+    _fx.needs.current.food = -1;    
+    _fx.needs.current.pee = 4;
+    _fx.needs.current.poo = 1;
+    _fx.personality.aggressiveness = -0.1;
+    _fx.personality.ambition = -0.1;
+    _fx.personality.criativity = 0.5;
+    _fx.personality.curiosity = 0.01;
+    _fx.personality.empathy = 0.01;
+    _fx.personality.funny = 0.5;
+    _fx.personality.honestity = -0.01;
+    _fx.personality.humanity = 0.2;
+    _fx.personality.positivity = 0.1;
+    _fx.personality.spirituality = 0.3;
+    _fx.interests.art = 0.1;
+    _fx.interests.cooking = 0.1;
+    _fx.interests.dance = 0.1;
+    _fx.interests.gaming = 0.1;
+    _fx.interests.music = 0.1;
+    _fx.interests.reading = 0.1;
+    _fx.interests.sport = 0.1;
+    _fx.interests.writing = 0.1;
+    _fx.skills.think = 0.02;
+    _fx.skills.hear = -0.01;
+    _fx.skills.cooking = -0.01;
+    _fx.skills.crafting = 0.01;
+    _fx.skills.unarmed = 0.01;
+    _fx.skills.lockpick = -0.01;
+
+    sumEffect(creature, _fx);
 end
 
 local creatureDrop = function(creature, world, itemid)
@@ -455,6 +468,7 @@ local creatureRemove = function(creature, world, itemid, containerid)
         end
     end
 end
+
 
 local function Creature(name)
     local self = {};

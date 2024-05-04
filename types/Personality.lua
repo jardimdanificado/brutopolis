@@ -15,7 +15,7 @@ local Personality = function()
     
     self.courage = 0;
     
-    self.agressiveness = 0;
+    self.aggressiveness = 0;
     self.ambition = 0;
 
     return self;
