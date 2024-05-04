@@ -37,8 +37,8 @@ function br.redraw()
     window.brout.player.position = window:Object()
     
     window.brout.player.position["local"] = window:Object()
-    window.brout.player.position["local"].x = br.player.position["local"].x -1 
-    window.brout.player.position["local"].y = br.player.position["local"].y -1
+    window.brout.player.position["local"].x = br.player.position["local"].x
+    window.brout.player.position["local"].y = br.player.position["local"].y
     
     window.brout.player.position["global"] = window:Object()
     window.brout.player.position["global"].x = br.player.position["global"].x -1

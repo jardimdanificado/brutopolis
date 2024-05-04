@@ -23,6 +23,11 @@
                 createCanvas(400, 400)
             }
 
+            window.dobr = function(str)
+            {
+                fengari.load("br.bruter.eval('" + str + "')")()
+            }
+
             async function main()
             {
                 //brutopolis code
@@ -73,9 +78,9 @@
                     }
                     for (let i = 0; i < window.brout.items.length; i++)
                     {
-                        image(imgs[window.brout.items[i].name] || imgs["misc"], window.brout.items[i].position.x * 12, window.brout.items[i].position.y * 12, 12, 12)
+                        image(imgs[window.brout.items[i].name] || imgs["misc"], (window.brout.items[i].position.x-1) * 12, (window.brout.items[i].position.y-1) * 12, 12, 12)
                     }
-                    image(imgs.human, brout.player.position.local.x * 12, brout.player.position.local.y * 12, 12, 12)
+                    image(imgs.human, (brout.player.position.local.x-1) * 12, (brout.player.position.local.y-1) * 12, 12, 12)
                 }
             }
             main()
