@@ -251,6 +251,8 @@ local creatureConsume = function(creature, world, itemid)
 
             print(creature.name .. "'s " .. item.name .. " has " .. #item.items*100 .. "ml left");
         end
+    elseif item.liquid then
+        print("liquids can only be consumed from liquid containers");
     else
         sumEffect(creature, item);
     end
@@ -384,8 +386,10 @@ local creatureDrop = function(creature, world, itemid)
     local item;
     if creature.items[itemid] then
         item = table.remove(creature.items, itemid);
-        item.position["global"] = br.utils.table.clone(creature.position["global"]);
-        item.position["local"] = br.utils.table.clone(creature.position["local"]);
+        
+        item.position =  br.utils.table.clone(creature.position);
+
+        --br.help(creature)
         table.insert(world.map[creature.position["global"].x][creature.position["global"].y].items, item);
         print(creature.name .. " dropped " .. item.name);
     end
@@ -407,7 +411,7 @@ local creaturePick = function(creature, world, direction)
     end
 
     for k,v in pairs(room.items) do
-        if v.position["local"].x == creature.position["local"].x + direction.x and v.position["local"].y == creature.position["local"].y + direction.y then
+        if not v.liquid and v.position["local"].x == creature.position["local"].x + direction.x and v.position["local"].y == creature.position["local"].y + direction.y then
             local item = table.remove(room.items, k);
             item.position = creature.position;
             table.insert(creature.items, v);
