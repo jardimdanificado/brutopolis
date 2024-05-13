@@ -167,4 +167,8 @@ _string.trim = function(s)
     return s:gsub("^%s+", ""):gsub("%s+$", "")
 end
 
+_string.firstWord = function(str)
+    return str:match("%S+") or ""
+end
+
 return _string

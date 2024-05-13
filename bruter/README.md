@@ -33,7 +33,7 @@ Lua(5.1+) and Terra compatible;
 
 - `boolean` = args that are true or false
 
-- `string` = args delimited by backticks(`) or keys({}) and anything else that doesnt match the other types
+- `string` = args delimited by backticks(`) or curly brackets({}) and anything else that doesnt match the other types
 
 - `sentence` = code that is enclosed by parenthesis, it is executed in order then the result is put in place of the sentence.
 
