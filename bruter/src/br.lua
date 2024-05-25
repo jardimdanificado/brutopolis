@@ -7,7 +7,8 @@ if not terralib then
     --package.terrapath = package.path;
     terralib = {
         loadfile = loadfile,
-        loadstring = loadstring,
+        loadstring = loadstring or load,
+        require = require,
     }
 end
 
@@ -26,7 +27,7 @@ local br =
     vm = 
     {
         -- version
-        version = "0.2.8",
+        version = "0.2.9",
         -- source and outputs
         source = "",
         outputpath = "",
@@ -44,33 +45,12 @@ local br =
 br.this = br;
 
 br.vm.preprocessors.sugar = function(source)
-    local nstr = br.utils.string.replace3(source, "%s+"," ")
+    local nstr = br.utils.string.replace3(source, "%s*"," ")
     
-    -- to be removed, because this is a function specific replace 
-    nstr = br.utils.string.replace3(nstr, ":$", ": $")
-    
-    nstr = br.utils.string.replace(nstr, "%}", "%} ")
-    nstr = br.utils.string.replace(nstr, "%{", " %{")
-    nstr = br.utils.string.replace(nstr, "%( ", "%(")
-    nstr = br.utils.string.replace(nstr, " %)", "%)")
-    nstr = br.utils.string.replace(nstr, "%(", " %(")
-    nstr = br.utils.string.replace3(nstr, "//", "// ")
-    
-    
-    --if the first two chars are " (" remove the space
-    if string.byte(nstr,1) == 32 and string.byte(nstr,2) == 40 then
-        nstr = string.sub(nstr, 2, #nstr);
-    end
-    
-    nstr = br.utils.string.replace3(nstr, "\t", " ")
     nstr = br.utils.string.replace3(nstr, "\n", " ")
     nstr = br.utils.string.replace3(nstr, "  ", "")
-
-
     
-    nstr = br.utils.string.replace(nstr, "; ", ";")
-    nstr = br.utils.string.replace(nstr, " ;", ";")
-    nstr = br.utils.string.replace(nstr, " ; ", ";")
+    nstr = br.utils.string.replace(nstr, "%s*;%s*", ";")
     
     -- if last char not ; add it
     if string.byte(nstr, #nstr) ~= 59 then
@@ -80,36 +60,9 @@ br.vm.preprocessors.sugar = function(source)
     return nstr
 end
 
-br.vm.safe = function()
-    local function safeMessage()
-        print(br.utils.console.colorstring("[SAFE MODE]", "green") .. ": this is safe bruter!");
-    end
-    br.lua.eval = safeMessage;
-    br.lua.include = safeMessage;
-    br.lua.require = safeMessage;
-    if br.C then
-        br.C.include = safeMessage;
-        br.C.eval = safeMessage;
-    end
-    br.global = nil;
-    br.this = nil;
-    br.using = safeMessage;
-    br.bruter.eval = safeMessage;
-    br.bruter.include = safeMessage;
-    for k,v in pairs(br.utils.file.load) do
-        br.utils.file.load[k] = safeMessage;
-    end
-    br.utils.file.exist = safeMessage;
-    br.utils.file.check = safeMessage;
-    br.utils.load = safeMessage;
-    print(br.utils.console.colorstring("[SAFE MODE]","green") .. ": bruter safe mode enabled!");
-end
-
 -- math and logic functions
 -- math and logic functions
 -- math and logic functions
-
-br.math = {};
 
 br["+"] = function(a,b) return a + b; end
 br["-"] = function(a,b) return a - b; end
@@ -118,6 +71,15 @@ br["*"] = function(a,b) return a * b; end
 br["/"] = function(a,b) return a / b; end
 br["^"] = function(a,b) return a ^ b; end
 br["%"] = function(a,b) return a % b; end
+
+br["&&"] = function(a,b) return a and b; end
+br["and"] = function(a,b) return a and b; end
+
+br["||"] = function(a,b) return a or b; end
+br["or"] = function(a,b) return a or b; end
+
+br["!"] = function(a) return not a; end
+
 
 br["<"] = function(a,b) return a < b; end
 br["<="] = function(a,b) return a <= b; end
@@ -132,15 +94,6 @@ br["!="] = function(a,b) return a ~= b; end
 
 br["includes"] = function(a,b) 
     return br.utils.table.includes(a,b); 
-end
-
-br["exists"] = function(...)
-    for k,v in pairs({...}) do
-        if not v then
-            return false;
-        end
-    end
-    return true;
 end
 
 -- parse the arguments
@@ -474,17 +427,6 @@ end
 -- module functions
 -- module functions
 
--- export
-br.export = function(name, as, other)
-    if as == "as" then
-        br.exports[other] = br[name];
-    elseif as then
-        br.exports[as] = br[name];
-    else
-        br.exports[name] = br[name];
-    end
-end
-
 br.using = function(name)
     if br.utils.file.exist(br.vm.bruterpath .. "libr/" .. name .. "/" .. name .. ".br") then
         br.bruter.include(br.vm.bruterpath .. "libr/" .. name .. "/" .. name .. ".br");
@@ -531,22 +473,24 @@ end
 
 -- require lua/terra file
 br["lua"].require = function(path)
-    return require(path);
+    return terralib.require(path);
 end
 
+if package.terrapath then
+    br.C = {};
 
+    -- include C code
+    br.C.include = function(path)
+        return terralib.includec(path);
+    end
 
-br.C = {};
+    -- include C string
+    br.C.eval = function(txt)
+        return terralib.includecstring(txt);
+    end
 
--- include C code
-br.C.include = function(path)
-    return terralib.includec(path);
 end
 
--- include C string
-br.C.eval = function(txt)
-    return terralib.includecstring(txt);
-end
 
 -- setter
 -- setter
@@ -868,10 +812,6 @@ br["if"] = function(condition, codestr, _else, codestr2)
     end
 end
 
-br["!"] = function(value)
-    return not value;
-end
-
 br["while"] = function(condition, codestr)
     --print (condition, br.vm.parse(condition))
     local condfunc;
@@ -1022,42 +962,25 @@ br["function"] = function(...)
 
     if name then
         br.set(name, result);
-    else  -- this is note working because
+    else
         return result;
     end
-end
-
-br["and"] = function(a,b)
-    return(a and b);
-end
-
-br["or"] = function(a,b)
-    return(a or b);
 end
 
 br["len"] = function(a)
     return #a;
 end
 
-br["shortcut"] = function(name, funcname, ...)
+-- arrow function 
+br["@"] = function(funcname, ...)
     local args = {...};
-
     local func = br.vm.recursiveget(funcname);
-
-    if #args > 0 then
-        br[name] = function()
-            return func(br.utils.table.unpack(args));
-        end;
-    else
-        br[name] = function()
-            return func(funcname)();
-        end;
+    return function()
+        return func(br.utils.table.unpack(args));
     end
 end
 
-if not package.terrapath then
-    br.C = nil; -- removes the C api if running on lua
-    br.exports = nil;
-end
+-- default function
+br["@@"] = br["function"];
 
 return br;

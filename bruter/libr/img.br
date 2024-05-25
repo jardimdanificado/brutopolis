@@ -1,4 +1,4 @@
-// this lib does nothing;
+// this lib does nothing; ignore it;
 set tokens from [];
 
 set rgb (lua.eval {
@@ -24,7 +24,7 @@ set , (lua.eval {
 , 1 128 7 utils.array.sum;
 , 1 128 8 utils.array.tostring;
 
-//lua utils _matrix;
+// lua utils _matrix;
 , 1 128 9 utils.matrix.includes;
 , 1 128 10 utils.matrix.new;
 , 1 128 11 utils.matrix.tostring;
@@ -35,7 +35,7 @@ set , (lua.eval {
 , 1 128 16 utils.matrix.reduce;
 , 1 128 17 utils.matrix.filter;
 
-//lua utils _console;
+// lua utils _console;
 , 1 128 18 utils.console.colors.black;
 , 1 128 19 utils.console.colors.reset;
 , 1 128 20 utils.console.colors.red;
@@ -50,7 +50,7 @@ set , (lua.eval {
 , 1 128 29 utils.console.randomcolor;
 , 1 128 30 utils.console.movecursor;
 
-//lua utils _encode_old;
+// lua utils _encode_old;
 , 1 128 31 utils.encode.shuffleTable;
 , 1 128 32 utils.encode.invertlabel;
 , 1 128 33 utils.encode.encrypt;
@@ -60,12 +60,12 @@ set , (lua.eval {
 , 1 128 37 utils.encode.save;
 , 1 128 38 utils.encode.load;
 
-//lua utils _encode;
+// lua utils _encode;
 , 1 128 39 utils.encode.genKey;
 , 1 128 40 utils.encode.encrypt;
 , 1 128 41 utils.encode.decrypt;
 
-//lua utils file;
+// lua utils file;
 , 1 128 42 utils.file.list;
 , 1 128 43 utils.file.isdir;
 , 1 128 44 utils.file.load.text;
@@ -74,10 +74,10 @@ set , (lua.eval {
 , 1 128 47 utils.file.load.charMap;
 , 1 128 48 utils.file.save.charMap;
 , 1 128 49 utils.file.load.map;
-, 1 128 50 utils.file.exist;
+// , 1 128 50 utils.file.exist; // removed;
 , 1 128 51 utils.file.check;
 
-//lua utils _math;
+// lua utils _math;
 , 1 128 52 utils.math.regrad3;
 , 1 128 53 utils.math.scale;
 , 1 128 54 utils.math.vec2;
@@ -97,7 +97,7 @@ set , (lua.eval {
 , 1 128 68 utils.math.primo;
 , 1 128 69 utils.math.mmc;
 
-//lua utils _string;
+// lua utils _string;
 , 1 128 70 utils.string.endsWith;
 , 1 128 71 utils.string.charAt;
 , 1 128 72 utils.string.byteAt;
@@ -110,7 +110,7 @@ set , (lua.eval {
 , 1 128 79 utils.string.trim;
 , 1 128 80 utils.string.firstWord;
 
-//lua utils _table;
+// lua utils _table;
 , 1 128 81 utils.table.assign;
 , 1 128 82 utils.table.len;
 , 1 128 83 utils.table.add;
@@ -133,7 +133,7 @@ set , (lua.eval {
 , 1 128 100 utils.table.clear;
 , 1 128 101 utils.table.selfClear;
 
-//lua utils init;
+// lua utils init;
 , 1 128 102 utils.isjit;
 , 1 128 103 utils.luaversion;
 , 1 128 104 utils.time;
@@ -153,7 +153,7 @@ set , (lua.eval {
 , 1 128 118 utils.repeater;
 , 1 128 119 utils.agendar;
 
-//br.lua br
+// br.lua br
 
 , 1 128 120 global;
 , 1 128 121 exports;
@@ -166,7 +166,7 @@ set , (lua.eval {
 , 1 128 128 vm.oneliner;
 , 1 128 129 this;
 , 1 128 130 vm.preprocessors.sugar;
-, 1 128 131 vm.safe;
+// , 1 128 131 vm.safe;// removed;
 , 1 128 132 +;
 , 1 128 133 -;
 , 1 128 134 *;
@@ -177,7 +177,7 @@ set , (lua.eval {
 , 1 128 139 ==;
 , 1 128 140 !=;
 , 1 128 141 includes;
-, 1 128 142 exists;
+// , 1 128 142 exists; // removed;
 , 1 128 143 vm.parsearg;
 , 1 128 144 vm.parseargs;
 , 1 128 145 vm.parseargsoptimized;
@@ -226,3 +226,4 @@ set , (lua.eval {
 
 
 set , nil;
+print "ok";

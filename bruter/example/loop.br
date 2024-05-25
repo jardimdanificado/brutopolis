@@ -1,5 +1,4 @@
-vm.safe;
-lua.eval "print('Hello from Lua!')"; -- not gonna work because of vm.safe;
+lua.eval {print('Hello from Lua!')};
 
 set a 45;
 set b 5;

@@ -29,6 +29,4 @@ help b;
 
 b.abc 55 44 11;
 
-//print `sum 5 5 is` (sum 5 5);
-
 print (b.strtest `this is a string`);

@@ -11,9 +11,9 @@
 // (// (// multilevel sentence));
 
 set variable 0; // this has setten a variable;
-($variable); // this is a variable enclosed in a sentence;
+(: $variable); // this is a variable enclosed in a sentence;
 
-(true); // this is a boolean enclosed in a sentence;
-(false); // this is a boolean enclosed in a sentence;
+(: true); // this is a boolean enclosed in a sentence;
+(: false); // this is a boolean enclosed in a sentence;
 
-(nil); // this is a nil enclosed in a sentence;
+(: nil); // this is a nil enclosed in a sentence;

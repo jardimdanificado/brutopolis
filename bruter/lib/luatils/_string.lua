@@ -106,8 +106,7 @@ end
 
 
 _string.replace = function(inputString, oldSubstring, newSubstring)
-    newSubstring = newSubstring or ''
-    return inputString:gsub(oldSubstring, newSubstring)
+    return inputString:gsub(oldSubstring, newSubstring or "")
 end
 
 _string.replace3 = function(inputString, oldSubstring, newSubstring) -- returns a string with the oldSubstring replaced by the newSubstring respecting the backticks enclosed strings and keeping them

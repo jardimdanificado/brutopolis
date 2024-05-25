@@ -38,10 +38,10 @@ set Room from function {w h}
     set tmpw (- $w 1);
     set tmph (- $h 1);
     // create the walls on the limits
-    //print $w $h;
+    // print $w $h;
     for {set i 1} {< $i $w} {set i (+ $i 1)}
     {
-        //print $i;
+        // print $i;
         set temproom.map.$i.1 35;
         set temproom.map.$i.$tmph 35;
     };

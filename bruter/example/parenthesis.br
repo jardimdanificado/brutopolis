@@ -1,9 +1,9 @@
 using math;
-({set}({a})(+(4)(55)(6)(-(^(4)(4))(%(45)(7))))); // this is just to battle test the math parenthesis, keys and the math functions;
+({set} (: {a}) (+ (: 4) (: 55) (: 6) (- (^ (: 4) (: 4)) (% (: 45) (: 7))))); // this is just to battle test the math parenthesis, keys and the math functions;
 print it is $a;
 
 
 // in this case help is run 3 times and then return 4 when it haves a return the function stops;
-(help;help;help;return(4));
+(help;help;help;return 4);
 // in this case help runs only the first time and then return 4, so the function is interrupted all the other commands after the first return are not executed;
-(help;return(4);help;help;help;return(12));
+(help;return help;help;help;help;return 12);

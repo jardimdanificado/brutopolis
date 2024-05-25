@@ -22,14 +22,14 @@ set d true;
 
 
 // this is a "and" statement;
-if (== (:$c) (:$d)) 
+if (== $c $d) 
 {
     print `$a == $b`;
 }
 else 
 {
     // "or" statement;
-    if (:$c;:$d) 
+    if (return $c;return $d) 
     {
         print `$a != $b`;
     }
@@ -54,5 +54,5 @@ else
 set e 51;
 // only the value of the last statement is returned, the rest are ignored because they are nil;
 // : is a return statement just like return;
-set f (:$v;:$h;:$v;:$e);
+set f (: $v;: $h;: $v;: $e);
 print f = $f;
