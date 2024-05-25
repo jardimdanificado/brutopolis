@@ -1,0 +1,228 @@
+// this lib does nothing;
+set tokens from [];
+
+set rgb (lua.eval {
+	return (function(r,g,b) 
+		return {r=r or 0,g=g or 0,b=b or 0}
+	end)});
+
+set img from [];
+
+set , (lua.eval {
+	
+	return (function(r,g,b,value)
+		br.tokens[value] = {r,g,b};
+	end)});
+
+// lua utils _array;
+, 1 128 1 utils.array.slice;
+, 1 128 2 utils.array.organize;
+, 1 128 3 utils.array.expand;
+, 1 128 4 utils.array.new;
+, 1 128 5 utils.array.random;
+, 1 128 6 utils.array.minmax;
+, 1 128 7 utils.array.sum;
+, 1 128 8 utils.array.tostring;
+
+//lua utils _matrix;
+, 1 128 9 utils.matrix.includes;
+, 1 128 10 utils.matrix.new;
+, 1 128 11 utils.matrix.tostring;
+, 1 128 12 utils.matrix.minmax;
+, 1 128 13 utils.matrix.unique;
+, 1 128 14 utils.matrix.average;
+, 1 128 15 utils.matrix.map;
+, 1 128 16 utils.matrix.reduce;
+, 1 128 17 utils.matrix.filter;
+
+//lua utils _console;
+, 1 128 18 utils.console.colors.black;
+, 1 128 19 utils.console.colors.reset;
+, 1 128 20 utils.console.colors.red;
+, 1 128 21 utils.console.colors.green;
+, 1 128 22 utils.console.colors.yellow;
+, 1 128 23 utils.console.colors.blue;
+, 1 128 24 utils.console.colors.magenta;
+, 1 128 25 utils.console.colors.cyan;
+, 1 128 26 utils.console.colors.white;
+, 1 128 27 utils.console.colorstring;
+, 1 128 28 utils.console.boldstring;
+, 1 128 29 utils.console.randomcolor;
+, 1 128 30 utils.console.movecursor;
+
+//lua utils _encode_old;
+, 1 128 31 utils.encode.shuffleTable;
+, 1 128 32 utils.encode.invertlabel;
+, 1 128 33 utils.encode.encrypt;
+, 1 128 34 utils.encode.decrypt;
+, 1 128 35 utils.encode.base64Encode;
+, 1 128 36 utils.encode.base64Decode;
+, 1 128 37 utils.encode.save;
+, 1 128 38 utils.encode.load;
+
+//lua utils _encode;
+, 1 128 39 utils.encode.genKey;
+, 1 128 40 utils.encode.encrypt;
+, 1 128 41 utils.encode.decrypt;
+
+//lua utils file;
+, 1 128 42 utils.file.list;
+, 1 128 43 utils.file.isdir;
+, 1 128 44 utils.file.load.text;
+, 1 128 45 utils.file.save.text;
+, 1 128 46 utils.file.save.intMap;
+, 1 128 47 utils.file.load.charMap;
+, 1 128 48 utils.file.save.charMap;
+, 1 128 49 utils.file.load.map;
+, 1 128 50 utils.file.exist;
+, 1 128 51 utils.file.check;
+
+//lua utils _math;
+, 1 128 52 utils.math.regrad3;
+, 1 128 53 utils.math.scale;
+, 1 128 54 utils.math.vec2;
+, 1 128 55 utils.math.vec2add;
+, 1 128 56 utils.math.vec2sub;
+, 1 128 57 utils.math.vec2div;
+, 1 128 58 utils.math.vec2mod;
+, 1 128 59 utils.math.vec2mul;
+, 1 128 60 utils.math.vec3;
+, 1 128 61 utils.math.vec3add;
+, 1 128 62 utils.math.vec3sub;
+, 1 128 63 utils.math.vec3div;
+, 1 128 64 utils.math.vec3mod;
+, 1 128 65 utils.math.vec3mul;
+, 1 128 66 utils.math.limit;
+, 1 128 67 utils.math.rotate;
+, 1 128 68 utils.math.primo;
+, 1 128 69 utils.math.mmc;
+
+//lua utils _string;
+, 1 128 70 utils.string.endsWith;
+, 1 128 71 utils.string.charAt;
+, 1 128 72 utils.string.byteAt;
+, 1 128 73 utils.string.split;
+, 1 128 74 utils.string.split2;
+, 1 128 75 utils.string.split3;
+, 1 128 76 utils.string.replace;
+, 1 128 77 utils.string.replace3;
+, 1 128 78 utils.string.includes;
+, 1 128 79 utils.string.trim;
+, 1 128 80 utils.string.firstWord;
+
+//lua utils _table;
+, 1 128 81 utils.table.assign;
+, 1 128 82 utils.table.len;
+, 1 128 83 utils.table.add;
+, 1 128 84 utils.table.sub;
+, 1 128 85 utils.table.mul;
+, 1 128 86 utils.table.div;
+, 1 128 87 utils.table.mod;
+, 1 128 88 utils.table.merge;
+, 1 128 89 utils.table.recurse;
+, 1 128 90 utils.table.keys;
+, 1 128 91 utils.table.move;
+, 1 128 92 utils.table.find;
+, 1 128 93 utils.table.sort;
+, 1 128 94 utils.table.unpack;
+, 1 128 95 utils.table.clone;
+, 1 128 96 utils.table.map;
+, 1 128 97 utils.table.filter;
+, 1 128 98 utils.table.reduce;
+, 1 128 99 utils.table.includes;
+, 1 128 100 utils.table.clear;
+, 1 128 101 utils.table.selfClear;
+
+//lua utils init;
+, 1 128 102 utils.isjit;
+, 1 128 103 utils.luaversion;
+, 1 128 104 utils.time;
+, 1 128 105 utils.randi;
+, 1 128 106 utils.random;
+, 1 128 107 utils.roleta;
+, 1 128 108 utils.id;
+, 1 128 109 utils.assign;
+, 1 128 110 utils.len;
+, 1 128 111 utils.turn;
+, 1 128 112 utils.load;
+, 1 128 113 utils.unix;
+, 1 128 114 utils.isDumpable;
+, 1 128 115 utils.stringify;
+, 1 128 116 utils.visufy;
+, 1 128 117 utils.visualtable;
+, 1 128 118 utils.repeater;
+, 1 128 119 utils.agendar;
+
+//br.lua br
+
+, 1 128 120 global;
+, 1 128 121 exports;
+, 1 128 122 vm.version;
+, 1 128 123 vm.source;
+, 1 128 124 vm.outputpath;
+, 1 128 125 vm.bruterpath;
+, 1 128 126 vm.debug;
+, 1 128 127 vm.debugmode;
+, 1 128 128 vm.oneliner;
+, 1 128 129 this;
+, 1 128 130 vm.preprocessors.sugar;
+, 1 128 131 vm.safe;
+, 1 128 132 +;
+, 1 128 133 -;
+, 1 128 134 *;
+, 1 128 135 /;
+, 1 128 136 %;
+, 1 128 137 <;
+, 1 128 138 >;
+, 1 128 139 ==;
+, 1 128 140 !=;
+, 1 128 141 includes;
+, 1 128 142 exists;
+, 1 128 143 vm.parsearg;
+, 1 128 144 vm.parseargs;
+, 1 128 145 vm.parseargsoptimized;
+, 1 128 146 vm.preprocess;
+, 1 128 147 vm.debugprint;
+, 1 128 148 vm.parsecmd;
+, 1 128 149 vm.parse;
+, 1 128 150 vm.runoptimized;
+, 1 128 151 vm.optimize;
+, 1 128 152 repl;
+, 1 128 153 breakpoint;
+, 1 128 154 export;
+, 1 128 155 using;
+, 1 128 156 bruter.include;
+, 1 128 157 bruter.eval;
+, 1 128 158 lua.eval;
+, 1 128 159 lua.include;
+, 1 128 160 lua.require;
+, 1 128 161 C.include;
+, 1 128 162 C.eval;
+, 1 128 163 vm.recursiveset;
+, 1 128 164 vm.recursiveget;
+, 1 128 165 vm.recursivegetref;
+, 1 128 166 vm.setvalue;
+, 1 128 167 vm.setfrom;
+, 1 128 168 vm.fakesetfrom;
+, 1 128 169 vm.fakeset;
+, 1 128 170 set;
+, 1 128 171 obj;
+, 1 128 172 return;
+, 1 128 173 :;
+, 1 128 174 string;
+, 1 128 175 help;
+, 1 128 176 print;
+, 1 128 177 [];
+, 1 128 178 if;
+, 1 128 179 !;
+, 1 128 180 while;
+, 1 128 181 each;
+, 1 128 182 for;
+, 1 128 183 function;
+, 1 128 184 and;
+, 1 128 185 or;
+, 1 128 186 len;
+, 1 128 187 shortcut;
+
+
+set , nil;

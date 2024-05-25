@@ -26,12 +26,12 @@ local br =
     vm = 
     {
         -- version
-        version = "0.2.7f",
+        version = "0.2.8",
         -- source and outputs
         source = "",
         outputpath = "",
         -- current path
-        bruterpath = string.sub(_bruterPath, 2, #_bruterPath-8),
+        bruterpath = string.sub(_bruterPath, 2, #_bruterPath-17),
         -- debug mode
         debug = false,
         funcdata = {},
@@ -43,35 +43,11 @@ local br =
 
 br.this = br;
 
-br.vm.safe = function()
-    local function safeMessage()
-        print(br.utils.console.colorstring("[SAFE MODE]", "green") .. ": this is safe bruter!");
-    end
-    br.lua.eval = safeMessage;
-    br.lua.include = safeMessage;
-    br.lua.require = safeMessage;
-    if br.C then
-        br.C.include = safeMessage;
-        br.C.eval = safeMessage;
-    end
-    br.global = nil;
-    br.this = nil;
-    br.using = safeMessage;
-    br.bruter.eval = safeMessage;
-    br.bruter.include = safeMessage;
-    for k,v in pairs(br.utils.file.load) do
-        br.utils.file.load[k] = safeMessage;
-    end
-    br.utils.file.exist = safeMessage;
-    br.utils.file.check = safeMessage;
-    br.utils.load = safeMessage;
-    print(br.utils.console.colorstring("[SAFE MODE]","green") .. ": bruter safe mode enabled!");
-end
-
 br.vm.preprocessors.sugar = function(source)
     local nstr = br.utils.string.replace3(source, "%s+"," ")
     
-    nstr = br.utils.string.replace3(nstr, ":", ": ")
+    -- to be removed, because this is a function specific replace 
+    nstr = br.utils.string.replace3(nstr, ":$", ": $")
     
     nstr = br.utils.string.replace(nstr, "%}", "%} ")
     nstr = br.utils.string.replace(nstr, "%{", " %{")
@@ -102,6 +78,31 @@ br.vm.preprocessors.sugar = function(source)
     end
     
     return nstr
+end
+
+br.vm.safe = function()
+    local function safeMessage()
+        print(br.utils.console.colorstring("[SAFE MODE]", "green") .. ": this is safe bruter!");
+    end
+    br.lua.eval = safeMessage;
+    br.lua.include = safeMessage;
+    br.lua.require = safeMessage;
+    if br.C then
+        br.C.include = safeMessage;
+        br.C.eval = safeMessage;
+    end
+    br.global = nil;
+    br.this = nil;
+    br.using = safeMessage;
+    br.bruter.eval = safeMessage;
+    br.bruter.include = safeMessage;
+    for k,v in pairs(br.utils.file.load) do
+        br.utils.file.load[k] = safeMessage;
+    end
+    br.utils.file.exist = safeMessage;
+    br.utils.file.check = safeMessage;
+    br.utils.load = safeMessage;
+    print(br.utils.console.colorstring("[SAFE MODE]","green") .. ": bruter safe mode enabled!");
 end
 
 -- math and logic functions
@@ -197,7 +198,8 @@ br.vm.parseargsoptimized = function(args)
     for i = 1, #args do
         if br.utils.string.includes(args[i], "$") and not br.utils.string.includes(args[i], "(") then
             newargs.args[i] = nil;
-            table.insert(newargs.variables, {name = br.utils.string.replace3(args[i], "%$", ''), index = i});
+            local ref, name = br.vm.recursivegetref(br.utils.string.replace(args[i], "%$", ''));
+            table.insert(newargs.variables, {name = name, ref = ref, index = i});
             --print("amendobobo   ")
         else
             newargs.args[i] = br.vm.parsearg(args[i]);
@@ -339,9 +341,9 @@ br.vm.parse = function(src, isSentence)
             else
                 br.vm.runoptimized(br.vm.cache[splited[i]]);
             end
+        else
+            result = br.vm.parsecmd(splited[i], isSentence);
         end
-
-        result = br.vm.parsecmd(splited[i], isSentence);
 
         if result then
             return result;
@@ -354,8 +356,11 @@ br.vm.runoptimized = function(opt)
         br.vm.debugprint(br.utils.console.colorstring("[DEBUG FAIL]", "red") .. ": empty command, skipping");
         return;
     end
+
     for k,v in pairs(opt.variables) do
-        opt.args[v.index] = br.vm.recursiveget(br.utils.string.replace(v.name,"%$",""));
+        --br.help(v)
+        --print(v.name, v.ref);
+        opt.args[v.index] = v.ref[v.name];
         --print(v.name, opt.args[v.index]);
     end
     
@@ -481,7 +486,6 @@ br.export = function(name, as, other)
 end
 
 br.using = function(name)
-    -- new 
     if br.utils.file.exist(br.vm.bruterpath .. "libr/" .. name .. "/" .. name .. ".br") then
         br.bruter.include(br.vm.bruterpath .. "libr/" .. name .. "/" .. name .. ".br");
     elseif br.utils.file.exist(br.vm.bruterpath .. "libr/" .. name .. "/" .. name .. ".lua") then
@@ -604,6 +608,7 @@ end
 -- recursive get the upper object and the key
 br.vm.recursivegetref = function(argname)
     if br.utils.string.includes(argname, ".") then
+        
         local result = br
         local splited = br.utils.string.split2(argname, ".")
         local lastKey = table.remove(splited)  -- Remove the last key to set its value later
@@ -624,6 +629,7 @@ br.vm.recursivegetref = function(argname)
         
         return result, br.vm.parsearg(lastKey)
     else
+        
         return br, argname
     end
 end
