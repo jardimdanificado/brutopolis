@@ -12,14 +12,15 @@
 ********************************************************************************************/
 
 #include "raylib.h"
+#include "bruter.h"
 
 //------------------------------------------------------------------------------------
 // Program main entry point
 //------------------------------------------------------------------------------------
 int main(void)
 {
-    // Initialization
-    //--------------------------------------------------------------------------------------
+    VirtualMachine *vm = make_vm();
+    init_std(vm);
     const int screenWidth = 800;
     const int screenHeight = 450;
 
@@ -29,7 +30,7 @@ int main(void)
 
     SetTargetFPS(60);               // Set our game to run at 60 frames-per-second
     //--------------------------------------------------------------------------------------
-
+    eval(vm, "print 'bruter is working from C'", NULL);
     // Main game loop
     while (!WindowShouldClose())    // Detect window close button or ESC key
     {
@@ -81,6 +82,6 @@ int main(void)
     //--------------------------------------------------------------------------------------
     CloseWindow();        // Close window and OpenGL context
     //--------------------------------------------------------------------------------------
-
+    free_vm(vm);
     return 0;
 }
