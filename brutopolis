@@ -1,3 +1,0 @@
-script_path=$0
-script_dir=$(dirname "$script_path")
-luajit $script_dir/main.lua $@

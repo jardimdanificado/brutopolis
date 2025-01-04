@@ -1,6 +1,0 @@
-// example of compiling;
-set io (C.include stdio.h);
-set codestr `return terra() br.io.printf("this code been printed from a executable file...\n") end`;
-
-set main (lua.eval $codestr); // this set the main;
-set exports.main $main; // this make sure the main function is exported, otherwise it will not be part of the compiled code;

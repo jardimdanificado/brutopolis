@@ -1,2 +1,0 @@
-set fakemodule from [];
-set fakemodule.fakeFunction (lua.eval `return (function (a, b) return("fakeFunction result is " .. (a + b)) end)`);
