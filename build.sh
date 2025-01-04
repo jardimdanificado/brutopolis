@@ -61,4 +61,5 @@ if [ -n "$SETUP" ]; then
 	rm -rf bruter
 fi
 
-emcc -o build/index.html src/main.c lib/bruter.o -Llib -Iinclude $RLPATH -s USE_GLFW=3 -s ASYNCIFY --shell-file src/minshell.html
+emcc -o build/bruter.html src/main.c lib/bruter.o -Llib -Iinclude $RLPATH -s USE_GLFW=3 -s ASYNCIFY --shell-file src/minshell.html
+mv build/bruter.html build/index.html
