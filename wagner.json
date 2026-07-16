@@ -1,0 +1,11 @@
+{
+    "name": "brutopolis",
+    "width": 320,
+    "height": 240,
+    "scale": 2,
+    "bpp": 8,
+    "memory": 8388608,
+    "src": [
+        "main.c"
+    ]
+}

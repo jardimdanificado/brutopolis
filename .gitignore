@@ -1,0 +1,6 @@
+.vscode
+*.tar
+*.wasm
+EXPORT.sh
+assets.h
+Scroll-o-Sprites
