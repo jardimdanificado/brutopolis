@@ -3,7 +3,7 @@
     "width": 320,
     "height": 240,
     "scale": 2,
-    "bpp": 8,
+    "color": "RGBA8888",
     "memory": 8388608,
     "src": [
         "main.c"
