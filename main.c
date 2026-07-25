@@ -1,8 +1,8 @@
 #include "wagner.h"
 
-static Canvas img_floor;
-static Canvas img_player;
-static Canvas img_npc;
+static Image img_floor;
+static Image img_player;
+static Image img_water;
 
 static float player_x = 0;
 static float player_y = 0;
@@ -13,18 +13,19 @@ static float zoom = 1.0f;
 static int last_mx = 0;
 static int last_my = 0;
 
-typedef struct {
-    float x;
-    float y;
-    float target_x;
-    float target_y;
-    float wait_time;
-} NPC;
-
+static inline void sprite(Image image, int x, int y, int sx, int sy) {
+    push();
+    translate(x, y);
+    scale(sx, sy);
+    texture(image);
+    rect();
+    pop();
+}
 
 void preload() {
-    load_image(&img_floor, "Feature_Stone_A.png");
-    load_image(&img_player, "Creature_Cat_U.png");
+    img_floor = load_image("Feature_Stone_A.png");
+    img_player = load_image("Creature_Cat_U.png");
+    img_water = load_image("Feature_Waves.png");
 }
 
 void draw() {
@@ -36,8 +37,8 @@ void draw() {
         if (tile_size > 0) actual_scale = (float)tile_size / img_floor.width;
     }
     
-    if (wagner.keys[20]) zoom -= 1.0f * wagner.delta_time; // Q
-    if (wagner.keys[8])  zoom += 1.0f * wagner.delta_time; // E
+    if (wagner.keys[KEY_Q]) zoom -= 1.0f * wagner.delta_time;
+    if (wagner.keys[KEY_E])  zoom += 1.0f * wagner.delta_time;
     if (zoom < 0.1f) zoom = 0.1f;
     
     // Player grid movement
@@ -52,10 +53,10 @@ void draw() {
     } else {
         if (img_floor.pixels) {
             bool moved = false;
-            if (wagner.keys[82] || wagner.keys[26]) { player_y -= tile_size_world; moved = true; } // Up / W
-            else if (wagner.keys[81] || wagner.keys[22]) { player_y += tile_size_world; moved = true; } // Down / S
-            else if (wagner.keys[80] || wagner.keys[4])  { player_x -= tile_size_world; moved = true; } // Left / A
-            else if (wagner.keys[79] || wagner.keys[7])  { player_x += tile_size_world; moved = true; } // Right / D
+            if (wagner.keys[KEY_UP] || wagner.keys[KEY_W])       { player_y -= tile_size_world; moved = true; }
+            else if (wagner.keys[KEY_DOWN] || wagner.keys[KEY_S]) { player_y += tile_size_world; moved = true; }
+            else if (wagner.keys[KEY_LEFT] || wagner.keys[KEY_A]) { player_x -= tile_size_world; moved = true; }
+            else if (wagner.keys[KEY_RIGHT] || wagner.keys[KEY_D]){ player_x += tile_size_world; moved = true; }
             
             if (moved) {
                 move_cooldown = 0.15f; // Cooldown duration for grid steps
@@ -71,14 +72,14 @@ void draw() {
     last_mx = wagner.mouse.x;
     last_my = wagner.mouse.y;
 
-    push(); fill(WHITE); clear(); pop();
+    push(); fill(rgb(0, 0, 0)); clear(); pop();
     
     if (img_floor.pixels && tile_size > 0) {
         int map_w = 10;
         int map_h = 10;
         
-        int start_x = wagner.width / 2 - (int)(cam_x * actual_scale);
-        int start_y = wagner.height / 2 - (int)(cam_y * actual_scale);
+        int start_x = (wagner.width - map_w * tile_size) / 2 - (int)(cam_x * actual_scale);
+        int start_y = (wagner.height - map_h * tile_size) / 2 - (int)(cam_y * actual_scale);
         
         // Desenha o mapa (chão)
         for (int y = 0; y < map_h; y++) {
@@ -88,12 +89,7 @@ void draw() {
                 
                 if (draw_x + tile_size > 0 && draw_x < wagner.width && 
                     draw_y + tile_size > 0 && draw_y < wagner.height) {
-                    push();
-                    translate(draw_x, draw_y);
-                    scale(tile_size, tile_size);
-                    texture(&img_floor);
-                    rect();
-                    pop();
+                    sprite(img_floor, draw_x, draw_y, tile_size, tile_size);
                 }
             }
         }
@@ -103,14 +99,10 @@ void draw() {
             int p_draw_x = start_x + (int)(player_x * actual_scale);
             int p_draw_y = start_y + (int)(player_y * actual_scale);
             
-            push();
-            translate(p_draw_x, p_draw_y);
-            scale(tile_size, tile_size);
-            texture(&img_player);
-            rect();
-            pop();
+            sprite(img_player, p_draw_x, p_draw_y, tile_size, tile_size);
         }
     }
+    
     
     push();
     translate(10, 10);
