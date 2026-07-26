@@ -13,12 +13,21 @@ static float zoom = 1.0f;
 static int last_mx = 0;
 static int last_my = 0;
 
-static inline void sprite(Image image, int x, int y, int sx, int sy) {
+static inline void draw_sprite(Image image, int x, int y, int sx, int sy) {
     push();
     translate(x, y);
     scale(sx, sy);
     texture(image);
     rect();
+    pop();
+}
+
+static inline void draw_text(char* _text, int x, int y, int _color, float size) {
+    push();
+    translate(x, y);
+    scale(size, size);
+    fill(_color);
+    text(_text);
     pop();
 }
 
@@ -47,23 +56,6 @@ void draw() {
         tile_size_world = img_floor.width;
     }
 
-    static float move_cooldown = 0.0f;
-    if (move_cooldown > 0.0f) {
-        move_cooldown -= wagner.delta_time;
-    } else {
-        if (img_floor.pixels) {
-            bool moved = false;
-            if (wagner.keys[KEY_UP] || wagner.keys[KEY_W])       { player_y -= tile_size_world; moved = true; }
-            else if (wagner.keys[KEY_DOWN] || wagner.keys[KEY_S]) { player_y += tile_size_world; moved = true; }
-            else if (wagner.keys[KEY_LEFT] || wagner.keys[KEY_A]) { player_x -= tile_size_world; moved = true; }
-            else if (wagner.keys[KEY_RIGHT] || wagner.keys[KEY_D]){ player_x += tile_size_world; moved = true; }
-            
-            if (moved) {
-                move_cooldown = 0.15f; // Cooldown duration for grid steps
-            }
-        }
-    }
-    
     // Process Mouse for Camera drag
     if (wagner.mouse_down && actual_scale > 0) {
         cam_x -= (wagner.mouse.x - last_mx) / actual_scale;
@@ -89,7 +81,7 @@ void draw() {
                 
                 if (draw_x + tile_size > 0 && draw_x < wagner.width && 
                     draw_y + tile_size > 0 && draw_y < wagner.height) {
-                    sprite(img_floor, draw_x, draw_y, tile_size, tile_size);
+                    draw_sprite(img_floor, draw_x, draw_y, tile_size, tile_size);
                 }
             }
         }
@@ -99,14 +91,10 @@ void draw() {
             int p_draw_x = start_x + (int)(player_x * actual_scale);
             int p_draw_y = start_y + (int)(player_y * actual_scale);
             
-            sprite(img_player, p_draw_x, p_draw_y, tile_size, tile_size);
+            draw_sprite(img_player, p_draw_x, p_draw_y, tile_size, tile_size);
         }
     }
     
     
-    push();
-    translate(10, 10);
-    fill(WHITE);
-    text("brutopolis");
-    pop();
+    draw_text("brutopolis", 10, 10, WHITE, 0);
 }
