@@ -5,6 +5,6 @@
     "scale": 2,
     "color": "RGB332",
     "src": [
-        "main.c"
+        "src/main.c"
     ]
 }
