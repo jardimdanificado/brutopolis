@@ -41,16 +41,16 @@ const MapGenConfig MAP_PRESET_HIGHLANDS = {
 };
 
 // ---------------------------------------------------------------------------
-// Data-Driven Item Specs Defined via ItemModifiers
+// Data-Driven Item Specs Defined via String-Named ItemModifiers
 // ---------------------------------------------------------------------------
 
 const ItemSpec ITEM_BREAD_SPEC = {
     .item_id = "item_bread",
     .modifiers = {
-        { .type = ITEM_MOD_DATA, .as.data = { "Pao Caseiro", "Pao de trigo macio e nutritivo" } },
-        { .type = ITEM_MOD_SKIN, .as.skin = { "Item_Bread.png" } },
-        { .type = ITEM_MOD_CONSUMABLE, .as.consumable = { .restore_hunger = 45.0f } },
-        { .type = ITEM_MOD_STACK, .as.stack = { .max_stack = 10 } }
+        { .type = ITEM_MOD_DATA, .mod_name = "dados", .as.data = { "Pao Caseiro", "Pao de trigo macio e nutritivo" } },
+        { .type = ITEM_MOD_SKIN, .mod_name = "skin", .as.skin = { "Item_Bread.png" } },
+        { .type = ITEM_MOD_CONSUMABLE, .mod_name = "comida", .as.consumable = { .restore_hunger = 45.0f } },
+        { .type = ITEM_MOD_STACK, .mod_name = "stack", .as.stack = { .max_stack = 10 } }
     },
     .modifier_count = 4
 };
@@ -58,10 +58,10 @@ const ItemSpec ITEM_BREAD_SPEC = {
 const ItemSpec ITEM_FRUIT_SPEC = {
     .item_id = "item_fruit",
     .modifiers = {
-        { .type = ITEM_MOD_DATA, .as.data = { "Fruta Suculenta", "Fruta fresca que cura e alimenta" } },
-        { .type = ITEM_MOD_SKIN, .as.skin = { "Item_Fruit.png" } },
-        { .type = ITEM_MOD_CONSUMABLE, .as.consumable = { .restore_hunger = 35.0f, .restore_health = 10.0f } },
-        { .type = ITEM_MOD_STACK, .as.stack = { .max_stack = 15 } }
+        { .type = ITEM_MOD_DATA, .mod_name = "dados", .as.data = { "Fruta Suculenta", "Fruta fresca que cura e alimenta" } },
+        { .type = ITEM_MOD_SKIN, .mod_name = "skin", .as.skin = { "Item_Fruit.png" } },
+        { .type = ITEM_MOD_CONSUMABLE, .mod_name = "comida", .as.consumable = { .restore_hunger = 35.0f, .restore_health = 10.0f } },
+        { .type = ITEM_MOD_STACK, .mod_name = "stack", .as.stack = { .max_stack = 15 } }
     },
     .modifier_count = 4
 };
@@ -69,10 +69,10 @@ const ItemSpec ITEM_FRUIT_SPEC = {
 const ItemSpec ITEM_WATER_SPEC = {
     .item_id = "item_water",
     .modifiers = {
-        { .type = ITEM_MOD_DATA, .as.data = { "Jarra d'Agua", "Agua fresca de nascente" } },
-        { .type = ITEM_MOD_SKIN, .as.skin = { "Item_Jug.png" } },
-        { .type = ITEM_MOD_CONSUMABLE, .as.consumable = { .restore_thirst = 55.0f } },
-        { .type = ITEM_MOD_STACK, .as.stack = { .max_stack = 5 } }
+        { .type = ITEM_MOD_DATA, .mod_name = "dados", .as.data = { "Jarra d'Agua", "Agua fresca de nascente" } },
+        { .type = ITEM_MOD_SKIN, .mod_name = "skin", .as.skin = { "Item_Jug.png" } },
+        { .type = ITEM_MOD_CONSUMABLE, .mod_name = "bebida", .as.consumable = { .restore_thirst = 55.0f } },
+        { .type = ITEM_MOD_STACK, .mod_name = "stack", .as.stack = { .max_stack = 5 } }
     },
     .modifier_count = 4
 };
@@ -80,10 +80,10 @@ const ItemSpec ITEM_WATER_SPEC = {
 const ItemSpec ITEM_HERB_SPEC = {
     .item_id = "item_herb",
     .modifiers = {
-        { .type = ITEM_MOD_DATA, .as.data = { "Erva Medicinal", "Planta raras com forte poder curativo" } },
-        { .type = ITEM_MOD_SKIN, .as.skin = { "Item_Herb.png" } },
-        { .type = ITEM_MOD_CONSUMABLE, .as.consumable = { .restore_health = 35.0f } },
-        { .type = ITEM_MOD_STACK, .as.stack = { .max_stack = 20 } }
+        { .type = ITEM_MOD_DATA, .mod_name = "dados", .as.data = { "Erva Medicinal", "Planta raras com forte poder curativo" } },
+        { .type = ITEM_MOD_SKIN, .mod_name = "skin", .as.skin = { "Item_Herb.png" } },
+        { .type = ITEM_MOD_CONSUMABLE, .mod_name = "cura", .as.consumable = { .restore_health = 35.0f } },
+        { .type = ITEM_MOD_STACK, .mod_name = "stack", .as.stack = { .max_stack = 20 } }
     },
     .modifier_count = 4
 };
@@ -91,10 +91,10 @@ const ItemSpec ITEM_HERB_SPEC = {
 const ItemSpec ITEM_STEAK_SPEC = {
     .item_id = "item_steak",
     .modifiers = {
-        { .type = ITEM_MOD_DATA, .as.data = { "Bife Assado", "Carne Suculenta altamente energetica" } },
-        { .type = ITEM_MOD_SKIN, .as.skin = { "Item_Steak.png" } },
-        { .type = ITEM_MOD_CONSUMABLE, .as.consumable = { .restore_hunger = 60.0f, .restore_health = 15.0f } },
-        { .type = ITEM_MOD_STACK, .as.stack = { .max_stack = 5 } }
+        { .type = ITEM_MOD_DATA, .mod_name = "dados", .as.data = { "Bife Assado", "Carne Suculenta altamente energetica" } },
+        { .type = ITEM_MOD_SKIN, .mod_name = "skin", .as.skin = { "Item_Steak.png" } },
+        { .type = ITEM_MOD_CONSUMABLE, .mod_name = "comida", .as.consumable = { .restore_hunger = 60.0f, .restore_health = 15.0f } },
+        { .type = ITEM_MOD_STACK, .mod_name = "stack", .as.stack = { .max_stack = 5 } }
     },
     .modifier_count = 4
 };
@@ -110,20 +110,20 @@ void setup_game_species_and_world(int* out_center_x, int* out_center_y) {
     if (out_center_y) *out_center_y = cy;
 
     // ---------------------------------------------------------------------------
-    // User-Defined Example Species Specs
+    // User-Defined Example Species Specs with String-Named Modifiers
     // ---------------------------------------------------------------------------
 
     // 1. Árvore Anciã (Plant, Photosynthesis, Spores, Stationary)
     CreatureSpec tree_spec = {
         .species_name = "Arvore Ancia",
         .modifiers = {
-            { .type = MOD_TYPE_DATA, .as.data = { "Carvalho", "Arvore Ancia", "Natureza" } },
-            { .type = MOD_TYPE_SKIN, .as.skin = { "Feature_Tree_Full.png" } },
-            { .type = MOD_TYPE_MOVEMENT, .as.movement = { MOVE_NONE } },
-            { .type = MOD_TYPE_DIET, .as.diet = { DIET_PHOTOSYNTHESIS } },
-            { .type = MOD_TYPE_REPRODUCTION, .as.repro = { REPRO_SPORE_SEED } },
-            { .type = MOD_TYPE_STATS, .as.stats = { 200.0f, 100.0f, 100.0f } },
-            { .type = MOD_TYPE_LOOT, .as.loot = { ITEM_FRUIT_SPEC, 1, 3, 1.0f } }
+            { .type = MOD_TYPE_DATA, .mod_name = "dados", .as.data = { "Carvalho", "Arvore Ancia", "Natureza" } },
+            { .type = MOD_TYPE_SKIN, .mod_name = "skin", .as.skin = { "Feature_Tree_Full.png" } },
+            { .type = MOD_TYPE_MOVEMENT, .mod_name = "estatico", .as.movement = { MOVE_NONE } },
+            { .type = MOD_TYPE_DIET, .mod_name = "fotossintese", .as.diet = { DIET_PHOTOSYNTHESIS } },
+            { .type = MOD_TYPE_REPRODUCTION, .mod_name = "esporeamento", .as.repro = { REPRO_SPORE_SEED } },
+            { .type = MOD_TYPE_STATS, .mod_name = "status", .as.stats = { 200.0f, 100.0f, 100.0f } },
+            { .type = MOD_TYPE_LOOT, .mod_name = "loot_fruta", .as.loot = { ITEM_FRUIT_SPEC, 1, 3, 1.0f } }
         },
         .modifier_count = 7
     };
@@ -132,15 +132,15 @@ void setup_game_species_and_world(int* out_center_x, int* out_center_y) {
     CreatureSpec dragon_spec = {
         .species_name = "Dragao Alado",
         .modifiers = {
-            { .type = MOD_TYPE_DATA, .as.data = { "Smaug", "Dragao Alado", "Dracones" } },
-            { .type = MOD_TYPE_SKIN, .as.skin = { "Creature_Dragon_U.png" } },
-            { .type = MOD_TYPE_MOVEMENT, .as.movement = { MOVE_FLY } },
-            { .type = MOD_TYPE_DIET, .as.diet = { DIET_CARNIVORE } },
-            { .type = MOD_TYPE_REPRODUCTION, .as.repro = { REPRO_SEX } },
-            { .type = MOD_TYPE_STATS, .as.stats = { 180.0f, 100.0f, 100.0f } },
-            { .type = MOD_TYPE_COMBAT, .as.combat = { 30.0f, 12.0f, 12.0f } },
-            { .type = MOD_TYPE_PERSONALITY, .as.personality = { 90, 80, 20, 80 } },
-            { .type = MOD_TYPE_LOOT, .as.loot = { ITEM_STEAK_SPEC, 2, 4, 1.0f } }
+            { .type = MOD_TYPE_DATA, .mod_name = "dados", .as.data = { "Smaug", "Dragao Alado", "Dracones" } },
+            { .type = MOD_TYPE_SKIN, .mod_name = "skin", .as.skin = { "Creature_Dragon_U.png" } },
+            { .type = MOD_TYPE_MOVEMENT, .mod_name = "voo", .as.movement = { MOVE_FLY } },
+            { .type = MOD_TYPE_DIET, .mod_name = "carnivoro", .as.diet = { DIET_CARNIVORE } },
+            { .type = MOD_TYPE_REPRODUCTION, .mod_name = "acasalamento", .as.repro = { REPRO_SEX } },
+            { .type = MOD_TYPE_STATS, .mod_name = "status", .as.stats = { 180.0f, 100.0f, 100.0f } },
+            { .type = MOD_TYPE_COMBAT, .mod_name = "combate_dragao", .as.combat = { 30.0f, 12.0f, 12.0f } },
+            { .type = MOD_TYPE_PERSONALITY, .mod_name = "personalidade", .as.personality = { 90, 80, 20, 80 } },
+            { .type = MOD_TYPE_LOOT, .mod_name = "loot_bife", .as.loot = { ITEM_STEAK_SPEC, 2, 4, 1.0f } }
         },
         .modifier_count = 9
     };
@@ -149,15 +149,15 @@ void setup_game_species_and_world(int* out_center_x, int* out_center_y) {
     CreatureSpec knight_spec = {
         .species_name = "Cavaleiro Imperial",
         .modifiers = {
-            { .type = MOD_TYPE_DATA, .as.data = { "Arthur", "Cavaleiro Imperial", "Reino" } },
-            { .type = MOD_TYPE_SKIN, .as.skin = { "Human_Knight_M.png" } },
-            { .type = MOD_TYPE_MOVEMENT, .as.movement = { MOVE_WALK } },
-            { .type = MOD_TYPE_DIET, .as.diet = { DIET_OMNIVORE } },
-            { .type = MOD_TYPE_REPRODUCTION, .as.repro = { REPRO_SEX } },
-            { .type = MOD_TYPE_STATS, .as.stats = { 150.0f, 100.0f, 100.0f } },
-            { .type = MOD_TYPE_COMBAT, .as.combat = { 22.0f, 8.0f, 10.0f } },
-            { .type = MOD_TYPE_PERSONALITY, .as.personality = { 85, 40, 70, 50 } },
-            { .type = MOD_TYPE_LOOT, .as.loot = { ITEM_BREAD_SPEC, 1, 2, 0.9f } }
+            { .type = MOD_TYPE_DATA, .mod_name = "dados", .as.data = { "Arthur", "Cavaleiro Imperial", "Reino" } },
+            { .type = MOD_TYPE_SKIN, .mod_name = "skin", .as.skin = { "Human_Knight_M.png" } },
+            { .type = MOD_TYPE_MOVEMENT, .mod_name = "terrestre", .as.movement = { MOVE_WALK } },
+            { .type = MOD_TYPE_DIET, .mod_name = "onivoro", .as.diet = { DIET_OMNIVORE } },
+            { .type = MOD_TYPE_REPRODUCTION, .mod_name = "acasalamento", .as.repro = { REPRO_SEX } },
+            { .type = MOD_TYPE_STATS, .mod_name = "status", .as.stats = { 150.0f, 100.0f, 100.0f } },
+            { .type = MOD_TYPE_COMBAT, .mod_name = "combate_imperial", .as.combat = { 22.0f, 8.0f, 10.0f } },
+            { .type = MOD_TYPE_PERSONALITY, .mod_name = "personalidade", .as.personality = { 85, 40, 70, 50 } },
+            { .type = MOD_TYPE_LOOT, .mod_name = "loot_pao", .as.loot = { ITEM_BREAD_SPEC, 1, 2, 0.9f } }
         },
         .modifier_count = 9
     };
@@ -166,15 +166,15 @@ void setup_game_species_and_world(int* out_center_x, int* out_center_y) {
     CreatureSpec goblin_spec = {
         .species_name = "Goblin Ladrao",
         .modifiers = {
-            { .type = MOD_TYPE_DATA, .as.data = { "Snark", "Goblin Ladrao", "Tribo" } },
-            { .type = MOD_TYPE_SKIN, .as.skin = { "Creature_Goblin_U.png" } },
-            { .type = MOD_TYPE_MOVEMENT, .as.movement = { MOVE_WALK } },
-            { .type = MOD_TYPE_DIET, .as.diet = { DIET_OMNIVORE } },
-            { .type = MOD_TYPE_REPRODUCTION, .as.repro = { REPRO_MITOSIS_SPLIT } },
-            { .type = MOD_TYPE_STATS, .as.stats = { 90.0f, 100.0f, 100.0f } },
-            { .type = MOD_TYPE_COMBAT, .as.combat = { 14.0f, 2.0f, 8.0f } },
-            { .type = MOD_TYPE_PERSONALITY, .as.personality = { 30, 85, 20, 90 } },
-            { .type = MOD_TYPE_LOOT, .as.loot = { ITEM_FRUIT_SPEC, 1, 2, 0.8f } }
+            { .type = MOD_TYPE_DATA, .mod_name = "dados", .as.data = { "Snark", "Goblin Ladrao", "Tribo" } },
+            { .type = MOD_TYPE_SKIN, .mod_name = "skin", .as.skin = { "Creature_Goblin_U.png" } },
+            { .type = MOD_TYPE_MOVEMENT, .mod_name = "terrestre", .as.movement = { MOVE_WALK } },
+            { .type = MOD_TYPE_DIET, .mod_name = "onivoro", .as.diet = { DIET_OMNIVORE } },
+            { .type = MOD_TYPE_REPRODUCTION, .mod_name = "mitose", .as.repro = { REPRO_MITOSIS_SPLIT } },
+            { .type = MOD_TYPE_STATS, .mod_name = "status", .as.stats = { 90.0f, 100.0f, 100.0f } },
+            { .type = MOD_TYPE_COMBAT, .mod_name = "combate_furtivo", .as.combat = { 14.0f, 2.0f, 8.0f } },
+            { .type = MOD_TYPE_PERSONALITY, .mod_name = "personalidade", .as.personality = { 30, 85, 20, 90 } },
+            { .type = MOD_TYPE_LOOT, .mod_name = "loot_fruta", .as.loot = { ITEM_FRUIT_SPEC, 1, 2, 0.8f } }
         },
         .modifier_count = 9
     };
@@ -183,15 +183,15 @@ void setup_game_species_and_world(int* out_center_x, int* out_center_y) {
     CreatureSpec cat_spec = {
         .species_name = "Gato Mistico",
         .modifiers = {
-            { .type = MOD_TYPE_DATA, .as.data = { "Felix", "Gato Mistico", "Natureza" } },
-            { .type = MOD_TYPE_SKIN, .as.skin = { "Creature_Cat_U.png" } },
-            { .type = MOD_TYPE_MOVEMENT, .as.movement = { MOVE_WALK } },
-            { .type = MOD_TYPE_DIET, .as.diet = { DIET_HERBIVORE } },
-            { .type = MOD_TYPE_REPRODUCTION, .as.repro = { REPRO_MITOSIS_SPLIT } },
-            { .type = MOD_TYPE_STATS, .as.stats = { 80.0f, 100.0f, 100.0f } },
-            { .type = MOD_TYPE_COMBAT, .as.combat = { 6.0f, 1.0f, 6.0f } },
-            { .type = MOD_TYPE_PERSONALITY, .as.personality = { 40, 50, 60, 80 } },
-            { .type = MOD_TYPE_LOOT, .as.loot = { ITEM_HERB_SPEC, 1, 2, 0.6f } }
+            { .type = MOD_TYPE_DATA, .mod_name = "dados", .as.data = { "Felix", "Gato Mistico", "Natureza" } },
+            { .type = MOD_TYPE_SKIN, .mod_name = "skin", .as.skin = { "Creature_Cat_U.png" } },
+            { .type = MOD_TYPE_MOVEMENT, .mod_name = "terrestre", .as.movement = { MOVE_WALK } },
+            { .type = MOD_TYPE_DIET, .mod_name = "herbivoro", .as.diet = { DIET_HERBIVORE } },
+            { .type = MOD_TYPE_REPRODUCTION, .mod_name = "mitose", .as.repro = { REPRO_MITOSIS_SPLIT } },
+            { .type = MOD_TYPE_STATS, .mod_name = "status", .as.stats = { 80.0f, 100.0f, 100.0f } },
+            { .type = MOD_TYPE_COMBAT, .mod_name = "combate_agil", .as.combat = { 6.0f, 1.0f, 6.0f } },
+            { .type = MOD_TYPE_PERSONALITY, .mod_name = "personalidade", .as.personality = { 40, 50, 60, 80 } },
+            { .type = MOD_TYPE_LOOT, .mod_name = "loot_erva", .as.loot = { ITEM_HERB_SPEC, 1, 2, 0.6f } }
         },
         .modifier_count = 9
     };
@@ -208,8 +208,8 @@ void setup_game_species_and_world(int* out_center_x, int* out_center_y) {
         if (is_tile_walkable_for(rx, ry, spec->modifiers[2].as.movement.movement)) {
             Entity* e = spawn_entity_from_spec(spec, rx, ry);
             if (e) {
-                entity_add_item_spec(e, &ITEM_BREAD_SPEC, random_int(1, 2));
-                entity_add_item_spec(e, &ITEM_WATER_SPEC, 1);
+                entity_add_item_spec(e, &ITEM_BREAD_SPEC, random_int(1, 3));
+                entity_add_item_spec(e, &ITEM_WATER_SPEC, random_int(1, 2));
             }
         }
     }

@@ -25,6 +25,7 @@ typedef enum {
 
 typedef struct {
     ItemModifierType type;
+    char mod_name[32];
     union {
         struct { char name[32]; char description[48]; } data;
         struct { char filename[64]; } skin;
@@ -137,6 +138,7 @@ typedef enum {
 
 typedef struct {
     ModifierType type;
+    char mod_name[32];
     union {
         struct { char name[32]; char title[32]; char group[32]; } data;
         struct { char filename[64]; } skin;
@@ -211,6 +213,10 @@ struct Entity {
     // Layer 2 High Level Brain Profile
     BrainProfile brain;
     
+    // Applied Modifiers Record
+    Modifier active_modifiers[12];
+    int active_modifier_count;
+
     // Dynamic Loot Table
     LootDrop loot_table[4];
     int loot_count;
@@ -241,13 +247,13 @@ extern World world;
 
 Modifier mod_data(const char* name, const char* title, const char* group);
 Modifier mod_skin(const char* filename);
-Modifier mod_movement(MovementType type);
-Modifier mod_diet(DietType diet);
-Modifier mod_repro(ReproType repro);
-Modifier mod_stats(float hp, float hunger, float thirst);
-Modifier mod_combat(float atk, float def, float aggro);
-Modifier mod_personality(int bravery, int gluttony, int sociability, int curiosity);
-Modifier mod_loot(const ItemSpec* spec, int min_c, int max_c, float chance);
+Modifier mod_movement(const char* mod_name, MovementType type);
+Modifier mod_diet(const char* mod_name, DietType diet);
+Modifier mod_repro(const char* mod_name, ReproType repro);
+Modifier mod_stats(const char* mod_name, float hp, float hunger, float thirst);
+Modifier mod_combat(const char* mod_name, float atk, float def, float aggro);
+Modifier mod_personality(const char* mod_name, int bravery, int gluttony, int sociability, int curiosity);
+Modifier mod_loot(const char* mod_name, const ItemSpec* spec, int min_c, int max_c, float chance);
 
 // ---------------------------------------------------------------------------
 // Function Prototypes
@@ -259,11 +265,13 @@ void update_entity_simulation(Entity* e, float dt);
 Entity* spawn_entity_from_spec(const CreatureSpec* spec, int x, int y);
 void apply_entity_modifiers(Entity* e, const Modifier* modifiers, int count);
 
-// Item & Inventory Helpers
+// Item & Non-Stacking Radial Scatter Helpers
+bool is_tile_occupied_by_item(int x, int y);
 bool entity_add_item_spec(Entity* e, const ItemSpec* spec, int count);
 bool entity_consume_food_spec(Entity* e);
 bool entity_consume_water_spec(Entity* e);
 void spawn_dropped_item_spec(int x, int y, const ItemSpec* spec, int count);
+void spawn_dropped_item_scatter(int origin_x, int origin_y, const ItemSpec* spec, int count);
 void trigger_entity_loot_drop(Entity* e);
 void entity_pickup_at(Entity* e, int x, int y);
 const char* get_item_skin_filename(const ItemSpec* spec);
@@ -272,7 +280,10 @@ const char* get_item_skin_filename(const ItemSpec* spec);
 bool is_tile_walkable_for(int x, int y, MovementType movement);
 int find_path_for(int sx, int sy, int gx, int gy, MovementType movement, GridPos* out_path, int max_out);
 
-// Layer 1 Perception / Sensors
+// Layer 1 Perception / Sensors (Generic Modifier Name Perception)
+bool brain_perceive_item_by_modifier_name(Entity* self, const char* target_mod_name, int* out_x, int* out_y);
+Entity* brain_perceive_creature_by_modifier_name(Entity* self, const char* target_mod_name);
+
 Entity* brain_perceive_closest_threat(Entity* self);
 Entity* brain_perceive_closest_ally(Entity* self);
 Entity* brain_perceive_closest_mate(Entity* self);

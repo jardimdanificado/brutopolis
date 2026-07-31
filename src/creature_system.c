@@ -15,6 +15,7 @@ const uint8_t tile_collision[] = {
 Modifier mod_data(const char* name, const char* title, const char* group) {
     Modifier m = {0};
     m.type = MOD_TYPE_DATA;
+    for (int i = 0; i < 31 && "dados"[i]; i++) m.mod_name[i] = "dados"[i];
     if (name)  for (int i = 0; i < 31 && name[i];  i++) m.as.data.name[i] = name[i];
     if (title) for (int i = 0; i < 31 && title[i]; i++) m.as.data.title[i] = title[i];
     if (group) for (int i = 0; i < 31 && group[i]; i++) m.as.data.group[i] = group[i];
@@ -24,52 +25,65 @@ Modifier mod_data(const char* name, const char* title, const char* group) {
 Modifier mod_skin(const char* filename) {
     Modifier m = {0};
     m.type = MOD_TYPE_SKIN;
+    for (int i = 0; i < 31 && "skin"[i]; i++) m.mod_name[i] = "skin"[i];
     if (filename) for (int i = 0; i < 63 && filename[i]; i++) m.as.skin.filename[i] = filename[i];
     return m;
 }
 
-Modifier mod_movement(MovementType type) {
+Modifier mod_movement(const char* mod_name, MovementType type) {
     Modifier m = {0};
     m.type = MOD_TYPE_MOVEMENT;
+    const char* tag = mod_name ? mod_name : "movimento";
+    for (int i = 0; i < 31 && tag[i]; i++) m.mod_name[i] = tag[i];
     m.as.movement.movement = type;
     return m;
 }
 
-Modifier mod_diet(DietType diet) {
+Modifier mod_diet(const char* mod_name, DietType diet) {
     Modifier m = {0};
     m.type = MOD_TYPE_DIET;
+    const char* tag = mod_name ? mod_name : "dieta";
+    for (int i = 0; i < 31 && tag[i]; i++) m.mod_name[i] = tag[i];
     m.as.diet.diet = diet;
     return m;
 }
 
-Modifier mod_repro(ReproType repro) {
+Modifier mod_repro(const char* mod_name, ReproType repro) {
     Modifier m = {0};
     m.type = MOD_TYPE_REPRODUCTION;
+    const char* tag = mod_name ? mod_name : "reproducao";
+    for (int i = 0; i < 31 && tag[i]; i++) m.mod_name[i] = tag[i];
     m.as.repro.repro = repro;
     return m;
 }
 
-Modifier mod_stats(float hp, float hunger, float thirst) {
+Modifier mod_stats(const char* mod_name, float hp, float hunger, float thirst) {
     Modifier m = {0};
     m.type = MOD_TYPE_STATS;
+    const char* tag = mod_name ? mod_name : "status";
+    for (int i = 0; i < 31 && tag[i]; i++) m.mod_name[i] = tag[i];
     m.as.stats.max_hp = hp;
     m.as.stats.max_hunger = hunger;
     m.as.stats.max_thirst = thirst;
     return m;
 }
 
-Modifier mod_combat(float atk, float def, float aggro) {
+Modifier mod_combat(const char* mod_name, float atk, float def, float aggro) {
     Modifier m = {0};
     m.type = MOD_TYPE_COMBAT;
+    const char* tag = mod_name ? mod_name : "combate";
+    for (int i = 0; i < 31 && tag[i]; i++) m.mod_name[i] = tag[i];
     m.as.combat.attack = atk;
     m.as.combat.defense = def;
     m.as.combat.aggro_range = aggro;
     return m;
 }
 
-Modifier mod_personality(int bravery, int gluttony, int sociability, int curiosity) {
+Modifier mod_personality(const char* mod_name, int bravery, int gluttony, int sociability, int curiosity) {
     Modifier m = {0};
     m.type = MOD_TYPE_PERSONALITY;
+    const char* tag = mod_name ? mod_name : "personalidade";
+    for (int i = 0; i < 31 && tag[i]; i++) m.mod_name[i] = tag[i];
     m.as.personality.bravery = bravery;
     m.as.personality.gluttony = gluttony;
     m.as.personality.sociability = sociability;
@@ -77,9 +91,11 @@ Modifier mod_personality(int bravery, int gluttony, int sociability, int curiosi
     return m;
 }
 
-Modifier mod_loot(const ItemSpec* spec, int min_c, int max_c, float chance) {
+Modifier mod_loot(const char* mod_name, const ItemSpec* spec, int min_c, int max_c, float chance) {
     Modifier m = {0};
     m.type = MOD_TYPE_LOOT;
+    const char* tag = mod_name ? mod_name : "loot";
+    for (int i = 0; i < 31 && tag[i]; i++) m.mod_name[i] = tag[i];
     if (spec) m.as.loot.spec = *spec;
     m.as.loot.min_count = min_c;
     m.as.loot.max_count = max_c;
@@ -96,6 +112,10 @@ void apply_entity_modifiers(Entity* e, const Modifier* modifiers, int count) {
 
     for (int i = 0; i < count; i++) {
         const Modifier* m = &modifiers[i];
+        if (e->active_modifier_count < 12) {
+            e->active_modifiers[e->active_modifier_count++] = *m;
+        }
+
         switch (m->type) {
             case MOD_TYPE_DATA:
                 for (int k = 0; k < 31; k++) e->name[k] = m->as.data.name[k];
@@ -183,14 +203,19 @@ const char* get_item_skin_filename(const ItemSpec* spec) {
     return "";
 }
 
-static bool item_specs_equal(const ItemSpec* a, const ItemSpec* b) {
+static bool strings_equal(const char* a, const char* b) {
     if (!a || !b) return false;
     int i = 0;
-    while (a->item_id[i] && b->item_id[i]) {
-        if (a->item_id[i] != b->item_id[i]) return false;
+    while (a[i] && b[i]) {
+        if (a[i] != b[i]) return false;
         i++;
     }
-    return a->item_id[i] == b->item_id[i];
+    return a[i] == b[i];
+}
+
+static bool item_specs_equal(const ItemSpec* a, const ItemSpec* b) {
+    if (!a || !b) return false;
+    return strings_equal(a->item_id, b->item_id);
 }
 
 bool entity_add_item_spec(Entity* e, const ItemSpec* spec, int count) {
@@ -261,6 +286,16 @@ bool entity_consume_water_spec(Entity* e) {
     return false;
 }
 
+bool is_tile_occupied_by_item(int x, int y) {
+    if (x < 0 || x >= MAP_WIDTH || y < 0 || y >= MAP_HEIGHT) return true;
+    for (int i = 0; i < MAX_DROPPED_ITEMS; i++) {
+        if (world.items[i].active && world.items[i].x == x && world.items[i].y == y) {
+            return true;
+        }
+    }
+    return false;
+}
+
 void spawn_dropped_item_spec(int x, int y, const ItemSpec* spec, int count) {
     if (!spec || count <= 0) return;
     for (int i = 0; i < MAX_DROPPED_ITEMS; i++) {
@@ -275,20 +310,62 @@ void spawn_dropped_item_spec(int x, int y, const ItemSpec* spec, int count) {
     }
 }
 
-void trigger_entity_loot_drop(Entity* e) {
-    for (int i = 0; i < 6; i++) {
-        if (e->inventory[i].spec.item_id[0] != '\0') {
-            spawn_dropped_item_spec(e->x, e->y, &e->inventory[i].spec, e->inventory[i].count);
-            e->inventory[i].spec.item_id[0] = '\0';
+void spawn_dropped_item_scatter(int origin_x, int origin_y, const ItemSpec* spec, int count) {
+    if (!spec || count <= 0) return;
+
+    int target_x = origin_x;
+    int target_y = origin_y;
+    bool found_tile = false;
+
+    for (int r = 0; r <= 8 && !found_tile; r++) {
+        if (r == 0) {
+            if (!is_tile_occupied_by_item(origin_x, origin_y) && is_tile_walkable_for(origin_x, origin_y, MOVE_WALK)) {
+                target_x = origin_x;
+                target_y = origin_y;
+                found_tile = true;
+            }
+        } else {
+            for (int dy = -r; dy <= r && !found_tile; dy++) {
+                for (int dx = -r; dx <= r && !found_tile; dx++) {
+                    if (dx*dx + dy*dy <= r*r && (dx*dx + dy*dy) > (r-1)*(r-1)) {
+                        int tx = origin_x + dx;
+                        int ty = origin_y + dy;
+                        if (!is_tile_occupied_by_item(tx, ty) && is_tile_walkable_for(tx, ty, MOVE_WALK)) {
+                            target_x = tx;
+                            target_y = ty;
+                            found_tile = true;
+                        }
+                    }
+                }
+            }
         }
     }
+
+    if (!found_tile) {
+        target_x = origin_x;
+        target_y = origin_y;
+    }
+
+    spawn_dropped_item_spec(target_x, target_y, spec, count);
+}
+
+void trigger_entity_loot_drop(Entity* e) {
+    // Drop 100% of all items in inventory scattered in all directions (no 2 items on same tile!)
+    for (int i = 0; i < 6; i++) {
+        if (e->inventory[i].spec.item_id[0] != '\0' && e->inventory[i].count > 0) {
+            spawn_dropped_item_scatter(e->x, e->y, &e->inventory[i].spec, e->inventory[i].count);
+            e->inventory[i].spec.item_id[0] = '\0';
+            e->inventory[i].count = 0;
+        }
+    }
+    // Drop extra loot from entity's loot table scattered outwards
     for (int d = 0; d < e->loot_count; d++) {
         LootDrop* lt = &e->loot_table[d];
         if (lt->spec.item_id[0] != '\0') {
             float roll = (float)random_int(0, 100) / 100.0f;
             if (roll <= lt->chance) {
                 int amount = random_int(lt->min_count, lt->max_count);
-                spawn_dropped_item_spec(e->x, e->y, &lt->spec, amount);
+                spawn_dropped_item_scatter(e->x, e->y, &lt->spec, amount);
             }
         }
     }
@@ -433,14 +510,66 @@ int find_path_for(int sx, int sy, int gx, int gy, MovementType movement, GridPos
 // LAYER 1: BASE CAPABILITIES & SENSORS API
 // ---------------------------------------------------------------------------
 
-static bool strings_equal(const char* a, const char* b) {
-    if (!a || !b) return false;
-    int i = 0;
-    while (a[i] && b[i]) {
-        if (a[i] != b[i]) return false;
-        i++;
+bool brain_perceive_item_by_modifier_name(Entity* self, const char* target_mod_name, int* out_x, int* out_y) {
+    if (!target_mod_name || target_mod_name[0] == '\0') return false;
+    float min_dist = 999999.0f;
+    int best_x = -1, best_y = -1;
+
+    for (int i = 0; i < MAX_DROPPED_ITEMS; i++) {
+        if (!world.items[i].active) continue;
+        const ItemSpec* spec = &world.items[i].spec;
+        bool has_mod = false;
+
+        for (int m = 0; m < spec->modifier_count; m++) {
+            if (strings_equal(spec->modifiers[m].mod_name, target_mod_name)) {
+                has_mod = true;
+                break;
+            }
+        }
+
+        if (has_mod) {
+            float d = (float)((world.items[i].x - self->x)*(world.items[i].x - self->x) + (world.items[i].y - self->y)*(world.items[i].y - self->y));
+            if (d < min_dist) {
+                min_dist = d;
+                best_x = world.items[i].x;
+                best_y = world.items[i].y;
+            }
+        }
     }
-    return a[i] == b[i];
+    if (best_x != -1) {
+        if (out_x) *out_x = best_x;
+        if (out_y) *out_y = best_y;
+        return true;
+    }
+    return false;
+}
+
+Entity* brain_perceive_creature_by_modifier_name(Entity* self, const char* target_mod_name) {
+    if (!target_mod_name || target_mod_name[0] == '\0') return NULL;
+    float min_dist = 999999.0f;
+    Entity* best = NULL;
+
+    for (int i = 0; i < MAX_ENTITIES; i++) {
+        Entity* other = &world.entities[i];
+        if (!other->active || other->id == self->id) continue;
+
+        bool has_mod = false;
+        for (int m = 0; m < other->active_modifier_count; m++) {
+            if (strings_equal(other->active_modifiers[m].mod_name, target_mod_name)) {
+                has_mod = true;
+                break;
+            }
+        }
+
+        if (has_mod) {
+            float d = (float)((other->x - self->x)*(other->x - self->x) + (other->y - self->y)*(other->y - self->y));
+            if (d < min_dist) {
+                min_dist = d;
+                best = other;
+            }
+        }
+    }
+    return best;
 }
 
 Entity* brain_perceive_closest_threat(Entity* self) {
@@ -507,36 +636,7 @@ Entity* brain_perceive_closest_mate(Entity* self) {
 
 bool brain_perceive_food(Entity* self, int* out_x, int* out_y) {
     if (self->diet == DIET_NONE || self->diet == DIET_PHOTOSYNTHESIS) return false;
-    float min_dist = 999999.0f;
-    int best_x = -1, best_y = -1;
-    
-    for (int i = 0; i < MAX_DROPPED_ITEMS; i++) {
-        if (!world.items[i].active) continue;
-        const ItemSpec* spec = &world.items[i].spec;
-        bool is_edible = false;
-
-        for (int m = 0; m < spec->modifier_count; m++) {
-            if (spec->modifiers[m].type == ITEM_MOD_CONSUMABLE && spec->modifiers[m].as.consumable.restore_hunger > 0.0f) {
-                is_edible = true;
-                break;
-            }
-        }
-
-        if (is_edible) {
-            float d = (float)((world.items[i].x - self->x)*(world.items[i].x - self->x) + (world.items[i].y - self->y)*(world.items[i].y - self->y));
-            if (d < min_dist) {
-                min_dist = d;
-                best_x = world.items[i].x;
-                best_y = world.items[i].y;
-            }
-        }
-    }
-    if (best_x != -1) {
-        *out_x = best_x;
-        *out_y = best_y;
-        return true;
-    }
-    return false;
+    return brain_perceive_item_by_modifier_name(self, "comida", out_x, out_y);
 }
 
 bool brain_perceive_water(Entity* self, int* out_x, int* out_y) {
@@ -736,12 +836,12 @@ void entity_brain_think(Entity* self) {
                     for (int s = 0; s < 31 && self->species_title[s]; s++) baby_spec.species_name[s] = self->species_title[s];
                     baby_spec.modifiers[0] = mod_data(self->name, self->species_title, self->group_tag);
                     baby_spec.modifiers[1] = mod_skin(self->skin_filename);
-                    baby_spec.modifiers[2] = mod_movement(self->movement);
-                    baby_spec.modifiers[3] = mod_diet(self->diet);
-                    baby_spec.modifiers[4] = mod_repro(self->repro);
-                    baby_spec.modifiers[5] = mod_stats(self->max_health, self->max_hunger, self->max_thirst);
-                    baby_spec.modifiers[6] = mod_combat(self->attack_power, self->defense, self->aggro_range);
-                    baby_spec.modifiers[7] = mod_personality(self->brain.bravery, self->brain.gluttony, self->brain.sociability, self->brain.curiosity);
+                    baby_spec.modifiers[2] = mod_movement("movimento", self->movement);
+                    baby_spec.modifiers[3] = mod_diet("dieta", self->diet);
+                    baby_spec.modifiers[4] = mod_repro("reproducao", self->repro);
+                    baby_spec.modifiers[5] = mod_stats("status", self->max_health, self->max_hunger, self->max_thirst);
+                    baby_spec.modifiers[6] = mod_combat("combate", self->attack_power, self->defense, self->aggro_range);
+                    baby_spec.modifiers[7] = mod_personality("personalidade", self->brain.bravery, self->brain.gluttony, self->brain.sociability, self->brain.curiosity);
                     baby_spec.modifier_count = 8;
                     spawn_entity_from_spec(&baby_spec, nx, ny);
                     break;
@@ -863,13 +963,13 @@ static void ca_smooth(int iterations) {
 void gen_map_custom(const MapGenConfig* config) {
     MapGenConfig cfg = {
         .seed = 12345,
-        .noise_scale = 0.07f,
+        .noise_scale = 0.05f,
         .octaves = 4,
-        .num_islands = 4,
-        .min_island_radius = 12.0f,
-        .max_island_radius = 28.0f,
+        .num_islands = 6,
+        .min_island_radius = 90.0f,
+        .max_island_radius = 170.0f,
         .water_threshold = 0.35f,
-        .mountain_threshold = 0.60f,
+        .mountain_threshold = 0.70f,
         .ca_smooth_iterations = 3
     };
     if (config) cfg = *config;
@@ -884,7 +984,6 @@ void gen_map_custom(const MapGenConfig* config) {
     typedef struct { float cx, cy, radius; } IslandSeed;
     IslandSeed islands[MAX_ISLAND_CENTROIDS];
 
-    // Island #0 is guaranteed at the center of the 512x512 map
     islands[0].cx = (float)(MAP_WIDTH / 2);
     islands[0].cy = (float)(MAP_HEIGHT / 2);
     islands[0].radius = cfg.max_island_radius;
@@ -978,7 +1077,6 @@ void update_entity_simulation(Entity* e, float dt) {
         if (e->fatigue < 0.0f) e->fatigue = 0.0f;
     }
 
-    // Mitosis Split & Spore Reproduction Execution
     if (e->health > e->max_health * 0.8f && e->hunger > e->max_hunger * 0.7f && e->repro_timer > 40.0f) {
         int dx[] = {0, 0, -1, 1};
         int dy[] = {-1, 1, 0, 0};
@@ -992,12 +1090,12 @@ void update_entity_simulation(Entity* e, float dt) {
                     for (int s = 0; s < 31 && e->species_title[s]; s++) clone_spec.species_name[s] = e->species_title[s];
                     clone_spec.modifiers[0] = mod_data(e->name, e->species_title, e->group_tag);
                     clone_spec.modifiers[1] = mod_skin(e->skin_filename);
-                    clone_spec.modifiers[2] = mod_movement(e->movement);
-                    clone_spec.modifiers[3] = mod_diet(e->diet);
-                    clone_spec.modifiers[4] = mod_repro(e->repro);
-                    clone_spec.modifiers[5] = mod_stats(e->max_health, e->max_hunger, e->max_thirst);
-                    clone_spec.modifiers[6] = mod_combat(e->attack_power, e->defense, e->aggro_range);
-                    clone_spec.modifiers[7] = mod_personality(e->brain.bravery, e->brain.gluttony, e->brain.sociability, e->brain.curiosity);
+                    clone_spec.modifiers[2] = mod_movement("movimento", e->movement);
+                    clone_spec.modifiers[3] = mod_diet("dieta", e->diet);
+                    clone_spec.modifiers[4] = mod_repro("reproducao", e->repro);
+                    clone_spec.modifiers[5] = mod_stats("status", e->max_health, e->max_hunger, e->max_thirst);
+                    clone_spec.modifiers[6] = mod_combat("combate", e->attack_power, e->defense, e->aggro_range);
+                    clone_spec.modifiers[7] = mod_personality("personalidade", e->brain.bravery, e->brain.gluttony, e->brain.sociability, e->brain.curiosity);
                     clone_spec.modifier_count = 8;
                     spawn_entity_from_spec(&clone_spec, nx, ny);
                     break;
