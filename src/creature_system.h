@@ -12,38 +12,69 @@
 #define MAX_PATH_NODES 64
 
 // ---------------------------------------------------------------------------
-// Item Definitions
+// Item Modifiers & Item Specifications (Data-Driven Items)
 // ---------------------------------------------------------------------------
 
 typedef enum {
-    ITEM_NONE = 0,
-    ITEM_BREAD,
-    ITEM_FRUIT,
-    ITEM_JUG_WATER,
-    ITEM_HERB,
-    ITEM_STEAK,
-    ITEM_TYPE_COUNT
-} ItemType;
+    ITEM_MOD_DATA = 0,      // Name, Description
+    ITEM_MOD_SKIN,          // Texture Asset Filename
+    ITEM_MOD_CONSUMABLE,    // Restore Hunger, Thirst, Health, Fatigue
+    ITEM_MOD_EQUIPMENT,     // Bonus Attack, Bonus Defense
+    ITEM_MOD_STACK          // Max Stack Count
+} ItemModifierType;
 
 typedef struct {
-    ItemType type;
+    ItemModifierType type;
+    union {
+        struct { char name[32]; char description[48]; } data;
+        struct { char filename[64]; } skin;
+        struct { float restore_hunger; float restore_thirst; float restore_health; float restore_fatigue; } consumable;
+        struct { float bonus_attack; float bonus_defense; } equipment;
+        struct { int max_stack; } stack;
+    } as;
+} ItemModifier;
+
+typedef struct {
+    char item_id[32];
+    ItemModifier modifiers[8];
+    int modifier_count;
+} ItemSpec;
+
+typedef struct {
+    ItemSpec spec;
     int count;
 } ItemStack;
 
 typedef struct {
     int x;
     int y;
-    ItemType type;
+    ItemSpec spec;
     int count;
     bool active;
 } DroppedItem;
 
 typedef struct {
-    ItemType type;
+    ItemSpec spec;
     int min_count;
     int max_count;
     float chance;
 } LootDrop;
+
+// ---------------------------------------------------------------------------
+// Configurable Terrain Generator Definitions
+// ---------------------------------------------------------------------------
+
+typedef struct {
+    uint32_t seed;
+    float noise_scale;
+    int octaves;
+    int num_islands;
+    float min_island_radius;
+    float max_island_radius;
+    float water_threshold;
+    float mountain_threshold;
+    int ca_smooth_iterations;
+} MapGenConfig;
 
 // ---------------------------------------------------------------------------
 // Biological & Trait Enums
@@ -101,7 +132,7 @@ typedef enum {
     MOD_TYPE_STATS,         // Max HP, Max Hunger, Max Thirst
     MOD_TYPE_COMBAT,        // Attack Power, Defense, Aggro Range
     MOD_TYPE_PERSONALITY,   // Bravery, Gluttony, Sociability, Curiosity
-    MOD_TYPE_LOOT           // Item Type, Min, Max, Chance
+    MOD_TYPE_LOOT           // Item Spec, Min, Max, Chance
 } ModifierType;
 
 typedef struct {
@@ -216,25 +247,26 @@ Modifier mod_repro(ReproType repro);
 Modifier mod_stats(float hp, float hunger, float thirst);
 Modifier mod_combat(float atk, float def, float aggro);
 Modifier mod_personality(int bravery, int gluttony, int sociability, int curiosity);
-Modifier mod_loot(ItemType item, int min_c, int max_c, float chance);
+Modifier mod_loot(const ItemSpec* spec, int min_c, int max_c, float chance);
 
 // ---------------------------------------------------------------------------
 // Function Prototypes
 // ---------------------------------------------------------------------------
 
-void gen_map(void);
-void init_creature_system(int* out_center_x, int* out_center_y);
+void gen_map_custom(const MapGenConfig* config);
+void init_creature_system_custom(const MapGenConfig* config, int* out_center_x, int* out_center_y);
 void update_entity_simulation(Entity* e, float dt);
 Entity* spawn_entity_from_spec(const CreatureSpec* spec, int x, int y);
 void apply_entity_modifiers(Entity* e, const Modifier* modifiers, int count);
 
 // Item & Inventory Helpers
-bool entity_add_item(Entity* e, ItemType type, int count);
-bool entity_consume_food(Entity* e);
-bool entity_consume_water(Entity* e);
-void spawn_dropped_item(int x, int y, ItemType type, int count);
+bool entity_add_item_spec(Entity* e, const ItemSpec* spec, int count);
+bool entity_consume_food_spec(Entity* e);
+bool entity_consume_water_spec(Entity* e);
+void spawn_dropped_item_spec(int x, int y, const ItemSpec* spec, int count);
 void trigger_entity_loot_drop(Entity* e);
 void entity_pickup_at(Entity* e, int x, int y);
+const char* get_item_skin_filename(const ItemSpec* spec);
 
 // Pathfinding & Movement Validation
 bool is_tile_walkable_for(int x, int y, MovementType movement);

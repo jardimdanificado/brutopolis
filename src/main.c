@@ -37,7 +37,6 @@ static Image get_or_load_texture(const char* filename) {
 }
 
 static Image img_tiles[3];
-static Image img_items[ITEM_TYPE_COUNT];
 
 static Image img_emote_angry;
 static Image img_emote_excited;
@@ -120,13 +119,6 @@ static inline void format_stat_str(char* buf, int val, int max_val) {
 // ---------------------------------------------------------------------------
 
 void preload() {
-    img_items[ITEM_NONE] = (Image){0};
-    img_items[ITEM_BREAD] = load_image("Item_Bread.png");
-    img_items[ITEM_FRUIT] = load_image("Item_Fruit.png");
-    img_items[ITEM_JUG_WATER] = load_image("Item_Jug.png");
-    img_items[ITEM_HERB] = load_image("Item_Herb.png");
-    img_items[ITEM_STEAK] = load_image("Item_Steak.png");
-
     img_tiles[FLOOR] = load_image("Feature_Stone_A.png");
     img_tiles[MOUNTAIN] = load_image("Feature_Stone_C.png");
     img_tiles[WATER] = load_image("Feature_Waves.png");
@@ -292,7 +284,9 @@ void draw() {
 
         if (draw_x + tile_size > 0 && draw_x < wagner.width && 
             draw_y + tile_size > 0 && draw_y < wagner.height) {
-            draw_sprite(img_items[world.items[i].type], draw_x, draw_y, tile_size, tile_size);
+            const char* skin_name = get_item_skin_filename(&world.items[i].spec);
+            Image item_img = get_or_load_texture(skin_name);
+            draw_sprite(item_img, draw_x, draw_y, tile_size, tile_size);
         }
     }
 
@@ -402,8 +396,10 @@ void draw() {
             int sy = 192 + (slot / 3) * 22;
             draw_box(sx, sy, 20, 20, rgb(40, 50, 60));
 
-            if (se->inventory[slot].type != ITEM_NONE) {
-                draw_sprite(img_items[se->inventory[slot].type], sx + 2, sy + 2, 16, 16);
+            if (se->inventory[slot].spec.item_id[0] != '\0') {
+                const char* skin_name = get_item_skin_filename(&se->inventory[slot].spec);
+                Image item_img = get_or_load_texture(skin_name);
+                draw_sprite(item_img, sx + 2, sy + 2, 16, 16);
                 char num[4];
                 num[0] = '0' + (se->inventory[slot].count % 10);
                 num[1] = '\0';

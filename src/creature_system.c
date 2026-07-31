@@ -77,10 +77,10 @@ Modifier mod_personality(int bravery, int gluttony, int sociability, int curiosi
     return m;
 }
 
-Modifier mod_loot(ItemType item, int min_c, int max_c, float chance) {
+Modifier mod_loot(const ItemSpec* spec, int min_c, int max_c, float chance) {
     Modifier m = {0};
     m.type = MOD_TYPE_LOOT;
-    m.as.loot.type = item;
+    if (spec) m.as.loot.spec = *spec;
     m.as.loot.min_count = min_c;
     m.as.loot.max_count = max_c;
     m.as.loot.chance = chance;
@@ -170,20 +170,40 @@ Entity* spawn_entity_from_spec(const CreatureSpec* spec, int x, int y) {
 }
 
 // ---------------------------------------------------------------------------
-// Item & Inventory Helpers
+// Item & Data-Driven Inventory Helpers
 // ---------------------------------------------------------------------------
 
-bool entity_add_item(Entity* e, ItemType type, int count) {
-    if (type == ITEM_NONE || count <= 0) return false;
+const char* get_item_skin_filename(const ItemSpec* spec) {
+    if (!spec) return "";
+    for (int i = 0; i < spec->modifier_count; i++) {
+        if (spec->modifiers[i].type == ITEM_MOD_SKIN) {
+            return spec->modifiers[i].as.skin.filename;
+        }
+    }
+    return "";
+}
+
+static bool item_specs_equal(const ItemSpec* a, const ItemSpec* b) {
+    if (!a || !b) return false;
+    int i = 0;
+    while (a->item_id[i] && b->item_id[i]) {
+        if (a->item_id[i] != b->item_id[i]) return false;
+        i++;
+    }
+    return a->item_id[i] == b->item_id[i];
+}
+
+bool entity_add_item_spec(Entity* e, const ItemSpec* spec, int count) {
+    if (!spec || count <= 0) return false;
     for (int i = 0; i < 6; i++) {
-        if (e->inventory[i].type == type) {
+        if (e->inventory[i].spec.item_id[0] != '\0' && item_specs_equal(&e->inventory[i].spec, spec)) {
             e->inventory[i].count += count;
             return true;
         }
     }
     for (int i = 0; i < 6; i++) {
-        if (e->inventory[i].type == ITEM_NONE) {
-            e->inventory[i].type = type;
+        if (e->inventory[i].spec.item_id[0] == '\0') {
+            e->inventory[i].spec = *spec;
             e->inventory[i].count = count;
             return true;
         }
@@ -191,49 +211,63 @@ bool entity_add_item(Entity* e, ItemType type, int count) {
     return false;
 }
 
-bool entity_consume_food(Entity* e) {
+bool entity_consume_food_spec(Entity* e) {
     if (e->diet == DIET_NONE || e->diet == DIET_PHOTOSYNTHESIS) return true;
 
     for (int i = 0; i < 6; i++) {
-        ItemType t = e->inventory[i].type;
-        bool valid_diet_item = false;
-        if (e->diet == DIET_HERBIVORE && (t == ITEM_BREAD || t == ITEM_FRUIT || t == ITEM_HERB)) valid_diet_item = true;
-        else if (e->diet == DIET_CARNIVORE && t == ITEM_STEAK) valid_diet_item = true;
-        else if (e->diet == DIET_OMNIVORE && (t == ITEM_BREAD || t == ITEM_FRUIT || t == ITEM_STEAK || t == ITEM_HERB)) valid_diet_item = true;
+        if (e->inventory[i].spec.item_id[0] == '\0') continue;
+        const ItemSpec* spec = &e->inventory[i].spec;
 
-        if (valid_diet_item) {
-            e->inventory[i].count--;
-            if (e->inventory[i].count <= 0) e->inventory[i].type = ITEM_NONE;
-            
-            e->hunger += 45.0f;
-            if (e->hunger > e->max_hunger) e->hunger = e->max_hunger;
-            return true;
+        for (int m = 0; m < spec->modifier_count; m++) {
+            if (spec->modifiers[m].type == ITEM_MOD_CONSUMABLE) {
+                float r_hunger = spec->modifiers[m].as.consumable.restore_hunger;
+                float r_health = spec->modifiers[m].as.consumable.restore_health;
+
+                if (r_hunger > 0.0f || r_health > 0.0f) {
+                    e->hunger += r_hunger;
+                    if (e->hunger > e->max_hunger) e->hunger = e->max_hunger;
+                    e->health += r_health;
+                    if (e->health > e->max_health) e->health = e->max_health;
+
+                    e->inventory[i].count--;
+                    if (e->inventory[i].count <= 0) e->inventory[i].spec.item_id[0] = '\0';
+                    return true;
+                }
+            }
         }
     }
     return false;
 }
 
-bool entity_consume_water(Entity* e) {
+bool entity_consume_water_spec(Entity* e) {
     for (int i = 0; i < 6; i++) {
-        if (e->inventory[i].type == ITEM_JUG_WATER) {
-            e->inventory[i].count--;
-            if (e->inventory[i].count <= 0) e->inventory[i].type = ITEM_NONE;
-            
-            e->thirst += 55.0f;
-            if (e->thirst > e->max_thirst) e->thirst = e->max_thirst;
-            return true;
+        if (e->inventory[i].spec.item_id[0] == '\0') continue;
+        const ItemSpec* spec = &e->inventory[i].spec;
+
+        for (int m = 0; m < spec->modifier_count; m++) {
+            if (spec->modifiers[m].type == ITEM_MOD_CONSUMABLE) {
+                float r_thirst = spec->modifiers[m].as.consumable.restore_thirst;
+                if (r_thirst > 0.0f) {
+                    e->thirst += r_thirst;
+                    if (e->thirst > e->max_thirst) e->thirst = e->max_thirst;
+
+                    e->inventory[i].count--;
+                    if (e->inventory[i].count <= 0) e->inventory[i].spec.item_id[0] = '\0';
+                    return true;
+                }
+            }
         }
     }
     return false;
 }
 
-void spawn_dropped_item(int x, int y, ItemType type, int count) {
-    if (type == ITEM_NONE || count <= 0) return;
+void spawn_dropped_item_spec(int x, int y, const ItemSpec* spec, int count) {
+    if (!spec || count <= 0) return;
     for (int i = 0; i < MAX_DROPPED_ITEMS; i++) {
         if (!world.items[i].active) {
             world.items[i].x = x;
             world.items[i].y = y;
-            world.items[i].type = type;
+            world.items[i].spec = *spec;
             world.items[i].count = count;
             world.items[i].active = true;
             break;
@@ -243,18 +277,18 @@ void spawn_dropped_item(int x, int y, ItemType type, int count) {
 
 void trigger_entity_loot_drop(Entity* e) {
     for (int i = 0; i < 6; i++) {
-        if (e->inventory[i].type != ITEM_NONE) {
-            spawn_dropped_item(e->x, e->y, e->inventory[i].type, e->inventory[i].count);
-            e->inventory[i].type = ITEM_NONE;
+        if (e->inventory[i].spec.item_id[0] != '\0') {
+            spawn_dropped_item_spec(e->x, e->y, &e->inventory[i].spec, e->inventory[i].count);
+            e->inventory[i].spec.item_id[0] = '\0';
         }
     }
     for (int d = 0; d < e->loot_count; d++) {
         LootDrop* lt = &e->loot_table[d];
-        if (lt->type != ITEM_NONE) {
+        if (lt->spec.item_id[0] != '\0') {
             float roll = (float)random_int(0, 100) / 100.0f;
             if (roll <= lt->chance) {
                 int amount = random_int(lt->min_count, lt->max_count);
-                spawn_dropped_item(e->x, e->y, lt->type, amount);
+                spawn_dropped_item_spec(e->x, e->y, &lt->spec, amount);
             }
         }
     }
@@ -263,7 +297,7 @@ void trigger_entity_loot_drop(Entity* e) {
 void entity_pickup_at(Entity* e, int x, int y) {
     for (int i = 0; i < MAX_DROPPED_ITEMS; i++) {
         if (world.items[i].active && world.items[i].x == x && world.items[i].y == y) {
-            if (entity_add_item(e, world.items[i].type, world.items[i].count)) {
+            if (entity_add_item_spec(e, &world.items[i].spec, world.items[i].count)) {
                 world.items[i].active = false;
             }
         }
@@ -478,13 +512,17 @@ bool brain_perceive_food(Entity* self, int* out_x, int* out_y) {
     
     for (int i = 0; i < MAX_DROPPED_ITEMS; i++) {
         if (!world.items[i].active) continue;
-        ItemType t = world.items[i].type;
-        bool valid_diet = false;
-        if (self->diet == DIET_HERBIVORE && (t == ITEM_BREAD || t == ITEM_FRUIT || t == ITEM_HERB)) valid_diet = true;
-        else if (self->diet == DIET_CARNIVORE && t == ITEM_STEAK) valid_diet = true;
-        else if (self->diet == DIET_OMNIVORE && (t == ITEM_BREAD || t == ITEM_FRUIT || t == ITEM_STEAK || t == ITEM_HERB)) valid_diet = true;
+        const ItemSpec* spec = &world.items[i].spec;
+        bool is_edible = false;
 
-        if (valid_diet) {
+        for (int m = 0; m < spec->modifier_count; m++) {
+            if (spec->modifiers[m].type == ITEM_MOD_CONSUMABLE && spec->modifiers[m].as.consumable.restore_hunger > 0.0f) {
+                is_edible = true;
+                break;
+            }
+        }
+
+        if (is_edible) {
             float d = (float)((world.items[i].x - self->x)*(world.items[i].x - self->x) + (world.items[i].y - self->y)*(world.items[i].y - self->y));
             if (d < min_dist) {
                 min_dist = d;
@@ -548,7 +586,7 @@ void brain_do_move_to(Entity* self, int target_x, int target_y) {
 
 void brain_do_eat(Entity* self) {
     self->current_motor = MOTOR_EAT;
-    if (!entity_consume_food(self)) {
+    if (!entity_consume_food_spec(self)) {
         int fx, fy;
         if (brain_perceive_food(self, &fx, &fy)) {
             brain_do_move_to(self, fx, fy);
@@ -560,7 +598,7 @@ void brain_do_eat(Entity* self) {
 
 void brain_do_drink(Entity* self) {
     self->current_motor = MOTOR_DRINK;
-    if (!entity_consume_water(self)) {
+    if (!entity_consume_water_spec(self)) {
         int wx, wy;
         if (brain_perceive_water(self, &wx, &wy)) {
             brain_do_move_to(self, wx, wy);
@@ -660,21 +698,18 @@ void entity_brain_think(Entity* self) {
         }
     }
 
-    // Sleep / Energy Logic (100 = Full Energy, <= 20 = Exhausted)
     if (self->fatigue <= 20.0f || (self->current_motor == MOTOR_SLEEP && self->fatigue < self->max_fatigue)) {
         for (int k = 0; k < 63 && "Dormindo..."; k++) self->brain.current_thought[k] = "Dormindo..."[k];
         brain_do_sleep(self);
         return;
     }
 
-    // Thirst / Hydration Logic (100 = Hydrated, <= 45 = Thirsty)
     if (self->thirst <= 45.0f) {
         for (int k = 0; k < 63 && "Buscando agua"; k++) self->brain.current_thought[k] = "Buscando agua"[k];
         brain_do_drink(self);
         return;
     }
 
-    // Hunger / Nutrition Logic (100 = Satiated, <= 45 = Hungry)
     if (self->diet != DIET_NONE && self->diet != DIET_PHOTOSYNTHESIS) {
         float hunger_threshold = (self->brain.gluttony > 60) ? 65.0f : 35.0f;
         if (self->hunger <= hunger_threshold) {
@@ -684,7 +719,6 @@ void entity_brain_think(Entity* self) {
         }
     }
 
-    // Sexual Reproduction Behavior
     if (mate && self->repro == REPRO_SEX && self->repro_timer > 30.0f) {
         for (int k = 0; k < 63 && "Buscando parceiro (Acasalamento)"; k++) self->brain.current_thought[k] = "Buscando parceiro (Acasalamento)"[k];
         float dist_sq = (float)((mate->x - self->x)*(mate->x - self->x) + (mate->y - self->y)*(mate->y - self->y));
@@ -736,7 +770,7 @@ void entity_brain_think(Entity* self) {
 }
 
 // ---------------------------------------------------------------------------
-// Map Generation & System Init
+// Configurable Map Generation
 // ---------------------------------------------------------------------------
 
 static uint32_t noise_seed = 12345;
@@ -826,55 +860,76 @@ static void ca_smooth(int iterations) {
     }
 }
 
-void gen_map(void) {
-    random_seed(w_unique);
+void gen_map_custom(const MapGenConfig* config) {
+    MapGenConfig cfg = {
+        .seed = 12345,
+        .noise_scale = 0.07f,
+        .octaves = 4,
+        .num_islands = 4,
+        .min_island_radius = 12.0f,
+        .max_island_radius = 28.0f,
+        .water_threshold = 0.35f,
+        .mountain_threshold = 0.60f,
+        .ca_smooth_iterations = 3
+    };
+    if (config) cfg = *config;
+
+    random_seed(cfg.seed > 0 ? cfg.seed : w_unique);
     noise_seed = (uint32_t)random(0, 0x7FFFFFFF);
 
-    #define MAX_ISLANDS 6
-    typedef struct { float cx, cy, radius; } IslandSeed;
+    #define MAX_ISLAND_CENTROIDS 16
+    int n_islands = cfg.num_islands > 0 ? cfg.num_islands : 4;
+    if (n_islands > MAX_ISLAND_CENTROIDS) n_islands = MAX_ISLAND_CENTROIDS;
 
-    int num_islands = 3 + random_int(0, MAX_ISLANDS - 3);
-    IslandSeed islands[MAX_ISLANDS];
-    for (int i = 0; i < num_islands; i++) {
-        float margin = 12.0f;
+    typedef struct { float cx, cy, radius; } IslandSeed;
+    IslandSeed islands[MAX_ISLAND_CENTROIDS];
+
+    // Island #0 is guaranteed at the center of the 512x512 map
+    islands[0].cx = (float)(MAP_WIDTH / 2);
+    islands[0].cy = (float)(MAP_HEIGHT / 2);
+    islands[0].radius = cfg.max_island_radius;
+
+    for (int i = 1; i < n_islands; i++) {
+        float margin = 40.0f;
         islands[i].cx     = margin + (float)random_int(0, (int)(MAP_WIDTH  - 2*margin));
         islands[i].cy     = margin + (float)random_int(0, (int)(MAP_HEIGHT - 2*margin));
-        islands[i].radius = 10.0f + (float)random_int(0, 20);
+        islands[i].radius = cfg.min_island_radius + (float)random_int(0, (int)(cfg.max_island_radius - cfg.min_island_radius + 1.0f));
     }
 
-    float noise_scale = 0.07f;
     for (int y = 0; y < MAP_HEIGHT; y++) {
         for (int x = 0; x < MAP_WIDTH; x++) {
-            float nx = x * noise_scale;
-            float ny = y * noise_scale;
-            float n = fbm(nx, ny, 4);
+            float nx = x * cfg.noise_scale;
+            float ny = y * cfg.noise_scale;
+            float n = fbm(nx, ny, cfg.octaves);
 
             float falloff = 0.0f;
-            for (int i = 0; i < num_islands; i++) {
+            for (int i = 0; i < n_islands; i++) {
                 float dx = (float)x - islands[i].cx;
                 float dy = (float)y - islands[i].cy;
                 float f  = island_falloff(dx, dy, islands[i].radius);
                 if (f > falloff) falloff = f;
             }
 
-            hmap[y][x] = n * 0.5f + falloff * 0.6f;
+            hmap[y][x] = n * falloff;
         }
     }
 
     for (int y = 0; y < MAP_HEIGHT; y++) {
         for (int x = 0; x < MAP_WIDTH; x++) {
             float h = hmap[y][x];
-            if      (h > 0.60f) world.map[y][x] = MOUNTAIN;
-            else if (h > 0.35f) world.map[y][x] = FLOOR;
-            else                world.map[y][x] = WATER;
+            if      (h > cfg.mountain_threshold) world.map[y][x] = MOUNTAIN;
+            else if (h > cfg.water_threshold)    world.map[y][x] = FLOOR;
+            else                                 world.map[y][x] = WATER;
         }
     }
 
-    ca_smooth(3);
+    if (cfg.ca_smooth_iterations > 0) {
+        ca_smooth(cfg.ca_smooth_iterations);
+    }
 }
 
-void init_creature_system(int* out_center_x, int* out_center_y) {
-    gen_map();
+void init_creature_system_custom(const MapGenConfig* config, int* out_center_x, int* out_center_y) {
+    gen_map_custom(config);
 
     int center_x = MAP_WIDTH / 2;
     int center_y = MAP_HEIGHT / 2;
@@ -904,7 +959,6 @@ void update_entity_simulation(Entity* e, float dt) {
 
     e->repro_timer += dt;
 
-    // Photosynthesis & Hunger Decay (100 = Full/Good, 0 = Empty/Bad)
     if (e->diet == DIET_PHOTOSYNTHESIS) {
         e->hunger += 2.0f * dt;
         if (e->hunger > e->max_hunger) e->hunger = e->max_hunger;
@@ -913,11 +967,9 @@ void update_entity_simulation(Entity* e, float dt) {
         if (e->hunger < 0.0f) e->hunger = 0.0f;
     }
 
-    // Thirst Decay (100 = Hydrated/Good, 0 = Dehydrated/Bad)
     e->thirst -= 1.2f * dt;
     if (e->thirst < 0.0f) e->thirst = 0.0f;
 
-    // Energy / Fatigue (100 = Rested/Good, 0 = Exhausted/Bad)
     if (e->current_motor == MOTOR_SLEEP) {
         e->fatigue += 8.0f * dt;
         if (e->fatigue >= e->max_fatigue) e->fatigue = e->max_fatigue;
@@ -949,16 +1001,11 @@ void update_entity_simulation(Entity* e, float dt) {
                     clone_spec.modifier_count = 8;
                     spawn_entity_from_spec(&clone_spec, nx, ny);
                     break;
-                } else if (e->repro == REPRO_SPORE_SEED) {
-                    e->repro_timer = 0.0f;
-                    spawn_dropped_item(nx, ny, ITEM_FRUIT, 2);
-                    break;
                 }
             }
         }
     }
 
-    // Damage on Starvation / Dehydration / Exhaustion
     if (e->hunger <= 10.0f || e->thirst <= 10.0f || e->fatigue <= 5.0f) {
         e->health -= 2.0f * dt;
     } else if (e->hunger > 70.0f && e->thirst > 70.0f && e->fatigue > 70.0f && e->health < e->max_health) {
