@@ -2,7 +2,7 @@
     "name": "brutopolis",
     "width": 320,
     "height": 240,
-    "scale": 2,
+    "scale": 1,
     "color": "RGB332",
     "src": [
         "src/main.c"
