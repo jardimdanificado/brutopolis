@@ -5,7 +5,7 @@
 // ---------------------------------------------------------------------------
 
 const MapGenConfig MAP_PRESET_ARCHIPELAGO = {
-    .seed = 12345,
+    .seed = 0,
     .noise_scale = 0.05f,
     .octaves = 4,
     .num_islands = 6,
@@ -17,7 +17,7 @@ const MapGenConfig MAP_PRESET_ARCHIPELAGO = {
 };
 
 const MapGenConfig MAP_PRESET_CONTINENT = {
-    .seed = 9999,
+    .seed = 0,
     .noise_scale = 0.035f,
     .octaves = 5,
     .num_islands = 3,
@@ -29,7 +29,7 @@ const MapGenConfig MAP_PRESET_CONTINENT = {
 };
 
 const MapGenConfig MAP_PRESET_HIGHLANDS = {
-    .seed = 5555,
+    .seed = 0,
     .noise_scale = 0.06f,
     .octaves = 4,
     .num_islands = 4,
@@ -122,7 +122,7 @@ const ItemSpec ITEM_SEED_SPEC = {
 
 void setup_game_species_and_world(int* out_center_x, int* out_center_y) {
     int cx, cy;
-    init_creature_system_custom(&MAP_PRESET_CONTINENT, &cx, &cy);
+    init_creature_system_custom(&MAP_PRESET_ARCHIPELAGO, &cx, &cy);
     if (out_center_x) *out_center_x = cx;
     if (out_center_y) *out_center_y = cy;
 

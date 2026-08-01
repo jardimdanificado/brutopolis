@@ -1516,7 +1516,7 @@ static void ca_smooth(int iterations) {
 
 void gen_map_custom(const MapGenConfig* config) {
     MapGenConfig cfg = {
-        .seed = 12345,
+        .seed = 0,
         .noise_scale = 0.05f,
         .octaves = 4,
         .num_islands = 6,
