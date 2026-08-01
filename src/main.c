@@ -63,14 +63,9 @@ static int last_mx = 0;
 static int last_my = 0;
 
 static int selected_entity_idx = -1;
-
-typedef enum {
-    CAM_MODE_FREECAM = 0,
-    CAM_MODE_PAUSED = 1,
-    CAM_MODE_FOLLOWING = 2
-} CameraMode;
-
-static CameraMode cam_mode = CAM_MODE_FREECAM;
+static bool is_paused = false;
+static int target_tps = 60;
+static float sim_accumulator = 0.0f;
 
 // ---------------------------------------------------------------------------
 // Drawing & Formatting Helpers
@@ -89,7 +84,7 @@ static inline void draw_sprite(Image image, int x, int y, int sx, int sy) {
 static inline void draw_text(char* _text, int x, int y, int _color, float size) {
     push();
     translate(x, y);
-    scale(size, size);
+    if (size != 0) scale(size, size);
     fill(_color);
     text(_text);
     pop();
@@ -105,25 +100,19 @@ static inline void draw_box(int x, int y, int w, int h, int color) {
 }
 
 static inline void format_stat_str(char* buf, int val, int max_val) {
-    if (val < 0) val = 0;
-    if (val > max_val) val = max_val;
     int idx = 0;
-    
     if (val >= 100) buf[idx++] = '0' + (val / 100);
     if (val >= 10)  buf[idx++] = '0' + ((val / 10) % 10);
     buf[idx++] = '0' + (val % 10);
-    
     buf[idx++] = '/';
-    
     if (max_val >= 100) buf[idx++] = '0' + (max_val / 100);
     if (max_val >= 10)  buf[idx++] = '0' + ((max_val / 10) % 10);
     buf[idx++] = '0' + (max_val % 10);
-    
     buf[idx] = '\0';
 }
 
 // ---------------------------------------------------------------------------
-// Game Preload & Setup
+// Engine Setup Initialization
 // ---------------------------------------------------------------------------
 
 void preload() {
@@ -151,12 +140,10 @@ void preload() {
 }
 
 void setup() {
-    int cx, cy;
+    int cx = 0, cy = 0;
     setup_game_species_and_world(&cx, &cy);
     cam_x = (float)cx;
     cam_y = (float)cy;
-    selected_entity_idx = -1;
-    cam_mode = CAM_MODE_FREECAM;
 }
 
 // ---------------------------------------------------------------------------
@@ -167,30 +154,70 @@ void draw() {
     float dt = wagner.delta_time;
     if (dt > 0.1f) dt = 0.1f;
 
+    // Space Key: Toggle Pause / Unpause
     static bool space_was_down = false;
-
-    // Space Key Mode Toggle (FREECAM -> PAUSED -> FOLLOWING)
     if (wagner.keys[KEY_SPACE]) {
         if (!space_was_down) {
             space_was_down = true;
-            cam_mode = (CameraMode)((cam_mode + 1) % 3);
+            is_paused = !is_paused;
         }
     } else {
         space_was_down = false;
     }
 
-    bool is_paused = (cam_mode == CAM_MODE_PAUSED);
+    // + / - Keys: Adjust Simulation Time Speed (1 to 360 TPS)
+    static bool plus_was_down = false;
+    static bool minus_was_down = false;
+    if (wagner.keys[KEY_KP_PLUS]) {
+        if (!plus_was_down) {
+            plus_was_down = true;
+            if (target_tps < 60) target_tps += 15;
+            else if (target_tps < 120) target_tps = 120;
+            else if (target_tps < 240) target_tps = 240;
+            else if (target_tps < 360) target_tps = 360;
+        }
+    } else {
+        plus_was_down = false;
+    }
+
+    if (wagner.keys[KEY_KP_MINUS]) {
+        if (!minus_was_down) {
+            minus_was_down = true;
+            if (target_tps > 240) target_tps = 240;
+            else if (target_tps > 120) target_tps = 120;
+            else if (target_tps > 60) target_tps = 60;
+            else if (target_tps > 15) target_tps -= 15;
+            else if (target_tps > 1) target_tps = 1;
+        }
+    } else {
+        minus_was_down = false;
+    }
 
     // Inverted Mouse Wheel Zoom
     int32_t wheel = _wagner_rom.state.mouse_wheel;
     if (wheel > 0) zoom /= 1.12f;
     else if (wheel < 0) zoom *= 1.12f;
 
-    // Run Engine Simulation (only when not paused)
+    // Q / E Keys: Manual Zoom In & Out
+    if (wagner.keys[KEY_Q]) zoom *= (1.0f + 1.2f * dt);
+    if (wagner.keys[KEY_E]) zoom /= (1.0f + 1.2f * dt);
+    if (zoom < 0.2f) zoom = 0.2f;
+    if (zoom > 3.0f) zoom = 3.0f;
+
+    // Run Engine Simulation (TPS Speed Stepping, capped per frame)
     if (!is_paused) {
-        for (int i = 0; i < MAX_ENTITIES; i++) {
-            update_entity_simulation(&world.entities[i], dt);
+        sim_accumulator += dt;
+        float step_dt = 1.0f / (float)target_tps;
+        int max_steps_per_frame = 30;
+        int steps = 0;
+        while (sim_accumulator >= step_dt && steps < max_steps_per_frame) {
+            sim_accumulator -= step_dt;
+            steps++;
+            for (int i = 0; i < MAX_ENTITIES; i++) {
+                update_entity_simulation(&world.entities[i], step_dt);
+            }
         }
+        if (steps >= max_steps_per_frame) sim_accumulator = 0.0f;
     }
 
     float actual_scale = zoom;
@@ -201,30 +228,41 @@ void draw() {
         actual_scale = (float)tile_size / img_tiles[FLOOR].width;
     }
 
-    if (wagner.keys[KEY_Q] || wagner.keys[KEY_KP_MINUS]) zoom /= (1.0f + 1.2f * dt);
-    if (wagner.keys[KEY_E] || wagner.keys[KEY_KP_PLUS])  zoom *= (1.0f + 1.2f * dt);
-    if (zoom < 0.2f) zoom = 0.2f;
-    if (zoom > 3.0f) zoom = 3.0f;
-
+    // Manual Camera Pan (WASD / Arrow Keys / Mouse Drag)
+    bool moved_cam_manually = false;
     float cam_speed = 15.0f * dt;
-    if (wagner.keys[KEY_W] || wagner.keys[KEY_UP])    cam_y -= cam_speed;
-    if (wagner.keys[KEY_S] || wagner.keys[KEY_DOWN])  cam_y += cam_speed;
-    if (wagner.keys[KEY_A] || wagner.keys[KEY_LEFT])  cam_x -= cam_speed;
-    if (wagner.keys[KEY_D] || wagner.keys[KEY_RIGHT]) cam_x += cam_speed;
+    if (wagner.keys[KEY_W] || wagner.keys[KEY_UP])    { cam_y -= cam_speed; moved_cam_manually = true; }
+    if (wagner.keys[KEY_S] || wagner.keys[KEY_DOWN])  { cam_y += cam_speed; moved_cam_manually = true; }
+    if (wagner.keys[KEY_A] || wagner.keys[KEY_LEFT])  { cam_x -= cam_speed; moved_cam_manually = true; }
+    if (wagner.keys[KEY_D] || wagner.keys[KEY_RIGHT]) { cam_x += cam_speed; moved_cam_manually = true; }
+
+    int mouse_dx = wagner.mouse.x - last_mx;
+    int mouse_dy = wagner.mouse.y - last_my;
 
     if (wagner.mouse_down && tile_size > 0 && wagner.mouse.y < 175) {
-        cam_x -= (float)(wagner.mouse.x - last_mx) / tile_size;
-        cam_y -= (float)(wagner.mouse.y - last_my) / tile_size;
+        if (mouse_dx != 0 || mouse_dy != 0) {
+            cam_x -= (float)mouse_dx / tile_size;
+            cam_y -= (float)mouse_dy / tile_size;
+            // Only set moved_cam_manually if actual drag distance is greater than 2px (prevents click deselect!)
+            if (mouse_dx * mouse_dx + mouse_dy * mouse_dy > 4) {
+                moved_cam_manually = true;
+            }
+        }
     }
     last_mx = wagner.mouse.x;
     last_my = wagner.mouse.y;
 
-    // FOLLOWING Mode: Force camera to follow selected creature
-    if (cam_mode == CAM_MODE_FOLLOWING) {
-        if (selected_entity_idx >= 0 && selected_entity_idx < MAX_ENTITIES && world.entities[selected_entity_idx].active) {
-            cam_x = (float)world.entities[selected_entity_idx].x;
-            cam_y = (float)world.entities[selected_entity_idx].y;
-        }
+    // Manual camera pan cancels unit selection & returns to Freecam
+    if (moved_cam_manually) {
+        selected_entity_idx = -1;
+    }
+
+    // Automatic Camera Following: Follow selected unit if valid
+    if (selected_entity_idx >= 0 && selected_entity_idx < MAX_ENTITIES && world.entities[selected_entity_idx].active) {
+        cam_x = (float)world.entities[selected_entity_idx].x;
+        cam_y = (float)world.entities[selected_entity_idx].y;
+    } else {
+        selected_entity_idx = -1;
     }
 
     // Playfield Center Camera Offset Calculation
@@ -248,9 +286,6 @@ void draw() {
                 }
             }
             selected_entity_idx = found_idx;
-            if (selected_entity_idx >= 0) {
-                cam_mode = CAM_MODE_FOLLOWING;
-            }
         }
     }
 
@@ -264,7 +299,6 @@ void draw() {
                 int next_idx = (start_from + step) % MAX_ENTITIES;
                 if (world.entities[next_idx].active) {
                     selected_entity_idx = next_idx;
-                    cam_mode = CAM_MODE_FOLLOWING;
                     cam_x = (float)world.entities[next_idx].x;
                     cam_y = (float)world.entities[next_idx].y;
                     break;
@@ -464,18 +498,22 @@ void draw() {
     clock_buf[d_idx] = '\0';
     draw_text(clock_buf, 8, 7, YELLOW, 0);
 
-    // Camera Mode Indicator Overlay
-    if (cam_mode == CAM_MODE_PAUSED) {
+    // Time Speed & Pause Status Overlay
+    if (is_paused) {
         draw_box(155, 4, 95, 14, rgb(40, 20, 20));
         draw_box(155, 4, 95, 1, RED);
         draw_text("[ PAUSED ]", 165, 7, RED, 0);
-    } else if (cam_mode == CAM_MODE_FOLLOWING) {
-        draw_box(155, 4, 115, 14, rgb(20, 40, 50));
-        draw_box(155, 4, 115, 1, CYAN);
-        draw_text("[ FOLLOWING ]", 161, 7, CYAN, 0);
     } else {
-        draw_box(155, 4, 100, 14, rgb(20, 35, 20));
-        draw_box(155, 4, 100, 1, GREEN);
-        draw_text("[ FREECAM ]", 160, 7, GREEN, 0);
+        draw_box(155, 4, 140, 14, rgb(20, 35, 20));
+        draw_box(155, 4, 140, 1, GREEN);
+        char speed_buf[32];
+        int s_idx = 0;
+        speed_buf[s_idx++] = '['; speed_buf[s_idx++] = ' '; speed_buf[s_idx++] = 'R'; speed_buf[s_idx++] = 'U'; speed_buf[s_idx++] = 'N'; speed_buf[s_idx++] = ' ';
+        speed_buf[s_idx++] = '(';
+        if (target_tps >= 10) speed_buf[s_idx++] = '0' + (target_tps / 10);
+        speed_buf[s_idx++] = '0' + (target_tps % 10);
+        speed_buf[s_idx++] = 't'; speed_buf[s_idx++] = 'p'; speed_buf[s_idx++] = 's'; speed_buf[s_idx++] = ')';
+        speed_buf[s_idx++] = ' '; speed_buf[s_idx++] = ']'; speed_buf[s_idx] = '\0';
+        draw_text(speed_buf, 161, 7, GREEN, 0);
     }
 }
