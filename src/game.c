@@ -50,9 +50,10 @@ const ItemSpec ITEM_BREAD_SPEC = {
         { .type = ITEM_MOD_DATA, .mod_name = "dados", .as.data = { "Pao Caseiro", "Pao de trigo macio e nutritivo" } },
         { .type = ITEM_MOD_SKIN, .mod_name = "skin", .as.skin = { "Item_Bread.png" } },
         { .type = ITEM_MOD_CONSUMABLE, .mod_name = "comida", .as.consumable = { .restore_hunger = 45.0f } },
-        { .type = ITEM_MOD_STACK, .mod_name = "stack", .as.stack = { .max_stack = 10 } }
+        { .type = ITEM_MOD_STACK, .mod_name = "stack", .as.stack = { .max_stack = 10 } },
+        { .type = ITEM_MOD_COLOR, .mod_name = "cor", .as.color = { .color = 0xFEF2A6, .backcolor = 0x3C280A } }
     },
-    .modifier_count = 4
+    .modifier_count = 5
 };
 
 const ItemSpec ITEM_FRUIT_SPEC = {
@@ -61,9 +62,10 @@ const ItemSpec ITEM_FRUIT_SPEC = {
         { .type = ITEM_MOD_DATA, .mod_name = "dados", .as.data = { "Fruta Suculenta", "Fruta fresca que cura e alimenta" } },
         { .type = ITEM_MOD_SKIN, .mod_name = "skin", .as.skin = { "Item_Fruit.png" } },
         { .type = ITEM_MOD_CONSUMABLE, .mod_name = "comida", .as.consumable = { .restore_hunger = 35.0f, .restore_health = 10.0f } },
-        { .type = ITEM_MOD_STACK, .mod_name = "stack", .as.stack = { .max_stack = 15 } }
+        { .type = ITEM_MOD_STACK, .mod_name = "stack", .as.stack = { .max_stack = 15 } },
+        { .type = ITEM_MOD_COLOR, .mod_name = "cor", .as.color = { .color = 0xF55064, .backcolor = 0x460F14 } }
     },
-    .modifier_count = 4
+    .modifier_count = 5
 };
 
 const ItemSpec ITEM_WATER_SPEC = {
@@ -72,9 +74,10 @@ const ItemSpec ITEM_WATER_SPEC = {
         { .type = ITEM_MOD_DATA, .mod_name = "dados", .as.data = { "Jarra d'Agua", "Agua fresca de nascente" } },
         { .type = ITEM_MOD_SKIN, .mod_name = "skin", .as.skin = { "Item_Jug.png" } },
         { .type = ITEM_MOD_CONSUMABLE, .mod_name = "bebida", .as.consumable = { .restore_thirst = 55.0f } },
-        { .type = ITEM_MOD_STACK, .mod_name = "stack", .as.stack = { .max_stack = 5 } }
+        { .type = ITEM_MOD_STACK, .mod_name = "stack", .as.stack = { .max_stack = 5 } },
+        { .type = ITEM_MOD_COLOR, .mod_name = "cor", .as.color = { .color = 0x64C8FF, .backcolor = 0x143250 } }
     },
-    .modifier_count = 4
+    .modifier_count = 5
 };
 
 const ItemSpec ITEM_HERB_SPEC = {
@@ -83,9 +86,10 @@ const ItemSpec ITEM_HERB_SPEC = {
         { .type = ITEM_MOD_DATA, .mod_name = "dados", .as.data = { "Erva Medicinal", "Planta raras com forte poder curativo" } },
         { .type = ITEM_MOD_SKIN, .mod_name = "skin", .as.skin = { "Item_Herb.png" } },
         { .type = ITEM_MOD_CONSUMABLE, .mod_name = "cura", .as.consumable = { .restore_health = 35.0f } },
-        { .type = ITEM_MOD_STACK, .mod_name = "stack", .as.stack = { .max_stack = 20 } }
+        { .type = ITEM_MOD_STACK, .mod_name = "stack", .as.stack = { .max_stack = 20 } },
+        { .type = ITEM_MOD_COLOR, .mod_name = "cor", .as.color = { .color = 0x64F08C, .backcolor = 0x0F3C19 } }
     },
-    .modifier_count = 4
+    .modifier_count = 5
 };
 
 const ItemSpec ITEM_STEAK_SPEC = {
@@ -94,9 +98,10 @@ const ItemSpec ITEM_STEAK_SPEC = {
         { .type = ITEM_MOD_DATA, .mod_name = "dados", .as.data = { "Bife Assado", "Carne Suculenta altamente energetica" } },
         { .type = ITEM_MOD_SKIN, .mod_name = "skin", .as.skin = { "Item_Steak.png" } },
         { .type = ITEM_MOD_CONSUMABLE, .mod_name = "comida", .as.consumable = { .restore_hunger = 60.0f, .restore_health = 15.0f } },
-        { .type = ITEM_MOD_STACK, .mod_name = "stack", .as.stack = { .max_stack = 5 } }
+        { .type = ITEM_MOD_STACK, .mod_name = "stack", .as.stack = { .max_stack = 5 } },
+        { .type = ITEM_MOD_COLOR, .mod_name = "cor", .as.color = { .color = 0xDC5A46, .backcolor = 0x3C140F } }
     },
-    .modifier_count = 4
+    .modifier_count = 5
 };
 
 // ---------------------------------------------------------------------------
@@ -110,7 +115,26 @@ void setup_game_species_and_world(int* out_center_x, int* out_center_y) {
     if (out_center_y) *out_center_y = cy;
 
     // ---------------------------------------------------------------------------
-    // User-Defined Species Specs with Behavior, Ability, Metabolism & Preferences
+    // Setup Terrain Block Modifiers (Collision & Colors)
+    // ---------------------------------------------------------------------------
+    tile_specs[FLOOR].modifiers[0] = tile_mod_collision(TILE_COLLISION_LAND);
+    tile_specs[FLOOR].modifiers[1] = tile_mod_color(rgb(170, 170, 170), rgb(90, 50, 25));
+    tile_specs[FLOOR].modifier_count = 2;
+
+    tile_specs[MOUNTAIN].modifiers[0] = tile_mod_collision(TILE_COLLISION_MOUNTAIN);
+    tile_specs[MOUNTAIN].modifiers[1] = tile_mod_color(rgb(180, 190, 200), rgb(50, 55, 65));
+    tile_specs[MOUNTAIN].modifier_count = 2;
+
+    tile_specs[WATER].modifiers[0] = tile_mod_collision(TILE_COLLISION_WATER);
+    tile_specs[WATER].modifiers[1] = tile_mod_color(rgb(70, 160, 240), rgb(15, 35, 70));
+    tile_specs[WATER].modifier_count = 2;
+
+    tile_specs[VOID_TILE].modifiers[0] = tile_mod_collision(TILE_COLLISION_VOID);
+    tile_specs[VOID_TILE].modifiers[1] = tile_mod_color(rgb(160, 60, 220), rgb(20, 10, 30));
+    tile_specs[VOID_TILE].modifier_count = 2;
+
+    // ---------------------------------------------------------------------------
+    // User-Defined Species Specs with Behavior, Ability, Metabolism, Preferences & Colors
     // ---------------------------------------------------------------------------
 
     // 1. Árvore Anciã (Plant, Photosynthesis, Spores, Regeneration)
@@ -125,9 +149,10 @@ void setup_game_species_and_world(int* out_center_x, int* out_center_y) {
             mod_stats("status", 200.0f, 100.0f, 100.0f),
             mod_plant("planta", true, true, 20.0f, "item_herb"),
             mod_ability("regeneracao", ABILITY_REGENERATION, 1.0f),
-            mod_loot("loot_fruta", &ITEM_FRUIT_SPEC, 1, 3, 1.0f)
+            mod_loot("loot_fruta", &ITEM_FRUIT_SPEC, 1, 3, 1.0f),
+            mod_color("cor", rgb(90, 220, 90), rgb(20, 50, 20))
         },
-        .modifier_count = 9
+        .modifier_count = 10
     };
 
     // 2. Dragão Alado (Flying, Carnivore, Territorial, Vampirism, Fast Metabolism)
@@ -145,9 +170,10 @@ void setup_game_species_and_world(int* out_center_x, int* out_center_y) {
             mod_behavior("territorial", BEHAVIOR_TERRITORIAL),
             mod_ability("vampirismo", ABILITY_VAMPIRISM, 1.0f),
             mod_metabolism("metabolismo", METABOLISM_FAST),
-            mod_loot("loot_bife", &ITEM_STEAK_SPEC, 2, 4, 1.0f)
+            mod_loot("loot_bife", &ITEM_STEAK_SPEC, 2, 4, 1.0f),
+            mod_color("cor", rgb(255, 100, 80), rgb(60, 10, 10))
         },
-        .modifier_count = 12
+        .modifier_count = 13
     };
 
     // 3. Cavaleiro Imperial (Walking, Omnivore, Herding, Terrain Preference)
@@ -164,9 +190,10 @@ void setup_game_species_and_world(int* out_center_x, int* out_center_y) {
             mod_personality("personalidade", 85, 40, 70, 50),
             mod_behavior("bando", BEHAVIOR_HERDING),
             mod_preferences("preferencias", FLOOR, "item_bread", "Cavaleiro Imperial", "Goblin Ladrao", 1.3f),
-            mod_loot("loot_pao", &ITEM_BREAD_SPEC, 1, 2, 0.9f)
+            mod_loot("loot_pao", &ITEM_BREAD_SPEC, 1, 2, 0.9f),
+            mod_color("cor", rgb(220, 220, 255), rgb(30, 40, 70))
         },
-        .modifier_count = 11
+        .modifier_count = 12
     };
 
     // 4. Goblin Ladrão (Walking, Scavenger, Camouflage, Fast Metabolism)
@@ -184,9 +211,10 @@ void setup_game_species_and_world(int* out_center_x, int* out_center_y) {
             mod_behavior("carniceiro", BEHAVIOR_SCAVENGER),
             mod_ability("camuflagem", ABILITY_CAMOUFLAGE, 1.0f),
             mod_metabolism("metabolismo", METABOLISM_FAST),
-            mod_loot("loot_fruta", &ITEM_FRUIT_SPEC, 1, 2, 0.8f)
+            mod_loot("loot_fruta", &ITEM_FRUIT_SPEC, 1, 2, 0.8f),
+            mod_color("cor", rgb(120, 230, 100), rgb(20, 50, 15))
         },
-        .modifier_count = 12
+        .modifier_count = 13
     };
 
     // 5. Gato Místico (Walking, Herbivore, Pacifist, Venom, Slow Metabolism)
@@ -204,9 +232,10 @@ void setup_game_species_and_world(int* out_center_x, int* out_center_y) {
             mod_behavior("pacifista", BEHAVIOR_PACIFIST),
             mod_ability("veneno", ABILITY_VENOM, 1.0f),
             mod_metabolism("metabolismo", METABOLISM_SLOW),
-            mod_loot("loot_erva", &ITEM_HERB_SPEC, 1, 2, 0.6f)
+            mod_loot("loot_erva", &ITEM_HERB_SPEC, 1, 2, 0.6f),
+            mod_color("cor", rgb(200, 150, 255), rgb(40, 20, 60))
         },
-        .modifier_count = 12
+        .modifier_count = 13
     };
 
     // 6. Planta Carnívora de Gaia (Plant Spec, Fruit Producer, Regeneration)
@@ -221,9 +250,10 @@ void setup_game_species_and_world(int* out_center_x, int* out_center_y) {
             mod_stats("status", 160.0f, 100.0f, 100.0f),
             mod_plant("planta", true, true, 15.0f, "item_fruit"),
             mod_ability("regeneracao", ABILITY_REGENERATION, 1.0f),
-            mod_loot("loot_fruta", &ITEM_FRUIT_SPEC, 1, 3, 1.0f)
+            mod_loot("loot_fruta", &ITEM_FRUIT_SPEC, 1, 3, 1.0f),
+            mod_color("cor", rgb(255, 120, 180), rgb(50, 15, 30))
         },
-        .modifier_count = 9
+        .modifier_count = 10
     };
 
     const CreatureSpec* specs[] = {

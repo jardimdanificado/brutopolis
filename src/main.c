@@ -81,6 +81,30 @@ static inline void draw_sprite(Image image, int x, int y, int sx, int sy) {
     pop();
 }
 
+static inline void draw_sprite_colored(Image image, int x, int y, int sx, int sy, uint64_t color, uint64_t backcolor) {
+    if (!image.pixels || sx <= 0 || sy <= 0) return;
+    Canvas target = _wagner_get_target();
+    int img_w = image.width;
+    int img_h = image.height;
+    for (int dy = 0; dy < sy; dy++) {
+        int py = y + dy;
+        if (py < 0 || py >= target.height) continue;
+        int img_y = dy * img_h / sy;
+        if (img_y >= img_h) img_y = img_h - 1;
+        int row_offset = img_y * image.stride;
+        for (int dx = 0; dx < sx; dx++) {
+            int px = x + dx;
+            if (px < 0 || px >= target.width) continue;
+            int img_x = dx * img_w / sx;
+            if (img_x >= img_w) img_x = img_w - 1;
+
+            Color c = _pixel_to_rgba(image, row_offset + img_x);
+            uint64_t draw_c = (c.r > 128 || c.g > 128 || c.b > 128) ? color : backcolor;
+            _wagner_set_pixel_raw(target, px, py, draw_c);
+        }
+    }
+}
+
 static inline void draw_text(char* _text, int x, int y, int _color, float size) {
     push();
     translate(x, y);
@@ -198,9 +222,9 @@ void draw() {
     if (wheel > 0) zoom /= 1.12f;
     else if (wheel < 0) zoom *= 1.12f;
 
-    // Q / E Keys: Manual Zoom In & Out
-    if (wagner.keys[KEY_Q]) zoom *= (1.0f + 1.2f * dt);
-    if (wagner.keys[KEY_E]) zoom /= (1.0f + 1.2f * dt);
+    // Q / E Keys: Manual Zoom (Q = Zoom Out, E = Zoom In)
+    if (wagner.keys[KEY_Q]) zoom /= (1.0f + 1.2f * dt);
+    if (wagner.keys[KEY_E]) zoom *= (1.0f + 1.2f * dt);
     if (zoom < 0.2f) zoom = 0.2f;
     if (zoom > 3.0f) zoom = 3.0f;
 
@@ -319,7 +343,9 @@ void draw() {
             
             if (draw_x + tile_size > 0 && draw_x < wagner.width && 
                 draw_y + tile_size > 0 && draw_y < wagner.height) {
-                draw_sprite(img_tiles[world.map[y][x]], draw_x, draw_y, tile_size, tile_size);
+                uint64_t t_col, t_backcol;
+                get_tile_colors((Tile)world.map[y][x], &t_col, &t_backcol);
+                draw_sprite_colored(img_tiles[world.map[y][x]], draw_x, draw_y, tile_size, tile_size, t_col, t_backcol);
             }
         }
     }
@@ -349,7 +375,10 @@ void draw() {
                 int item_draw_size = tile_size * 3 / 4;
                 if (item_draw_size < 8) item_draw_size = 8;
                 int offset = (tile_size - item_draw_size) / 2;
-                draw_sprite(item_img, draw_x + offset, draw_y + offset, item_draw_size, item_draw_size);
+
+                uint64_t it_col, it_backcol;
+                get_item_colors(&world.items[i].spec, &it_col, &it_backcol);
+                draw_sprite_colored(item_img, draw_x + offset, draw_y + offset, item_draw_size, item_draw_size, it_col, it_backcol);
             }
         }
     }
@@ -373,7 +402,9 @@ void draw() {
             }
 
             Image e_skin = get_or_load_texture(e->skin_filename);
-            draw_sprite(e_skin, draw_x, draw_y, tile_size, tile_size);
+            uint64_t e_col, e_backcol;
+            get_creature_colors(e, &e_col, &e_backcol);
+            draw_sprite_colored(e_skin, draw_x, draw_y, tile_size, tile_size, e_col, e_backcol);
 
             // Overhead Emotes
             Image emote = (Image){0};
@@ -404,7 +435,9 @@ void draw() {
 
         // Column 1: Info, Species & Biological Traits
         Image se_skin = get_or_load_texture(se->skin_filename);
-        draw_sprite(se_skin, 6, 180, 28, 28);
+        uint64_t se_col, se_backcol;
+        get_creature_colors(se, &se_col, &se_backcol);
+        draw_sprite_colored(se_skin, 6, 180, 28, 28, se_col, se_backcol);
         draw_text(se->name, 38, 180, WHITE, 0);
 
         char title_str[36];
@@ -464,7 +497,9 @@ void draw() {
             if (se->inventory[slot].spec.item_id[0] != '\0') {
                 const char* skin_name = get_item_skin_filename(&se->inventory[slot].spec);
                 Image item_img = get_or_load_texture(skin_name);
-                draw_sprite(item_img, sx + 2, sy + 2, 16, 16);
+                uint64_t inv_col, inv_backcol;
+                get_item_colors(&se->inventory[slot].spec, &inv_col, &inv_backcol);
+                draw_sprite_colored(item_img, sx + 2, sy + 2, 16, 16, inv_col, inv_backcol);
                 char num[4];
                 num[0] = '0' + (se->inventory[slot].count % 10);
                 num[1] = '\0';

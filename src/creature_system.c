@@ -3,12 +3,15 @@
 World world = {0};
 
 WorldClock world_clock = { .day = 0, .hour = 0, .minute = 0, .total_ticks = 0, .time_accumulator = 0.0f, .global_light = 0.0f, .global_heat = 0.2f };
-WorldModifier world_mod = { .light_mode = WORLD_LIGHT_STANDARD, .sunrise_hour = 6, .sunset_hour = 18, .max_light_level = 1.0f };
+WorldModifier world_mod = { .light_mode = WORLD_LIGHT_STANDARD, .sunrise_hour = 6, .sunset_hour = 18, .max_light_level = 1.0f, .has_color = false, .has_backcolor = false };
+
+TileSpec tile_specs[NUM_TILES] = {0};
 
 const uint8_t tile_collision[] = {
     [FLOOR] = 0,
     [MOUNTAIN] = 1,
     [WATER] = 1,
+    [VOID_TILE] = 1,
 };
 
 // ---------------------------------------------------------------------------
@@ -216,6 +219,50 @@ Modifier mod_plant(const char* mod_name, bool sunlight, bool produces_fruit, flo
     return m;
 }
 
+Modifier mod_color(const char* mod_name, uint64_t color, uint64_t backcolor) {
+    Modifier m = {0};
+    m.type = MOD_TYPE_COLOR;
+    const char* tag = mod_name ? mod_name : "cor";
+    for (int i = 0; i < 31 && tag[i]; i++) m.mod_name[i] = tag[i];
+    m.as.color.color = color;
+    m.as.color.backcolor = backcolor;
+    return m;
+}
+
+ItemModifier item_mod_color(const char* mod_name, uint64_t color, uint64_t backcolor) {
+    ItemModifier m = {0};
+    m.type = ITEM_MOD_COLOR;
+    const char* tag = mod_name ? mod_name : "cor";
+    for (int i = 0; i < 31 && tag[i]; i++) m.mod_name[i] = tag[i];
+    m.as.color.color = color;
+    m.as.color.backcolor = backcolor;
+    return m;
+}
+
+TileModifier tile_mod_collision(TileCollisionType col) {
+    TileModifier m = {0};
+    m.type = TILE_MOD_COLLISION;
+    m.as.collision.collision_type = col;
+    return m;
+}
+
+TileModifier tile_mod_color(uint64_t color, uint64_t backcolor) {
+    TileModifier m = {0};
+    m.type = TILE_MOD_COLOR;
+    m.as.color.color = color;
+    m.as.color.backcolor = backcolor;
+    m.as.color.has_color = true;
+    m.as.color.has_backcolor = true;
+    return m;
+}
+
+void set_world_colors(uint64_t color, uint64_t backcolor) {
+    world_mod.color = color;
+    world_mod.backcolor = backcolor;
+    world_mod.has_color = true;
+    world_mod.has_backcolor = true;
+}
+
 // ---------------------------------------------------------------------------
 // Modifier Application Engine
 // ---------------------------------------------------------------------------
@@ -287,6 +334,12 @@ void apply_entity_modifiers(Entity* e, const Modifier* modifiers, int count) {
             case MOD_TYPE_PLANT:
                 e->is_plant = true;
                 e->plant = m->as.plant;
+                break;
+            case MOD_TYPE_COLOR:
+                e->color = m->as.color.color;
+                e->backcolor = m->as.color.backcolor;
+                e->has_color = true;
+                e->has_backcolor = true;
                 break;
         }
     }
@@ -518,15 +571,94 @@ void entity_pickup_at(Entity* e, int x, int y) {
 // Pathfinding & Movement Validation
 // ---------------------------------------------------------------------------
 
+TileCollisionType get_tile_collision_type(Tile t) {
+    if (t >= 0 && t < NUM_TILES) {
+        TileSpec* spec = &tile_specs[t];
+        for (int i = 0; i < spec->modifier_count; i++) {
+            if (spec->modifiers[i].type == TILE_MOD_COLLISION) {
+                return spec->modifiers[i].as.collision.collision_type;
+            }
+        }
+    }
+    if (t == WATER) return TILE_COLLISION_WATER;
+    if (t == MOUNTAIN) return TILE_COLLISION_MOUNTAIN;
+    if (t == VOID_TILE) return TILE_COLLISION_VOID;
+    return TILE_COLLISION_LAND;
+}
+
 #define BFS_RADIUS 40
 #define BFS_GRID_SIZE (BFS_RADIUS * 2 + 1)
 
 bool is_tile_walkable_for(int x, int y, MovementType movement) {
     if (x < 0 || x >= MAP_WIDTH || y < 0 || y >= MAP_HEIGHT) return false;
     if (movement == MOVE_NONE) return false;
+    Tile t = (Tile)world.map[y][x];
+    TileCollisionType col = get_tile_collision_type(t);
+    if (col == TILE_COLLISION_VOID) return false;
     if (movement == MOVE_FLY) return true;
-    if (movement == MOVE_AQUATIC) return world.map[y][x] == WATER;
-    return tile_collision[world.map[y][x]] == 0;
+    if (movement == MOVE_AQUATIC) return col == TILE_COLLISION_WATER;
+    return col == TILE_COLLISION_LAND;
+}
+
+// ---------------------------------------------------------------------------
+// Color Resolution & Fallback Hierarchy System
+// ---------------------------------------------------------------------------
+
+void get_creature_colors(const Entity* e, uint64_t* out_color, uint64_t* out_backcolor) {
+    uint64_t def_c = rgb(255, 255, 255);
+    uint64_t def_bc = rgb(0, 0, 0);
+
+    if (world_mod.has_color) def_c = world_mod.color;
+    if (world_mod.has_backcolor) def_bc = world_mod.backcolor;
+
+    if (e && e->has_color) def_c = e->color;
+    if (e && e->has_backcolor) def_bc = e->backcolor;
+
+    if (out_color) *out_color = def_c;
+    if (out_backcolor) *out_backcolor = def_bc;
+}
+
+void get_item_colors(const ItemSpec* spec, uint64_t* out_color, uint64_t* out_backcolor) {
+    uint64_t def_c = rgb(255, 255, 255);
+    uint64_t def_bc = rgb(0, 0, 0);
+
+    if (world_mod.has_color) def_c = world_mod.color;
+    if (world_mod.has_backcolor) def_bc = world_mod.backcolor;
+
+    if (spec) {
+        for (int i = 0; i < spec->modifier_count; i++) {
+            if (spec->modifiers[i].type == ITEM_MOD_COLOR) {
+                def_c = spec->modifiers[i].as.color.color;
+                def_bc = spec->modifiers[i].as.color.backcolor;
+                break;
+            }
+        }
+    }
+
+    if (out_color) *out_color = def_c;
+    if (out_backcolor) *out_backcolor = def_bc;
+}
+
+void get_tile_colors(Tile t, uint64_t* out_color, uint64_t* out_backcolor) {
+    uint64_t def_c = rgb(255, 255, 255);
+    uint64_t def_bc = rgb(0, 0, 0);
+
+    if (world_mod.has_color) def_c = world_mod.color;
+    if (world_mod.has_backcolor) def_bc = world_mod.backcolor;
+
+    if (t >= 0 && t < NUM_TILES) {
+        TileSpec* spec = &tile_specs[t];
+        for (int i = 0; i < spec->modifier_count; i++) {
+            if (spec->modifiers[i].type == TILE_MOD_COLOR) {
+                if (spec->modifiers[i].as.color.has_color) def_c = spec->modifiers[i].as.color.color;
+                if (spec->modifiers[i].as.color.has_backcolor) def_bc = spec->modifiers[i].as.color.backcolor;
+                break;
+            }
+        }
+    }
+
+    if (out_color) *out_color = def_c;
+    if (out_backcolor) *out_backcolor = def_bc;
 }
 
 int find_path_for(int sx, int sy, int gx, int gy, MovementType movement, GridPos* out_path, int max_out) {

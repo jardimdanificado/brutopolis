@@ -20,7 +20,8 @@ typedef enum {
     ITEM_MOD_SKIN,          // Texture Asset Filename
     ITEM_MOD_CONSUMABLE,    // Restore Hunger, Thirst, Health, Fatigue
     ITEM_MOD_EQUIPMENT,     // Bonus Attack, Bonus Defense
-    ITEM_MOD_STACK          // Max Stack Count
+    ITEM_MOD_STACK,         // Max Stack Count
+    ITEM_MOD_COLOR          // Color & Backcolor Modifiers
 } ItemModifierType;
 
 typedef struct {
@@ -32,6 +33,7 @@ typedef struct {
         struct { float restore_hunger; float restore_thirst; float restore_health; float restore_fatigue; } consumable;
         struct { float bonus_attack; float bonus_defense; } equipment;
         struct { int max_stack; } stack;
+        struct { uint64_t color; uint64_t backcolor; } color;
     } as;
 } ItemModifier;
 
@@ -60,6 +62,46 @@ typedef struct {
     int max_count;
     float chance;
 } LootDrop;
+
+// ---------------------------------------------------------------------------
+// Terrain Tile Specifications & Modifiers (Fixed per Block Type)
+// ---------------------------------------------------------------------------
+
+typedef enum {
+    FLOOR = 0,
+    MOUNTAIN,
+    WATER,
+    VOID_TILE,
+    NUM_TILES
+} Tile;
+
+typedef enum {
+    TILE_COLLISION_LAND = 0,     // Terra
+    TILE_COLLISION_WATER,        // Água
+    TILE_COLLISION_MOUNTAIN,     // Montanha
+    TILE_COLLISION_VOID          // Vazio
+} TileCollisionType;
+
+typedef enum {
+    TILE_MOD_COLLISION = 0,
+    TILE_MOD_COLOR
+} TileModifierType;
+
+typedef struct {
+    TileModifierType type;
+    union {
+        struct { TileCollisionType collision_type; } collision;
+        struct { uint64_t color; uint64_t backcolor; bool has_color; bool has_backcolor; } color;
+    } as;
+} TileModifier;
+
+typedef struct {
+    char tile_name[32];
+    TileModifier modifiers[4];
+    int modifier_count;
+} TileSpec;
+
+extern TileSpec tile_specs[NUM_TILES];
 
 // ---------------------------------------------------------------------------
 // Configurable Terrain Generator Definitions
@@ -103,6 +145,10 @@ typedef struct {
     int sunrise_hour;
     int sunset_hour;
     float max_light_level;
+    uint64_t color;
+    uint64_t backcolor;
+    bool has_color;
+    bool has_backcolor;
 } WorldModifier;
 
 extern WorldClock world_clock;
@@ -211,7 +257,8 @@ typedef enum {
     MOD_TYPE_SPECIAL_ABILITY,// Regeneration, Vampirism, Venom...
     MOD_TYPE_METABOLISM,    // Normal, Fast, Slow
     MOD_TYPE_PREFERENCES,   // Terrain, Food, Ally & Hated Species
-    MOD_TYPE_PLANT          // Plant Traits & Fruit Production
+    MOD_TYPE_PLANT,         // Plant Traits & Fruit Production
+    MOD_TYPE_COLOR          // Creature Color & Backcolor Modifiers
 } ModifierType;
 
 typedef struct {
@@ -232,6 +279,7 @@ typedef struct {
         struct { MetabolismType type; } metabolism;
         PreferenceData preferences;
         PlantData plant;
+        struct { uint64_t color; uint64_t backcolor; } color;
     } as;
 } Modifier;
 
@@ -265,6 +313,12 @@ struct Entity {
     int x;
     int y;
     
+    // Custom Color Modifiers
+    uint64_t color;
+    uint64_t backcolor;
+    bool has_color;
+    bool has_backcolor;
+
     // Biological Traits (User Defined via Modifiers)
     MovementType movement;
     DietType diet;
@@ -326,12 +380,6 @@ typedef struct {
     uint8_t map[MAP_HEIGHT][MAP_WIDTH];
 } World;
 
-typedef enum {
-    FLOOR,
-    MOUNTAIN,
-    WATER,
-} Tile;
-
 extern const uint8_t tile_collision[];
 extern World world;
 
@@ -353,6 +401,17 @@ Modifier mod_ability(const char* mod_name, AbilityType ability, float power);
 Modifier mod_metabolism(const char* mod_name, MetabolismType meta);
 Modifier mod_preferences(const char* mod_name, int terrain, const char* p_food, const char* p_spec, const char* h_spec, float bonus);
 Modifier mod_plant(const char* mod_name, bool sunlight, bool produces_fruit, float interval, const char* fruit_id);
+Modifier mod_color(const char* mod_name, uint64_t color, uint64_t backcolor);
+ItemModifier item_mod_color(const char* mod_name, uint64_t color, uint64_t backcolor);
+TileModifier tile_mod_collision(TileCollisionType col);
+TileModifier tile_mod_color(uint64_t color, uint64_t backcolor);
+void set_world_colors(uint64_t color, uint64_t backcolor);
+
+// Color Resolution & Fallback Helpers
+void get_creature_colors(const Entity* e, uint64_t* out_color, uint64_t* out_backcolor);
+void get_item_colors(const ItemSpec* spec, uint64_t* out_color, uint64_t* out_backcolor);
+void get_tile_colors(Tile t, uint64_t* out_color, uint64_t* out_backcolor);
+TileCollisionType get_tile_collision_type(Tile t);
 
 // ---------------------------------------------------------------------------
 // Function Prototypes
