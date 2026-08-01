@@ -229,6 +229,17 @@ Modifier mod_color(const char* mod_name, uint64_t color, uint64_t backcolor) {
     return m;
 }
 
+Modifier mod_group(const char* mod_name, const char* group_tag) {
+    Modifier m = {0};
+    m.type = MOD_TYPE_GROUP;
+    const char* tag = mod_name ? mod_name : "grupo";
+    for (int i = 0; i < 31 && tag[i]; i++) m.mod_name[i] = tag[i];
+    if (group_tag) {
+        for (int i = 0; i < 31 && group_tag[i]; i++) m.as.group.group[i] = group_tag[i];
+    }
+    return m;
+}
+
 ItemModifier item_mod_color(const char* mod_name, uint64_t color, uint64_t backcolor) {
     ItemModifier m = {0};
     m.type = ITEM_MOD_COLOR;
@@ -341,6 +352,9 @@ void apply_entity_modifiers(Entity* e, const Modifier* modifiers, int count) {
                 e->has_color = true;
                 e->has_backcolor = true;
                 break;
+            case MOD_TYPE_GROUP:
+                for (int k = 0; k < 31; k++) e->group_tag[k] = m->as.group.group[k];
+                break;
         }
     }
 }
@@ -422,6 +436,37 @@ bool entity_add_item_spec(Entity* e, const ItemSpec* spec, int count) {
     return false;
 }
 
+bool is_food_suitable_for_diet(DietType diet, const ItemSpec* spec) {
+    if (!spec || spec->item_id[0] == '\0') return true;
+    if (diet == DIET_NONE || diet == DIET_PHOTOSYNTHESIS) return false;
+    if (diet == DIET_OMNIVORE) return true;
+
+    bool is_consumable = false;
+    for (int m = 0; m < spec->modifier_count; m++) {
+        if (spec->modifiers[m].type == ITEM_MOD_CONSUMABLE) {
+            is_consumable = true;
+            break;
+        }
+    }
+    if (!is_consumable) return true;
+
+    bool is_meat = strings_equal(spec->item_id, "item_steak");
+    bool is_plant_food = strings_equal(spec->item_id, "item_fruit") || 
+                         strings_equal(spec->item_id, "item_herb") || 
+                         strings_equal(spec->item_id, "item_bread") || 
+                         strings_equal(spec->item_id, "item_seed");
+
+    if (diet == DIET_CARNIVORE) {
+        if (is_plant_food) return false;
+        return true;
+    }
+    if (diet == DIET_HERBIVORE) {
+        if (is_meat) return false;
+        return true;
+    }
+    return true;
+}
+
 bool entity_consume_food_spec(Entity* e) {
     if (e->diet == DIET_NONE || e->diet == DIET_PHOTOSYNTHESIS) return true;
 
@@ -435,10 +480,18 @@ bool entity_consume_food_spec(Entity* e) {
                 float r_health = spec->modifiers[m].as.consumable.restore_health;
 
                 if (r_hunger > 0.0f || r_health > 0.0f) {
+                    if (!is_food_suitable_for_diet(e->diet, spec)) continue;
+
                     e->hunger += r_hunger;
                     if (e->hunger > e->max_hunger) e->hunger = e->max_hunger;
                     e->health += r_health;
                     if (e->health > e->max_health) e->health = e->max_health;
+
+                    // Eating fruit or herb drops a seed on the ground!
+                    if (strings_equal(spec->item_id, "item_fruit") || strings_equal(spec->item_id, "item_herb")) {
+                        extern const ItemSpec ITEM_SEED_SPEC;
+                        spawn_dropped_item_scatter(e->x, e->y, &ITEM_SEED_SPEC, 1);
+                    }
 
                     e->inventory[i].count--;
                     if (e->inventory[i].count <= 0) e->inventory[i].spec.item_id[0] = '\0';
@@ -490,6 +543,7 @@ void spawn_dropped_item_spec(int x, int y, const ItemSpec* spec, int count) {
             world.items[i].y = y;
             world.items[i].spec = *spec;
             world.items[i].count = count;
+            world.items[i].germinate_timer = 0.0f;
             world.items[i].active = true;
             break;
         }
@@ -560,6 +614,7 @@ void trigger_entity_loot_drop(Entity* e) {
 void entity_pickup_at(Entity* e, int x, int y) {
     for (int i = 0; i < MAX_DROPPED_ITEMS; i++) {
         if (world.items[i].active && world.items[i].x == x && world.items[i].y == y) {
+            if (!is_food_suitable_for_diet(e->diet, &world.items[i].spec)) continue;
             if (entity_add_item_spec(e, &world.items[i].spec, world.items[i].count)) {
                 world.items[i].active = false;
             }
@@ -873,6 +928,8 @@ Entity* brain_perceive_closest_threat(Entity* self) {
     for (int i = 0; i < MAX_ENTITIES; i++) {
         Entity* other = &world.entities[i];
         if (!other->active || other->id == self->id) continue;
+        if (other->is_plant || other->movement == MOVE_NONE) continue;
+        if (strings_equal(self->species_title, other->species_title)) continue;
         
         bool is_hostile = false;
         float hostility_weight = 1.0f;
@@ -937,7 +994,7 @@ Entity* brain_perceive_closest_mate(Entity* self) {
         if (!other->active || other->id == self->id) continue;
         
         if (other->repro == REPRO_SEX && strings_equal(self->species_title, other->species_title)) {
-            if (other->health > other->max_health * 0.7f && other->hunger > other->max_hunger * 0.6f && other->fatigue > 50.0f) {
+            if (other->health > other->max_health * 0.5f && other->hunger > other->max_hunger * 0.35f && other->fatigue > 30.0f) {
                 float dist = (float)((other->x - self->x)*(other->x - self->x) + (other->y - self->y)*(other->y - self->y));
                 if (dist <= min_dist) {
                     min_dist = dist;
@@ -1091,6 +1148,28 @@ bool brain_do_eat(Entity* self) {
         for (int k = 0; k < 63 && "Seeking food"; k++) self->brain.current_thought[k] = "Seeking food"[k];
         brain_do_move_to(self, fx, fy);
         return true;
+    }
+
+    // Priority for Carnivores / Omnivores: Hunt living prey of a different species
+    if (self->diet == DIET_CARNIVORE || self->diet == DIET_OMNIVORE) {
+        float min_pdist = 999999.0f;
+        Entity* best_prey = NULL;
+        for (int i = 0; i < MAX_ENTITIES; i++) {
+            Entity* prey = &world.entities[i];
+            if (!prey->active || prey->id == self->id || prey->is_plant || prey->movement == MOVE_NONE) continue;
+            if (strings_equal(self->species_title, prey->species_title)) continue;
+
+            float dist_sq = (float)((prey->x - self->x)*(prey->x - self->x) + (prey->y - self->y)*(prey->y - self->y));
+            if (dist_sq <= self->aggro_range * self->aggro_range * 4.0f && dist_sq < min_pdist) {
+                min_pdist = dist_sq;
+                best_prey = prey;
+            }
+        }
+        if (best_prey) {
+            for (int k = 0; k < 63 && "Hunting prey for food!"; k++) self->brain.current_thought[k] = "Hunting prey for food!"[k];
+            brain_do_attack(self, best_prey);
+            return true;
+        }
     }
 
     return false;
@@ -1530,6 +1609,49 @@ void update_entity_simulation(Entity* e, float dt) {
 
     if (e->id == 1) {
         update_world_clock(dt);
+
+        // Seed Germination & Sprouting System
+        for (int i = 0; i < MAX_DROPPED_ITEMS; i++) {
+            if (world.items[i].active && strings_equal(world.items[i].spec.item_id, "item_seed")) {
+                world.items[i].germinate_timer += dt;
+                if (world.items[i].germinate_timer >= 12.0f) {
+                    int sx = world.items[i].x;
+                    int sy = world.items[i].y;
+                    if (world.map[sy][sx] == FLOOR) {
+                        world.items[i].active = false;
+                        extern const ItemSpec ITEM_FRUIT_SPEC;
+                        CreatureSpec new_plant_spec = {
+                            .species_name = "Planta Carnivora",
+                            .modifiers = {
+                                mod_data("Gaia", "Planta Carnivora", "Flora"),
+                                mod_skin("Feature_Tree_Full.png"),
+                                mod_movement("estatico", MOVE_NONE),
+                                mod_diet("fotossintese", DIET_PHOTOSYNTHESIS),
+                                mod_repro("esporeamento", REPRO_SPORE_SEED),
+                                mod_stats("status", 160.0f, 100.0f, 100.0f),
+                                mod_plant("planta", true, true, 15.0f, "item_fruit"),
+                                mod_ability("regeneracao", ABILITY_REGENERATION, 1.0f),
+                                mod_loot("loot_fruta", &ITEM_FRUIT_SPEC, 1, 3, 1.0f),
+                                mod_color("cor", rgb(255, 120, 180), rgb(50, 15, 30))
+                            },
+                            .modifier_count = 10
+                        };
+                        spawn_entity_from_spec(&new_plant_spec, sx, sy);
+                    }
+                }
+            }
+        }
+    }
+
+    // Inventory Audit: Drop unsuitable foods immediately if they land in inventory
+    for (int slot = 0; slot < 6; slot++) {
+        if (e->inventory[slot].spec.item_id[0] != '\0' && e->inventory[slot].count > 0) {
+            if (!is_food_suitable_for_diet(e->diet, &e->inventory[slot].spec)) {
+                spawn_dropped_item_scatter(e->x, e->y, &e->inventory[slot].spec, e->inventory[slot].count);
+                e->inventory[slot].spec.item_id[0] = '\0';
+                e->inventory[slot].count = 0;
+            }
+        }
     }
 
     if (e->combat_flash_timer > 0.0f) e->combat_flash_timer -= dt;

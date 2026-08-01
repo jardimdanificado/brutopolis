@@ -53,6 +53,7 @@ typedef struct {
     int y;
     ItemSpec spec;
     int count;
+    float germinate_timer;
     bool active;
 } DroppedItem;
 
@@ -244,7 +245,7 @@ typedef struct {
 // ---------------------------------------------------------------------------
 
 typedef enum {
-    MOD_TYPE_DATA = 0,      // Name, Title, Group Tag
+    MOD_TYPE_DATA = 0,      // Name, Title
     MOD_TYPE_SKIN,          // Texture Asset Filename
     MOD_TYPE_MOVEMENT,      // MOVE_NONE, MOVE_WALK, MOVE_AQUATIC, MOVE_FLY
     MOD_TYPE_DIET,          // DIET_PHOTOSYNTHESIS, HERBIVORE, CARNIVORE...
@@ -258,7 +259,8 @@ typedef enum {
     MOD_TYPE_METABOLISM,    // Normal, Fast, Slow
     MOD_TYPE_PREFERENCES,   // Terrain, Food, Ally & Hated Species
     MOD_TYPE_PLANT,         // Plant Traits & Fruit Production
-    MOD_TYPE_COLOR          // Creature Color & Backcolor Modifiers
+    MOD_TYPE_COLOR,         // Creature Color & Backcolor Modifiers
+    MOD_TYPE_GROUP          // Group Tag / Faction Belonging
 } ModifierType;
 
 typedef struct {
@@ -280,6 +282,7 @@ typedef struct {
         PreferenceData preferences;
         PlantData plant;
         struct { uint64_t color; uint64_t backcolor; } color;
+        struct { char group[32]; } group;
     } as;
 } Modifier;
 
@@ -402,6 +405,7 @@ Modifier mod_metabolism(const char* mod_name, MetabolismType meta);
 Modifier mod_preferences(const char* mod_name, int terrain, const char* p_food, const char* p_spec, const char* h_spec, float bonus);
 Modifier mod_plant(const char* mod_name, bool sunlight, bool produces_fruit, float interval, const char* fruit_id);
 Modifier mod_color(const char* mod_name, uint64_t color, uint64_t backcolor);
+Modifier mod_group(const char* mod_name, const char* group_tag);
 ItemModifier item_mod_color(const char* mod_name, uint64_t color, uint64_t backcolor);
 TileModifier tile_mod_collision(TileCollisionType col);
 TileModifier tile_mod_color(uint64_t color, uint64_t backcolor);
@@ -423,7 +427,7 @@ void update_entity_simulation(Entity* e, float dt);
 Entity* spawn_entity_from_spec(const CreatureSpec* spec, int x, int y);
 void apply_entity_modifiers(Entity* e, const Modifier* modifiers, int count);
 
-// Item & Non-Stacking Radial Scatter Helpers
+bool is_food_suitable_for_diet(DietType diet, const ItemSpec* spec);
 bool is_tile_occupied_by_item(int x, int y);
 bool entity_add_item_spec(Entity* e, const ItemSpec* spec, int count);
 bool entity_consume_food_spec(Entity* e);

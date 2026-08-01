@@ -104,6 +104,18 @@ const ItemSpec ITEM_STEAK_SPEC = {
     .modifier_count = 5
 };
 
+const ItemSpec ITEM_SEED_SPEC = {
+    .item_id = "item_seed",
+    .modifiers = {
+        { .type = ITEM_MOD_DATA, .mod_name = "dados", .as.data = { "Semente de Planta", "Semente fertil que germina no solo" } },
+        { .type = ITEM_MOD_SKIN, .mod_name = "skin", .as.skin = { "Item_Herb.png" } },
+        { .type = ITEM_MOD_CONSUMABLE, .mod_name = "comida", .as.consumable = { .restore_hunger = 10.0f } },
+        { .type = ITEM_MOD_STACK, .mod_name = "stack", .as.stack = { .max_stack = 20 } },
+        { .type = ITEM_MOD_COLOR, .mod_name = "cor", .as.color = { .color = 0x90EE90, .backcolor = 0x2E8B57 } }
+    },
+    .modifier_count = 5
+};
+
 // ---------------------------------------------------------------------------
 // Game Setup & Content Spawning
 // ---------------------------------------------------------------------------

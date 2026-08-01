@@ -12,6 +12,7 @@ extern const ItemSpec ITEM_FRUIT_SPEC;
 extern const ItemSpec ITEM_WATER_SPEC;
 extern const ItemSpec ITEM_HERB_SPEC;
 extern const ItemSpec ITEM_STEAK_SPEC;
+extern const ItemSpec ITEM_SEED_SPEC;
 
 void setup_game_species_and_world(int* out_center_x, int* out_center_y);
 
