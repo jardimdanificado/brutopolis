@@ -289,11 +289,12 @@ Entity* brain_perceive_closest_ally(Entity* self);
 Entity* brain_perceive_closest_mate(Entity* self);
 bool brain_perceive_food(Entity* self, int* out_x, int* out_y);
 bool brain_perceive_water(Entity* self, int* out_x, int* out_y);
+bool brain_perceive_water_source(Entity* self, int* out_x, int* out_y);
 
 // Layer 1 Motor Actuators
 void brain_do_move_to(Entity* self, int target_x, int target_y);
-void brain_do_eat(Entity* self);
-void brain_do_drink(Entity* self);
+bool brain_do_eat(Entity* self);
+bool brain_do_drink(Entity* self);
 void brain_do_sleep(Entity* self);
 void brain_do_attack(Entity* self, Entity* target);
 void brain_do_flee(Entity* self, Entity* threat);

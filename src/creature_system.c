@@ -643,8 +643,8 @@ bool brain_perceive_water(Entity* self, int* out_x, int* out_y) {
     float min_dist = 999999.0f;
     int best_x = -1, best_y = -1;
     
-    for (int dy = -20; dy <= 20; dy++) {
-        for (int dx = -20; dx <= 20; dx++) {
+    for (int dy = -30; dy <= 30; dy++) {
+        for (int dx = -30; dx <= 30; dx++) {
             int tx = self->x + dx;
             int ty = self->y + dy;
             if (tx >= 0 && tx < MAP_WIDTH && ty >= 0 && ty < MAP_HEIGHT) {
@@ -668,8 +668,39 @@ bool brain_perceive_water(Entity* self, int* out_x, int* out_y) {
         }
     }
     if (best_x != -1) {
-        *out_x = best_x;
-        *out_y = best_y;
+        if (out_x) *out_x = best_x;
+        if (out_y) *out_y = best_y;
+        return true;
+    }
+    return false;
+}
+
+bool brain_perceive_water_source(Entity* self, int* out_x, int* out_y) {
+    int item_x = -1, item_y = -1;
+    bool has_item = brain_perceive_item_by_modifier_name(self, "bebida", &item_x, &item_y);
+
+    int shore_x = -1, shore_y = -1;
+    bool has_shore = brain_perceive_water(self, &shore_x, &shore_y);
+
+    if (has_item && has_shore) {
+        float dist_item = (float)((item_x - self->x)*(item_x - self->x) + (item_y - self->y)*(item_y - self->y));
+        float dist_shore = (float)((shore_x - self->x)*(shore_x - self->x) + (shore_y - self->y)*(shore_y - self->y));
+        if (dist_item <= dist_shore) {
+            if (out_x) *out_x = item_x;
+            if (out_y) *out_y = item_y;
+            return true;
+        } else {
+            if (out_x) *out_x = shore_x;
+            if (out_y) *out_y = shore_y;
+            return true;
+        }
+    } else if (has_item) {
+        if (out_x) *out_x = item_x;
+        if (out_y) *out_y = item_y;
+        return true;
+    } else if (has_shore) {
+        if (out_x) *out_x = shore_x;
+        if (out_y) *out_y = shore_y;
         return true;
     }
     return false;
@@ -678,34 +709,81 @@ bool brain_perceive_water(Entity* self, int* out_x, int* out_y) {
 void brain_do_move_to(Entity* self, int target_x, int target_y) {
     if (self->movement == MOVE_NONE) return;
     self->current_motor = MOTOR_MOVE;
-    if (self->path_len == 0 || self->path_idx >= self->path_len) {
+
+    bool target_changed = false;
+    if (self->path_len > 0) {
+        GridPos last_node = self->path[self->path_len - 1];
+        if (last_node.x != target_x || last_node.y != target_y) {
+            target_changed = true;
+        }
+    }
+
+    if (self->path_len == 0 || self->path_idx >= self->path_len || target_changed) {
         self->path_len = find_path_for(self->x, self->y, target_x, target_y, self->movement, self->path, MAX_PATH_NODES);
         self->path_idx = 0;
     }
 }
 
-void brain_do_eat(Entity* self) {
-    self->current_motor = MOTOR_EAT;
-    if (!entity_consume_food_spec(self)) {
-        int fx, fy;
-        if (brain_perceive_food(self, &fx, &fy)) {
-            brain_do_move_to(self, fx, fy);
-        }
-    } else {
+bool brain_do_eat(Entity* self) {
+    if (entity_consume_food_spec(self)) {
+        self->current_motor = MOTOR_EAT;
+        for (int k = 0; k < 63 && "Comendo item de comida"; k++) self->brain.current_thought[k] = "Comendo item de comida"[k];
         self->path_len = 0;
+        return true;
     }
+
+    int fx, fy;
+    if (brain_perceive_food(self, &fx, &fy)) {
+        self->current_motor = MOTOR_EAT;
+        for (int k = 0; k < 63 && "Buscando alimento"; k++) self->brain.current_thought[k] = "Buscando alimento"[k];
+        brain_do_move_to(self, fx, fy);
+        return true;
+    }
+
+    return false;
 }
 
-void brain_do_drink(Entity* self) {
-    self->current_motor = MOTOR_DRINK;
-    if (!entity_consume_water_spec(self)) {
-        int wx, wy;
-        if (brain_perceive_water(self, &wx, &wy)) {
-            brain_do_move_to(self, wx, wy);
-        }
-    } else {
+bool brain_do_drink(Entity* self) {
+    // Priority 1: Drink from inventory item if held
+    if (entity_consume_water_spec(self)) {
+        self->current_motor = MOTOR_DRINK;
+        for (int k = 0; k < 63 && "Bebendo item de agua"; k++) self->brain.current_thought[k] = "Bebendo item de agua"[k];
         self->path_len = 0;
+        return true;
     }
+
+    // Priority 2: Check if standing on shore adjacent to natural water
+    bool near_water = false;
+    int dx[] = {0, 0, -1, 1};
+    int dy[] = {-1, 1, 0, 0};
+    for (int k = 0; k < 4; k++) {
+        int nx = self->x + dx[k];
+        int ny = self->y + dy[k];
+        if (nx >= 0 && nx < MAP_WIDTH && ny >= 0 && ny < MAP_HEIGHT && world.map[ny][nx] == WATER) {
+            near_water = true;
+            break;
+        }
+    }
+
+    if (near_water) {
+        self->current_motor = MOTOR_DRINK;
+        for (int k = 0; k < 63 && "Bebendo na margem"; k++) self->brain.current_thought[k] = "Bebendo na margem"[k];
+        self->thirst += 60.0f;
+        if (self->thirst > self->max_thirst) self->thirst = self->max_thirst;
+        self->path_len = 0;
+        return true;
+    }
+
+    // Priority 3: Navigate to closest water source (dropped item OR lake shore)
+    int wx, wy;
+    if (brain_perceive_water_source(self, &wx, &wy)) {
+        self->current_motor = MOTOR_DRINK;
+        for (int k = 0; k < 63 && "Buscando agua"; k++) self->brain.current_thought[k] = "Buscando agua"[k];
+        brain_do_move_to(self, wx, wy);
+        return true;
+    }
+
+    return false;
 }
 
 void brain_do_sleep(Entity* self) {
@@ -805,17 +883,19 @@ void entity_brain_think(Entity* self) {
     }
 
     if (self->thirst <= 45.0f) {
-        for (int k = 0; k < 63 && "Buscando agua"; k++) self->brain.current_thought[k] = "Buscando agua"[k];
-        brain_do_drink(self);
-        return;
+        if (brain_do_drink(self)) {
+            return;
+        }
+        for (int k = 0; k < 63 && "Com sede (Sem agua no mapa)"; k++) self->brain.current_thought[k] = "Com sede (Sem agua no mapa)"[k];
     }
 
     if (self->diet != DIET_NONE && self->diet != DIET_PHOTOSYNTHESIS) {
         float hunger_threshold = (self->brain.gluttony > 60) ? 65.0f : 35.0f;
         if (self->hunger <= hunger_threshold) {
-            for (int k = 0; k < 63 && "Buscando alimento"; k++) self->brain.current_thought[k] = "Buscando alimento"[k];
-            brain_do_eat(self);
-            return;
+            if (brain_do_eat(self)) {
+                return;
+            }
+            for (int k = 0; k < 63 && "Com fome (Sem comida no mapa)"; k++) self->brain.current_thought[k] = "Com fome (Sem comida no mapa)"[k];
         }
     }
 

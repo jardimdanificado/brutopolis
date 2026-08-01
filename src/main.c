@@ -62,7 +62,15 @@ static float zoom = 1.0f;
 static int last_mx = 0;
 static int last_my = 0;
 
-static int selected_entity_idx = 0;
+static int selected_entity_idx = -1;
+
+typedef enum {
+    CAM_MODE_FREECAM = 0,
+    CAM_MODE_PAUSED = 1,
+    CAM_MODE_FOLLOWING = 2
+} CameraMode;
+
+static CameraMode cam_mode = CAM_MODE_FREECAM;
 
 // ---------------------------------------------------------------------------
 // Drawing & Formatting Helpers
@@ -147,6 +155,8 @@ void setup() {
     setup_game_species_and_world(&cx, &cy);
     cam_x = (float)cx;
     cam_y = (float)cy;
+    selected_entity_idx = -1;
+    cam_mode = CAM_MODE_FREECAM;
 }
 
 // ---------------------------------------------------------------------------
@@ -157,18 +167,19 @@ void draw() {
     float dt = wagner.delta_time;
     if (dt > 0.1f) dt = 0.1f;
 
-    static bool is_paused = false;
     static bool space_was_down = false;
 
-    // Space Key Pause Toggle
+    // Space Key Mode Toggle (FREECAM -> PAUSED -> FOLLOWING)
     if (wagner.keys[KEY_SPACE]) {
         if (!space_was_down) {
             space_was_down = true;
-            is_paused = !is_paused;
+            cam_mode = (CameraMode)((cam_mode + 1) % 3);
         }
     } else {
         space_was_down = false;
     }
+
+    bool is_paused = (cam_mode == CAM_MODE_PAUSED);
 
     // Inverted Mouse Wheel Zoom
     int32_t wheel = _wagner_rom.state.mouse_wheel;
@@ -208,11 +219,19 @@ void draw() {
     last_mx = wagner.mouse.x;
     last_my = wagner.mouse.y;
 
+    // FOLLOWING Mode: Force camera to follow selected creature
+    if (cam_mode == CAM_MODE_FOLLOWING) {
+        if (selected_entity_idx >= 0 && selected_entity_idx < MAX_ENTITIES && world.entities[selected_entity_idx].active) {
+            cam_x = (float)world.entities[selected_entity_idx].x;
+            cam_y = (float)world.entities[selected_entity_idx].y;
+        }
+    }
+
     // Playfield Center Camera Offset Calculation
     int start_x = wagner.width / 2 - (int)((cam_x + 0.5f) * tile_size);
     int start_y = 175 / 2 - (int)((cam_y + 0.5f) * tile_size);
 
-    // Mouse Selection
+    // Mouse Selection & Deselection
     if (wagner.mouse_pressed) {
         int mx = wagner.mouse.x;
         int my = wagner.mouse.y;
@@ -221,12 +240,14 @@ void draw() {
             int clicked_tile_x = (int)(((float)(mx - start_x)) / tile_size);
             int clicked_tile_y = (int)(((float)(my - start_y)) / tile_size);
 
+            int found_idx = -1;
             for (int i = 0; i < MAX_ENTITIES; i++) {
                 if (world.entities[i].active && world.entities[i].x == clicked_tile_x && world.entities[i].y == clicked_tile_y) {
-                    selected_entity_idx = i;
+                    found_idx = i;
                     break;
                 }
             }
+            selected_entity_idx = found_idx;
         }
     }
 
@@ -235,12 +256,15 @@ void draw() {
     if (wagner.keys[KEY_TAB]) {
         if (!tab_was_down) {
             tab_was_down = true;
+            int start_from = (selected_entity_idx < 0) ? 0 : selected_entity_idx;
             for (int step = 1; step <= MAX_ENTITIES; step++) {
-                int next_idx = (selected_entity_idx + step) % MAX_ENTITIES;
+                int next_idx = (start_from + step) % MAX_ENTITIES;
                 if (world.entities[next_idx].active) {
                     selected_entity_idx = next_idx;
-                    cam_x = (float)world.entities[next_idx].x;
-                    cam_y = (float)world.entities[next_idx].y;
+                    if (cam_mode == CAM_MODE_FOLLOWING) {
+                        cam_x = (float)world.entities[next_idx].x;
+                        cam_y = (float)world.entities[next_idx].y;
+                    }
                     break;
                 }
             }
@@ -410,10 +434,18 @@ void draw() {
         draw_text("Clique ou pressione TAB para inspecionar criatura", 20, 200, WHITE, 0);
     }
 
-    // Pause Indicator Overlay
-    if (is_paused) {
+    // Camera Mode Indicator Overlay
+    if (cam_mode == CAM_MODE_PAUSED) {
         draw_box(115, 4, 90, 14, rgb(40, 20, 20));
         draw_box(115, 4, 90, 1, RED);
         draw_text("[ PAUSADO ]", 125, 7, RED, 0);
+    } else if (cam_mode == CAM_MODE_FOLLOWING) {
+        draw_box(115, 4, 90, 14, rgb(20, 40, 50));
+        draw_box(115, 4, 90, 1, CYAN);
+        draw_text("[ SEGUINDO ]", 121, 7, CYAN, 0);
+    } else {
+        draw_box(115, 4, 90, 14, rgb(20, 35, 20));
+        draw_box(115, 4, 90, 1, GREEN);
+        draw_text("[ CAM LIVRE ]", 120, 7, GREEN, 0);
     }
 }
