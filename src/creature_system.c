@@ -2,11 +2,70 @@
 
 World world = {0};
 
+WorldClock world_clock = { .day = 0, .hour = 0, .minute = 0, .total_ticks = 0, .time_accumulator = 0.0f, .global_light = 0.0f, .global_heat = 0.2f };
+WorldModifier world_mod = { .light_mode = WORLD_LIGHT_STANDARD, .sunrise_hour = 6, .sunset_hour = 18, .max_light_level = 1.0f };
+
 const uint8_t tile_collision[] = {
     [FLOOR] = 0,
     [MOUNTAIN] = 1,
     [WATER] = 1,
 };
+
+// ---------------------------------------------------------------------------
+// World Time, Light & Heat Simulation
+// ---------------------------------------------------------------------------
+
+void update_world_clock(float dt) {
+    world_clock.time_accumulator += dt;
+    while (world_clock.time_accumulator >= 1.0f) {
+        world_clock.time_accumulator -= 1.0f;
+        world_clock.minute++;
+        world_clock.total_ticks++;
+
+        if (world_clock.minute >= 60) {
+            world_clock.minute = 0;
+            world_clock.hour++;
+            if (world_clock.hour >= 24) {
+                world_clock.hour = 0;
+                world_clock.day++;
+            }
+        }
+    }
+
+    if (world_mod.light_mode == WORLD_LIGHT_PERMA_DARK) {
+        world_clock.global_light = 0.15f;
+        world_clock.global_heat = 0.10f;
+    } else if (world_mod.light_mode == WORLD_LIGHT_PERMA_BRIGHT) {
+        world_clock.global_light = 1.0f;
+        world_clock.global_heat = 0.90f;
+    } else {
+        float hour_float = (float)world_clock.hour + (float)world_clock.minute / 60.0f;
+        int sr = world_mod.sunrise_hour > 0 ? world_mod.sunrise_hour : 6;
+        int ss = world_mod.sunset_hour > 0 ? world_mod.sunset_hour : 18;
+
+        if (hour_float >= (float)sr && hour_float <= (float)ss) {
+            float day_progress = (hour_float - (float)sr) / (float)(ss - sr);
+            if (day_progress <= 0.5f) {
+                world_clock.global_light = day_progress * 2.0f;
+            } else {
+                world_clock.global_light = (1.0f - day_progress) * 2.0f;
+            }
+            if (world_clock.global_light < 0.2f) world_clock.global_light = 0.2f;
+        } else {
+            world_clock.global_light = 0.05f;
+        }
+        world_clock.global_heat = 0.15f + world_clock.global_light * 0.70f;
+    }
+}
+
+float get_tile_light_level(int x, int y) {
+    if (x < 0 || x >= MAP_WIDTH || y < 0 || y >= MAP_HEIGHT) return 0.0f;
+    float light = world_clock.global_light;
+    if (world.map[y][x] == MOUNTAIN) light *= 1.2f;
+    else if (world.map[y][x] == WATER) light *= 0.9f;
+    if (light > 1.0f) light = 1.0f;
+    return light;
+}
 
 // ---------------------------------------------------------------------------
 // Modifier Helper Constructors
@@ -103,6 +162,60 @@ Modifier mod_loot(const char* mod_name, const ItemSpec* spec, int min_c, int max
     return m;
 }
 
+Modifier mod_behavior(const char* mod_name, BehaviorType behavior) {
+    Modifier m = {0};
+    m.type = MOD_TYPE_BEHAVIOR;
+    const char* tag = mod_name ? mod_name : "comportamento";
+    for (int i = 0; i < 31 && tag[i]; i++) m.mod_name[i] = tag[i];
+    m.as.behavior.behavior = behavior;
+    return m;
+}
+
+Modifier mod_ability(const char* mod_name, AbilityType ability, float power) {
+    Modifier m = {0};
+    m.type = MOD_TYPE_SPECIAL_ABILITY;
+    const char* tag = mod_name ? mod_name : "habilidade";
+    for (int i = 0; i < 31 && tag[i]; i++) m.mod_name[i] = tag[i];
+    m.as.ability.ability = ability;
+    m.as.ability.power = power;
+    return m;
+}
+
+Modifier mod_metabolism(const char* mod_name, MetabolismType meta) {
+    Modifier m = {0};
+    m.type = MOD_TYPE_METABOLISM;
+    const char* tag = mod_name ? mod_name : "metabolismo";
+    for (int i = 0; i < 31 && tag[i]; i++) m.mod_name[i] = tag[i];
+    m.as.metabolism.type = meta;
+    return m;
+}
+
+Modifier mod_preferences(const char* mod_name, int terrain, const char* p_food, const char* p_spec, const char* h_spec, float bonus) {
+    Modifier m = {0};
+    m.type = MOD_TYPE_PREFERENCES;
+    const char* tag = mod_name ? mod_name : "preferencias";
+    for (int i = 0; i < 31 && tag[i]; i++) m.mod_name[i] = tag[i];
+    m.as.preferences.preferred_terrain = terrain;
+    if (p_food) for (int i = 0; i < 31 && p_food[i]; i++) m.as.preferences.preferred_food_mod[i] = p_food[i];
+    if (p_spec) for (int i = 0; i < 31 && p_spec[i]; i++) m.as.preferences.preferred_species[i] = p_spec[i];
+    if (h_spec) for (int i = 0; i < 31 && h_spec[i]; i++) m.as.preferences.hated_species[i] = h_spec[i];
+    m.as.preferences.bonus_multiplier = bonus > 0.0f ? bonus : 1.25f;
+    return m;
+}
+
+Modifier mod_plant(const char* mod_name, bool sunlight, bool produces_fruit, float interval, const char* fruit_id) {
+    Modifier m = {0};
+    m.type = MOD_TYPE_PLANT;
+    const char* tag = mod_name ? mod_name : "planta";
+    for (int i = 0; i < 31 && tag[i]; i++) m.mod_name[i] = tag[i];
+    m.as.plant.requires_sunlight = sunlight;
+    m.as.plant.produces_fruit = produces_fruit;
+    m.as.plant.fruit_spawn_interval = interval > 0.0f ? interval : 20.0f;
+    m.as.plant.fruit_spawn_timer = 0.0f;
+    if (fruit_id) for (int i = 0; i < 31 && fruit_id[i]; i++) m.as.plant.fruit_item_id[i] = fruit_id[i];
+    return m;
+}
+
 // ---------------------------------------------------------------------------
 // Modifier Application Engine
 // ---------------------------------------------------------------------------
@@ -158,6 +271,23 @@ void apply_entity_modifiers(Entity* e, const Modifier* modifiers, int count) {
                     e->loot_table[e->loot_count++] = m->as.loot;
                 }
                 break;
+            case MOD_TYPE_BEHAVIOR:
+                e->behavior = m->as.behavior.behavior;
+                break;
+            case MOD_TYPE_SPECIAL_ABILITY:
+                e->ability = m->as.ability.ability;
+                e->ability_power = m->as.ability.power;
+                break;
+            case MOD_TYPE_METABOLISM:
+                e->metabolism = m->as.metabolism.type;
+                break;
+            case MOD_TYPE_PREFERENCES:
+                e->preferences = m->as.preferences;
+                break;
+            case MOD_TYPE_PLANT:
+                e->is_plant = true;
+                e->plant = m->as.plant;
+                break;
         }
     }
 }
@@ -171,6 +301,8 @@ Entity* spawn_entity_from_spec(const CreatureSpec* spec, int x, int y) {
             e->id = i + 1;
             e->x = x;
             e->y = y;
+            e->home_x = x;
+            e->home_y = y;
             e->active = true;
             e->max_health = 100.0f; e->health = 100.0f;
             e->max_hunger = 100.0f; e->hunger = (float)random_int(75, 100);
@@ -181,6 +313,7 @@ Entity* spawn_entity_from_spec(const CreatureSpec* spec, int x, int y) {
             e->movement = MOVE_WALK;
             e->diet = DIET_OMNIVORE;
             e->repro = REPRO_NONE;
+            e->preferences.preferred_terrain = -1;
             
             apply_entity_modifiers(e, spec->modifiers, spec->modifier_count);
             return e;
@@ -572,20 +705,70 @@ Entity* brain_perceive_creature_by_modifier_name(Entity* self, const char* targe
     return best;
 }
 
+void add_or_update_negative_preference(Entity* victim, Entity* attacker) {
+    if (!victim || !attacker || victim->id == attacker->id) return;
+
+    bool found = false;
+    for (int i = 0; i < victim->active_modifier_count; i++) {
+        if (victim->active_modifiers[i].type == MOD_TYPE_PREFERENCES) {
+            PreferenceData* p = &victim->active_modifiers[i].as.preferences;
+            if (strings_equal(p->hated_species, attacker->species_title) || p->hated_unit_id == attacker->id) {
+                p->species_affinity -= 0.30f;
+                p->hated_unit_id = attacker->id;
+                victim->preferences.species_affinity = p->species_affinity;
+                victim->preferences.hated_unit_id = attacker->id;
+                found = true;
+                break;
+            }
+        }
+    }
+
+    if (!found) {
+        Modifier m = mod_preferences("grudge", -1, NULL, NULL, attacker->species_title, 1.25f);
+        m.as.preferences.hated_unit_id = attacker->id;
+        m.as.preferences.species_affinity = -0.75f;
+        if (victim->active_modifier_count < 12) {
+            victim->active_modifiers[victim->active_modifier_count++] = m;
+        }
+        victim->preferences = m.as.preferences;
+    }
+}
+
 Entity* brain_perceive_closest_threat(Entity* self) {
-    if (self->group_tag[0] == '\0') return NULL;
-    float min_dist = self->aggro_range * self->aggro_range;
+    float min_score = (self->aggro_range * self->aggro_range) * 1.5f;
     Entity* best = NULL;
 
     for (int i = 0; i < MAX_ENTITIES; i++) {
         Entity* other = &world.entities[i];
-        if (!other->active || other->id == self->id || other->group_tag[0] == '\0') continue;
+        if (!other->active || other->id == self->id) continue;
         
-        if (!strings_equal(self->group_tag, other->group_tag)) {
-            float dist = (float)((other->x - self->x)*(other->x - self->x) + (other->y - self->y)*(other->y - self->y));
-            if (dist <= min_dist) {
-                min_dist = dist;
-                best = other;
+        bool is_hostile = false;
+        float hostility_weight = 1.0f;
+
+        if (self->group_tag[0] != '\0' && other->group_tag[0] != '\0' && !strings_equal(self->group_tag, other->group_tag)) {
+            is_hostile = true;
+        }
+
+        if (self->preferences.hated_species[0] != '\0' && strings_equal(self->preferences.hated_species, other->species_title)) {
+            is_hostile = true;
+            hostility_weight += 2.0f - self->preferences.species_affinity;
+        }
+        if (self->preferences.hated_unit_id == other->id) {
+            is_hostile = true;
+            hostility_weight += 4.0f;
+        }
+
+        float effective_aggro = self->aggro_range;
+        if (other->ability == ABILITY_CAMOUFLAGE) effective_aggro *= 0.5f;
+
+        if (is_hostile) {
+            float dist_sq = (float)((other->x - self->x)*(other->x - self->x) + (other->y - self->y)*(other->y - self->y));
+            if (dist_sq <= effective_aggro * effective_aggro * 2.2f) {
+                float score = dist_sq / hostility_weight;
+                if (score < min_score) {
+                    min_score = score;
+                    best = other;
+                }
             }
         }
     }
@@ -636,7 +819,45 @@ Entity* brain_perceive_closest_mate(Entity* self) {
 
 bool brain_perceive_food(Entity* self, int* out_x, int* out_y) {
     if (self->diet == DIET_NONE || self->diet == DIET_PHOTOSYNTHESIS) return false;
-    return brain_perceive_item_by_modifier_name(self, "comida", out_x, out_y);
+    
+    float min_score = 999999.0f;
+    int best_x = -1, best_y = -1;
+
+    for (int i = 0; i < MAX_DROPPED_ITEMS; i++) {
+        if (!world.items[i].active) continue;
+        const ItemSpec* spec = &world.items[i].spec;
+        bool is_food = false;
+
+        for (int m = 0; m < spec->modifier_count; m++) {
+            if (strings_equal(spec->modifiers[m].mod_name, "comida")) {
+                is_food = true;
+                break;
+            }
+        }
+
+        if (is_food) {
+            float dist_sq = (float)((world.items[i].x - self->x)*(world.items[i].x - self->x) + (world.items[i].y - self->y)*(world.items[i].y - self->y));
+            float weight = 1.0f;
+
+            if (self->preferences.preferred_food_mod[0] != '\0' && strings_equal(spec->item_id, self->preferences.preferred_food_mod)) {
+                weight = self->preferences.food_affinity > 0.0f ? self->preferences.food_affinity : 2.5f;
+            }
+
+            float score = dist_sq / weight;
+            if (score < min_score) {
+                min_score = score;
+                best_x = world.items[i].x;
+                best_y = world.items[i].y;
+            }
+        }
+    }
+
+    if (best_x != -1) {
+        if (out_x) *out_x = best_x;
+        if (out_y) *out_y = best_y;
+        return true;
+    }
+    return false;
 }
 
 bool brain_perceive_water(Entity* self, int* out_x, int* out_y) {
@@ -727,7 +948,7 @@ void brain_do_move_to(Entity* self, int target_x, int target_y) {
 bool brain_do_eat(Entity* self) {
     if (entity_consume_food_spec(self)) {
         self->current_motor = MOTOR_EAT;
-        for (int k = 0; k < 63 && "Comendo item de comida"; k++) self->brain.current_thought[k] = "Comendo item de comida"[k];
+        for (int k = 0; k < 63 && "Eating food item"; k++) self->brain.current_thought[k] = "Eating food item"[k];
         self->path_len = 0;
         return true;
     }
@@ -735,7 +956,7 @@ bool brain_do_eat(Entity* self) {
     int fx, fy;
     if (brain_perceive_food(self, &fx, &fy)) {
         self->current_motor = MOTOR_EAT;
-        for (int k = 0; k < 63 && "Buscando alimento"; k++) self->brain.current_thought[k] = "Buscando alimento"[k];
+        for (int k = 0; k < 63 && "Seeking food"; k++) self->brain.current_thought[k] = "Seeking food"[k];
         brain_do_move_to(self, fx, fy);
         return true;
     }
@@ -747,7 +968,7 @@ bool brain_do_drink(Entity* self) {
     // Priority 1: Drink from inventory item if held
     if (entity_consume_water_spec(self)) {
         self->current_motor = MOTOR_DRINK;
-        for (int k = 0; k < 63 && "Bebendo item de agua"; k++) self->brain.current_thought[k] = "Bebendo item de agua"[k];
+        for (int k = 0; k < 63 && "Drinking water item"; k++) self->brain.current_thought[k] = "Drinking water item"[k];
         self->path_len = 0;
         return true;
     }
@@ -767,7 +988,7 @@ bool brain_do_drink(Entity* self) {
 
     if (near_water) {
         self->current_motor = MOTOR_DRINK;
-        for (int k = 0; k < 63 && "Bebendo na margem"; k++) self->brain.current_thought[k] = "Bebendo na margem"[k];
+        for (int k = 0; k < 63 && "Drinking at shore"; k++) self->brain.current_thought[k] = "Drinking at shore"[k];
         self->thirst += 60.0f;
         if (self->thirst > self->max_thirst) self->thirst = self->max_thirst;
         self->path_len = 0;
@@ -778,7 +999,7 @@ bool brain_do_drink(Entity* self) {
     int wx, wy;
     if (brain_perceive_water_source(self, &wx, &wy)) {
         self->current_motor = MOTOR_DRINK;
-        for (int k = 0; k < 63 && "Buscando agua"; k++) self->brain.current_thought[k] = "Buscando agua"[k];
+        for (int k = 0; k < 63 && "Seeking water"; k++) self->brain.current_thought[k] = "Seeking water"[k];
         brain_do_move_to(self, wx, wy);
         return true;
     }
@@ -796,6 +1017,9 @@ void brain_do_attack(Entity* self, Entity* target) {
     self->current_motor = MOTOR_ATTACK;
     self->target_entity_id = target->id;
 
+    // Register combat grudge/negative preference on victim
+    add_or_update_negative_preference(target, self);
+
     float dist_sq = (float)((target->x - self->x)*(target->x - self->x) + (target->y - self->y)*(target->y - self->y));
     if (dist_sq <= 2.2f) {
         if (self->attack_cooldown <= 0.0f) {
@@ -804,6 +1028,14 @@ void brain_do_attack(Entity* self, Entity* target) {
             if (dmg < 2.0f) dmg = 2.0f;
             target->health -= dmg;
             target->combat_flash_timer = 0.3f;
+
+            if (self->ability == ABILITY_VAMPIRISM) {
+                self->health += dmg * 0.35f;
+                if (self->health > self->max_health) self->health = self->max_health;
+            }
+            if (self->ability == ABILITY_VENOM) {
+                target->poison_timer = 5.0f;
+            }
         }
         self->path_len = 0;
     } else {
@@ -865,19 +1097,19 @@ void entity_brain_think(Entity* self) {
     Entity* mate = brain_perceive_closest_mate(self);
 
     if (threat && self->attack_power > 0.0f) {
-        if (self->brain.bravery < 40) {
-            for (int k = 0; k < 63 && "Fugindo em panico!"; k++) self->brain.current_thought[k] = "Fugindo em panico!"[k];
+        if (self->behavior == BEHAVIOR_PACIFIST || self->brain.bravery < 40) {
+            for (int k = 0; k < 63 && "Fleeing in panic!"; k++) self->brain.current_thought[k] = "Fleeing in panic!"[k];
             brain_do_flee(self, threat);
             return;
         } else {
-            for (int k = 0; k < 63 && "Atacando ameaca!"; k++) self->brain.current_thought[k] = "Atacando ameaca!"[k];
+            for (int k = 0; k < 63 && "Attacking threat!"; k++) self->brain.current_thought[k] = "Attacking threat!"[k];
             brain_do_attack(self, threat);
             return;
         }
     }
 
     if (self->fatigue <= 20.0f || (self->current_motor == MOTOR_SLEEP && self->fatigue < self->max_fatigue)) {
-        for (int k = 0; k < 63 && "Dormindo..."; k++) self->brain.current_thought[k] = "Dormindo..."[k];
+        for (int k = 0; k < 63 && "Sleeping..."; k++) self->brain.current_thought[k] = "Sleeping..."[k];
         brain_do_sleep(self);
         return;
     }
@@ -886,7 +1118,7 @@ void entity_brain_think(Entity* self) {
         if (brain_do_drink(self)) {
             return;
         }
-        for (int k = 0; k < 63 && "Com sede (Sem agua no mapa)"; k++) self->brain.current_thought[k] = "Com sede (Sem agua no mapa)"[k];
+        for (int k = 0; k < 63 && "Thirsty (No water on map)"; k++) self->brain.current_thought[k] = "Thirsty (No water on map)"[k];
     }
 
     if (self->diet != DIET_NONE && self->diet != DIET_PHOTOSYNTHESIS) {
@@ -895,12 +1127,43 @@ void entity_brain_think(Entity* self) {
             if (brain_do_eat(self)) {
                 return;
             }
-            for (int k = 0; k < 63 && "Com fome (Sem comida no mapa)"; k++) self->brain.current_thought[k] = "Com fome (Sem comida no mapa)"[k];
+            for (int k = 0; k < 63 && "Hungry (No food on map)"; k++) self->brain.current_thought[k] = "Hungry (No food on map)"[k];
+
+            // Starvation Cannibalism Dynamic Acquisition
+            if (self->hunger <= 25.0f) {
+                if (self->behavior != BEHAVIOR_CANNIBALISM && (random_int(0, 100) < 5)) {
+                    self->behavior = BEHAVIOR_CANNIBALISM;
+                }
+                if (self->behavior == BEHAVIOR_CANNIBALISM) {
+                    for (int i = 0; i < MAX_ENTITIES; i++) {
+                        Entity* prey = &world.entities[i];
+                        if (prey->active && prey->id != self->id && strings_equal(prey->species_title, self->species_title)) {
+                            for (int k = 0; k < 63 && "Starving: Cannibal hunting!"; k++) self->brain.current_thought[k] = "Starving: Cannibal hunting!"[k];
+                            brain_do_attack(self, prey);
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Scavenger behavior: Pick up dropped items if idle/exploring
+    if (self->behavior == BEHAVIOR_SCAVENGER && self->path_len == 0) {
+        for (int i = 0; i < MAX_DROPPED_ITEMS; i++) {
+            if (world.items[i].active) {
+                float dist = (float)((world.items[i].x - self->x)*(world.items[i].x - self->x) + (world.items[i].y - self->y)*(world.items[i].y - self->y));
+                if (dist <= 144.0f) {
+                    for (int k = 0; k < 63 && "Collecting dropped item"; k++) self->brain.current_thought[k] = "Collecting dropped item"[k];
+                    brain_do_move_to(self, world.items[i].x, world.items[i].y);
+                    return;
+                }
+            }
         }
     }
 
     if (mate && self->repro == REPRO_SEX && self->repro_timer > 30.0f) {
-        for (int k = 0; k < 63 && "Buscando parceiro (Acasalamento)"; k++) self->brain.current_thought[k] = "Buscando parceiro (Acasalamento)"[k];
+        for (int k = 0; k < 63 && "Seeking partner (Mating)"; k++) self->brain.current_thought[k] = "Seeking partner (Mating)"[k];
         float dist_sq = (float)((mate->x - self->x)*(mate->x - self->x) + (mate->y - self->y)*(mate->y - self->y));
         if (dist_sq <= 2.2f) {
             self->repro_timer = 0.0f;
@@ -934,18 +1197,18 @@ void entity_brain_think(Entity* self) {
     }
 
     if (self->brain.sociability >= 60 && ally) {
-        for (int k = 0; k < 63 && "Socializando com aliado"; k++) self->brain.current_thought[k] = "Socializando com aliado"[k];
+        for (int k = 0; k < 63 && "Socializing with ally"; k++) self->brain.current_thought[k] = "Socializing with ally"[k];
         brain_do_socialize(self, ally);
         return;
     }
 
     if (self->brain.curiosity >= 50 && self->movement != MOVE_NONE) {
-        for (int k = 0; k < 63 && "Explorando o mapa"; k++) self->brain.current_thought[k] = "Explorando o mapa"[k];
+        for (int k = 0; k < 63 && "Exploring map"; k++) self->brain.current_thought[k] = "Exploring map"[k];
         brain_do_explore(self);
         return;
     }
 
-    for (int k = 0; k < 63 && "Em repouso"; k++) self->brain.current_thought[k] = "Em repouso"[k];
+    for (int k = 0; k < 63 && "Resting..."; k++) self->brain.current_thought[k] = "Resting..."[k];
     brain_do_idle(self);
 }
 
@@ -1133,30 +1396,86 @@ void init_creature_system_custom(const MapGenConfig* config, int* out_center_x, 
 void update_entity_simulation(Entity* e, float dt) {
     if (!e->active) return;
 
+    if (e->id == 1) {
+        update_world_clock(dt);
+    }
+
     if (e->combat_flash_timer > 0.0f) e->combat_flash_timer -= dt;
     if (e->attack_cooldown > 0.0f) e->attack_cooldown -= dt;
+    if (e->poison_timer > 0.0f) {
+        e->poison_timer -= dt;
+        e->health -= 3.0f * dt;
+    }
 
     e->repro_timer += dt;
 
+    // Plant Fruit / Herb Periodic Spawn System
+    if (e->is_plant) {
+        if (e->plant.produces_fruit) {
+            e->plant.fruit_spawn_timer += dt;
+            if (e->plant.fruit_spawn_timer >= e->plant.fruit_spawn_interval) {
+                e->plant.fruit_spawn_timer = 0.0f;
+                // Spawn fruit/herb item in an adjacent walkable tile
+                int adx[] = {0, 0, -1, 1};
+                int ady[] = {-1, 1, 0, 0};
+                for (int k = 0; k < 4; k++) {
+                    int nx = e->x + adx[k];
+                    int ny = e->y + ady[k];
+                    if (is_tile_walkable_for(nx, ny, MOVE_WALK)) {
+                        extern const ItemSpec ITEM_FRUIT_SPEC;
+                        extern const ItemSpec ITEM_HERB_SPEC;
+                        const ItemSpec* p_spec = &ITEM_FRUIT_SPEC;
+                        if (e->plant.fruit_item_id[0] != '\0') {
+                            if (strings_equal(e->plant.fruit_item_id, "item_herb")) p_spec = &ITEM_HERB_SPEC;
+                        }
+                        spawn_dropped_item_scatter(nx, ny, p_spec, 1);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    // Metabolism Rate Multiplier
+    float meta_rate = (e->metabolism == METABOLISM_FAST) ? 1.50f : ((e->metabolism == METABOLISM_SLOW) ? 0.60f : 1.0f);
+
+    // Active Regeneration Ability (Restores HP but costs 3x nutrients)
+    bool is_regenerating = false;
+    if (e->ability == ABILITY_REGENERATION && e->health < e->max_health) {
+        is_regenerating = true;
+        e->health += 6.0f * dt;
+        if (e->health > e->max_health) e->health = e->max_health;
+        meta_rate *= 3.0f; // 3x metabolic cost during active regeneration!
+    }
+
+    // Sleep Healing Bonus (Sleeping creatures recover extra HP)
+    if (e->current_motor == MOTOR_SLEEP) {
+        e->health += 2.0f * dt;
+        if (e->health > e->max_health) e->health = e->max_health;
+    }
+
+    // Nutrient Decay (Photosynthesis vs Meat/Herb Diet)
     if (e->diet == DIET_PHOTOSYNTHESIS) {
-        e->hunger += 2.0f * dt;
+        float tile_light = get_tile_light_level(e->x, e->y);
+        e->hunger += 3.0f * tile_light * dt;
         if (e->hunger > e->max_hunger) e->hunger = e->max_hunger;
     } else if (e->diet != DIET_NONE) {
-        e->hunger -= 0.8f * dt;
+        e->hunger -= 0.8f * meta_rate * dt;
         if (e->hunger < 0.0f) e->hunger = 0.0f;
     }
 
-    e->thirst -= 1.2f * dt;
+    e->thirst -= 1.2f * meta_rate * dt;
     if (e->thirst < 0.0f) e->thirst = 0.0f;
 
     if (e->current_motor == MOTOR_SLEEP) {
         e->fatigue += 8.0f * dt;
         if (e->fatigue >= e->max_fatigue) e->fatigue = e->max_fatigue;
     } else {
-        e->fatigue -= 0.4f * dt;
+        e->fatigue -= 0.4f * meta_rate * dt;
         if (e->fatigue < 0.0f) e->fatigue = 0.0f;
     }
 
+    // Reproduction Check
     if (e->health > e->max_health * 0.8f && e->hunger > e->max_hunger * 0.7f && e->repro_timer > 40.0f) {
         int dx[] = {0, 0, -1, 1};
         int dy[] = {-1, 1, 0, 0};
@@ -1184,9 +1503,10 @@ void update_entity_simulation(Entity* e, float dt) {
         }
     }
 
+    // Starvation & Passive Healing
     if (e->hunger <= 10.0f || e->thirst <= 10.0f || e->fatigue <= 5.0f) {
         e->health -= 2.0f * dt;
-    } else if (e->hunger > 70.0f && e->thirst > 70.0f && e->fatigue > 70.0f && e->health < e->max_health) {
+    } else if (e->hunger > 70.0f && e->thirst > 70.0f && e->fatigue > 70.0f && e->health < e->max_health && !is_regenerating) {
         e->health += 1.0f * dt;
     }
 
@@ -1199,9 +1519,19 @@ void update_entity_simulation(Entity* e, float dt) {
 
     entity_brain_think(e);
 
+    // Movement & Step Speed Calculation
     if (e->path_len > 0 && e->path_idx < e->path_len) {
         e->move_timer += dt;
         float step_delay = (e->current_motor == MOTOR_ATTACK || e->current_motor == MOTOR_FLEE) ? 0.22f : 0.40f;
+        if (e->metabolism == METABOLISM_FAST) step_delay *= 0.80f; // +25% speed bonus
+        else if (e->metabolism == METABOLISM_SLOW) step_delay *= 1.15f;
+
+        // Terrain Preference Speed Bonus
+        if (e->preferences.preferred_terrain >= 0 && world.map[e->y][e->x] == e->preferences.preferred_terrain) {
+            float b_mult = e->preferences.bonus_multiplier > 0.0f ? e->preferences.bonus_multiplier : 1.25f;
+            step_delay /= b_mult; // Faster step on preferred terrain!
+        }
+
         if (e->move_timer >= step_delay) {
             e->move_timer = 0.0f;
             e->x = e->path[e->path_idx].x;

@@ -248,6 +248,9 @@ void draw() {
                 }
             }
             selected_entity_idx = found_idx;
+            if (selected_entity_idx >= 0) {
+                cam_mode = CAM_MODE_FOLLOWING;
+            }
         }
     }
 
@@ -261,10 +264,9 @@ void draw() {
                 int next_idx = (start_from + step) % MAX_ENTITIES;
                 if (world.entities[next_idx].active) {
                     selected_entity_idx = next_idx;
-                    if (cam_mode == CAM_MODE_FOLLOWING) {
-                        cam_x = (float)world.entities[next_idx].x;
-                        cam_y = (float)world.entities[next_idx].y;
-                    }
+                    cam_mode = CAM_MODE_FOLLOWING;
+                    cam_x = (float)world.entities[next_idx].x;
+                    cam_y = (float)world.entities[next_idx].y;
                     break;
                 }
             }
@@ -302,28 +304,33 @@ void draw() {
 
     // Render Dropped Items
     for (int i = 0; i < MAX_DROPPED_ITEMS; i++) {
-        if (!world.items[i].active) continue;
-        int draw_x = start_x + world.items[i].x * tile_size;
-        int draw_y = start_y + world.items[i].y * tile_size;
+        if (world.items[i].active) {
+            int draw_x = start_x + world.items[i].x * tile_size;
+            int draw_y = start_y + world.items[i].y * tile_size;
 
-        if (draw_x + tile_size > 0 && draw_x < wagner.width && 
-            draw_y + tile_size > 0 && draw_y < wagner.height) {
-            const char* skin_name = get_item_skin_filename(&world.items[i].spec);
-            Image item_img = get_or_load_texture(skin_name);
-            draw_sprite(item_img, draw_x, draw_y, tile_size, tile_size);
+            if (draw_x + tile_size > 0 && draw_x < wagner.width && 
+                draw_y + tile_size > 0 && draw_y < wagner.height) {
+                const char* skin_name = get_item_skin_filename(&world.items[i].spec);
+                Image item_img = get_or_load_texture(skin_name);
+                int item_draw_size = tile_size * 3 / 4;
+                if (item_draw_size < 8) item_draw_size = 8;
+                int offset = (tile_size - item_draw_size) / 2;
+                draw_sprite(item_img, draw_x + offset, draw_y + offset, item_draw_size, item_draw_size);
+            }
         }
     }
 
-    // Render Entities
+    // Render Entities & Selection Indicators
     for (int i = 0; i < MAX_ENTITIES; i++) {
         Entity* e = &world.entities[i];
-        if (!e->active) continue;
+        if (e->active) {
+            int draw_x = start_x + e->x * tile_size;
+            int draw_y = start_y + e->y * tile_size;
 
-        int draw_x = start_x + e->x * tile_size;
-        int draw_y = start_y + e->y * tile_size;
-
-        if (draw_x + tile_size > 0 && draw_x < wagner.width && 
-            draw_y + tile_size > 0 && draw_y < wagner.height) {
+            if (draw_x + tile_size <= 0 || draw_x >= wagner.width || 
+                draw_y + tile_size <= 0 || draw_y >= wagner.height) {
+                continue;
+            }
             
             if (e->combat_flash_timer > 0.0f) {
                 draw_box(draw_x - 1, draw_y - 1, tile_size + 2, tile_size + 2, RED);
@@ -353,12 +360,12 @@ void draw() {
     }
 
     // ---------------------------------------------------------------------------
-    // Biological HUD Inspector Panel
+    // Biological HUD Inspector Panel (Only displayed when a creature is selected)
     // ---------------------------------------------------------------------------
-    draw_box(0, 175, 320, 65, rgb(20, 24, 30));
-    draw_box(0, 175, 320, 1, rgb(60, 80, 100));
+    if (selected_entity_idx >= 0 && selected_entity_idx < MAX_ENTITIES && world.entities[selected_entity_idx].active) {
+        draw_box(0, 175, 320, 65, rgb(20, 24, 30));
+        draw_box(0, 175, 320, 1, rgb(60, 80, 100));
 
-    if (selected_entity_idx >= 0 && world.entities[selected_entity_idx].active) {
         Entity* se = &world.entities[selected_entity_idx];
 
         // Column 1: Info, Species & Biological Traits
@@ -374,9 +381,9 @@ void draw() {
         draw_text(title_str, 38, 191, GREEN, 0);
 
         char bio_str[32];
-        const char* mov_str = (se->movement == MOVE_FLY) ? "Voo" : (se->movement == MOVE_AQUATIC ? "Aqua" : (se->movement == MOVE_NONE ? "Fixo" : "Andar"));
-        const char* diet_str = (se->diet == DIET_PHOTOSYNTHESIS) ? "Luz" : (se->diet == DIET_HERBIVORE ? "Erva" : (se->diet == DIET_CARNIVORE ? "Carne" : "Omni"));
-        const char* repro_str = (se->repro == REPRO_SEX) ? "Sex" : (se->repro == REPRO_MITOSIS_SPLIT ? "Mitose" : (se->repro == REPRO_SPORE_SEED ? "Esporo" : "Nulo"));
+        const char* mov_str = (se->movement == MOVE_FLY) ? "Fly" : (se->movement == MOVE_AQUATIC ? "Aqua" : (se->movement == MOVE_NONE ? "Fixed" : "Walk"));
+        const char* diet_str = (se->diet == DIET_PHOTOSYNTHESIS) ? "Light" : (se->diet == DIET_HERBIVORE ? "Herb" : (se->diet == DIET_CARNIVORE ? "Carn" : "Omni"));
+        const char* repro_str = (se->repro == REPRO_SEX) ? "Sex" : (se->repro == REPRO_MITOSIS_SPLIT ? "Mitosis" : (se->repro == REPRO_SPORE_SEED ? "Spore" : "None"));
 
         int b_idx = 0;
         for (int i = 0; mov_str[i]; i++) bio_str[b_idx++] = mov_str[i];
@@ -393,28 +400,28 @@ void draw() {
         int stat_x = 132;
         char num_buf[16];
 
-        // 1. HP (Coração)
+        // 1. HP
         draw_sprite(img_icon_heart, stat_x + 24, 180, 10, 10);
         format_stat_str(num_buf, (int)se->health, (int)se->max_health);
         draw_text(num_buf, stat_x + 42, 181, WHITE, 0);
 
-        // 2. Fome (Comida/Pão)
+        // 2. Hunger
         draw_sprite(img_icon_food, stat_x + 24, 191, 10, 10);
         format_stat_str(num_buf, (int)se->hunger, (int)se->max_hunger);
         draw_text(num_buf, stat_x + 42, 192, WHITE, 0);
 
-        // 3. Sede (Gota d'Água)
+        // 3. Thirst
         draw_sprite(img_icon_water, stat_x + 24, 202, 10, 10);
         format_stat_str(num_buf, (int)se->thirst, (int)se->max_thirst);
         draw_text(num_buf, stat_x + 42, 203, WHITE, 0);
 
-        // 4. Sono / Energia (Ícone de Sono)
+        // 4. Energy / Fatigue
         draw_sprite(img_icon_sleep, stat_x + 24, 213, 10, 10);
         format_stat_str(num_buf, (int)se->fatigue, (int)se->max_fatigue);
         draw_text(num_buf, stat_x + 42, 214, WHITE, 0);
 
         // Column 3: Inventory Grid
-        draw_text("Bolsa:", 245, 180, WHITE, 0);
+        draw_text("Bag:", 245, 180, WHITE, 0);
         for (int slot = 0; slot < 6; slot++) {
             int sx = 245 + (slot % 3) * 24;
             int sy = 192 + (slot / 3) * 22;
@@ -430,22 +437,45 @@ void draw() {
                 draw_text(num, sx + 12, sy + 11, WHITE, 0);
             }
         }
-    } else {
-        draw_text("Clique ou pressione TAB para inspecionar criatura", 20, 200, WHITE, 0);
     }
+
+    // World Clock & Climate HUD Overlay
+    draw_box(4, 4, 145, 14, rgb(20, 24, 30));
+    draw_box(4, 4, 145, 1, rgb(60, 80, 100));
+    char clock_buf[32];
+    int d_idx = 0;
+    clock_buf[d_idx++] = 'D'; clock_buf[d_idx++] = 'a'; clock_buf[d_idx++] = 'y'; clock_buf[d_idx++] = ' ';
+    if (world_clock.day >= 10) clock_buf[d_idx++] = '0' + (world_clock.day / 10);
+    clock_buf[d_idx++] = '0' + (world_clock.day % 10);
+    clock_buf[d_idx++] = ' ';
+    clock_buf[d_idx++] = '0' + (world_clock.hour / 10);
+    clock_buf[d_idx++] = '0' + (world_clock.hour % 10);
+    clock_buf[d_idx++] = ':';
+    clock_buf[d_idx++] = '0' + (world_clock.minute / 10);
+    clock_buf[d_idx++] = '0' + (world_clock.minute % 10);
+    clock_buf[d_idx++] = ' ';
+    clock_buf[d_idx++] = 'L';
+    clock_buf[d_idx++] = ':';
+    int light_pct = (int)(world_clock.global_light * 100.0f);
+    if (light_pct > 99) light_pct = 99;
+    if (light_pct >= 10) clock_buf[d_idx++] = '0' + (light_pct / 10);
+    clock_buf[d_idx++] = '0' + (light_pct % 10);
+    clock_buf[d_idx++] = '%';
+    clock_buf[d_idx] = '\0';
+    draw_text(clock_buf, 8, 7, YELLOW, 0);
 
     // Camera Mode Indicator Overlay
     if (cam_mode == CAM_MODE_PAUSED) {
-        draw_box(115, 4, 90, 14, rgb(40, 20, 20));
-        draw_box(115, 4, 90, 1, RED);
-        draw_text("[ PAUSADO ]", 125, 7, RED, 0);
+        draw_box(155, 4, 95, 14, rgb(40, 20, 20));
+        draw_box(155, 4, 95, 1, RED);
+        draw_text("[ PAUSED ]", 165, 7, RED, 0);
     } else if (cam_mode == CAM_MODE_FOLLOWING) {
-        draw_box(115, 4, 90, 14, rgb(20, 40, 50));
-        draw_box(115, 4, 90, 1, CYAN);
-        draw_text("[ SEGUINDO ]", 121, 7, CYAN, 0);
+        draw_box(155, 4, 115, 14, rgb(20, 40, 50));
+        draw_box(155, 4, 115, 1, CYAN);
+        draw_text("[ FOLLOWING ]", 161, 7, CYAN, 0);
     } else {
-        draw_box(115, 4, 90, 14, rgb(20, 35, 20));
-        draw_box(115, 4, 90, 1, GREEN);
-        draw_text("[ CAM LIVRE ]", 120, 7, GREEN, 0);
+        draw_box(155, 4, 100, 14, rgb(20, 35, 20));
+        draw_box(155, 4, 100, 1, GREEN);
+        draw_text("[ FREECAM ]", 160, 7, GREEN, 0);
     }
 }

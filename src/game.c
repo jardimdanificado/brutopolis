@@ -110,102 +110,139 @@ void setup_game_species_and_world(int* out_center_x, int* out_center_y) {
     if (out_center_y) *out_center_y = cy;
 
     // ---------------------------------------------------------------------------
-    // User-Defined Example Species Specs with String-Named Modifiers
+    // User-Defined Species Specs with Behavior, Ability, Metabolism & Preferences
     // ---------------------------------------------------------------------------
 
-    // 1. Árvore Anciã (Plant, Photosynthesis, Spores, Stationary)
+    // 1. Árvore Anciã (Plant, Photosynthesis, Spores, Regeneration)
     CreatureSpec tree_spec = {
         .species_name = "Arvore Ancia",
         .modifiers = {
-            { .type = MOD_TYPE_DATA, .mod_name = "dados", .as.data = { "Carvalho", "Arvore Ancia", "Natureza" } },
-            { .type = MOD_TYPE_SKIN, .mod_name = "skin", .as.skin = { "Feature_Tree_Full.png" } },
-            { .type = MOD_TYPE_MOVEMENT, .mod_name = "estatico", .as.movement = { MOVE_NONE } },
-            { .type = MOD_TYPE_DIET, .mod_name = "fotossintese", .as.diet = { DIET_PHOTOSYNTHESIS } },
-            { .type = MOD_TYPE_REPRODUCTION, .mod_name = "esporeamento", .as.repro = { REPRO_SPORE_SEED } },
-            { .type = MOD_TYPE_STATS, .mod_name = "status", .as.stats = { 200.0f, 100.0f, 100.0f } },
-            { .type = MOD_TYPE_LOOT, .mod_name = "loot_fruta", .as.loot = { ITEM_FRUIT_SPEC, 1, 3, 1.0f } }
+            mod_data("Carvalho", "Arvore Ancia", "Natureza"),
+            mod_skin("Feature_Tree_Full.png"),
+            mod_movement("estatico", MOVE_NONE),
+            mod_diet("fotossintese", DIET_PHOTOSYNTHESIS),
+            mod_repro("esporeamento", REPRO_SPORE_SEED),
+            mod_stats("status", 200.0f, 100.0f, 100.0f),
+            mod_plant("planta", true, true, 20.0f, "item_herb"),
+            mod_ability("regeneracao", ABILITY_REGENERATION, 1.0f),
+            mod_loot("loot_fruta", &ITEM_FRUIT_SPEC, 1, 3, 1.0f)
         },
-        .modifier_count = 7
+        .modifier_count = 9
     };
 
-    // 2. Dragão Alado (Flying, Carnivore, Sexual Reproduction)
+    // 2. Dragão Alado (Flying, Carnivore, Territorial, Vampirism, Fast Metabolism)
     CreatureSpec dragon_spec = {
         .species_name = "Dragao Alado",
         .modifiers = {
-            { .type = MOD_TYPE_DATA, .mod_name = "dados", .as.data = { "Smaug", "Dragao Alado", "Dracones" } },
-            { .type = MOD_TYPE_SKIN, .mod_name = "skin", .as.skin = { "Creature_Dragon_U.png" } },
-            { .type = MOD_TYPE_MOVEMENT, .mod_name = "voo", .as.movement = { MOVE_FLY } },
-            { .type = MOD_TYPE_DIET, .mod_name = "carnivoro", .as.diet = { DIET_CARNIVORE } },
-            { .type = MOD_TYPE_REPRODUCTION, .mod_name = "acasalamento", .as.repro = { REPRO_SEX } },
-            { .type = MOD_TYPE_STATS, .mod_name = "status", .as.stats = { 180.0f, 100.0f, 100.0f } },
-            { .type = MOD_TYPE_COMBAT, .mod_name = "combate_dragao", .as.combat = { 30.0f, 12.0f, 12.0f } },
-            { .type = MOD_TYPE_PERSONALITY, .mod_name = "personalidade", .as.personality = { 90, 80, 20, 80 } },
-            { .type = MOD_TYPE_LOOT, .mod_name = "loot_bife", .as.loot = { ITEM_STEAK_SPEC, 2, 4, 1.0f } }
+            mod_data("Smaug", "Dragao Alado", "Dracones"),
+            mod_skin("Creature_Dragon_U.png"),
+            mod_movement("voo", MOVE_FLY),
+            mod_diet("carnivoro", DIET_CARNIVORE),
+            mod_repro("acasalamento", REPRO_SEX),
+            mod_stats("status", 180.0f, 100.0f, 100.0f),
+            mod_combat("combate_dragao", 30.0f, 12.0f, 12.0f),
+            mod_personality("personalidade", 90, 80, 20, 80),
+            mod_behavior("territorial", BEHAVIOR_TERRITORIAL),
+            mod_ability("vampirismo", ABILITY_VAMPIRISM, 1.0f),
+            mod_metabolism("metabolismo", METABOLISM_FAST),
+            mod_loot("loot_bife", &ITEM_STEAK_SPEC, 2, 4, 1.0f)
         },
-        .modifier_count = 9
+        .modifier_count = 12
     };
 
-    // 3. Cavaleiro Imperial (Walking, Omnivore, Sexual Reproduction)
+    // 3. Cavaleiro Imperial (Walking, Omnivore, Herding, Terrain Preference)
     CreatureSpec knight_spec = {
         .species_name = "Cavaleiro Imperial",
         .modifiers = {
-            { .type = MOD_TYPE_DATA, .mod_name = "dados", .as.data = { "Arthur", "Cavaleiro Imperial", "Reino" } },
-            { .type = MOD_TYPE_SKIN, .mod_name = "skin", .as.skin = { "Human_Knight_M.png" } },
-            { .type = MOD_TYPE_MOVEMENT, .mod_name = "terrestre", .as.movement = { MOVE_WALK } },
-            { .type = MOD_TYPE_DIET, .mod_name = "onivoro", .as.diet = { DIET_OMNIVORE } },
-            { .type = MOD_TYPE_REPRODUCTION, .mod_name = "acasalamento", .as.repro = { REPRO_SEX } },
-            { .type = MOD_TYPE_STATS, .mod_name = "status", .as.stats = { 150.0f, 100.0f, 100.0f } },
-            { .type = MOD_TYPE_COMBAT, .mod_name = "combate_imperial", .as.combat = { 22.0f, 8.0f, 10.0f } },
-            { .type = MOD_TYPE_PERSONALITY, .mod_name = "personalidade", .as.personality = { 85, 40, 70, 50 } },
-            { .type = MOD_TYPE_LOOT, .mod_name = "loot_pao", .as.loot = { ITEM_BREAD_SPEC, 1, 2, 0.9f } }
+            mod_data("Arthur", "Cavaleiro Imperial", "Reino"),
+            mod_skin("Human_Knight_M.png"),
+            mod_movement("terrestre", MOVE_WALK),
+            mod_diet("onivoro", DIET_OMNIVORE),
+            mod_repro("acasalamento", REPRO_SEX),
+            mod_stats("status", 150.0f, 100.0f, 100.0f),
+            mod_combat("combate_imperial", 22.0f, 8.0f, 10.0f),
+            mod_personality("personalidade", 85, 40, 70, 50),
+            mod_behavior("bando", BEHAVIOR_HERDING),
+            mod_preferences("preferencias", FLOOR, "item_bread", "Cavaleiro Imperial", "Goblin Ladrao", 1.3f),
+            mod_loot("loot_pao", &ITEM_BREAD_SPEC, 1, 2, 0.9f)
         },
-        .modifier_count = 9
+        .modifier_count = 11
     };
 
-    // 4. Goblin Ladrão (Walking, Mitosis Split, Omnivore)
+    // 4. Goblin Ladrão (Walking, Scavenger, Camouflage, Fast Metabolism)
     CreatureSpec goblin_spec = {
         .species_name = "Goblin Ladrao",
         .modifiers = {
-            { .type = MOD_TYPE_DATA, .mod_name = "dados", .as.data = { "Snark", "Goblin Ladrao", "Tribo" } },
-            { .type = MOD_TYPE_SKIN, .mod_name = "skin", .as.skin = { "Creature_Goblin_U.png" } },
-            { .type = MOD_TYPE_MOVEMENT, .mod_name = "terrestre", .as.movement = { MOVE_WALK } },
-            { .type = MOD_TYPE_DIET, .mod_name = "onivoro", .as.diet = { DIET_OMNIVORE } },
-            { .type = MOD_TYPE_REPRODUCTION, .mod_name = "mitose", .as.repro = { REPRO_MITOSIS_SPLIT } },
-            { .type = MOD_TYPE_STATS, .mod_name = "status", .as.stats = { 90.0f, 100.0f, 100.0f } },
-            { .type = MOD_TYPE_COMBAT, .mod_name = "combate_furtivo", .as.combat = { 14.0f, 2.0f, 8.0f } },
-            { .type = MOD_TYPE_PERSONALITY, .mod_name = "personalidade", .as.personality = { 30, 85, 20, 90 } },
-            { .type = MOD_TYPE_LOOT, .mod_name = "loot_fruta", .as.loot = { ITEM_FRUIT_SPEC, 1, 2, 0.8f } }
+            mod_data("Snark", "Goblin Ladrao", "Tribo"),
+            mod_skin("Creature_Goblin_U.png"),
+            mod_movement("terrestre", MOVE_WALK),
+            mod_diet("onivoro", DIET_OMNIVORE),
+            mod_repro("mitose", REPRO_MITOSIS_SPLIT),
+            mod_stats("status", 90.0f, 100.0f, 100.0f),
+            mod_combat("combate_furtivo", 14.0f, 2.0f, 8.0f),
+            mod_personality("personalidade", 30, 85, 20, 90),
+            mod_behavior("carniceiro", BEHAVIOR_SCAVENGER),
+            mod_ability("camuflagem", ABILITY_CAMOUFLAGE, 1.0f),
+            mod_metabolism("metabolismo", METABOLISM_FAST),
+            mod_loot("loot_fruta", &ITEM_FRUIT_SPEC, 1, 2, 0.8f)
         },
-        .modifier_count = 9
+        .modifier_count = 12
     };
 
-    // 5. Gato Místico (Walking, Herbivore, Mitosis Split)
+    // 5. Gato Místico (Walking, Herbivore, Pacifist, Venom, Slow Metabolism)
     CreatureSpec cat_spec = {
         .species_name = "Gato Mistico",
         .modifiers = {
-            { .type = MOD_TYPE_DATA, .mod_name = "dados", .as.data = { "Felix", "Gato Mistico", "Natureza" } },
-            { .type = MOD_TYPE_SKIN, .mod_name = "skin", .as.skin = { "Creature_Cat_U.png" } },
-            { .type = MOD_TYPE_MOVEMENT, .mod_name = "terrestre", .as.movement = { MOVE_WALK } },
-            { .type = MOD_TYPE_DIET, .mod_name = "herbivoro", .as.diet = { DIET_HERBIVORE } },
-            { .type = MOD_TYPE_REPRODUCTION, .mod_name = "mitose", .as.repro = { REPRO_MITOSIS_SPLIT } },
-            { .type = MOD_TYPE_STATS, .mod_name = "status", .as.stats = { 80.0f, 100.0f, 100.0f } },
-            { .type = MOD_TYPE_COMBAT, .mod_name = "combate_agil", .as.combat = { 6.0f, 1.0f, 6.0f } },
-            { .type = MOD_TYPE_PERSONALITY, .mod_name = "personalidade", .as.personality = { 40, 50, 60, 80 } },
-            { .type = MOD_TYPE_LOOT, .mod_name = "loot_erva", .as.loot = { ITEM_HERB_SPEC, 1, 2, 0.6f } }
+            mod_data("Felix", "Gato Mistico", "Natureza"),
+            mod_skin("Creature_Cat_U.png"),
+            mod_movement("terrestre", MOVE_WALK),
+            mod_diet("herbivoro", DIET_HERBIVORE),
+            mod_repro("mitose", REPRO_MITOSIS_SPLIT),
+            mod_stats("status", 80.0f, 100.0f, 100.0f),
+            mod_combat("combate_agil", 6.0f, 1.0f, 6.0f),
+            mod_personality("personalidade", 40, 50, 60, 80),
+            mod_behavior("pacifista", BEHAVIOR_PACIFIST),
+            mod_ability("veneno", ABILITY_VENOM, 1.0f),
+            mod_metabolism("metabolismo", METABOLISM_SLOW),
+            mod_loot("loot_erva", &ITEM_HERB_SPEC, 1, 2, 0.6f)
+        },
+        .modifier_count = 12
+    };
+
+    // 6. Planta Carnívora de Gaia (Plant Spec, Fruit Producer, Regeneration)
+    CreatureSpec plant_spec = {
+        .species_name = "Planta Carnivora",
+        .modifiers = {
+            mod_data("Gaia", "Planta Carnivora", "Flora"),
+            mod_skin("Feature_Tree_Full.png"),
+            mod_movement("estatico", MOVE_NONE),
+            mod_diet("fotossintese", DIET_PHOTOSYNTHESIS),
+            mod_repro("esporeamento", REPRO_SPORE_SEED),
+            mod_stats("status", 160.0f, 100.0f, 100.0f),
+            mod_plant("planta", true, true, 15.0f, "item_fruit"),
+            mod_ability("regeneracao", ABILITY_REGENERATION, 1.0f),
+            mod_loot("loot_fruta", &ITEM_FRUIT_SPEC, 1, 3, 1.0f)
         },
         .modifier_count = 9
     };
 
     const CreatureSpec* specs[] = {
-        &tree_spec, &dragon_spec, &knight_spec, &goblin_spec, &cat_spec
+        &tree_spec, &dragon_spec, &knight_spec, &goblin_spec, &cat_spec, &plant_spec
     };
 
     // Populate Entities in Game World
-    for (int i = 0; i < 15; i++) {
-        int rx = cx + random_int(-20, 20);
-        int ry = cy + random_int(-20, 20);
-        const CreatureSpec* spec = specs[i % 5];
-        if (is_tile_walkable_for(rx, ry, spec->modifiers[2].as.movement.movement)) {
+    for (int i = 0; i < 24; i++) {
+        int rx = cx + random_int(-25, 25);
+        int ry = cy + random_int(-25, 25);
+        const CreatureSpec* spec = specs[i % 6];
+        MovementType mtype = MOVE_WALK;
+        for (int m = 0; m < spec->modifier_count; m++) {
+            if (spec->modifiers[m].type == MOD_TYPE_MOVEMENT) {
+                mtype = spec->modifiers[m].as.movement.movement;
+                break;
+            }
+        }
+        if (mtype == MOVE_NONE || is_tile_walkable_for(rx, ry, mtype)) {
             Entity* e = spawn_entity_from_spec(spec, rx, ry);
             if (e) {
                 entity_add_item_spec(e, &ITEM_BREAD_SPEC, random_int(1, 3));

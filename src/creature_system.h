@@ -78,6 +78,37 @@ typedef struct {
 } MapGenConfig;
 
 // ---------------------------------------------------------------------------
+// World Time, Light, Heat & World Modifiers
+// ---------------------------------------------------------------------------
+
+typedef struct {
+    int day;
+    int hour;
+    int minute;
+    uint32_t total_ticks;
+    float time_accumulator;
+    float global_light;        // 0.0f (darkness) to 1.0f (full light)
+    float global_heat;         // 0.0f (cold) to 1.0f (heat)
+} WorldClock;
+
+typedef enum {
+    WORLD_LIGHT_STANDARD = 0,
+    WORLD_LIGHT_PERMA_DARK,
+    WORLD_LIGHT_PERMA_BRIGHT,
+    WORLD_LIGHT_CUSTOM_RATIO
+} WorldLightMode;
+
+typedef struct {
+    WorldLightMode light_mode;
+    int sunrise_hour;
+    int sunset_hour;
+    float max_light_level;
+} WorldModifier;
+
+extern WorldClock world_clock;
+extern WorldModifier world_mod;
+
+// ---------------------------------------------------------------------------
 // Biological & Trait Enums
 // ---------------------------------------------------------------------------
 
@@ -115,6 +146,48 @@ typedef enum {
     MOTOR_EXPLORE
 } MotorCapability;
 
+typedef enum {
+    BEHAVIOR_NONE = 0,
+    BEHAVIOR_SCAVENGER,
+    BEHAVIOR_TERRITORIAL,
+    BEHAVIOR_PACIFIST,
+    BEHAVIOR_HERDING,
+    BEHAVIOR_CANNIBALISM
+} BehaviorType;
+
+typedef enum {
+    ABILITY_NONE = 0,
+    ABILITY_REGENERATION,
+    ABILITY_VAMPIRISM,
+    ABILITY_VENOM,
+    ABILITY_CAMOUFLAGE
+} AbilityType;
+
+typedef enum {
+    METABOLISM_NORMAL = 0,
+    METABOLISM_FAST,
+    METABOLISM_SLOW
+} MetabolismType;
+
+typedef struct {
+    int preferred_terrain;
+    char preferred_food_mod[32];
+    char preferred_species[32];
+    char hated_species[32];
+    int hated_unit_id;
+    float food_affinity;    // Higher weight for preferred foods
+    float species_affinity; // Negative values indicate hostility/grudge
+    float bonus_multiplier;
+} PreferenceData;
+
+typedef struct {
+    bool requires_sunlight;
+    bool produces_fruit;
+    float fruit_spawn_interval;
+    float fruit_spawn_timer;
+    char fruit_item_id[32];
+} PlantData;
+
 typedef struct {
     int x;
     int y;
@@ -133,7 +206,12 @@ typedef enum {
     MOD_TYPE_STATS,         // Max HP, Max Hunger, Max Thirst
     MOD_TYPE_COMBAT,        // Attack Power, Defense, Aggro Range
     MOD_TYPE_PERSONALITY,   // Bravery, Gluttony, Sociability, Curiosity
-    MOD_TYPE_LOOT           // Item Spec, Min, Max, Chance
+    MOD_TYPE_LOOT,          // Item Spec, Min, Max, Chance
+    MOD_TYPE_BEHAVIOR,      // Behavior Type (Scavenger, Territorial...)
+    MOD_TYPE_SPECIAL_ABILITY,// Regeneration, Vampirism, Venom...
+    MOD_TYPE_METABOLISM,    // Normal, Fast, Slow
+    MOD_TYPE_PREFERENCES,   // Terrain, Food, Ally & Hated Species
+    MOD_TYPE_PLANT          // Plant Traits & Fruit Production
 } ModifierType;
 
 typedef struct {
@@ -149,6 +227,11 @@ typedef struct {
         struct { float attack; float defense; float aggro_range; } combat;
         struct { int bravery; int gluttony; int sociability; int curiosity; } personality;
         LootDrop loot;
+        struct { BehaviorType behavior; } behavior;
+        struct { AbilityType ability; float power; } ability;
+        struct { MetabolismType type; } metabolism;
+        PreferenceData preferences;
+        PlantData plant;
     } as;
 } Modifier;
 
@@ -212,6 +295,17 @@ struct Entity {
     
     // Layer 2 High Level Brain Profile
     BrainProfile brain;
+
+    // Advanced Behavioral & Trait Components
+    BehaviorType behavior;
+    AbilityType ability;
+    float ability_power;
+    MetabolismType metabolism;
+    PreferenceData preferences;
+    PlantData plant;
+    bool is_plant;
+    float poison_timer;
+    int home_x, home_y;
     
     // Applied Modifiers Record
     Modifier active_modifiers[12];
@@ -254,6 +348,11 @@ Modifier mod_stats(const char* mod_name, float hp, float hunger, float thirst);
 Modifier mod_combat(const char* mod_name, float atk, float def, float aggro);
 Modifier mod_personality(const char* mod_name, int bravery, int gluttony, int sociability, int curiosity);
 Modifier mod_loot(const char* mod_name, const ItemSpec* spec, int min_c, int max_c, float chance);
+Modifier mod_behavior(const char* mod_name, BehaviorType behavior);
+Modifier mod_ability(const char* mod_name, AbilityType ability, float power);
+Modifier mod_metabolism(const char* mod_name, MetabolismType meta);
+Modifier mod_preferences(const char* mod_name, int terrain, const char* p_food, const char* p_spec, const char* h_spec, float bonus);
+Modifier mod_plant(const char* mod_name, bool sunlight, bool produces_fruit, float interval, const char* fruit_id);
 
 // ---------------------------------------------------------------------------
 // Function Prototypes
@@ -301,6 +400,8 @@ void brain_do_flee(Entity* self, Entity* threat);
 void brain_do_socialize(Entity* self, Entity* ally);
 void brain_do_explore(Entity* self);
 void brain_do_idle(Entity* self);
+
+void add_or_update_negative_preference(Entity* victim, Entity* attacker);
 
 // Layer 2 Developer High Level Brain Hook
 void entity_brain_think(Entity* self);
