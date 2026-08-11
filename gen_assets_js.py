@@ -6,7 +6,7 @@ Bundles all PNG assets + the JS files (concatenated as game.js).
 import os, sys
 
 ASSETS_DIR  = "assets"
-JS_FILES    = ["js/world.js", "js/creatures.js", "js/game_setup.js", "js/main.js"]
+JS_FILES    = ["js/world.js", "js/creatures.js", "js/game_setup.js", "js/runtime.js"]
 OUTPUT      = "assets_js.h"
 
 entries = []
@@ -36,10 +36,6 @@ for jf in JS_FILES:
 
 if js_bundle:
     js_bundle += b"\n// Host compatibility aliases for the gameplay API.\n"
-    js_bundle += b"var drawSprite = draw_sprite;\n"
-    js_bundle += b"var drawSpriteColored = draw_sprite_colored;\n"
-    js_bundle += b"var drawBox = rect;\n"
-    js_bundle += b"var drawText = text;\n"
     # MicroQuickJS requires input[input_len] to be a readable NUL byte.
     js_bundle += b"\0"
     entries.append(("game.js", js_bundle))

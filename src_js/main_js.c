@@ -43,6 +43,12 @@
 // ---------------------------------------------------------------------------
 #include "mquickjs.h"
 
+/* C-owned terrain/state used by the hybrid runtime.  The JavaScript side
+ * will own the simulation, while these routines keep map generation and
+ * rendering-facing data in the native engine. */
+#include "../src/creature_system.h"
+#include "../src/creature_system.c"
+
 /* Stubs for JS stdlib optional functions */
 JSValue js_date_constructor(JSContext *ctx, JSValue *tv, int argc, JSValue *argv) { return JS_NewDate(ctx, 0); }
 JSValue js_date_now(JSContext *ctx, JSValue *tv, int argc, JSValue *argv) { return JS_NewInt64(ctx, 0); }
@@ -60,6 +66,21 @@ JSValue js_text(JSContext *ctx, JSValue *tv, int argc, JSValue *argv);
 JSValue js_rgb(JSContext *ctx, JSValue *tv, int argc, JSValue *argv);
 JSValue js_draw_sprite(JSContext *ctx, JSValue *tv, int argc, JSValue *argv);
 JSValue js_draw_sprite_colored(JSContext *ctx, JSValue *tv, int argc, JSValue *argv);
+JSValue js_native_map_generate(JSContext *ctx, JSValue *tv, int argc, JSValue *argv);
+JSValue js_native_map_width(JSContext *ctx, JSValue *tv, int argc, JSValue *argv);
+JSValue js_native_map_height(JSContext *ctx, JSValue *tv, int argc, JSValue *argv);
+JSValue js_native_map_tile(JSContext *ctx, JSValue *tv, int argc, JSValue *argv);
+JSValue js_native_map_walkable(JSContext *ctx, JSValue *tv, int argc, JSValue *argv);
+JSValue js_native_find_path(JSContext *ctx, JSValue *tv, int argc, JSValue *argv);
+JSValue js_native_render_entity(JSContext *ctx, JSValue *tv, int argc, JSValue *argv);
+JSValue js_native_render_item(JSContext *ctx, JSValue *tv, int argc, JSValue *argv);
+JSValue js_native_is_paused(JSContext *ctx, JSValue *tv, int argc, JSValue *argv);
+JSValue js_native_target_tps(JSContext *ctx, JSValue *tv, int argc, JSValue *argv);
+JSValue js_native_selected_entity(JSContext *ctx, JSValue *tv, int argc, JSValue *argv);
+JSValue js_native_render_entity_meta(JSContext *ctx, JSValue *tv, int argc, JSValue *argv);
+JSValue js_native_render_inventory(JSContext *ctx, JSValue *tv, int argc, JSValue *argv);
+JSValue js_native_render_clock(JSContext *ctx, JSValue *tv, int argc, JSValue *argv);
+JSValue js_native_render_clear(JSContext *ctx, JSValue *tv, int argc, JSValue *argv);
 
 /*
  * mqjs_stdlib.h is generated for the full Wagner JavaScript API and therefore
@@ -230,6 +251,233 @@ JSValue js_rgb(JSContext *ctx, JSValue *tv, int argc, JSValue *argv) {
     return JS_NewInt32(ctx, (int32_t)rgb(r,g,b));
 }
 
+typedef struct {
+    int active, x, y, motor;
+    int fg, bg;
+    float health, hunger, thirst, fatigue;
+    char skin[64];
+} JSRenderEntity;
+
+static JSRenderEntity js_render_entities[MAX_ENTITIES];
+typedef struct {
+    int active, x, y, fg, bg, count;
+    char skin[64];
+} JSRenderItem;
+static JSRenderItem js_render_items[MAX_DROPPED_ITEMS];
+typedef struct {
+    int active, fg, bg, count;
+    char skin[64];
+} JSRenderInventory;
+static JSRenderInventory js_render_inventory[MAX_ENTITIES][6];
+typedef struct { int day, hour, minute, light; } JSRenderClock;
+static JSRenderClock js_render_clock;
+
+/* The renderer is the original C renderer, compiled into this host. */
+#include "c_renderer.c"
+
+JSValue js_native_map_generate(JSContext *ctx, JSValue *tv, int argc, JSValue *argv) {
+    tile_specs[FLOOR].modifiers[0] = tile_mod_collision(TILE_COLLISION_LAND);
+    tile_specs[FLOOR].modifiers[1] = tile_mod_color(rgb(170, 170, 170), rgb(90, 50, 25));
+    tile_specs[FLOOR].modifier_count = 2;
+    tile_specs[MOUNTAIN].modifiers[0] = tile_mod_collision(TILE_COLLISION_MOUNTAIN);
+    tile_specs[MOUNTAIN].modifiers[1] = tile_mod_color(rgb(180, 190, 200), rgb(50, 55, 65));
+    tile_specs[MOUNTAIN].modifier_count = 2;
+    tile_specs[WATER].modifiers[0] = tile_mod_collision(TILE_COLLISION_WATER);
+    tile_specs[WATER].modifiers[1] = tile_mod_color(rgb(70, 160, 240), rgb(15, 35, 70));
+    tile_specs[WATER].modifier_count = 2;
+    tile_specs[VOID_TILE].modifiers[0] = tile_mod_collision(TILE_COLLISION_VOID);
+    tile_specs[VOID_TILE].modifiers[1] = tile_mod_color(rgb(160, 60, 220), rgb(20, 10, 30));
+    tile_specs[VOID_TILE].modifier_count = 2;
+
+    MapGenConfig cfg = {
+        .seed = 0, .noise_scale = 0.05f, .octaves = 4, .num_islands = 6,
+        .min_island_radius = 90.0f, .max_island_radius = 170.0f,
+        .water_threshold = 0.35f, .mountain_threshold = 0.70f,
+        .ca_smooth_iterations = 3
+    };
+    gen_map_custom(&cfg);
+    return JS_UNDEFINED;
+}
+
+JSValue js_native_map_width(JSContext *ctx, JSValue *tv, int argc, JSValue *argv) {
+    return JS_NewInt32(ctx, MAP_WIDTH);
+}
+
+JSValue js_native_map_height(JSContext *ctx, JSValue *tv, int argc, JSValue *argv) {
+    return JS_NewInt32(ctx, MAP_HEIGHT);
+}
+
+JSValue js_native_map_tile(JSContext *ctx, JSValue *tv, int argc, JSValue *argv) {
+    int x = -1, y = -1;
+    if (argc > 0) JS_ToInt32(ctx, &x, argv[0]);
+    if (argc > 1) JS_ToInt32(ctx, &y, argv[1]);
+    if (x < 0 || x >= MAP_WIDTH || y < 0 || y >= MAP_HEIGHT)
+        return JS_NewInt32(ctx, VOID_TILE);
+    return JS_NewInt32(ctx, world.map[y][x]);
+}
+
+JSValue js_native_map_walkable(JSContext *ctx, JSValue *tv, int argc, JSValue *argv) {
+    int x = 0, y = 0, movement = MOVE_WALK;
+    if (argc > 0) JS_ToInt32(ctx, &x, argv[0]);
+    if (argc > 1) JS_ToInt32(ctx, &y, argv[1]);
+    if (argc > 2) JS_ToInt32(ctx, &movement, argv[2]);
+    return JS_NewBool(is_tile_walkable_for(x, y, (MovementType)movement));
+}
+
+JSValue js_native_find_path(JSContext *ctx, JSValue *tv, int argc, JSValue *argv) {
+    int sx = 0, sy = 0, gx = 0, gy = 0, movement = MOVE_WALK;
+    if (argc > 0) JS_ToInt32(ctx, &sx, argv[0]);
+    if (argc > 1) JS_ToInt32(ctx, &sy, argv[1]);
+    if (argc > 2) JS_ToInt32(ctx, &gx, argv[2]);
+    if (argc > 3) JS_ToInt32(ctx, &gy, argv[3]);
+    if (argc > 4) JS_ToInt32(ctx, &movement, argv[4]);
+    GridPos path[MAX_PATH_NODES];
+    int count = find_path_for(sx, sy, gx, gy, (MovementType)movement,
+                              path, MAX_PATH_NODES);
+    JSValue result = JS_NewArray(ctx, (uint32_t)(count > 0 ? count : 0));
+    for (int i = 0; i < count; i++) {
+        JSValue node = JS_NewObject(ctx);
+        JS_SetPropertyStr(ctx, node, "x", JS_NewInt32(ctx, path[i].x));
+        JS_SetPropertyStr(ctx, node, "y", JS_NewInt32(ctx, path[i].y));
+        JS_SetPropertyUint32(ctx, result, (uint32_t)i, node);
+    }
+    return result;
+}
+
+JSValue js_native_render_clear(JSContext *ctx, JSValue *tv, int argc, JSValue *argv) {
+    memset(js_render_entities, 0, sizeof(js_render_entities));
+    memset(js_render_items, 0, sizeof(js_render_items));
+    memset(js_render_inventory, 0, sizeof(js_render_inventory));
+    memset(&js_render_clock, 0, sizeof(js_render_clock));
+    return JS_UNDEFINED;
+}
+
+JSValue js_native_render_item(JSContext *ctx, JSValue *tv, int argc, JSValue *argv) {
+    if (argc < 8) return JS_UNDEFINED;
+    int index = -1;
+    JS_ToInt32(ctx, &index, argv[0]);
+    if (index < 0 || index >= MAX_DROPPED_ITEMS) return JS_UNDEFINED;
+    JSRenderItem *item = &js_render_items[index];
+    JS_ToInt32(ctx, &item->active, argv[1]);
+    JS_ToInt32(ctx, &item->x, argv[2]);
+    JS_ToInt32(ctx, &item->y, argv[3]);
+    JS_ToInt32(ctx, &item->fg, argv[4]);
+    JS_ToInt32(ctx, &item->bg, argv[5]);
+    JS_ToInt32(ctx, &item->count, argv[6]);
+    JSCStringBuf sb;
+    const char *skin = JS_ToCString(ctx, argv[7], &sb);
+    if (skin) strncpy(item->skin, skin, sizeof(item->skin) - 1);
+    item->skin[sizeof(item->skin) - 1] = '\0';
+    return JS_UNDEFINED;
+}
+
+JSValue js_native_render_entity_meta(JSContext *ctx, JSValue *tv, int argc, JSValue *argv) {
+    if (argc < 12) return JS_UNDEFINED;
+    int index = -1;
+    JS_ToInt32(ctx, &index, argv[0]);
+    if (index < 0 || index >= MAX_ENTITIES) return JS_UNDEFINED;
+    Entity *e = &world.entities[index];
+    JSCStringBuf a, b, c;
+    const char *name = JS_ToCString(ctx, argv[1], &a);
+    const char *title = JS_ToCString(ctx, argv[2], &b);
+    const char *thought = JS_ToCString(ctx, argv[3], &c);
+    if (name) strncpy(e->name, name, sizeof(e->name) - 1);
+    if (title) strncpy(e->species_title, title, sizeof(e->species_title) - 1);
+    if (thought) strncpy(e->brain.current_thought, thought, sizeof(e->brain.current_thought) - 1);
+    JS_ToInt32(ctx, (int *)&e->movement, argv[4]);
+    JS_ToInt32(ctx, (int *)&e->diet, argv[5]);
+    JS_ToInt32(ctx, (int *)&e->repro, argv[6]);
+    int value = 0;
+    JS_ToInt32(ctx, &value, argv[7]); e->max_health = (float)value;
+    JS_ToInt32(ctx, &value, argv[8]); e->max_hunger = (float)value;
+    JS_ToInt32(ctx, &value, argv[9]); e->max_thirst = (float)value;
+    JS_ToInt32(ctx, &value, argv[10]); e->max_fatigue = (float)value;
+    JS_ToInt32(ctx, &value, argv[11]); e->combat_flash_timer = (float)value;
+    return JS_UNDEFINED;
+}
+
+JSValue js_native_render_inventory(JSContext *ctx, JSValue *tv, int argc, JSValue *argv) {
+    if (argc < 7) return JS_UNDEFINED;
+    int index = -1, slot = -1;
+    JS_ToInt32(ctx, &index, argv[0]);
+    JS_ToInt32(ctx, &slot, argv[1]);
+    if (index < 0 || index >= MAX_ENTITIES || slot < 0 || slot >= 6) return JS_UNDEFINED;
+    JSRenderInventory *item = &js_render_inventory[index][slot];
+    JS_ToInt32(ctx, &item->active, argv[2]);
+    JS_ToInt32(ctx, &item->fg, argv[3]);
+    JS_ToInt32(ctx, &item->bg, argv[4]);
+    JS_ToInt32(ctx, &item->count, argv[5]);
+    JSCStringBuf sb;
+    const char *skin = JS_ToCString(ctx, argv[6], &sb);
+    if (skin) strncpy(item->skin, skin, sizeof(item->skin) - 1);
+    item->skin[sizeof(item->skin) - 1] = '\0';
+    return JS_UNDEFINED;
+}
+
+JSValue js_native_render_clock(JSContext *ctx, JSValue *tv, int argc, JSValue *argv) {
+    if (argc < 4) return JS_UNDEFINED;
+    JS_ToInt32(ctx, &js_render_clock.day, argv[0]);
+    JS_ToInt32(ctx, &js_render_clock.hour, argv[1]);
+    JS_ToInt32(ctx, &js_render_clock.minute, argv[2]);
+    JS_ToInt32(ctx, &js_render_clock.light, argv[3]);
+    return JS_UNDEFINED;
+}
+
+JSValue js_native_is_paused(JSContext *ctx, JSValue *tv, int argc, JSValue *argv) {
+    return JS_NewBool(c_renderer_is_paused());
+}
+
+JSValue js_native_target_tps(JSContext *ctx, JSValue *tv, int argc, JSValue *argv) {
+    return JS_NewInt32(ctx, c_renderer_target_tps());
+}
+
+JSValue js_native_selected_entity(JSContext *ctx, JSValue *tv, int argc, JSValue *argv) {
+    return JS_NewInt32(ctx, c_renderer_selected_entity());
+}
+
+JSValue js_native_render_entity(JSContext *ctx, JSValue *tv, int argc, JSValue *argv) {
+    if (argc < 12) return JS_UNDEFINED;
+    int index = -1;
+    JS_ToInt32(ctx, &index, argv[0]);
+    if (index < 0 || index >= MAX_ENTITIES) return JS_UNDEFINED;
+    JSRenderEntity *e = &js_render_entities[index];
+    JS_ToInt32(ctx, &e->active, argv[1]);
+    JS_ToInt32(ctx, &e->x, argv[2]);
+    JS_ToInt32(ctx, &e->y, argv[3]);
+    JS_ToInt32(ctx, &e->motor, argv[4]);
+    JS_ToInt32(ctx, &e->fg, argv[5]);
+    JS_ToInt32(ctx, &e->bg, argv[6]);
+    int stat = 0;
+    JS_ToInt32(ctx, &stat, argv[7]); e->health = (float)stat;
+    JS_ToInt32(ctx, &stat, argv[8]); e->hunger = (float)stat;
+    JS_ToInt32(ctx, &stat, argv[9]); e->thirst = (float)stat;
+    JS_ToInt32(ctx, &stat, argv[10]); e->fatigue = (float)stat;
+    JSCStringBuf sb;
+    const char *skin = JS_ToCString(ctx, argv[11], &sb);
+    if (skin) strncpy(e->skin, skin, sizeof(e->skin) - 1);
+    e->skin[sizeof(e->skin) - 1] = '\0';
+
+    /* Mirror the render-facing subset into the native entity table.  The
+     * simulation remains JS-owned; C only consumes this snapshot. */
+    Entity *ce = &world.entities[index];
+    memset(ce, 0, sizeof(*ce));
+    ce->active = e->active != 0;
+    ce->id = index + 1;
+    ce->x = e->x; ce->y = e->y;
+    ce->current_motor = (MotorCapability)e->motor;
+    ce->color = (uint64_t)e->fg; ce->backcolor = (uint64_t)e->bg;
+    ce->has_color = true; ce->has_backcolor = true;
+    ce->health = e->health; ce->max_health = e->health;
+    ce->hunger = e->hunger; ce->max_hunger = e->hunger;
+    ce->thirst = e->thirst; ce->max_thirst = e->thirst;
+    ce->fatigue = e->fatigue; ce->max_fatigue = e->fatigue;
+    strncpy(ce->skin_filename, e->skin, sizeof(ce->skin_filename) - 1);
+    ce->skin_filename[sizeof(ce->skin_filename) - 1] = '\0';
+    strncpy(ce->name, "JS Entity", sizeof(ce->name) - 1);
+    strncpy(ce->species_title, "JS Entity", sizeof(ce->species_title) - 1);
+    return JS_UNDEFINED;
+}
+
 // ---------------------------------------------------------------------------
 // Setup: initialize JS, load game.js, call JS setup()
 // ---------------------------------------------------------------------------
@@ -237,6 +485,7 @@ static bool _prev_mouse_down = false;
 
 void setup() {
     w_setup(&_wagner_rom.state, WAGNER_TITLE, WAGNER_CFG_W, WAGNER_CFG_H, WAGNER_CFG_BPP, WAGNER_CFG_SCALE);
+    c_renderer_preload();
 
     ctx = JS_NewContext(js_heap, sizeof(js_heap), &js_stdlib);
     if (!ctx) return;
@@ -305,6 +554,7 @@ void setup() {
         JS_PushArg(ctx, JS_NULL);
         JSValue res = JS_Call(ctx, 0);
         report_exception(ctx, res);
+        c_renderer_draw();
     }
 }
 
@@ -334,11 +584,12 @@ void draw() {
         JS_SetPropertyUint32(ctx, keys, i, JS_NewBool(_wagner_rom.state.keys[i] ? 1 : 0));
     }
 
-    JSValue fn = JS_GetPropertyStr(ctx, global, "draw");
+    JSValue fn = JS_GetPropertyStr(ctx, global, "tick");
     if (JS_IsFunction(ctx, fn) && !JS_StackCheck(ctx, 2)) {
         JS_PushArg(ctx, fn);
         JS_PushArg(ctx, JS_NULL);
         JSValue res = JS_Call(ctx, 0);
         report_exception(ctx, res);
+        c_renderer_draw();
     }
 }

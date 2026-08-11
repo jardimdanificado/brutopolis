@@ -100,7 +100,7 @@ $(TARGET): $(SRCS) $(MQJS_SRCS) $(ASSETS) wagner.h
 
 gen-assets: $(ASSETS)
 
-$(ASSETS): js/world.js js/creatures.js js/game_setup.js js/main.js
+$(ASSETS): js/world.js js/creatures.js js/game_setup.js js/runtime.js
 	$(PYTHON3) gen_assets_js.py
 
 run: all

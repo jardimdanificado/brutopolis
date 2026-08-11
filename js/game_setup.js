@@ -4,7 +4,7 @@
 
 function setupWorld() {
     // Generate map
-    genMap({ seed:0, noiseScale:0.05, octaves:4, numIslands:6, minRadius:22, maxRadius:42, waterThresh:0.35, mountThresh:0.70, caIter:3 });
+    genMap({ seed:0, noiseScale:0.05, octaves:4, numIslands:6, minRadius:90, maxRadius:170, waterThresh:0.35, mountThresh:0.70, caIter:3 });
     var center = findLandCenter();
     var cx = center.x, cy = center.y;
 
