@@ -17,7 +17,9 @@ var BEHAVIOR_NONE = 0, BEHAVIOR_SCAVENGER = 1, BEHAVIOR_TERRITORIAL = 2,
 var ABILITY_NONE = 0, ABILITY_REGEN = 1, ABILITY_VAMPIRISM = 2, ABILITY_VENOM = 3, ABILITY_CAMOUFLAGE = 4;
 var METABOLISM_NORMAL = 0, METABOLISM_FAST = 1, METABOLISM_SLOW = 2;
 
-var MAP_WIDTH = 512, MAP_HEIGHT = 512;
+// Keep the simulation map large enough for exploration while fitting the
+// JavaScript runtime budget on the embedded MicroQuickJS target.
+var MAP_WIDTH = 128, MAP_HEIGHT = 128;
 var MAX_ENTITIES = 96, MAX_ITEMS = 128, MAX_PATH = 64;
 var BFS_RADIUS = 40;
 

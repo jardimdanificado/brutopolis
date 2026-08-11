@@ -1890,7 +1890,10 @@ WagnerAudio ogg_decode(const uint8_t* data, size_t size) {
 // ASSET LOADERS WITH CACHING
 // ============================================
 
-#include "assets.h"
+#ifndef WAGNER_ASSETS_HEADER
+#define WAGNER_ASSETS_HEADER "assets.h"
+#endif
+#include WAGNER_ASSETS_HEADER
 
 typedef struct {
     const char* path;

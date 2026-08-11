@@ -15,7 +15,7 @@
 # =============================================================================
 
 CLANG     ?= clang
-WAGNOSTIC ?= wagnostic
+WAGNOSTIC ?= $(if $(wildcard ../wagnostic/emulators/wasm3/wagnostic),../wagnostic/emulators/wasm3/wagnostic,wagnostic)
 PYTHON3   ?= python3
 
 # Repo structure
@@ -23,7 +23,9 @@ LIB       := lib
 DECODERS  := $(LIB)/decoders
 INCLUDE   := $(LIB)/include
 SHIM      := $(LIB)/shim
-MQJS_DIR  := src_js/mquickjs
+# Prefer a vendored copy. During development, the sibling wagner checkout is
+# also supported, but a clean checkout without either copy fails explicitly.
+MQJS_DIR  ?= $(if $(wildcard src_js/mquickjs/mquickjs.c),src_js/mquickjs,$(if $(wildcard ../wagner/lib/mquickjs/mquickjs.c),../wagner/lib/mquickjs,src_js/mquickjs))
 
 TARGET := brutopolis_js.wasm
 ASSETS := assets_js.h
@@ -57,6 +59,7 @@ CFLAGS = \
 	-DLODEPNG_NO_COMPILE_ANCILLARY_CHUNKS \
 	-DLODEPNG_NO_COMPILE_ERROR_TEXT \
 	-DWAGNER_NO_AUDIO_DECODE \
+	-DWAGNER_ASSETS_HEADER=\"assets_js.h\" \
 	-include $(ASSETS)
 
 LDFLAGS = \
@@ -72,22 +75,24 @@ SRCS = \
 
 # MicroQuickJS sources
 MQJS_SRCS = \
-	$(MQJS_DIR)/mquickjs.c
+	$(MQJS_DIR)/mquickjs.c \
+	$(MQJS_DIR)/cutils.c \
+	$(MQJS_DIR)/dtoa.c \
+	$(MQJS_DIR)/libm.c
 
-.PHONY: all run gen-assets patch clean setup
+.PHONY: all run gen-assets patch clean setup test-js
 
 all: setup $(TARGET)
 
-# Clone and patch mquickjs if not present
-setup: $(MQJS_DIR)/mquickjs.h
-
-$(MQJS_DIR)/mquickjs.h:
-	@if [ ! -d $(MQJS_DIR) ]; then \
-		echo "→ Cloning mquickjs..."; \
-		git clone --depth 1 https://github.com/nicowillis/mquickjs.git $(MQJS_DIR) 2>/dev/null || \
-		git clone --depth 1 https://github.com/bellard/quickjs.git $(MQJS_DIR); \
+# Validate the dependency without mutating the checkout or relying on network.
+setup:
+	@if [ ! -f "$(MQJS_DIR)/mquickjs.c" ] || [ ! -f "$(MQJS_DIR)/mquickjs.h" ] || [ ! -f "$(MQJS_DIR)/mqjs_stdlib.h" ] || ! grep -q 'js_draw_sprite' "$(MQJS_DIR)/mqjs_stdlib.h"; then \
+		echo "error: MicroQuickJS not found in $(MQJS_DIR)" >&2; \
+		echo "       use the Wagner-generated MicroQuickJS stdlib (with js_draw_sprite)" >&2; \
+		echo "       or set MQJS_DIR=/path/to/wagner/lib/mquickjs" >&2; \
+		exit 1; \
 	fi
-	@echo "→ mquickjs ready"
+	@echo "→ MicroQuickJS: $(MQJS_DIR)"
 
 $(TARGET): $(SRCS) $(MQJS_SRCS) $(ASSETS) wagner.h
 	$(CLANG) $(CFLAGS) $(LDFLAGS) -o $@ $(SRCS) $(MQJS_SRCS)
@@ -102,8 +107,11 @@ run: all
 	$(WAGNOSTIC) $(TARGET)
 
 patch:
-	$(PYTHON3) patch_stdlib.py
+	MQJS_DIR="$(MQJS_DIR)" $(PYTHON3) patch_stdlib.py
 	@echo "✓  Patched stdlib"
+
+test-js:
+	$(PYTHON3) tests/js_smoke.py
 
 clean:
 	rm -f $(TARGET) $(ASSETS)

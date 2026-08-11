@@ -35,7 +35,16 @@ for jf in JS_FILES:
         print(f"[gen_assets_js] WARNING: Missing {jf}")
 
 if js_bundle:
+    js_bundle += b"\n// Host compatibility aliases for the gameplay API.\n"
+    js_bundle += b"var drawSprite = draw_sprite;\n"
+    js_bundle += b"var drawSpriteColored = draw_sprite_colored;\n"
+    js_bundle += b"var drawBox = rect;\n"
+    js_bundle += b"var drawText = text;\n"
+    # MicroQuickJS requires input[input_len] to be a readable NUL byte.
+    js_bundle += b"\0"
     entries.append(("game.js", js_bundle))
+else:
+    entries.append(("game.js", b"\0"))
 
 # Write output
 lines = []

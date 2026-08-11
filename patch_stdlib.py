@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 import os
+import sys
 
-STDLIB_C = os.path.join("mquickjs", "mqjs_stdlib.c")
+mqjs_dir = os.environ.get("MQJS_DIR", "src_js/mquickjs")
+STDLIB_C = os.path.join(mqjs_dir, "mqjs_stdlib.c")
 
 if not os.path.exists(STDLIB_C):
-    print(f"Error: {STDLIB_C} not found.")
-    exit(1)
+    print(f"Error: {STDLIB_C} not found.", file=sys.stderr)
+    sys.exit(1)
 
 with open(STDLIB_C, "r") as f:
     content = f.read()
