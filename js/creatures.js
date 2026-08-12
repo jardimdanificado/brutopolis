@@ -37,6 +37,8 @@ function makeEntity(id, x, y) {
         attack: 0.0, defense: 0.0, attackSpeed: 1.0, attackCooldown: 0.0, aggroRange: 0.0,
         targetId: -1, combatFlash: 0.0,
         motor: MOTOR_IDLE, path: [], pathIdx: 0, moveTimer: 0.0,
+        pathTargetX: x, pathTargetY: y,
+        pathReplanTimer: 0.0,
         bravery: 50, gluttony: 50, sociability: 50, curiosity: 50, thought: "...",
         behavior: BEHAVIOR_NONE, ability: ABILITY_NONE, abilityPower: 0.0,
         metabolism: METABOLISM_NORMAL,
@@ -140,6 +142,7 @@ function entityTriggerLoot(e) {
         spawnDroppedItemScatter(e.x, e.y, e.inventory[i].item, e.inventory[i].count);
     }
     e.inventory = [];
+    if (!e.isPlant) spawnDroppedItemScatter(e.x, e.y, ITEM_STEAK, 1);
     for (var i = 0; i < e.lootTable.length; i++) {
         var lt = e.lootTable[i];
         if (rngFloat() <= lt.chance) {
@@ -165,12 +168,16 @@ function perceiveThreat(self) {
     var best = null, minScore = (self.aggroRange*self.aggroRange)*1.5;
     for (var i = 0; i < MAX_ENTITIES; i++) {
         var other = entities[i];
-        if (!other||other.id===self.id||other.isPlant||other.movement===MOVE_NONE) continue;
+        if (!other||!other.active||other.id===self.id||other.isPlant||other.movement===MOVE_NONE) continue;
         if (other.speciesTitle===self.speciesTitle) continue;
         var hostile = false, hw = 1.0;
         if (self.groupTag&&other.groupTag&&self.groupTag!==other.groupTag) { hostile=true; }
         if (self.hatedSpecies&&self.hatedSpecies===other.speciesTitle) { hostile=true; hw+=2.0-self.speciesAffinity; }
         if (self.hatedId===other.id) { hostile=true; hw+=4.0; }
+        if (self.diet===DIET_CARNIVORE && !self.hatedSpecies && self.hatedId!==other.id) {
+            var huntLimit = self.gluttony>60 ? 65 : 35;
+            if (self.hunger > huntLimit) hostile = false;
+        }
         var ea = self.aggroRange * (other.ability===ABILITY_CAMOUFLAGE ? 0.5 : 1.0);
         if (hostile) {
             var d = (other.x-self.x)*(other.x-self.x)+(other.y-self.y)*(other.y-self.y);
@@ -182,14 +189,14 @@ function perceiveThreat(self) {
 function perceiveAlly(self) {
     if (!self.groupTag) return null;
     var best=null, minD=(self.aggroRange*1.5)*(self.aggroRange*1.5);
-    for (var i=0;i<MAX_ENTITIES;i++) { var o=entities[i]; if(!o||o.id===self.id||o.groupTag!==self.groupTag) continue; var d=(o.x-self.x)*(o.x-self.x)+(o.y-self.y)*(o.y-self.y); if(d<=minD){minD=d;best=o;} }
+    for (var i=0;i<MAX_ENTITIES;i++) { var o=entities[i]; if(!o||!o.active||o.id===self.id||o.groupTag!==self.groupTag) continue; var d=(o.x-self.x)*(o.x-self.x)+(o.y-self.y)*(o.y-self.y); if(d<=minD){minD=d;best=o;} }
     return best;
 }
 function perceiveMate(self) {
     if (self.repro!==REPRO_SEX) return null;
     var best=null, minD=(self.aggroRange*2)*(self.aggroRange*2);
     for (var i=0;i<MAX_ENTITIES;i++) {
-        var o=entities[i]; if(!o||o.id===self.id||o.repro!==REPRO_SEX||o.speciesTitle!==self.speciesTitle) continue;
+        var o=entities[i]; if(!o||!o.active||o.id===self.id||o.repro!==REPRO_SEX||o.speciesTitle!==self.speciesTitle) continue;
         if (o.health>o.maxHealth*0.5&&o.hunger>o.maxHunger*0.35&&o.fatigue>30) {
             var d=(o.x-self.x)*(o.x-self.x)+(o.y-self.y)*(o.y-self.y); if(d<=minD){minD=d;best=o;}
         }
@@ -210,15 +217,7 @@ function perceiveFood(self) {
     return best;
 }
 function perceiveWaterTile(self) {
-    var bestD=1e9, best=null;
-    for (var dy=-30;dy<=30;dy++) for (var dx=-30;dx<=30;dx++) {
-        var tx=self.x+dx, ty=self.y+dy;
-        if (getTile(tx,ty)===WATER) {
-            var adx=[0,0,-1,1],ady=[-1,1,0,0];
-            for (var k=0;k<4;k++) { var wx=tx+adx[k],wy=ty+ady[k]; if(isTileWalkable(wx,wy,self.movement)){var d=(wx-self.x)*(wx-self.x)+(wy-self.y)*(wy-self.y);if(d<bestD){bestD=d;best={x:wx,y:wy};}}}
-        }
-    }
-    return best;
+    return native_find_water(self.x, self.y, self.movement, 30);
 }
 function perceiveWaterSource(self) {
     var itemWater=null, minDI=1e9;
@@ -237,12 +236,19 @@ function isNearWater(self) {
 // Motor actuators
 // ---------------------------------------------------------------------------
 function doMoveTo(self, tx, ty) {
+    if (self.movement===MOVE_NONE) return false;
     self.motor = MOTOR_MOVE;
-    var targetChanged = self.path.length > 0 && (self.path[self.path.length-1].x!==tx||self.path[self.path.length-1].y!==ty);
-    if (self.path.length===0||self.pathIdx>=self.path.length||targetChanged) {
+    var targetChanged = self.path.length > 0 &&
+        (self.pathTargetX !== tx || self.pathTargetY !== ty);
+    var pathFinished = self.path.length===0 || self.pathIdx>=self.path.length;
+    if (pathFinished || (targetChanged && self.pathReplanTimer<=0)) {
         self.path = findPath(self.x, self.y, tx, ty, self.movement);
         self.pathIdx = 0;
+        self.pathTargetX = tx;
+        self.pathTargetY = ty;
+        self.pathReplanTimer = 0.35;
     }
+    return self.path.length > 0;
 }
 function doEat(self) {
     if (entityConsumeFood(self)) { self.motor=MOTOR_EAT; self.thought="Eating food item"; self.path=[]; return true; }
@@ -250,7 +256,7 @@ function doEat(self) {
     if (fp) { self.motor=MOTOR_EAT; self.thought="Seeking food"; doMoveTo(self,fp.x,fp.y); return true; }
     if (self.diet===DIET_CARNIVORE||self.diet===DIET_OMNIVORE) {
         var best=null,minD=1e9;
-        for(var i=0;i<MAX_ENTITIES;i++){var pr=entities[i];if(!pr||pr.id===self.id||pr.isPlant||pr.movement===MOVE_NONE||pr.speciesTitle===self.speciesTitle)continue;var d=(pr.x-self.x)*(pr.x-self.x)+(pr.y-self.y)*(pr.y-self.y);if(d<=self.aggroRange*self.aggroRange*4&&d<minD){minD=d;best=pr;}}
+        for(var i=0;i<MAX_ENTITIES;i++){var pr=entities[i];if(!pr||!pr.active||pr.id===self.id||pr.isPlant||pr.movement===MOVE_NONE||pr.speciesTitle===self.speciesTitle)continue;var d=(pr.x-self.x)*(pr.x-self.x)+(pr.y-self.y)*(pr.y-self.y);if(d<=self.aggroRange*self.aggroRange*4&&d<minD){minD=d;best=pr;}}
         if(best){self.thought="Hunting prey for food!";doAttack(self,best);return true;}
     }
     return false;
@@ -264,7 +270,13 @@ function doDrink(self) {
 }
 function doSleep(self) { self.motor=MOTOR_SLEEP; self.path=[]; }
 function doAttack(self, target) {
-    if (!target) return;
+    if (!target || !target.active) {
+        self.targetId=-1;
+        self.path=[];
+        self.pathIdx=0;
+        self.motor=MOTOR_IDLE;
+        return;
+    }
     self.motor=MOTOR_ATTACK; self.targetId=target.id;
     // grudge
     if (target.hatedId!==self.id){target.hatedId=self.id;target.hatedSpecies=self.speciesTitle;target.speciesAffinity=Math.max(-1,target.speciesAffinity-0.3);}
@@ -281,8 +293,10 @@ function doAttack(self, target) {
     } else { doMoveTo(self,target.x,target.y); }
 }
 function doFlee(self, threat) {
+    if (!threat || !threat.active) { self.path=[]; return; }
     self.motor=MOTOR_FLEE;
-    var dx=self.x-threat.x||1, dy=self.y-threat.y;
+    var dx=self.x-threat.x, dy=self.y-threat.y;
+    if (dx===0 && dy===0) dx=1;
     doMoveTo(self, self.x+(dx>0?8:-8), self.y+(dy>0?8:-8));
 }
 function doSocialize(self, ally) {
@@ -310,13 +324,13 @@ function brainThink(self) {
         else{self.thought="Attacking threat!";doAttack(self,threat);return;}
     }
     if (self.fatigue<=20||(self.motor===MOTOR_SLEEP&&self.fatigue<self.maxFatigue)){self.thought="Sleeping...";doSleep(self);return;}
-    if (self.thirst<=45){if(doDrink(self))return;self.thought="Thirsty (No water)";}
+    if (self.diet!==DIET_PHOTOSYNTHESIS&&self.thirst<=45){if(doDrink(self))return;self.thought="Thirsty (No water)";}
     if (self.diet!==DIET_NONE&&self.diet!==DIET_PHOTOSYNTHESIS){
         var ht=self.gluttony>60?65:35;
         if(self.hunger<=ht){if(doEat(self))return;self.thought="Hungry (No food)";
             if(self.hunger<=25){
                 if(self.behavior!==BEHAVIOR_CANNIBALISM&&rngInt(0,100)<5)self.behavior=BEHAVIOR_CANNIBALISM;
-                if(self.behavior===BEHAVIOR_CANNIBALISM){for(var i=0;i<MAX_ENTITIES;i++){var pr=entities[i];if(pr&&pr.id!==self.id&&pr.speciesTitle===self.speciesTitle){self.thought="Starving: Cannibal!";doAttack(self,pr);return;}}}
+                if(self.behavior===BEHAVIOR_CANNIBALISM){for(var i=0;i<MAX_ENTITIES;i++){var pr=entities[i];if(pr&&pr.active&&pr.id!==self.id&&pr.speciesTitle===self.speciesTitle){self.thought="Starving: Cannibal!";doAttack(self,pr);return;}}}
             }
         }
     }
@@ -366,6 +380,7 @@ function updateEntity(e, dt, isFirst) {
     }
 
     // Timers
+    if (e.pathReplanTimer>0) e.pathReplanTimer-=dt;
     if (e.combatFlash>0) e.combatFlash-=dt;
     if (e.attackCooldown>0) e.attackCooldown-=dt;
     if (e.poisonTimer>0){e.poisonTimer-=dt;e.health-=3.0*dt;}
@@ -394,7 +409,7 @@ function updateEntity(e, dt, isFirst) {
     // Nutrient decay
     if (e.diet===DIET_PHOTOSYNTHESIS){var tl=getTileLight(e.x,e.y);e.hunger=Math.min(e.maxHunger,e.hunger+3*tl*dt);}
     else if(e.diet!==DIET_NONE){e.hunger=Math.max(0,e.hunger-0.8*meta*dt);}
-    e.thirst=Math.max(0,e.thirst-1.2*meta*dt);
+    if (e.diet!==DIET_PHOTOSYNTHESIS) e.thirst=Math.max(0,e.thirst-1.2*meta*dt);
     if (e.motor===MOTOR_SLEEP){e.fatigue=Math.min(e.maxFatigue,e.fatigue+8*dt);}
     else{e.fatigue=Math.max(0,e.fatigue-0.4*meta*dt);}
 

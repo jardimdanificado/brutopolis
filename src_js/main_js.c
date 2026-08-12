@@ -46,8 +46,7 @@
 /* C-owned terrain/state used by the hybrid runtime.  The JavaScript side
  * will own the simulation, while these routines keep map generation and
  * rendering-facing data in the native engine. */
-#include "../src/creature_system.h"
-#include "../src/creature_system.c"
+#include "native_world.h"
 
 /* Stubs for JS stdlib optional functions */
 JSValue js_date_constructor(JSContext *ctx, JSValue *tv, int argc, JSValue *argv) { return JS_NewDate(ctx, 0); }
@@ -71,6 +70,7 @@ JSValue js_native_map_width(JSContext *ctx, JSValue *tv, int argc, JSValue *argv
 JSValue js_native_map_height(JSContext *ctx, JSValue *tv, int argc, JSValue *argv);
 JSValue js_native_map_tile(JSContext *ctx, JSValue *tv, int argc, JSValue *argv);
 JSValue js_native_map_walkable(JSContext *ctx, JSValue *tv, int argc, JSValue *argv);
+JSValue js_native_find_water(JSContext *ctx, JSValue *tv, int argc, JSValue *argv);
 JSValue js_native_find_path(JSContext *ctx, JSValue *tv, int argc, JSValue *argv);
 JSValue js_native_render_entity(JSContext *ctx, JSValue *tv, int argc, JSValue *argv);
 JSValue js_native_render_item(JSContext *ctx, JSValue *tv, int argc, JSValue *argv);
@@ -256,6 +256,10 @@ typedef struct {
     int fg, bg;
     float health, hunger, thirst, fatigue;
     char skin[64];
+    char name[32], title[32], thought[64];
+    int movement, diet, repro;
+    int max_health, max_hunger, max_thirst, max_fatigue;
+    int combat_flash;
 } JSRenderEntity;
 
 static JSRenderEntity js_render_entities[MAX_ENTITIES];
@@ -276,26 +280,7 @@ static JSRenderClock js_render_clock;
 #include "c_renderer.c"
 
 JSValue js_native_map_generate(JSContext *ctx, JSValue *tv, int argc, JSValue *argv) {
-    tile_specs[FLOOR].modifiers[0] = tile_mod_collision(TILE_COLLISION_LAND);
-    tile_specs[FLOOR].modifiers[1] = tile_mod_color(rgb(170, 170, 170), rgb(90, 50, 25));
-    tile_specs[FLOOR].modifier_count = 2;
-    tile_specs[MOUNTAIN].modifiers[0] = tile_mod_collision(TILE_COLLISION_MOUNTAIN);
-    tile_specs[MOUNTAIN].modifiers[1] = tile_mod_color(rgb(180, 190, 200), rgb(50, 55, 65));
-    tile_specs[MOUNTAIN].modifier_count = 2;
-    tile_specs[WATER].modifiers[0] = tile_mod_collision(TILE_COLLISION_WATER);
-    tile_specs[WATER].modifiers[1] = tile_mod_color(rgb(70, 160, 240), rgb(15, 35, 70));
-    tile_specs[WATER].modifier_count = 2;
-    tile_specs[VOID_TILE].modifiers[0] = tile_mod_collision(TILE_COLLISION_VOID);
-    tile_specs[VOID_TILE].modifiers[1] = tile_mod_color(rgb(160, 60, 220), rgb(20, 10, 30));
-    tile_specs[VOID_TILE].modifier_count = 2;
-
-    MapGenConfig cfg = {
-        .seed = 0, .noise_scale = 0.05f, .octaves = 4, .num_islands = 6,
-        .min_island_radius = 90.0f, .max_island_radius = 170.0f,
-        .water_threshold = 0.35f, .mountain_threshold = 0.70f,
-        .ca_smooth_iterations = 3
-    };
-    gen_map_custom(&cfg);
+    native_world_generate();
     return JS_UNDEFINED;
 }
 
@@ -313,7 +298,7 @@ JSValue js_native_map_tile(JSContext *ctx, JSValue *tv, int argc, JSValue *argv)
     if (argc > 1) JS_ToInt32(ctx, &y, argv[1]);
     if (x < 0 || x >= MAP_WIDTH || y < 0 || y >= MAP_HEIGHT)
         return JS_NewInt32(ctx, VOID_TILE);
-    return JS_NewInt32(ctx, world.map[y][x]);
+    return JS_NewInt32(ctx, native_world_tile(x, y));
 }
 
 JSValue js_native_map_walkable(JSContext *ctx, JSValue *tv, int argc, JSValue *argv) {
@@ -321,7 +306,7 @@ JSValue js_native_map_walkable(JSContext *ctx, JSValue *tv, int argc, JSValue *a
     if (argc > 0) JS_ToInt32(ctx, &x, argv[0]);
     if (argc > 1) JS_ToInt32(ctx, &y, argv[1]);
     if (argc > 2) JS_ToInt32(ctx, &movement, argv[2]);
-    return JS_NewBool(is_tile_walkable_for(x, y, (MovementType)movement));
+    return JS_NewBool(native_world_walkable(x, y, movement));
 }
 
 JSValue js_native_find_path(JSContext *ctx, JSValue *tv, int argc, JSValue *argv) {
@@ -331,9 +316,9 @@ JSValue js_native_find_path(JSContext *ctx, JSValue *tv, int argc, JSValue *argv
     if (argc > 2) JS_ToInt32(ctx, &gx, argv[2]);
     if (argc > 3) JS_ToInt32(ctx, &gy, argv[3]);
     if (argc > 4) JS_ToInt32(ctx, &movement, argv[4]);
-    GridPos path[MAX_PATH_NODES];
-    int count = find_path_for(sx, sy, gx, gy, (MovementType)movement,
-                              path, MAX_PATH_NODES);
+    NativeGridPos path[NATIVE_MAX_PATH];
+    int count = native_world_find_path(sx, sy, gx, gy, movement,
+                                       path, NATIVE_MAX_PATH);
     JSValue result = JS_NewArray(ctx, (uint32_t)(count > 0 ? count : 0));
     for (int i = 0; i < count; i++) {
         JSValue node = JS_NewObject(ctx);
@@ -341,6 +326,20 @@ JSValue js_native_find_path(JSContext *ctx, JSValue *tv, int argc, JSValue *argv
         JS_SetPropertyStr(ctx, node, "y", JS_NewInt32(ctx, path[i].y));
         JS_SetPropertyUint32(ctx, result, (uint32_t)i, node);
     }
+    return result;
+}
+
+JSValue js_native_find_water(JSContext *ctx, JSValue *tv, int argc, JSValue *argv) {
+    int sx = 0, sy = 0, movement = MOVE_WALK, radius = 30;
+    if (argc > 0) JS_ToInt32(ctx, &sx, argv[0]);
+    if (argc > 1) JS_ToInt32(ctx, &sy, argv[1]);
+    if (argc > 2) JS_ToInt32(ctx, &movement, argv[2]);
+    if (argc > 3) JS_ToInt32(ctx, &radius, argv[3]);
+    NativeGridPos pos;
+    if (!native_world_find_water(sx, sy, movement, radius, &pos)) return JS_NULL;
+    JSValue result = JS_NewObject(ctx);
+    JS_SetPropertyStr(ctx, result, "x", JS_NewInt32(ctx, pos.x));
+    JS_SetPropertyStr(ctx, result, "y", JS_NewInt32(ctx, pos.y));
     return result;
 }
 
@@ -376,23 +375,23 @@ JSValue js_native_render_entity_meta(JSContext *ctx, JSValue *tv, int argc, JSVa
     int index = -1;
     JS_ToInt32(ctx, &index, argv[0]);
     if (index < 0 || index >= MAX_ENTITIES) return JS_UNDEFINED;
-    Entity *e = &world.entities[index];
+    JSRenderEntity *e = &js_render_entities[index];
     JSCStringBuf a, b, c;
     const char *name = JS_ToCString(ctx, argv[1], &a);
     const char *title = JS_ToCString(ctx, argv[2], &b);
     const char *thought = JS_ToCString(ctx, argv[3], &c);
     if (name) strncpy(e->name, name, sizeof(e->name) - 1);
-    if (title) strncpy(e->species_title, title, sizeof(e->species_title) - 1);
-    if (thought) strncpy(e->brain.current_thought, thought, sizeof(e->brain.current_thought) - 1);
-    JS_ToInt32(ctx, (int *)&e->movement, argv[4]);
-    JS_ToInt32(ctx, (int *)&e->diet, argv[5]);
-    JS_ToInt32(ctx, (int *)&e->repro, argv[6]);
+    if (title) strncpy(e->title, title, sizeof(e->title) - 1);
+    if (thought) strncpy(e->thought, thought, sizeof(e->thought) - 1);
+    JS_ToInt32(ctx, &e->movement, argv[4]);
+    JS_ToInt32(ctx, &e->diet, argv[5]);
+    JS_ToInt32(ctx, &e->repro, argv[6]);
     int value = 0;
-    JS_ToInt32(ctx, &value, argv[7]); e->max_health = (float)value;
-    JS_ToInt32(ctx, &value, argv[8]); e->max_hunger = (float)value;
-    JS_ToInt32(ctx, &value, argv[9]); e->max_thirst = (float)value;
-    JS_ToInt32(ctx, &value, argv[10]); e->max_fatigue = (float)value;
-    JS_ToInt32(ctx, &value, argv[11]); e->combat_flash_timer = (float)value;
+    JS_ToInt32(ctx, &value, argv[7]); e->max_health = value;
+    JS_ToInt32(ctx, &value, argv[8]); e->max_hunger = value;
+    JS_ToInt32(ctx, &value, argv[9]); e->max_thirst = value;
+    JS_ToInt32(ctx, &value, argv[10]); e->max_fatigue = value;
+    JS_ToInt32(ctx, &e->combat_flash, argv[11]);
     return JS_UNDEFINED;
 }
 
@@ -457,24 +456,6 @@ JSValue js_native_render_entity(JSContext *ctx, JSValue *tv, int argc, JSValue *
     if (skin) strncpy(e->skin, skin, sizeof(e->skin) - 1);
     e->skin[sizeof(e->skin) - 1] = '\0';
 
-    /* Mirror the render-facing subset into the native entity table.  The
-     * simulation remains JS-owned; C only consumes this snapshot. */
-    Entity *ce = &world.entities[index];
-    memset(ce, 0, sizeof(*ce));
-    ce->active = e->active != 0;
-    ce->id = index + 1;
-    ce->x = e->x; ce->y = e->y;
-    ce->current_motor = (MotorCapability)e->motor;
-    ce->color = (uint64_t)e->fg; ce->backcolor = (uint64_t)e->bg;
-    ce->has_color = true; ce->has_backcolor = true;
-    ce->health = e->health; ce->max_health = e->health;
-    ce->hunger = e->hunger; ce->max_hunger = e->hunger;
-    ce->thirst = e->thirst; ce->max_thirst = e->thirst;
-    ce->fatigue = e->fatigue; ce->max_fatigue = e->fatigue;
-    strncpy(ce->skin_filename, e->skin, sizeof(ce->skin_filename) - 1);
-    ce->skin_filename[sizeof(ce->skin_filename) - 1] = '\0';
-    strncpy(ce->name, "JS Entity", sizeof(ce->name) - 1);
-    strncpy(ce->species_title, "JS Entity", sizeof(ce->species_title) - 1);
     return JS_UNDEFINED;
 }
 

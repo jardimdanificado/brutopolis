@@ -1,5 +1,5 @@
 #include "../wagner.h"
-#include "../src/creature_system.h"
+#include "native_world.h"
 
 // ---------------------------------------------------------------------------
 // Dynamic Texture Cache & Game Visual Assets
@@ -63,10 +63,6 @@ static int selected_entity_idx = -1;
 static bool is_paused = false;
 static int target_tps = 60;
 static float sim_accumulator = 0.0f;
-
-/* Kept only so the original setup helper remains available for comparison;
- * the hybrid host initializes the map and JS world itself. */
-void setup_game_species_and_world(int* out_center_x, int* out_center_y);
 
 int c_renderer_is_paused(void) { return is_paused ? 1 : 0; }
 int c_renderer_target_tps(void) { return target_tps; }
@@ -170,13 +166,6 @@ void c_renderer_preload() {
     img_icon_sleep = load_image("Other_Sleep.png");
 }
 
-void c_renderer_setup_unused() {
-    int cx = 0, cy = 0;
-    setup_game_species_and_world(&cx, &cy);
-    cam_x = (float)cx;
-    cam_y = (float)cy;
-}
-
 // ---------------------------------------------------------------------------
 // Main Game Loop & Renderer
 // ---------------------------------------------------------------------------
@@ -273,9 +262,9 @@ void c_renderer_draw() {
     }
 
     // Automatic Camera Following: Follow selected unit if valid
-    if (selected_entity_idx >= 0 && selected_entity_idx < MAX_ENTITIES && world.entities[selected_entity_idx].active) {
-        cam_x = (float)world.entities[selected_entity_idx].x;
-        cam_y = (float)world.entities[selected_entity_idx].y;
+    if (selected_entity_idx >= 0 && selected_entity_idx < MAX_ENTITIES && js_render_entities[selected_entity_idx].active) {
+        cam_x = (float)js_render_entities[selected_entity_idx].x;
+        cam_y = (float)js_render_entities[selected_entity_idx].y;
     } else {
         selected_entity_idx = -1;
     }
@@ -295,7 +284,7 @@ void c_renderer_draw() {
 
             int found_idx = -1;
             for (int i = 0; i < MAX_ENTITIES; i++) {
-                if (world.entities[i].active && world.entities[i].x == clicked_tile_x && world.entities[i].y == clicked_tile_y) {
+                if (js_render_entities[i].active && js_render_entities[i].x == clicked_tile_x && js_render_entities[i].y == clicked_tile_y) {
                     found_idx = i;
                     break;
                 }
@@ -312,10 +301,10 @@ void c_renderer_draw() {
             int start_from = (selected_entity_idx < 0) ? 0 : selected_entity_idx;
             for (int step = 1; step <= MAX_ENTITIES; step++) {
                 int next_idx = (start_from + step) % MAX_ENTITIES;
-                if (world.entities[next_idx].active) {
+                if (js_render_entities[next_idx].active) {
                     selected_entity_idx = next_idx;
-                    cam_x = (float)world.entities[next_idx].x;
-                    cam_y = (float)world.entities[next_idx].y;
+                    cam_x = (float)js_render_entities[next_idx].x;
+                    cam_y = (float)js_render_entities[next_idx].y;
                     break;
                 }
             }
@@ -335,23 +324,20 @@ void c_renderer_draw() {
             if (draw_x + tile_size > 0 && draw_x < wagner.width && 
                 draw_y + tile_size > 0 && draw_y < wagner.height) {
                 uint64_t t_col, t_backcol;
-                get_tile_colors((Tile)world.map[y][x], &t_col, &t_backcol);
-                draw_sprite_colored(img_tiles[world.map[y][x]], draw_x, draw_y, tile_size, tile_size, t_col, t_backcol);
+                int tile = native_world_tile(x, y);
+                uint64_t tile_colors[4][2] = {
+                    {rgb(170,170,170), rgb(90,50,25)}, {rgb(180,190,200), rgb(50,55,65)},
+                    {rgb(70,160,240), rgb(15,35,70)}, {rgb(160,60,220), rgb(20,10,30)}
+                };
+                t_col = tile_colors[tile][0]; t_backcol = tile_colors[tile][1];
+                draw_sprite_colored(img_tiles[tile], draw_x, draw_y, tile_size, tile_size, t_col, t_backcol);
             }
         }
     }
 
     // Render Path of Selected Entity
-    if (selected_entity_idx >= 0 && world.entities[selected_entity_idx].active) {
-        Entity* se = &world.entities[selected_entity_idx];
-        for (int p = se->path_idx; p < se->path_len; p++) {
-            int px = start_x + se->path[p].x * tile_size;
-            int py = start_y + se->path[p].y * tile_size;
-            if (px + tile_size > 0 && px < wagner.width && py + tile_size > 0 && py < wagner.height) {
-                draw_box(px + tile_size / 4, py + tile_size / 4, tile_size / 2, tile_size / 2, YELLOW);
-            }
-        }
-    }
+    /* Path visualization is owned by the JS simulation and can be added to
+     * the generic render buffer without exposing C entity internals. */
 
     // Render Dropped Items
     for (int i = 0; i < MAX_DROPPED_ITEMS; i++) {
@@ -374,7 +360,7 @@ void c_renderer_draw() {
 
     // Render Entities & Selection Indicators
     for (int i = 0; i < MAX_ENTITIES; i++) {
-        Entity* e = &world.entities[i];
+        JSRenderEntity* e = &js_render_entities[i];
         if (e->active) {
             int draw_x = start_x + e->x * tile_size;
             int draw_y = start_y + e->y * tile_size;
@@ -384,26 +370,25 @@ void c_renderer_draw() {
                 continue;
             }
             
-            if (e->combat_flash_timer > 0.0f) {
+            if (e->combat_flash > 0) {
                 draw_box(draw_x - 1, draw_y - 1, tile_size + 2, tile_size + 2, RED);
             } else if (i == selected_entity_idx) {
                 draw_box(draw_x - 1, draw_y - 1, tile_size + 2, tile_size + 2, CYAN);
             }
 
-            Image e_skin = get_or_load_texture(e->skin_filename);
-            uint64_t e_col, e_backcol;
-            get_creature_colors(e, &e_col, &e_backcol);
-            draw_sprite_colored(e_skin, draw_x, draw_y, tile_size, tile_size, e_col, e_backcol);
+            Image e_skin = get_or_load_texture(e->skin);
+            draw_sprite_colored(e_skin, draw_x, draw_y, tile_size, tile_size,
+                                (uint64_t)e->fg, (uint64_t)e->bg);
 
             // Overhead Emotes
             Image emote = (Image){0};
-            if (e->fatigue <= 25.0f || e->current_motor == MOTOR_SLEEP) emote = img_emote_sleeping;
-            else if (e->current_motor == MOTOR_ATTACK) emote = img_emote_angry;
-            else if (e->current_motor == MOTOR_FLEE) emote = img_emote_upset;
+            if (e->fatigue <= 25.0f || e->motor == MOTOR_SLEEP) emote = img_emote_sleeping;
+            else if (e->motor == MOTOR_ATTACK) emote = img_emote_angry;
+            else if (e->motor == MOTOR_FLEE) emote = img_emote_upset;
             else if (e->health < 35.0f) emote = img_emote_hurt;
             else if (e->hunger <= 30.0f || e->thirst <= 30.0f) emote = img_emote_sick;
-            else if (e->current_motor == MOTOR_SOCIALIZE) emote = img_emote_happy;
-            else if (e->current_motor == MOTOR_EAT || e->current_motor == MOTOR_DRINK) emote = img_emote_excited;
+            else if (e->motor == MOTOR_SOCIALIZE) emote = img_emote_happy;
+            else if (e->motor == MOTOR_EAT || e->motor == MOTOR_DRINK) emote = img_emote_excited;
 
             if (emote.pixels) {
                 int emote_size = tile_size * 3 / 4;
@@ -416,30 +401,28 @@ void c_renderer_draw() {
     // ---------------------------------------------------------------------------
     // Biological HUD Inspector Panel (Only displayed when a creature is selected)
     // ---------------------------------------------------------------------------
-    if (selected_entity_idx >= 0 && selected_entity_idx < MAX_ENTITIES && world.entities[selected_entity_idx].active) {
+    if (selected_entity_idx >= 0 && selected_entity_idx < MAX_ENTITIES && js_render_entities[selected_entity_idx].active) {
         draw_box(0, 175, 320, 65, rgb(20, 24, 30));
         draw_box(0, 175, 320, 1, rgb(60, 80, 100));
 
-        Entity* se = &world.entities[selected_entity_idx];
+        JSRenderEntity* se = &js_render_entities[selected_entity_idx];
 
         // Column 1: Info, Species & Biological Traits
-        Image se_skin = get_or_load_texture(se->skin_filename);
-        uint64_t se_col, se_backcol;
-        get_creature_colors(se, &se_col, &se_backcol);
-        draw_sprite_colored(se_skin, 6, 180, 28, 28, se_col, se_backcol);
+        Image se_skin = get_or_load_texture(se->skin);
+        draw_sprite_colored(se_skin, 6, 180, 28, 28, (uint64_t)se->fg, (uint64_t)se->bg);
         draw_text(se->name, 38, 180, WHITE, 0);
 
         char title_str[36];
         title_str[0] = '[';
         int k = 0;
-        while (se->species_title[k] && k < 28) { title_str[k+1] = se->species_title[k]; k++; }
+        while (se->title[k] && k < 28) { title_str[k+1] = se->title[k]; k++; }
         title_str[k+1] = ']'; title_str[k+2] = '\0';
         draw_text(title_str, 38, 191, GREEN, 0);
 
         char bio_str[32];
-        const char* mov_str = (se->movement == MOVE_FLY) ? "Fly" : (se->movement == MOVE_AQUATIC ? "Aqua" : (se->movement == MOVE_NONE ? "Fixed" : "Walk"));
-        const char* diet_str = (se->diet == DIET_PHOTOSYNTHESIS) ? "Light" : (se->diet == DIET_HERBIVORE ? "Herb" : (se->diet == DIET_CARNIVORE ? "Carn" : "Omni"));
-        const char* repro_str = (se->repro == REPRO_SEX) ? "Sex" : (se->repro == REPRO_MITOSIS_SPLIT ? "Mitosis" : (se->repro == REPRO_SPORE_SEED ? "Spore" : "None"));
+        const char* mov_str = (se->movement == NATIVE_MOVE_FLY) ? "Fly" : (se->movement == NATIVE_MOVE_AQUATIC ? "Aqua" : (se->movement == NATIVE_MOVE_NONE ? "Fixed" : "Walk"));
+        const char* diet_str = (se->diet == 1) ? "Light" : (se->diet == 2 ? "Herb" : (se->diet == 3 ? "Carn" : "Omni"));
+        const char* repro_str = (se->repro == 3) ? "Sex" : (se->repro == 1 ? "Mitosis" : (se->repro == 2 ? "Spore" : "None"));
 
         int b_idx = 0;
         for (int i = 0; mov_str[i]; i++) bio_str[b_idx++] = mov_str[i];
@@ -450,7 +433,7 @@ void c_renderer_draw() {
         bio_str[b_idx] = '\0';
 
         draw_text(bio_str, 38, 202, CYAN, 0);
-        draw_text(se->brain.current_thought, 6, 226, YELLOW, 0);
+        draw_text(se->thought, 6, 226, YELLOW, 0);
 
         // Column 2: Status Icons & White Text Numbers (Current / Max)
         int stat_x = 132;

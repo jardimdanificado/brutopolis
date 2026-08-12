@@ -128,66 +128,8 @@ function findLandCenter() {
     return { x: cx, y: cy };
 }
 
-// ---------------------------------------------------------------------------
-// Native pathfinding boundary. The old JS BFS was removed from the active
-// runtime; C owns the search and JS receives only the resulting path.
-// ---------------------------------------------------------------------------
-function findPathLegacy(sx, sy, gx, gy, movement) {
-    if (sx === gx && sy === gy) return [];
-    if (movement === MOVE_NONE) return [];
-    if (!isTileWalkable(gx, gy, movement)) {
-        var dxs = [0,0,-1,1,-1,1,-1,1], dys = [-1,1,0,0,-1,-1,1,1];
-        var best = null, bestD = 1e9;
-        for (var i = 0; i < 8; i++) {
-            var nx = gx+dxs[i], ny = gy+dys[i];
-            if (isTileWalkable(nx, ny, movement)) {
-                var d = (nx-sx)*(nx-sx)+(ny-sy)*(ny-sy);
-                if (d < bestD) { bestD = d; best = {x:nx,y:ny}; }
-            }
-        }
-        if (!best) return [];
-        gx = best.x; gy = best.y;
-        if (sx===gx && sy===gy) return [];
-    }
-
-    var GS = BFS_RADIUS * 2 + 1;
-    var visited = new Array(GS * GS); for (var i=0;i<visited.length;i++) visited[i]=false;
-    var prevX   = new Array(GS * GS); var prevY = new Array(GS * GS);
-    var qx = [], qy = [];
-    visited[BFS_RADIUS * GS + BFS_RADIUS] = true;
-    qx.push(sx); qy.push(sy);
-    var found = false;
-    var DX = [0,0,-1,1], DY = [-1,1,0,0];
-
-    for (var head = 0; head < qx.length; head++) {
-        var cx = qx[head], cy = qy[head];
-        if (cx===gx && cy===gy) { found=true; break; }
-        for (var i = 0; i < 4; i++) {
-            var nx = cx+DX[i], ny = cy+DY[i];
-            var lx = nx-sx+BFS_RADIUS, ly = ny-sy+BFS_RADIUS;
-            if (lx>=0&&lx<GS&&ly>=0&&ly<GS&&!visited[ly*GS+lx]&&isTileWalkable(nx,ny,movement)) {
-                visited[ly*GS+lx]=true;
-                prevX[ly*GS+lx]=cx; prevY[ly*GS+lx]=cy;
-                qx.push(nx); qy.push(ny);
-            }
-        }
-    }
-    if (!found) return [];
-
-    var path = [];
-    var curX = gx, curY = gy;
-    while (curX!==sx||curY!==sy) {
-        path.push({x:curX,y:curY});
-        var lx=curX-sx+BFS_RADIUS, ly=curY-sy+BFS_RADIUS;
-        var px=prevX[ly*GS+lx], py=prevY[ly*GS+lx];
-        curX=px; curY=py;
-        if (path.length > MAX_PATH * 4) break;
-    }
-    path.reverse();
-    if (path.length > MAX_PATH) path = path.slice(0, MAX_PATH);
-    return path;
-}
-
+// Native pathfinding boundary. C owns the search and JS receives only the
+// resulting path; the simulation still owns how that path is used.
 function findPath(sx, sy, gx, gy, movement) {
     if (sx === gx && sy === gy || movement === MOVE_NONE) return [];
     return native_find_path(sx, sy, gx, gy, movement);

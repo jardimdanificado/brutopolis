@@ -70,6 +70,7 @@ LDFLAGS = \
 
 SRCS = \
 	src_js/main_js.c \
+	src_js/native_world.c \
 	$(DECODERS)/lodepng.c \
 	$(SHIM)/libc_shim.c
 
