@@ -130,7 +130,7 @@ export function createKnight(x, y) {
   return createEntity(
     {
       name: "Cavaleiro Imperial",
-      render: { skin: "Actor_Knight.png", color: 0xffdcdce6, backcolor: 0xff1e283c },
+      render: { skin: "Human_Knight_M.png", color: 0xffdcdce6, backcolor: 0xff1e283c },
       health: createHealthProp(120, 120),
       stomach: createStomachProp(100, 100),
       random_walk: createRandomWalkProp(0.7)
@@ -144,7 +144,7 @@ export function createParasiteHost(x, y) {
   const host = createEntity(
     {
       name: "Gato Silvestre (Infectado)",
-      render: { skin: "Pet_Cat.png", color: 0xfff0b464, backcolor: 0xff321e0f },
+      render: { skin: "Creature_Cat_U.png", color: 0xfff0b464, backcolor: 0xff321e0f },
       health: createHealthProp(80, 80),
       stomach: createStomachProp(100, 100),
       random_walk: createRandomWalkProp(0.6)
@@ -162,7 +162,7 @@ export function createDragon(x, y) {
   return createEntity(
     {
       name: "Dragão Rubro",
-      render: { skin: "Monster_Dragon.png", color: 0xffff4646, backcolor: 0xff3c0f0f },
+      render: { skin: "Creature_Dragon_U.png", color: 0xffff4646, backcolor: 0xff3c0f0f },
       health: createHealthProp(300, 300),
       stomach: createStomachProp(100, 100),
       random_walk: createRandomWalkProp(0.5),
@@ -177,7 +177,7 @@ export function createFruit(x, y) {
   return createEntity(
     {
       name: "Fruto Silvestre",
-      render: { skin: "Item_Bread.png", color: 0xfffaa03c, backcolor: 0xff46230a },
+      render: { skin: "Item_Fruit.png", color: 0xfffaa03c, backcolor: 0xff46230a },
       edible: { restoreAmount: 30 }
     },
     x,

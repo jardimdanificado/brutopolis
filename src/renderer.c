@@ -126,25 +126,76 @@ typedef struct {
 static TextureEntry s_tex_cache[MAX_TEX_CACHE];
 static int s_tex_count = 0;
 
+static inline char to_lower_char(char c) {
+    if (c >= 'A' && c <= 'Z') return c + ('a' - 'A');
+    return c;
+}
+
+static bool str_equals_ci(const char* a, const char* b) {
+    if (!a || !b) return false;
+    while (*a && *b) {
+        if (to_lower_char(*a) != to_lower_char(*b)) return false;
+        a++; b++;
+    }
+    return (*a == 0 && *b == 0);
+}
+
+static bool str_contains_ci(const char* haystack, const char* needle) {
+    if (!haystack || !needle || *needle == 0) return false;
+    for (int i = 0; haystack[i] != 0; i++) {
+        int j = 0;
+        while (needle[j] != 0 && haystack[i + j] != 0 &&
+               to_lower_char(haystack[i + j]) == to_lower_char(needle[j])) {
+            j++;
+        }
+        if (needle[j] == 0) return true;
+    }
+    return false;
+}
+
 static const WagnerAsset* find_wagner_asset(const char* path) {
     if (!path || path[0] == '\0') return NULL;
+
+    // 1. Exact match
     for (int i = 0; i < WAGNER_ASSET_COUNT; i++) {
         const char* a = WAGNER_ASSETS[i].path;
         const char* b = path;
         while (*a && *b && *a == *b) { a++; b++; }
         if (*a == 0 && *b == 0) return &WAGNER_ASSETS[i];
     }
-    // Try basename match
+
+    // 2. Case-insensitive match
+    for (int i = 0; i < WAGNER_ASSET_COUNT; i++) {
+        if (str_equals_ci(WAGNER_ASSETS[i].path, path)) return &WAGNER_ASSETS[i];
+    }
+
+    // 3. Basename match
     const char* base = path;
     for (const char* p = path; *p; p++) {
         if (*p == '/' || *p == '\\') base = p + 1;
     }
     for (int i = 0; i < WAGNER_ASSET_COUNT; i++) {
-        const char* a = WAGNER_ASSETS[i].path;
-        const char* b = base;
-        while (*a && *b && *a == *b) { a++; b++; }
-        if (*a == 0 && *b == 0) return &WAGNER_ASSETS[i];
+        if (str_equals_ci(WAGNER_ASSETS[i].path, base)) return &WAGNER_ASSETS[i];
     }
+
+    // 4. Substring / Keyword match (e.g. "dragon" matches "Creature_Dragon_U.png")
+    char clean_name[64];
+    int len = 0;
+    while (len < 63 && base[len] != '\0') {
+        clean_name[len] = base[len];
+        len++;
+    }
+    clean_name[len] = '\0';
+    if (len > 4 && str_equals_ci(&clean_name[len - 4], ".png")) {
+        clean_name[len - 4] = '\0';
+    }
+
+    for (int i = 0; i < WAGNER_ASSET_COUNT; i++) {
+        if (str_contains_ci(WAGNER_ASSETS[i].path, clean_name)) {
+            return &WAGNER_ASSETS[i];
+        }
+    }
+
     return NULL;
 }
 
