@@ -8,6 +8,8 @@
 
 #define HEADER_SIZE 8
 
+#define FRAMEBUFFER_RESERVE (8 * 1024 * 1024)
+
 extern unsigned char __heap_base;
 static size_t arena_used = 0;
 
@@ -15,7 +17,7 @@ void *malloc(size_t size) {
     if (size == 0) return 0;
     size_t total = ((size + HEADER_SIZE) + 7) & ~(size_t)7;
     size_t mem_size = __builtin_wasm_memory_size(0) * 65536;
-    char *heap_start = (char *)&__heap_base;
+    char *heap_start = ((char *)&__heap_base) + FRAMEBUFFER_RESERVE;
     if ((size_t)(heap_start + arena_used + total) > mem_size) {
         size_t needed = (size_t)(heap_start + arena_used + total) - mem_size;
         size_t pages = (needed + 65535) / 65536;
@@ -180,14 +182,30 @@ double ldexp(double x, int n) {
     return x * r;
 }
 double sin(double x) {
-    while (x >  M_PI) x -= 2.0 * M_PI;
-    while (x < -M_PI) x += 2.0 * M_PI;
-    if (x < 0) return -sin(-x);
-    if (x > M_PI / 2.0) x = M_PI - x;
-    double y = x * (M_PI - x);
-    return 16.0 * y / (5.0 * M_PI * M_PI - 4.0 * y);
+    const double PI = 3.14159265358979323846;
+    const double TWO_PI = 6.28318530717958647692;
+    if (x != x) return 0.0;
+    double sign = 1.0;
+    if (x < 0.0) {
+        x = -x;
+        sign = -1.0;
+    }
+    while (x >= TWO_PI) x -= TWO_PI;
+    if (x > PI) {
+        x -= PI;
+        sign = -sign;
+    }
+    if (x > PI * 0.5) {
+        x = PI - x;
+    }
+    double y = x * (PI - x);
+    double denom = 5.0 * PI * PI - 4.0 * y;
+    if (denom <= 0.0) return 0.0;
+    return sign * (16.0 * y / denom);
 }
-double cos(double x) { return sin(x + M_PI / 2.0); }
+double cos(double x) {
+    return sin(x + 3.14159265358979323846 / 2.0);
+}
 double exp(double x) {
     double y = x / M_LN2;
     int    k = (int)(y + (y < 0 ? -0.5 : 0.5));

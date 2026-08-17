@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Brutopolis — Hierarchical Property Bag Engine</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Header Navigation & Controls -->
+  <header>
+    <div class="logo-group">
+      <span class="logo">BRUTOPOLIS</span>
+      <span class="badge">HIERARCHICAL PROPERTY BAG</span>
+    </div>
+
+    <!-- Clock & Ambient HUD -->
+    <div class="clock-hud">
+      <div class="hud-item">
+        <span class="hud-label">Tempo:</span>
+        <span class="hud-value" id="hud-clock">DIA 00 00:00</span>
+      </div>
+      <div class="hud-item">
+        <span class="hud-label">Luz:</span>
+        <span class="hud-value" id="hud-light" style="color: var(--yellow);">100%</span>
+      </div>
+      <div class="hud-item">
+        <span class="hud-label">Calor:</span>
+        <span class="hud-value" id="hud-heat" style="color: var(--orange);">85%</span>
+      </div>
+    </div>
+
+    <!-- Actions & Speed Slider -->
+    <div class="controls-group">
+      <button id="btn-pause" class="primary" title="Pausar / Despausar (Espaço)">
+        <span id="btn-pause-text">PAUSAR</span>
+      </button>
+
+      <div class="slider-group">
+        <span class="hud-label">TPS:</span>
+        <input type="range" id="slider-tps" min="1" max="360" value="60" step="5">
+        <span class="hud-value" id="val-tps">60</span>
+      </div>
+
+      <select id="select-preset" title="Preset de Geração do Mapa">
+        <option value="0">Arquipélago</option>
+        <option value="1">Continente</option>
+        <option value="2">Terras Altas</option>
+      </select>
+
+      <button id="btn-reset" title="Regenerar Mundo (R)">NOVO MUNDO</button>
+    </div>
+  </header>
+
+  <!-- Main Workspace -->
+  <div class="main-workspace">
+    <!-- Interactive Canvas Container -->
+    <div class="canvas-container">
+      <canvas id="canvas" width="480" height="360"></canvas>
+
+      <!-- Floating Camera Tools -->
+      <div class="floating-tools">
+        <button id="btn-zoom-in" title="Aumentar Zoom (E / Scroll)">+</button>
+        <button id="btn-zoom-out" title="Diminuir Zoom (Q / Scroll)">−</button>
+        <button id="btn-center" title="Centralizar Câmera (C)">◎</button>
+      </div>
+    </div>
+
+    <!-- Dynamic Hierarchical Inspector -->
+    <aside class="inspector-sidebar">
+      <div class="sidebar-header">
+        <span>INSPETOR HIERÁRQUICO</span>
+        <span id="insp-id-badge" style="color: var(--gray);">#--</span>
+      </div>
+
+      <div class="sidebar-content" id="insp-content">
+        <!-- Empty State -->
+        <div id="insp-empty" style="color: var(--gray); text-align: center; padding: 40px 0;">
+          Clique em qualquer entidade no mapa (ou no Mundo) para inspecionar seu saco de propriedades e entidades interiores.
+        </div>
+
+        <!-- Entity Details -->
+        <div id="insp-details" style="display: none;" class="entity-card">
+          <!-- Breadcrumb Path Hierarchy -->
+          <div style="font-size: 10px; color: var(--aqua-bright); display: flex; flex-wrap: wrap; gap: 4px; align-items: center;" id="insp-breadcrumbs">
+            <!-- Dynamically populated -->
+          </div>
+
+          <div class="entity-top">
+            <div class="entity-avatar" id="insp-avatar">
+              <span style="font-size: 18px;">?</span>
+            </div>
+            <div class="entity-names">
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <span class="entity-name" id="insp-name">Entidade</span>
+                <span class="pill" id="insp-props-count" style="font-size: 9px; padding: 1px 4px; border-color: var(--yellow); color: var(--yellow-bright);">0 PROPS</span>
+              </div>
+              <span class="entity-title" id="insp-pos">POS: 0, 0</span>
+            </div>
+          </div>
+
+          <!-- Dynamic Properties List Container -->
+          <div style="font-weight: 700; font-size: 11px; color: var(--fg0); margin-top: 4px;">
+            PROPRIEDADES & EFEITOS:
+          </div>
+          <div class="prop-list" id="insp-props-list">
+            <!-- Dynamically populated by app.js -->
+          </div>
+
+          <!-- Child Entities List (Entidades Interiores / Parasitas / Itens) -->
+          <div style="font-weight: 700; font-size: 11px; color: var(--fg0); margin-top: 6px; display: flex; justify-content: space-between; align-items: center;">
+            <span>ENTIDADES INTERIORES:</span>
+            <span id="insp-children-count" style="font-size: 10px; color: var(--purple-bright);">0 filhas</span>
+          </div>
+          <div class="prop-list" id="insp-children-list">
+            <!-- Dynamically populated -->
+          </div>
+
+          <!-- Property & Child Injector Tool -->
+          <div style="background: var(--bg0); border: 1px solid var(--bg2); padding: 8px; display: flex; flex-direction: column; gap: 6px; margin-top: 4px;">
+            <span style="font-size: 11px; font-weight: 600; color: var(--fg2);">+ Injetar na Entidade:</span>
+            <div style="display: flex; gap: 4px;">
+              <select id="select-inject-prop" style="flex: 1; font-size: 11px; padding: 4px;">
+                <option value="parasite_child">Entidade Filha: Parasita Interno</option>
+                <option value="stomach">Propriedade: Estômago (current: 100)</option>
+                <option value="regeneration">Propriedade: Regeneração</option>
+                <option value="burn">Propriedade: Queimadura</option>
+                <option value="random_walk">Propriedade: Movimento Aleatório</option>
+                <option value="photosynthesis">Propriedade: Fotossíntese</option>
+              </select>
+              <button id="btn-inject-prop" class="primary" style="padding: 4px 8px; font-size: 11px;">Injetar</button>
+            </div>
+          </div>
+
+          <!-- Quick Actions -->
+          <div class="sidebar-actions">
+            <button id="btn-insp-follow">Focar Câmera</button>
+            <button id="btn-insp-kill" class="danger">Eliminar Entidade</button>
+          </div>
+        </div>
+
+        <!-- Spawner Tools -->
+        <div class="entity-card">
+          <div style="font-weight: 700; font-size: 12px; color: var(--fg0); margin-bottom: 8px;">
+            SPAWNER DE ENTIDADES
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
+            <button id="btn-spawn-creature" style="color: var(--blue-bright);" title="Criatura com Estômago e Andar">+ Criatura</button>
+            <button id="btn-spawn-parasite-host" style="color: var(--purple-bright);" title="Criatura com Parasita Interno como Entidade Filha">+ Hospedeiro</button>
+            <button id="btn-spawn-tree" style="color: var(--green-bright);" title="Planta Fotossintética">+ Árvore</button>
+            <button id="btn-spawn-dragon" style="color: var(--red-bright);" title="Dragão Alado">+ Dragão</button>
+            <button id="btn-spawn-fruit" style="color: var(--yellow-bright);" title="Item Fruto">+ Fruto</button>
+            <button id="btn-inspect-world" style="color: var(--aqua-bright);" title="Inspecionar Entidade Raiz do Mundo">◎ Mundo (Raiz)</button>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- Bottom Footer Status HUD -->
+  <footer>
+    <div class="pop-stats">
+      <div class="pop-item"><span>Total Registradas:</span> <b id="stat-pop">0</b></div>
+      <div class="pop-item"><span>No Mundo:</span> <b id="stat-world-children" style="color: var(--yellow-bright);">0</b></div>
+      <div class="pop-item"><span>Luz Solar:</span> <b id="stat-light-hud" style="color: var(--yellow);">100%</b></div>
+    </div>
+
+    <div class="shortcuts">
+      <kbd>Espaço</kbd> Pausa &nbsp;|&nbsp;
+      <kbd>WASD</kbd> Mover Câmera &nbsp;|&nbsp;
+      <kbd>Q</kbd>/<kbd>E</kbd> Zoom &nbsp;|&nbsp;
+      <kbd>R</kbd> Regenerar Mapa
+    </div>
+  </footer>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
