@@ -386,15 +386,14 @@ static void draw_sprite_tinted(uint8_t* fb, int fb_w, int fb_h, Image img, int x
             uint8_t pb = img.pixels[p_idx + 2];
             uint8_t pa = img.pixels[p_idx + 3];
 
-            if (pa < 32) continue; // transparent
+            if (pa < 32) continue; // transparent in texture
 
             bool is_fg = (pr > 128 || pg > 128 || pb > 128);
 
-            if (!is_tile && !is_fg) {
-                continue;
-            }
-
             ColorRGBA draw_c = is_fg ? fg : bg;
+            if (color_a(draw_c) == 0) {
+                continue; // transparent background requested
+            }
 
             if (light < 1.0f) {
                 float min_light = 0.15f;
@@ -449,12 +448,19 @@ int renderer_get_sprite_data(const char* name, uint32_t fg, uint32_t bg, uint8_t
                 out_pixels_16x16_rgba[out_idx + 0] = color_r(fg);
                 out_pixels_16x16_rgba[out_idx + 1] = color_g(fg);
                 out_pixels_16x16_rgba[out_idx + 2] = color_b(fg);
-                out_pixels_16x16_rgba[out_idx + 3] = 255;
+                out_pixels_16x16_rgba[out_idx + 3] = color_a(fg);
             } else {
-                out_pixels_16x16_rgba[out_idx + 0] = 0;
-                out_pixels_16x16_rgba[out_idx + 1] = 0;
-                out_pixels_16x16_rgba[out_idx + 2] = 0;
-                out_pixels_16x16_rgba[out_idx + 3] = 0;
+                if (color_a(bg) > 0) {
+                    out_pixels_16x16_rgba[out_idx + 0] = color_r(bg);
+                    out_pixels_16x16_rgba[out_idx + 1] = color_g(bg);
+                    out_pixels_16x16_rgba[out_idx + 2] = color_b(bg);
+                    out_pixels_16x16_rgba[out_idx + 3] = color_a(bg);
+                } else {
+                    out_pixels_16x16_rgba[out_idx + 0] = 0;
+                    out_pixels_16x16_rgba[out_idx + 1] = 0;
+                    out_pixels_16x16_rgba[out_idx + 2] = 0;
+                    out_pixels_16x16_rgba[out_idx + 3] = 0;
+                }
             }
         }
     }

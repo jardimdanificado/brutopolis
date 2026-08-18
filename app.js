@@ -1,28 +1,64 @@
 // =============================================================================
-// Brutopolis — Hierarchical Property Bag Engine & WASM Graphics Pipeline
+// Brutopolis — Biological Simulation Engine & WASM Graphics Pipeline
 // =============================================================================
 
 import { wash_memory, wash_load, wash_write_string } from "./wash.js";
-import { createWorld } from "./js/world.js";
+import { World } from "./js/world.js";
 import {
   createEntity,
-  tickRecursive,
-  syncRenderTreeToWasm,
+  tickEntities,
+  syncRenderToWasm,
   entityRegistry,
-  getEntityById
+  getEntityById,
+  destroyEntity,
+  explodeEntityOnDeath,
+  currentTick,
+  resetEngineTicks,
+  incrementEngineTick
 } from "./js/engine.js";
 import {
+  resetWorldEvents,
+  getEventsForEntity,
+  getRecentWorldEvents,
+  allEvents
+} from "./js/event_log.js";
+import {
+  createLifeProp,
+  createLungsProp,
+  createGillsProp,
   createStomachProp,
-  createParasiteChild,
-  createRandomWalkProp,
+  createBladderProp,
+  createKidneyProp,
+  createBrainProp,
+  createArmProp,
+  createLegProp,
+  createEyeProp,
+  createWingsProp,
+  createDeepRootProp,
+  createSurfaceRootProp,
+  createTerrainPreferenceProp,
+  createParasitesProp,
   createPhotosynthesisProp,
   createRegenerationProp,
+  createBodyRegenerationProp,
+  createCombatProp,
   createBurnProp,
-  createTree,
   createKnight,
-  createParasiteHost,
+  createArcher,
+  createCat,
+  createWolf,
+  createBear,
+  createGoblin,
+  createBat,
+  createSeaSerpent,
   createDragon,
-  createFruit
+  createOakTree,
+  createWillowTree,
+  createPineTree,
+  createWaterLily,
+  createSeaweed,
+  createFruit,
+  createSeedEntity
 } from "./js/properties.js";
 
 // ---------------------------------------------------------------------------
@@ -44,6 +80,7 @@ const imageData = ctx.createImageData(CANVAS_WIDTH, CANVAS_HEIGHT);
 
 let shader = null;
 let world = null;
+let entities = [];
 
 let isPaused = false;
 let currentTps = 60;
@@ -66,8 +103,8 @@ const btnZoomOut = document.getElementById("btn-zoom-out");
 const btnCenter = document.getElementById("btn-center");
 
 const statPop = document.getElementById("stat-pop");
-const statWorldChildren = document.getElementById("stat-world-children");
-const statLightHud = document.getElementById("stat-light-hud");
+const statLiving = document.getElementById("stat-living");
+const statFood = document.getElementById("stat-food");
 
 // Inspector Elements
 const inspIdBadge = document.getElementById("insp-id-badge");
@@ -77,10 +114,10 @@ const inspAvatar = document.getElementById("insp-avatar");
 const inspName = document.getElementById("insp-name");
 const inspPropsCount = document.getElementById("insp-props-count");
 const inspPos = document.getElementById("insp-pos");
-const inspBreadcrumbs = document.getElementById("insp-breadcrumbs");
 const inspPropsList = document.getElementById("insp-props-list");
-const inspChildrenList = document.getElementById("insp-children-list");
-const inspChildrenCount = document.getElementById("insp-children-count");
+const inspEventList = document.getElementById("insp-event-list");
+const globalEventsList = document.getElementById("global-events-list");
+const logEventsCount = document.getElementById("log-events-count");
 
 const selectInjectProp = document.getElementById("select-inject-prop");
 const btnInjectProp = document.getElementById("btn-inject-prop");
@@ -88,69 +125,121 @@ const btnInspFollow = document.getElementById("btn-insp-follow");
 const btnInspKill = document.getElementById("btn-insp-kill");
 
 // Spawner buttons
-const btnSpawnCreature = document.getElementById("btn-spawn-creature");
-const btnSpawnParasiteHost = document.getElementById("btn-spawn-parasite-host");
-const btnSpawnTree = document.getElementById("btn-spawn-tree");
+const btnSpawnKnight = document.getElementById("btn-spawn-knight");
+const btnSpawnArcher = document.getElementById("btn-spawn-archer");
+const btnSpawnWolf = document.getElementById("btn-spawn-wolf");
+const btnSpawnBear = document.getElementById("btn-spawn-bear");
+const btnSpawnCat = document.getElementById("btn-spawn-cat");
+const btnSpawnGoblin = document.getElementById("btn-spawn-goblin");
+const btnSpawnBat = document.getElementById("btn-spawn-bat");
+const btnSpawnSerpent = document.getElementById("btn-spawn-serpent");
 const btnSpawnDragon = document.getElementById("btn-spawn-dragon");
+const btnSpawnSeed = document.getElementById("btn-spawn-seed");
 const btnSpawnFruit = document.getElementById("btn-spawn-fruit");
-const btnInspectWorld = document.getElementById("btn-inspect-world");
 
 // Scratch pointers for Avatar preview
 const SPRITE_BUF_PTR = mem.heapBase + FRAMEBUFFER_SIZE + 16384;
 const NAME_PTR = mem.heapBase + FRAMEBUFFER_SIZE + 20480;
 
 // ---------------------------------------------------------------------------
-// Mouse & Keyboard Controls
+// Mouse & Keyboard Controls (Aspect-Ratio Aware & Precise Drag/Click)
 // ---------------------------------------------------------------------------
 
 let mouseX = 0;
 let mouseY = 0;
 let mouseButtons = 0;
+let isMouseDown = false;
 let isDragging = false;
-let dragStartX = 0;
-let dragStartY = 0;
+let dragStartClientX = 0;
+let dragStartClientY = 0;
+let dragCameraStartX = 0;
+let dragCameraStartY = 0;
 
-canvas.addEventListener("mousemove", (e) => {
+function getCanvasCoords(clientX, clientY) {
   const rect = canvas.getBoundingClientRect();
-  mouseX = ((e.clientX - rect.left) / rect.width) * CANVAS_WIDTH;
-  mouseY = ((e.clientY - rect.top) / rect.height) * CANVAS_HEIGHT;
+  const canvasAspect = CANVAS_WIDTH / CANVAS_HEIGHT;
+  const elemAspect = rect.width / rect.height;
+  let renderW, renderH, offsetX, offsetY;
 
-  if (isDragging && shader) {
-    const dx = mouseX - dragStartX;
-    const dy = mouseY - dragStartY;
-    const zoom = shader.exports.wasm_get_camera_zoom();
-    const tileSize = 16.0 * zoom;
-    if (tileSize > 0.5) {
-      const cx = shader.exports.wasm_get_camera_x() - dx / tileSize;
-      const cy = shader.exports.wasm_get_camera_y() - dy / tileSize;
-      shader.exports.wasm_set_camera(cx, cy, zoom);
-      dragStartX = mouseX;
-      dragStartY = mouseY;
-    }
+  if (elemAspect > canvasAspect) {
+    renderH = rect.height;
+    renderW = renderH * canvasAspect;
+    offsetX = (rect.width - renderW) / 2;
+    offsetY = 0;
+  } else {
+    renderW = rect.width;
+    renderH = renderW / canvasAspect;
+    offsetX = 0;
+    offsetY = (rect.height - renderH) / 2;
   }
-});
+
+  const cx = clientX - rect.left - offsetX;
+  const cy = clientY - rect.top - offsetY;
+
+  return {
+    x: Math.max(0, Math.min(CANVAS_WIDTH, (cx / renderW) * CANVAS_WIDTH)),
+    y: Math.max(0, Math.min(CANVAS_HEIGHT, (cy / renderH) * CANVAS_HEIGHT)),
+    inside: cx >= 0 && cx <= renderW && cy >= 0 && cy <= renderH,
+    renderW,
+    renderH
+  };
+}
 
 canvas.addEventListener("mousedown", (e) => {
-  const rect = canvas.getBoundingClientRect();
-  mouseX = ((e.clientX - rect.left) / rect.width) * CANVAS_WIDTH;
-  mouseY = ((e.clientY - rect.top) / rect.height) * CANVAS_HEIGHT;
-  mouseButtons = 1;
-  isDragging = true;
-  dragStartX = mouseX;
-  dragStartY = mouseY;
+  if (e.button !== 0 && e.button !== 1 && e.button !== 2) return;
+  const coords = getCanvasCoords(e.clientX, e.clientY);
+  mouseX = coords.x;
+  mouseY = coords.y;
+  mouseButtons = e.buttons;
+
+  isMouseDown = true;
+  isDragging = false;
+  dragStartClientX = e.clientX;
+  dragStartClientY = e.clientY;
+
+  if (shader) {
+    dragCameraStartX = shader.exports.wasm_get_camera_x();
+    dragCameraStartY = shader.exports.wasm_get_camera_y();
+  }
 });
 
-window.addEventListener("mouseup", () => {
-  if (isDragging && shader) {
-    const totalDrag = Math.abs(mouseX - dragStartX) + Math.abs(mouseY - dragStartY);
-    if (totalDrag < 4) {
-      const foundId = shader.exports.wasm_select_at(mouseX, mouseY, CANVAS_WIDTH, CANVAS_HEIGHT);
-      lastSelectedId = foundId;
-      updateInspector();
+window.addEventListener("mousemove", (e) => {
+  const coords = getCanvasCoords(e.clientX, e.clientY);
+  mouseX = coords.x;
+  mouseY = coords.y;
+
+  if (isMouseDown && shader) {
+    const totalDist = Math.hypot(e.clientX - dragStartClientX, e.clientY - dragStartClientY);
+    if (totalDist > 4) {
+      isDragging = true;
+      const zoom = shader.exports.wasm_get_camera_zoom();
+      const pixelScale = coords.renderW / CANVAS_WIDTH;
+      const tileSizeScreen = 16.0 * zoom * pixelScale;
+
+      if (tileSizeScreen > 0.2) {
+        const dx = (e.clientX - dragStartClientX) / tileSizeScreen;
+        const dy = (e.clientY - dragStartClientY) / tileSizeScreen;
+        shader.exports.wasm_set_camera(dragCameraStartX - dx, dragCameraStartY - dy, zoom);
+      }
     }
   }
-  mouseButtons = 0;
+});
+
+window.addEventListener("mouseup", (e) => {
+  if (isMouseDown && shader) {
+    const totalDist = Math.hypot(e.clientX - dragStartClientX, e.clientY - dragStartClientY);
+    if (!isDragging && totalDist <= 5) {
+      const coords = getCanvasCoords(e.clientX, e.clientY);
+      if (coords.inside) {
+        const foundId = shader.exports.wasm_select_at(coords.x, coords.y, CANVAS_WIDTH, CANVAS_HEIGHT);
+        lastSelectedId = foundId;
+        updateInspector();
+      }
+    }
+  }
+  isMouseDown = false;
   isDragging = false;
+  mouseButtons = 0;
 });
 
 canvas.addEventListener("wheel", (e) => {
@@ -196,7 +285,7 @@ function handleKeyMovement(dt) {
   if (keysDown.has("KeyW") || keysDown.has("ArrowUp")) cy -= speed;
   if (keysDown.has("KeyS") || keysDown.has("ArrowDown")) cy += speed;
   if (keysDown.has("KeyA") || keysDown.has("ArrowLeft")) cx -= speed;
-  if (keysDown.has("KeyD") || keysDown.has("ArrowRight")) cx += speed;
+  if (keysDown.has("KeyD") || keysDown.has("ArrowRight")) cx -= speed;
 
   if (keysDown.has("KeyQ")) zoom /= (1.0 + 1.5 * dt);
   if (keysDown.has("KeyE")) zoom *= (1.0 + 1.5 * dt);
@@ -229,47 +318,81 @@ function resetWorld() {
   const preset = parseInt(selectPreset.value, 10);
   shader.exports.wasm_init(preset);
 
-  // Clear existing registry & create Root World Entity
-  entityRegistry.clear();
-  world = createWorld(mem, shader.exports);
+  // Reset engine ticks & clear existing registry & events
+  resetEngineTicks();
+  resetWorldEvents();
+  world.refresh();
+  entities = [];
   lastSelectedId = -1;
 
   const cx = Math.floor(shader.exports.wasm_get_camera_x());
   const cy = Math.floor(shader.exports.wasm_get_camera_y());
 
-  // 1. Spawn Trees in World
-  for (let i = 0; i < 15; i++) {
-    const rx = cx + Math.floor((Math.random() - 0.5) * 50);
-    const ry = cy + Math.floor((Math.random() - 0.5) * 50);
-    if (world.isWalkable(rx, ry)) {
-      world.addChild(createTree(rx, ry));
+  // Helper to spawn entities randomly across entire 512x512 map
+  function spawnRandomGlobal(count, factoryFn, conditionFn) {
+    let spawned = 0;
+    let attempts = 0;
+    while (spawned < count && attempts < count * 25) {
+      attempts++;
+      const rx = Math.floor(Math.random() * 508) + 2;
+      const ry = Math.floor(Math.random() * 508) + 2;
+      if (!conditionFn || conditionFn(rx, ry)) {
+        entities.push(factoryFn(rx, ry));
+        spawned++;
+      }
     }
   }
 
-  // 2. Spawn Knights
-  for (let i = 0; i < 6; i++) {
-    const rx = cx + Math.floor((Math.random() - 0.5) * 40);
-    const ry = cy + Math.floor((Math.random() - 0.5) * 40);
-    if (world.isWalkable(rx, ry)) {
-      world.addChild(createKnight(rx, ry));
-    }
+  // 1. Adult Trees Spread Globally (Oak, Willow, Pine)
+  spawnRandomGlobal(70, createOakTree, (x, y) => world.getTile(x, y) === 0);
+  spawnRandomGlobal(60, createWillowTree, (x, y) => world.getTile(x, y) === 0 || world.getTile(x, y) === 2);
+  spawnRandomGlobal(50, createPineTree, (x, y) => world.getTile(x, y) === 0 || world.getTile(x, y) === 1);
+
+  // 2. Aquatic Plants in Seas and Lakes (Vitória-Régia & Seaweed)
+  spawnRandomGlobal(80, createWaterLily, (x, y) => world.getTile(x, y) === 2);
+  spawnRandomGlobal(100, createSeaweed, (x, y) => world.getTile(x, y) === 2);
+
+  // 3. Seeds & Fruits Scattered Globally
+  spawnRandomGlobal(150, (x, y) => createSeedEntity(x, y, Math.random() < 0.5 ? "large" : "small", Math.random() < 0.5 ? "oak" : "willow"), (x, y) => world.getTile(x, y) === 0);
+  spawnRandomGlobal(80, (x, y) => createFruit(x, y, Math.random() < 0.5 ? "large" : "small", Math.random() < 0.5 ? "oak" : "willow"), (x, y) => world.isWalkable(x, y));
+
+  // 4. Large Fauna Distributed Worldwide (Empty stomachs)
+  // Terrestrial & Forest Dwellers
+  spawnRandomGlobal(50, (x, y) => createKnight(x, y, Math.random() < 0.5 ? "male" : "female"), (x, y) => world.isWalkable(x, y));
+  spawnRandomGlobal(45, (x, y) => createArcher(x, y, Math.random() < 0.5 ? "female" : "male"), (x, y) => world.isWalkable(x, y));
+  spawnRandomGlobal(55, (x, y) => createWolf(x, y), (x, y) => world.isWalkable(x, y));
+  spawnRandomGlobal(35, (x, y) => createBear(x, y), (x, y) => world.isWalkable(x, y));
+  spawnRandomGlobal(50, (x, y) => createCat(x, y, Math.random() < 0.25), (x, y) => world.isWalkable(x, y));
+  spawnRandomGlobal(50, (x, y) => createGoblin(x, y), (x, y) => world.isWalkable(x, y));
+
+  // Aerial & Flying Dwellers
+  spawnRandomGlobal(50, (x, y) => createBat(x, y), () => true);
+  spawnRandomGlobal(12, (x, y) => createDragon(x, y), () => true);
+
+  // Aquatic Creatures with Gills
+  spawnRandomGlobal(80, (x, y) => createSeaSerpent(x, y), (x, y) => world.getTile(x, y) === 2);
+
+  // 5. Initial Focal Cluster around Camera for Immediate Action
+  for (let i = 0; i < 4; i++) {
+    const rx = cx + Math.floor((Math.random() - 0.5) * 30);
+    const ry = cy + Math.floor((Math.random() - 0.5) * 30);
+    if (world.isWalkable(rx, ry)) entities.push(createKnight(rx, ry));
   }
-
-  // 3. Spawn Parasite hosts (Cat containing a Child Parasite entity!)
-  for (let i = 0; i < 3; i++) {
-    const rx = cx + Math.floor((Math.random() - 0.5) * 40);
-    const ry = cy + Math.floor((Math.random() - 0.5) * 40);
-    if (world.isWalkable(rx, ry)) {
-      world.addChild(createParasiteHost(rx, ry));
-    }
+  for (let i = 0; i < 4; i++) {
+    const rx = cx + Math.floor((Math.random() - 0.5) * 30);
+    const ry = cy + Math.floor((Math.random() - 0.5) * 30);
+    if (world.isWalkable(rx, ry)) entities.push(createWolf(rx, ry));
   }
+  for (let i = 0; i < 5; i++) {
+    const rx = cx + Math.floor((Math.random() - 0.5) * 30);
+    const ry = cy + Math.floor((Math.random() - 0.5) * 30);
+    if (world.isWalkable(rx, ry)) entities.push(createFruit(rx, ry));
+  }
+  const focusDragon = createDragon(cx + 4, cy + 4);
+  entities.push(focusDragon);
+  lastSelectedId = focusDragon.id;
+  shader.exports.wasm_select_entity(focusDragon.id);
 
-  // 4. Spawn Dragon
-  const dragon = createDragon(cx + 4, cy + 4);
-  world.addChild(dragon);
-
-  lastSelectedId = dragon.id;
-  shader.exports.wasm_select_entity(dragon.id);
   updateInspector();
 }
 
@@ -296,8 +419,7 @@ function centerCamera() {
   if (!shader) return;
   const selEntity = getEntityById(lastSelectedId);
   if (selEntity) {
-    const pos = selEntity.getWorldPos();
-    shader.exports.wasm_set_camera(pos.x, pos.y, shader.exports.wasm_get_camera_zoom());
+    shader.exports.wasm_set_camera(selEntity.x, selEntity.y, shader.exports.wasm_get_camera_zoom());
   } else {
     shader.exports.wasm_set_camera(256, 256, 1.0);
   }
@@ -310,37 +432,49 @@ btnInspKill.addEventListener("click", () => {
   if (lastSelectedId < 0) return;
   const entity = getEntityById(lastSelectedId);
   if (entity) {
-    entity.destroy();
+    explodeEntityOnDeath(entity, entities, world);
+    destroyEntity(entity, entities);
     lastSelectedId = -1;
     updateInspector();
   }
 });
 
-btnInspectWorld?.addEventListener("click", () => {
-  if (world) {
-    lastSelectedId = world.id;
-    updateInspector();
-  }
-});
-
-// Property / Child Injector Handler
+// Property Injector Handler
 btnInjectProp.addEventListener("click", () => {
   const entity = getEntityById(lastSelectedId);
   if (!entity) return;
 
   const propType = selectInjectProp.value;
-  if (propType === "parasite_child") {
-    entity.addChild(createParasiteChild(1.5));
+  if (propType === "lungs") {
+    entity.properties.lungs = createLungsProp();
+  } else if (propType === "gills") {
+    entity.properties.gills = createGillsProp();
+  } else if (propType === "body_regen") {
+    entity.properties.body_regen = createBodyRegenerationProp(1.0, 4, 10);
+  } else if (propType === "combat") {
+    entity.properties.combat = createCombatProp(1.2, 3);
+  } else if (propType === "wings") {
+    entity.properties.wings = createWingsProp(1.0, 100, 100, 20.0);
+  } else if (propType === "surface_root") {
+    entity.properties.surface_root = createSurfaceRootProp(8);
+  } else if (propType === "deep_root") {
+    entity.properties.deep_root = createDeepRootProp(18.0, 12.0);
+  } else if (propType === "terrain_water") {
+    entity.properties.terrain_pref = createTerrainPreferenceProp([2], "Água");
+  } else if (propType === "terrain_floor") {
+    entity.properties.terrain_pref = createTerrainPreferenceProp([0], "Solo Fértil");
+  } else if (propType === "parasites") {
+    entity.properties.parasites = createParasitesProp(1.5);
   } else if (propType === "stomach") {
-    entity.properties.stomach = createStomachProp(100, 100);
-  } else if (propType === "regeneration") {
-    entity.properties.regeneration = createRegenerationProp(1.0);
+    entity.properties.stomach = createStomachProp(4);
+  } else if (propType === "bladder") {
+    entity.properties.bladder = createBladderProp(3000, 3000);
+  } else if (propType === "kidney") {
+    entity.properties.kidney = createKidneyProp(0.75);
+  } else if (propType === "brain") {
+    entity.properties.brain = createBrainProp(16);
   } else if (propType === "burn") {
-    entity.properties.burn = createBurnProp(0.5);
-  } else if (propType === "random_walk") {
-    entity.properties.random_walk = createRandomWalkProp(0.7);
-  } else if (propType === "photosynthesis") {
-    entity.properties.photosynthesis = createPhotosynthesisProp();
+    entity.properties.burn = createBurnProp(0.5, 40);
   }
   updateInspector();
 });
@@ -349,78 +483,77 @@ btnInjectProp.addEventListener("click", () => {
 // Spawner Actions
 // ---------------------------------------------------------------------------
 
-btnSpawnCreature?.addEventListener("click", () => {
-  if (!world || !shader) return;
+function spawnEntityAtCamera(factoryFn) {
+  if (!shader) return;
   const cx = Math.floor(shader.exports.wasm_get_camera_x());
   const cy = Math.floor(shader.exports.wasm_get_camera_y());
-  const ent = createKnight(cx, cy);
-  world.addChild(ent);
+  const ent = factoryFn(cx, cy);
+  entities.push(ent);
   lastSelectedId = ent.id;
   shader.exports.wasm_select_entity(ent.id);
   updateInspector();
-});
+}
 
-btnSpawnParasiteHost?.addEventListener("click", () => {
-  if (!world || !shader) return;
-  const cx = Math.floor(shader.exports.wasm_get_camera_x());
-  const cy = Math.floor(shader.exports.wasm_get_camera_y());
-  const host = createParasiteHost(cx, cy);
-  world.addChild(host);
-  lastSelectedId = host.id;
-  shader.exports.wasm_select_entity(host.id);
-  updateInspector();
-});
-
-btnSpawnTree?.addEventListener("click", () => {
-  if (!world || !shader) return;
-  const cx = Math.floor(shader.exports.wasm_get_camera_x());
-  const cy = Math.floor(shader.exports.wasm_get_camera_y());
-  const tree = createTree(cx, cy);
-  world.addChild(tree);
-  lastSelectedId = tree.id;
-  shader.exports.wasm_select_entity(tree.id);
-  updateInspector();
-});
-
-btnSpawnDragon?.addEventListener("click", () => {
-  if (!world || !shader) return;
-  const cx = Math.floor(shader.exports.wasm_get_camera_x());
-  const cy = Math.floor(shader.exports.wasm_get_camera_y());
-  const dragon = createDragon(cx, cy);
-  world.addChild(dragon);
-  lastSelectedId = dragon.id;
-  shader.exports.wasm_select_entity(dragon.id);
-  updateInspector();
-});
-
-btnSpawnFruit?.addEventListener("click", () => {
-  if (!world || !shader) return;
-  const cx = Math.floor(shader.exports.wasm_get_camera_x());
-  const cy = Math.floor(shader.exports.wasm_get_camera_y());
-  const fruit = createFruit(cx, cy);
-  world.addChild(fruit);
-  lastSelectedId = fruit.id;
-  shader.exports.wasm_select_entity(fruit.id);
-  updateInspector();
-});
+btnSpawnKnight?.addEventListener("click", () => spawnEntityAtCamera(createKnight));
+btnSpawnArcher?.addEventListener("click", () => spawnEntityAtCamera(createArcher));
+btnSpawnWolf?.addEventListener("click", () => spawnEntityAtCamera(createWolf));
+btnSpawnBear?.addEventListener("click", () => spawnEntityAtCamera(createBear));
+btnSpawnCat?.addEventListener("click", () => spawnEntityAtCamera(createCat));
+btnSpawnGoblin?.addEventListener("click", () => spawnEntityAtCamera(createGoblin));
+btnSpawnBat?.addEventListener("click", () => spawnEntityAtCamera(createBat));
+btnSpawnSerpent?.addEventListener("click", () => spawnEntityAtCamera(createSeaSerpent));
+btnSpawnDragon?.addEventListener("click", () => spawnEntityAtCamera(createDragon));
+btnSpawnSeed?.addEventListener("click", () => spawnEntityAtCamera(createSeedEntity));
+btnSpawnFruit?.addEventListener("click", () => spawnEntityAtCamera(createFruit));
 
 // ---------------------------------------------------------------------------
-// Dynamic Hierarchical Inspector
+// Dynamic Biological Inspector
 // ---------------------------------------------------------------------------
 
 function updateStatsAndClock() {
   if (!world) return;
 
-  const clock = world.properties.clock;
-  if (clock) {
-    hudClock.textContent = `DIA ${String(clock.day).padStart(2, "0")} ${String(clock.hour).padStart(2, "0")}:${String(clock.minute).padStart(2, "0")}`;
-  }
-  hudLight.textContent = `${Math.round((world.properties.light || 1.0) * 100)}%`;
-  hudHeat.textContent = `${Math.round((world.properties.heat || 0.8) * 100)}%`;
+  const clock = world.clock;
+  hudClock.textContent = `DIA ${String(clock.day).padStart(2, "0")} ${String(clock.hour).padStart(2, "0")}:${String(clock.minute).padStart(2, "0")}`;
+  hudLight.textContent = `${Math.round(clock.globalLight * 100)}%`;
+  hudHeat.textContent = `${Math.round(clock.globalHeat * 100)}%`;
 
-  statPop.textContent = entityRegistry.size;
-  statWorldChildren.textContent = world.entities ? world.entities.length : 0;
-  statLightHud.textContent = `${Math.round((world.properties.light || 1.0) * 100)}%`;
+  let livingCount = 0;
+  let foodCount = 0;
+
+  for (const e of entities) {
+    if (e.properties.life) livingCount++;
+    if (e.properties.edible || e.properties.germination) foodCount++;
+  }
+
+  statPop.textContent = entities.length;
+  statLiving.textContent = livingCount;
+  statFood.textContent = foodCount;
+
+  // Global Event Log update
+  if (logEventsCount) logEventsCount.textContent = `${allEvents.length} EVTS`;
+  if (globalEventsList) {
+    const recents = getRecentWorldEvents(12);
+    globalEventsList.innerHTML = "";
+    if (recents.length === 0) {
+      globalEventsList.innerHTML = `<span style="color: var(--gray); font-style: italic;">Nenhum acontecimento ainda...</span>`;
+    } else {
+      for (const ev of recents) {
+        const evDiv = document.createElement("div");
+        evDiv.style.padding = "3px 6px";
+        evDiv.style.background = "var(--bg0-soft)";
+        evDiv.style.borderRadius = "2px";
+        evDiv.style.borderLeft = "3px solid " + (
+          ev.type === "AMPUTATION" ? "var(--red-bright)" :
+          ev.type === "ATTACK" ? "var(--orange-bright)" :
+          ev.type === "DEATH" ? "var(--red)" :
+          ev.type === "SPROUT" ? "var(--green-bright)" : "var(--blue-bright)"
+        );
+        evDiv.innerHTML = `<span style="color: var(--gray); font-size: 9px;">[D${ev.timestamp.day} ${String(ev.timestamp.hour).padStart(2,"0")}:${String(ev.timestamp.minute).padStart(2,"0")}]</span> <b style="color: var(--fg0);">${ev.type}:</b> <span style="color: var(--fg2);">${ev.description}</span>`;
+        globalEventsList.appendChild(evDiv);
+      }
+    }
+  }
 }
 
 function updateInspector() {
@@ -436,36 +569,13 @@ function updateInspector() {
   inspEmpty.style.display = "none";
   inspDetails.style.display = "flex";
   inspIdBadge.textContent = `#${entity.id}`;
-  inspName.textContent = entity.properties.name || (entity.id === 0 ? "Mundo" : `Entidade #${entity.id}`);
-
-  const pos = entity.getWorldPos();
-  inspPos.textContent = entity.x !== undefined ? `POS: ${entity.x}, ${entity.y}` : `HERDADA: ${pos.x}, ${pos.y}`;
-
-  // 1. Breadcrumbs Path Hierarchy
-  inspBreadcrumbs.innerHTML = "";
-  const path = entity.getPath();
-  path.forEach((p, idx) => {
-    const span = document.createElement("span");
-    span.textContent = p.name;
-    span.style.cursor = "pointer";
-    span.style.textDecoration = "underline";
-    span.addEventListener("click", () => {
-      lastSelectedId = p.id;
-      updateInspector();
-    });
-    inspBreadcrumbs.appendChild(span);
-    if (idx < path.length - 1) {
-      const sep = document.createElement("span");
-      sep.textContent = " > ";
-      sep.style.color = "var(--gray)";
-      inspBreadcrumbs.appendChild(sep);
-    }
-  });
+  inspName.textContent = entity.properties.name || `Entidade #${entity.id}`;
+  inspPos.textContent = `POS: ${entity.x}, ${entity.y}`;
 
   const propEntries = Object.entries(entity.properties);
   inspPropsCount.textContent = `${propEntries.length} PROPS`;
 
-  // 2. Render Avatar Preview if entity has 'render' property
+  // 1. Render Avatar Preview
   const r = entity.properties.render;
   if (r && r.skin && shader) {
     wash_write_string(mem, r.skin, NAME_PTR);
@@ -490,10 +600,10 @@ function updateInspector() {
       actx.putImageData(imgData, 0, 0);
     }
   } else {
-    inspAvatar.innerHTML = `<span style="font-size: 16px; color: var(--gray);">${entity.id === 0 ? "🌍" : "∅"}</span>`;
+    inspAvatar.innerHTML = `<span style="font-size: 16px; color: var(--gray);">∅</span>`;
   }
 
-  // 3. Dynamic Property Cards
+  // 2. Dynamic Property Cards
   inspPropsList.innerHTML = "";
 
   for (const [key, prop] of propEntries) {
@@ -522,14 +632,14 @@ function updateInspector() {
     header.appendChild(delBtn);
     card.appendChild(header);
 
-    // If property has current and max -> render progress bar!
-    if (typeof prop === "object" && typeof prop.current === "number" && typeof prop.max === "number" && prop.max > 0) {
+    // If property is 'life' -> render Energy Bar
+    if (key === "life" && typeof prop.energy === "number" && typeof prop.max === "number") {
       const barContainer = document.createElement("div");
       barContainer.className = "prop-bar-container";
 
       const barHeader = document.createElement("div");
       barHeader.className = "prop-bar-header";
-      barHeader.innerHTML = `<span>Nível</span><span><b>${Math.round(prop.current)}</b>/${prop.max}</span>`;
+      barHeader.innerHTML = `<span>⚡ Energia Vital</span><span><b>${Math.round(prop.energy)}</b>/${prop.max}</span>`;
       barContainer.appendChild(barHeader);
 
       const barBg = document.createElement("div");
@@ -537,12 +647,124 @@ function updateInspector() {
 
       const barFill = document.createElement("div");
       barFill.className = "bar-fill";
-      barFill.style.background = key === "health" ? "var(--red-bright)" : (key === "stomach" ? "var(--orange-bright)" : "var(--aqua-bright)");
-      barFill.style.width = `${Math.max(0, Math.min(100, (prop.current / prop.max) * 100))}%`;
+      barFill.style.background = "var(--green-bright)";
+      barFill.style.width = `${Math.max(0, Math.min(100, (prop.energy / prop.max) * 100))}%`;
 
       barBg.appendChild(barFill);
       barContainer.appendChild(barBg);
       card.appendChild(barContainer);
+    }
+
+    // If property has condition and maxCondition -> render Physical Condition Bar
+    if (typeof prop.condition === "number" && typeof prop.maxCondition === "number") {
+      const barContainer = document.createElement("div");
+      barContainer.className = "prop-bar-container";
+
+      const barHeader = document.createElement("div");
+      barHeader.className = "prop-bar-header";
+      const condPct = Math.round((prop.condition / prop.maxCondition) * 100);
+      barHeader.innerHTML = `<span>Condição Física</span><span><b>${Math.round(prop.condition)}</b>/${prop.maxCondition} (${condPct}%)</span>`;
+      barContainer.appendChild(barHeader);
+
+      const barBg = document.createElement("div");
+      barBg.className = "bar-bg";
+
+      const barFill = document.createElement("div");
+      barFill.className = "bar-fill";
+      barFill.style.background = condPct > 60 ? "var(--aqua-bright)" : (condPct > 25 ? "var(--yellow-bright)" : "var(--red-bright)");
+      barFill.style.width = `${Math.max(0, Math.min(100, condPct))}%`;
+
+      barBg.appendChild(barFill);
+      barContainer.appendChild(barBg);
+      card.appendChild(barContainer);
+    }
+
+    // If property is 'bladder' -> render Water Bar
+    if (key === "bladder" && typeof prop.water === "number" && typeof prop.maxWater === "number") {
+      const barContainer = document.createElement("div");
+      barContainer.className = "prop-bar-container";
+
+      const barHeader = document.createElement("div");
+      barHeader.className = "prop-bar-header";
+      barHeader.innerHTML = `<span>💧 Água (Bexiga)</span><span><b>${Math.round(prop.water)}</b>/${prop.maxWater}</span>`;
+      barContainer.appendChild(barHeader);
+
+      const barBg = document.createElement("div");
+      barBg.className = "bar-bg";
+
+      const barFill = document.createElement("div");
+      barFill.className = "bar-fill";
+      barFill.style.background = "var(--blue-bright)";
+      barFill.style.width = `${Math.max(0, Math.min(100, (prop.water / prop.maxWater) * 100))}%`;
+
+      barBg.appendChild(barFill);
+      barContainer.appendChild(barBg);
+      card.appendChild(barContainer);
+    }
+
+    // If property is 'stomach' with digesting items
+    if (key === "stomach" && Array.isArray(prop.items)) {
+      const digestBox = document.createElement("div");
+      digestBox.style.fontSize = "10px";
+      digestBox.style.color = "var(--orange-bright)";
+      digestBox.style.marginTop = "4px";
+
+      if (prop.items.length === 0) {
+        digestBox.innerHTML = `<i>Estômago Vazio (0/${prop.capacity} itens)</i>`;
+      } else {
+        let itemsHtml = `<b>Em Digestão (${prop.items.length}/${prop.capacity}):</b><ul style="margin: 2px 0 0 14px; padding: 0;">`;
+        for (const item of prop.items) {
+          itemsHtml += `<li>${item.name} (${Math.round(item.remainingTurns)}s restantes | +${item.nutrition} cal)</li>`;
+        }
+        itemsHtml += `</ul>`;
+        digestBox.innerHTML = itemsHtml;
+      }
+      card.appendChild(digestBox);
+    }
+
+    // If property is 'brain' (Mood, Personality, and Affinities Table)
+    if (key === "brain") {
+      const brainBox = document.createElement("div");
+      brainBox.style.fontSize = "10px";
+      brainBox.style.color = "var(--purple-bright)";
+      brainBox.style.marginTop = "4px";
+
+      const affEntries = Object.entries(prop.affinities || {});
+      let affText = "Nenhuma relação conhecida";
+      if (affEntries.length > 0) {
+        affText = affEntries.map(([tid, val]) => `#${tid}: ${val >= 0 ? "+" : ""}${Math.round(val)}`).join(", ");
+      }
+
+      brainBox.innerHTML = `Humor: <b>${prop.mood || "calmo"}</b><br>Afinidades: <span style="color: var(--fg2);">${affText}</span>`;
+      card.appendChild(brainBox);
+    }
+
+    // If property is 'amputated_*'
+    if (key.startsWith("amputated_")) {
+      const ampBox = document.createElement("div");
+      ampBox.style.fontSize = "10px";
+      ampBox.style.color = "var(--red-bright)";
+      ampBox.style.marginTop = "3px";
+      ampBox.style.fontWeight = "bold";
+      ampBox.innerHTML = `⚠️ MEMBRO AMPUTADO! Hemorragia ativa: <b>-${prop.bleedRate}</b> energia/s`;
+      card.appendChild(ampBox);
+    }
+
+    // If property is 'lungs' or 'gills'
+    if (key === "lungs") {
+      const lungBox = document.createElement("div");
+      lungBox.style.fontSize = "10px";
+      lungBox.style.color = "var(--yellow-bright)";
+      lungBox.style.marginTop = "2px";
+      lungBox.innerHTML = `Respiração: <b>Pulmonar (Afoga na água)</b>`;
+      card.appendChild(lungBox);
+    } else if (key === "gills") {
+      const gillBox = document.createElement("div");
+      gillBox.style.fontSize = "10px";
+      gillBox.style.color = "var(--aqua-bright)";
+      gillBox.style.marginTop = "2px";
+      gillBox.innerHTML = `Respiração: <b>Branquial (Asfixia fora d'água)</b>`;
+      card.appendChild(gillBox);
     }
 
     // Display fields of the property object or primitive value
@@ -551,13 +773,22 @@ function updateInspector() {
 
     if (typeof prop === "object") {
       for (const [fieldKey, fieldVal] of Object.entries(prop)) {
-        if (fieldKey === "effect" || fieldKey.startsWith("_")) continue;
+        if (
+          fieldKey === "effect" ||
+          fieldKey === "items" ||
+          fieldKey === "rootEntityIds" ||
+          fieldKey === "affinities" ||
+          fieldKey.startsWith("_")
+        )
+          continue;
 
         const fieldItem = document.createElement("span");
         fieldItem.className = "prop-field-item";
         let displayVal = fieldVal;
         if (typeof fieldVal === "number") {
           displayVal = Number.isInteger(fieldVal) ? fieldVal : fieldVal.toFixed(2);
+        } else if (typeof fieldVal === "object" && fieldVal !== null) {
+          displayVal = JSON.stringify(fieldVal);
         }
         fieldItem.textContent = `${fieldKey}: ${displayVal}`;
         fields.appendChild(fieldItem);
@@ -581,45 +812,26 @@ function updateInspector() {
     inspPropsList.appendChild(card);
   }
 
-  // 4. Dynamic Child Entities List (Entidades Interiores)
-  inspChildrenList.innerHTML = "";
-  const children = entity.entities || [];
-  inspChildrenCount.textContent = `${children.length} filhas`;
-
-  if (children.length === 0) {
-    inspChildrenList.innerHTML = `<div style="font-size: 10px; color: var(--gray); font-style: italic;">Nenhuma entidade interior.</div>`;
-  } else {
-    for (const child of children) {
-      const childCard = document.createElement("div");
-      childCard.className = "prop-card";
-      childCard.style.borderLeft = "3px solid var(--purple-bright)";
-
-      const childHeader = document.createElement("div");
-      childHeader.className = "prop-header";
-
-      const nameBtn = document.createElement("span");
-      nameBtn.style.cursor = "pointer";
-      nameBtn.style.color = "var(--fg0)";
-      nameBtn.style.fontWeight = "600";
-      nameBtn.textContent = `#${child.id} ${child.properties.name || "Entidade Filha"}`;
-      nameBtn.addEventListener("click", () => {
-        lastSelectedId = child.id;
-        updateInspector();
-      });
-      childHeader.appendChild(nameBtn);
-
-      const delChildBtn = document.createElement("button");
-      delChildBtn.className = "prop-del-btn";
-      delChildBtn.innerHTML = "×";
-      delChildBtn.title = `Remover / Destruir entidade interior #${child.id}`;
-      delChildBtn.addEventListener("click", () => {
-        child.destroy();
-        updateInspector();
-      });
-      childHeader.appendChild(delChildBtn);
-      childCard.appendChild(childHeader);
-
-      inspChildrenList.appendChild(childCard);
+  // 3. Render Personal Event History for Selected Entity
+  if (inspEventList) {
+    const entityEvents = getEventsForEntity(entity.id, 12);
+    inspEventList.innerHTML = "";
+    if (entityEvents.length === 0) {
+      inspEventList.innerHTML = `<span style="color: var(--gray); font-style: italic;">Nenhum evento registrado nesta criatura.</span>`;
+    } else {
+      for (const ev of entityEvents.reverse()) {
+        const evDiv = document.createElement("div");
+        evDiv.style.padding = "2px 6px";
+        evDiv.style.background = "var(--bg0-hard)";
+        evDiv.style.borderRadius = "2px";
+        evDiv.style.borderLeft = "2px solid " + (
+          ev.type === "AMPUTATION" ? "var(--red-bright)" :
+          ev.type === "ATTACK" ? "var(--orange-bright)" :
+          ev.type === "DEATH" ? "var(--red)" : "var(--yellow-bright)"
+        );
+        evDiv.innerHTML = `<span style="color: var(--gray); font-size: 9px;">[D${ev.timestamp.day} ${String(ev.timestamp.hour).padStart(2,"0")}:${String(ev.timestamp.minute).padStart(2,"0")}]</span> <b style="color: var(--fg0);">${ev.type}:</b> <span style="color: var(--fg2);">${ev.description}</span>`;
+        inspEventList.appendChild(evDiv);
+      }
     }
   }
 }
@@ -638,8 +850,10 @@ function frame(time) {
   handleKeyMovement(dt);
 
   if (shader && world) {
-    // 1. Tick Recursive Hierarchical Tree if not paused
+    // 1. Tick Simulation if not paused
     if (!isPaused) {
+      world.clock.tick(dt);
+
       simAccumulator += dt;
       const stepDt = 1.0 / currentTps;
       const maxSteps = 15;
@@ -648,23 +862,23 @@ function frame(time) {
       while (simAccumulator >= stepDt && steps < maxSteps) {
         simAccumulator -= stepDt;
         steps++;
-        tickRecursive(world, stepDt);
+        incrementEngineTick();
+        tickEntities(entities, stepDt, world);
       }
       if (steps >= maxSteps) simAccumulator = 0;
     }
 
-    // 2. Sync renderable tree nodes into WASM shared memory
-    syncRenderTreeToWasm(world, mem, shader.exports);
+    // 2. Sync renderable entities into WASM shared memory
+    syncRenderToWasm(entities, mem, shader.exports);
 
-    // 3. Update WASM clock & lighting from root world entity
-    const clock = world.properties.clock || { day: 0, hour: 10, minute: 0 };
+    // 3. Update WASM clock & lighting
     shader.exports.wasm_set_clock(
-      clock.day,
-      clock.hour,
-      clock.minute,
-      world.properties.light || 1.0,
-      world.properties.heat || 0.8,
-      entityRegistry.size
+      world.clock.day,
+      world.clock.hour,
+      world.clock.minute,
+      world.clock.globalLight,
+      world.clock.globalHeat,
+      entities.length
     );
 
     // 4. Run WASM Renderer
@@ -703,8 +917,9 @@ function frame(time) {
 async function init() {
   try {
     shader = await wash_load("./brutopolis.wasm", mem);
+    world = new World(mem, shader.exports);
     resetWorld();
-    console.log("✓ Brutopolis (Hierarchical Tree Engine) initialized successfully!");
+    console.log("✓ Brutopolis (Biological Ecosystem Engine) initialized successfully!");
     requestAnimationFrame(frame);
   } catch (err) {
     console.error("Failed to load Brutopolis:", err);

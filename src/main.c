@@ -162,13 +162,26 @@ int wasm_select_at(float screen_x, float screen_y, uint32_t screen_w, uint32_t s
     float fy = s_cam_y + (screen_y - center_y) / (float)tile_size;
 
     int found_id = -1;
-    float closest_dist = 2.5f;
 
+    // Pass 1: exact tile hit (cursor is squarely inside entity tile bounds)
     for (int i = 0; i < MAX_RENDER_ENTITIES; i++) {
         RenderEntity* e = &s_entities[i];
         if (!e->active) continue;
-        float dx = (float)e->x - fx;
-        float dy = (float)e->y - fy;
+        if (fx >= (float)e->x && fx < (float)(e->x + 1) &&
+            fy >= (float)e->y && fy < (float)(e->y + 1)) {
+            found_id = e->id;
+            s_selected_id = found_id;
+            return found_id;
+        }
+    }
+
+    // Pass 2: nearest entity center within a tight 1.5-tile radius
+    float closest_dist = 1.5f;
+    for (int i = 0; i < MAX_RENDER_ENTITIES; i++) {
+        RenderEntity* e = &s_entities[i];
+        if (!e->active) continue;
+        float dx = ((float)e->x + 0.5f) - fx;
+        float dy = ((float)e->y + 0.5f) - fy;
         float d = f_abs(dx) + f_abs(dy);
         if (d < closest_dist) {
             closest_dist = d;

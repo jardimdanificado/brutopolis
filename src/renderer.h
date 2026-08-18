@@ -6,8 +6,8 @@
 #include "world_gen.h"
 #include "wash_api.h"
 
-#define MAX_RENDER_ENTITIES 256
-#define MAX_RENDER_ITEMS 256
+#define MAX_RENDER_ENTITIES 4096
+#define MAX_RENDER_ITEMS 1024
 
 typedef struct {
     int32_t active;
