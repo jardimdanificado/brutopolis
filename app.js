@@ -722,7 +722,7 @@ function updateInspector() {
       card.appendChild(digestBox);
     }
 
-    // If property is 'brain' (Mood, Personality, and Affinities Table)
+    // If property is 'brain' (Mood, Personality, Affinities, 8x8 Zones, Short/Long Memory, Object Memory, Dietary Prefs)
     if (key === "brain") {
       const brainBox = document.createElement("div");
       brainBox.style.fontSize = "10px";
@@ -730,12 +730,38 @@ function updateInspector() {
       brainBox.style.marginTop = "4px";
 
       const affEntries = Object.entries(prop.affinities || {});
-      let affText = "Nenhuma relação conhecida";
+      let affText = "Nenhuma";
       if (affEntries.length > 0) {
-        affText = affEntries.map(([tid, val]) => `#${tid}: ${val >= 0 ? "+" : ""}${Math.round(val)}`).join(", ");
+        affText = affEntries.slice(0, 6).map(([tid, val]) => `#${tid}: ${val >= 0 ? "+" : ""}${Math.round(val)}`).join(", ");
+        if (affEntries.length > 6) affText += ` (+${affEntries.length - 6})`;
       }
 
-      brainBox.innerHTML = `Humor: <b>${prop.mood || "calmo"}</b><br>Afinidades: <span style="color: var(--fg2);">${affText}</span>`;
+      // Geo zones & territory
+      const knownZonesCount = Object.keys(prop.geoMemory || {}).length;
+      const territoryTxt = prop.territoryZoneKey ? `Zona ${prop.territoryZoneKey}` : "Nenhum";
+
+      // Dietary preferences
+      let prefsTxt = "Geral";
+      if (prop.preferences) {
+        const likes = prop.preferences.likes.map(l => `+${l.value}`).join(", ");
+        const dislikes = prop.preferences.dislikes.map(d => `-${d.value}`).join(", ");
+        prefsTxt = `${likes}${dislikes ? ` | ${dislikes}` : ""}`;
+      }
+
+      // Object memory
+      const objMemCount = prop.objectMemory?.length || 0;
+      const shortMemCount = prop.shortTermMemory?.length || 0;
+      const longMemCount = prop.longTermMemory?.length || 0;
+
+      let html = `<b>Humor:</b> ${prop.mood || "calmo"}<br>`;
+      html += `<b>Raça/Espécie:</b> <span style="color: var(--fg0);">${entity.properties.species || "N/A"}</span><br>`;
+      html += `<b>Afinidades:</b> <span style="color: var(--fg2);">${affText}</span><br>`;
+      html += `<b>Zonas 8x8:</b> ${knownZonesCount} conhecidas | <b>Território:</b> ${territoryTxt}<br>`;
+      html += `<b>Memória de Objetos:</b> ${objMemCount}/${prop.objectCapacity || 5} recursos salvos<br>`;
+      html += `<b>Memórias:</b> Recente (${shortMemCount}/${prop.shortTermCapacity || 10}) | Longo Prazo (${longMemCount})<br>`;
+      html += `<b>Gosto Alimentar:</b> <span style="color: var(--orange-bright);">${prefsTxt}</span>`;
+
+      brainBox.innerHTML = html;
       card.appendChild(brainBox);
     }
 

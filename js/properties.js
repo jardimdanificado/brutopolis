@@ -2,13 +2,45 @@ import { createEntity, getEntityById, currentTick } from "./engine.js";
 import { recordWorldEvent } from "./event_log.js";
 
 // ---------------------------------------------------------------------------
-// 0. Energy Cost Multipliers Based on Physical Condition
+// 0. Energy Cost Multipliers Based on Physical Condition & Color Similarity
 // ---------------------------------------------------------------------------
 
 export function getDamagedEnergyMultiplier(condition, maxCondition = 100) {
   if (condition >= maxCondition) return 1.0;
   const ratio = Math.max(0, condition) / Math.max(1, maxCondition);
   return 1.0 + 4.0 * Math.pow(1.0 - ratio, 2);
+}
+
+export function getColorSimilarityBoost(colorA, colorB) {
+  if (colorA === undefined || colorB === undefined) return 1.0;
+  const rA = (colorA >> 16) & 0xff;
+  const gA = (colorA >> 8) & 0xff;
+  const bA = colorA & 0xff;
+
+  const rB = (colorB >> 16) & 0xff;
+  const gB = (colorB >> 8) & 0xff;
+  const bB = colorB & 0xff;
+
+  const diff = Math.hypot(rA - rB, gA - gB, bA - bB);
+  return diff < 80 ? 1.1 : 1.0;
+}
+
+export function generateRandomDietaryPreferences() {
+  const parts = ["leg", "arm", "organ", "bone", "meat", "eye", "wings"];
+  const speciesList = ["human", "wolf", "cat", "bear", "goblin", "bat", "serpent", "dragon", "oak", "willow", "pine"];
+
+  const likes = [];
+  const dislikes = [];
+
+  const likedPart = parts[Math.floor(Math.random() * parts.length)];
+  const likedSpecies = speciesList[Math.floor(Math.random() * speciesList.length)];
+  likes.push({ type: "part", value: likedPart, bonus: 1.4 });
+  likes.push({ type: "species", value: likedSpecies, bonus: 1.5 });
+
+  const dislikedPart = parts[(parts.indexOf(likedPart) + 2) % parts.length];
+  dislikes.push({ type: "part", value: dislikedPart, penalty: 0.6 });
+
+  return { likes, dislikes };
 }
 
 // ---------------------------------------------------------------------------
@@ -31,12 +63,10 @@ export function createLungsProp() {
       const inWater = world && world.getTile(ent.x, ent.y) === 2;
 
       if (inWater && !isFlying) {
-        // Drowning: massive energy loss and lung damage!
         ent.properties.life.energy = Math.max(0, ent.properties.life.energy - dt * 90.0);
         this.condition = Math.max(0, this.condition - dt * 12.0);
         ent.combatFlash = 2;
       } else {
-        // Normal low basal respiration cost
         const mult = getDamagedEnergyMultiplier(this.condition, this.maxCondition);
         ent.properties.life.energy = Math.max(0, ent.properties.life.energy - dt * 0.2 * mult);
       }
@@ -59,12 +89,10 @@ export function createGillsProp() {
       const inWater = world && world.getTile(ent.x, ent.y) === 2;
 
       if (!inWater) {
-        // Suffocation out of water: massive energy loss!
         ent.properties.life.energy = Math.max(0, ent.properties.life.energy - dt * 90.0);
         this.condition = Math.max(0, this.condition - dt * 15.0);
         ent.combatFlash = 2;
       } else {
-        // Normal aquatic respiration cost
         const mult = getDamagedEnergyMultiplier(this.condition, this.maxCondition);
         ent.properties.life.energy = Math.max(0, ent.properties.life.energy - dt * 0.2 * mult);
       }
@@ -121,7 +149,7 @@ export function createBodyRegenerationProp(rate = 1.0, maxRegenPerTick = 4, ener
 export function createStomachProp(capacity = 4, diet = { meat: 1.0, plant: 0.8, fruit: 1.2, organ: 1.1, bone: 0.3 }) {
   return {
     capacity,
-    items: [], // [{ name, nutrition, foodType, totalTurns, remainingTurns, seed }]
+    items: [],
     diet,
     effect(ent, dt, world, entities) {
       if (!this.items || this.items.length === 0) return;
@@ -140,7 +168,6 @@ export function createStomachProp(capacity = 4, diet = { meat: 1.0, plant: 0.8, 
 
         item.remainingTurns -= dt;
 
-        // When digestion completes, excrete feces with potential small seeds
         if (item.remainingTurns <= 0) {
           const finishedItem = this.items.splice(i, 1)[0];
 
@@ -181,7 +208,6 @@ export function createKidneyProp(ratio = 0.75) {
       const waterDrain = 1.0 * this.ratio * mult * dt;
       ent.properties.bladder.water = Math.max(0, ent.properties.bladder.water - waterDrain);
 
-      // Accelerated energy loss on dehydration
       if (ent.properties.bladder.water <= 0 && ent.properties.life) {
         ent.properties.life.energy = Math.max(0, ent.properties.life.energy - dt * 15.0);
       }
@@ -190,15 +216,87 @@ export function createKidneyProp(ratio = 0.75) {
 }
 
 /**
- * Brain (Cognition, Humor, Personality, and Perception-based Affinities)
+ * Brain (Quality, Short/Long-Term Memory, 8x8 Geographic Zones & Territorial Affinities, Object Memory, Dietary Preferences)
  */
-export function createBrainProp(maxPath = 16, personality = { bravery: 0.7, curiosity: 0.8, aggression: 0.3 }) {
+export function createBrainProp(maxPath = 16, personality = { bravery: 0.7, curiosity: 0.8, aggression: 0.3 }, quality = 1.0) {
+  const shortCap = Math.max(4, Math.floor(quality * 10));
+  const objCap = Math.max(3, Math.floor(quality * 6));
+
   return {
+    quality,
     maxPath,
     path: [],
     mood: "calm",
     personality,
-    affinities: {}, // { [targetEntityId]: number } from -100 to +100
+    affinities: {}, // { [targetEntityId]: number }
+    preferences: generateRandomDietaryPreferences(),
+
+    // Short-term perception buffer (overwrites oldest entries)
+    shortTermMemory: [],
+    shortTermCapacity: shortCap,
+
+    // Long-term episodic memory (traumatic or joyful key events)
+    longTermMemory: [],
+
+    // 8x8 Geographic Zones Memory (Infinite)
+    geoMemory: {}, // { [zoneKey]: { zx, zy, affinity, timeSpent, lastVisitedTick } }
+    territoryZoneKey: null,
+
+    // Object / Resource Memory
+    objectMemory: [], // [{ entityId, name, foodType, nutrition, x, y, seenTick }]
+    objectCapacity: objCap,
+
+    addShortTerm(eventData) {
+      this.shortTermMemory.push({ tick: currentTick, ...eventData });
+      if (this.shortTermMemory.length > this.shortTermCapacity) {
+        this.shortTermMemory.shift();
+      }
+    },
+
+    addLongTerm(eventData) {
+      if (!this.longTermMemory.some(e => e.type === eventData.type && e.desc === eventData.desc)) {
+        this.longTermMemory.push({ tick: currentTick, ...eventData });
+      }
+    },
+
+    rememberObject(item) {
+      const idx = this.objectMemory.findIndex(m => m.entityId === item.id);
+      if (idx >= 0) {
+        this.objectMemory[idx].x = item.x;
+        this.objectMemory[idx].y = item.y;
+        this.objectMemory[idx].seenTick = currentTick;
+        return;
+      }
+
+      const rec = {
+        entityId: item.id,
+        name: item.properties.name || "Objeto",
+        foodType: item.properties.edible?.foodType || "food",
+        nutrition: item.properties.edible?.nutrition || 1000,
+        x: item.x,
+        y: item.y,
+        seenTick: currentTick
+      };
+
+      if (this.objectMemory.length < this.objectCapacity) {
+        this.objectMemory.push(rec);
+      } else {
+        let replaceIdx = 0;
+        let oldestTick = Infinity;
+        for (let i = 0; i < this.objectMemory.length; i++) {
+          if (this.objectMemory[i].seenTick < oldestTick) {
+            oldestTick = this.objectMemory[i].seenTick;
+            replaceIdx = i;
+          }
+        }
+        this.objectMemory[replaceIdx] = rec;
+      }
+    },
+
+    forgetObject(entityId) {
+      this.objectMemory = this.objectMemory.filter(m => m.entityId !== entityId);
+    },
+
     condition: 100,
     maxCondition: 100,
     nutrition: 800,
@@ -209,19 +307,76 @@ export function createBrainProp(maxPath = 16, personality = { bravery: 0.7, curi
         ent.properties.life.energy = Math.max(0, ent.properties.life.energy - dt * 5.0 * mult);
       }
 
-      // Perception-based affinity increase over time
+      // 1. Geographic Zone Tracking (8x8 Area)
+      const zx = Math.floor(ent.x / 8);
+      const zy = Math.floor(ent.y / 8);
+      const zoneKey = `${zx}_${zy}`;
+
+      if (!this.geoMemory[zoneKey]) {
+        this.geoMemory[zoneKey] = { zx, zy, affinity: 0, timeSpent: 0, lastVisitedTick: currentTick };
+      }
+      const geo = this.geoMemory[zoneKey];
+      geo.timeSpent += dt;
+      geo.lastVisitedTick = currentTick;
+      geo.affinity = Math.min(100, geo.affinity + dt * 0.05);
+
       const viewRange = ent.properties.eye_left?.viewRange || ent.properties.eye_right?.viewRange || 8;
+      const mySpecies = ent.properties.species || "creature";
+      const myColor = ent.properties.render?.color;
+
+      // 2. Scan Entities in Perception Range for Affinity, Memory & Object Memorization
+      let allyAffinitySumInZone = 0;
+
       for (const other of entities) {
-        if (other !== ent && !other.destroyed && other.properties.life) {
-          const dist = Math.abs(other.x - ent.x) + Math.abs(other.y - ent.y);
-          if (dist <= viewRange) {
-            // Gradually build mutual familiarity/affinity over time
-            const currentAff = this.affinities[other.id] !== undefined ? this.affinities[other.id] : 0;
-            // Does not auto-forgive severe enemies (-100) quickly, but gradually softens neutral/allies
-            if (currentAff >= -50) {
-              this.affinities[other.id] = Math.min(100, currentAff + dt * 0.4);
-            }
+        if (other === ent || other.destroyed) continue;
+
+        const dist = Math.abs(other.x - ent.x) + Math.abs(other.y - ent.y);
+        if (dist > viewRange) continue;
+
+        // Remember visible food items in Object Memory
+        if (other.properties.edible) {
+          this.rememberObject(other);
+        }
+
+        // Process Living Creatures: Species & Color Affinity
+        if (other.properties.life) {
+          const otherSpecies = other.properties.species || "creature";
+          const isSameSpecies = otherSpecies === mySpecies;
+          const otherColor = other.properties.render?.color;
+
+          // Initial Encounter Affinity
+          if (this.affinities[other.id] === undefined) {
+            this.affinities[other.id] = isSameSpecies ? 30 : 0;
           }
+
+          let currentAff = this.affinities[other.id];
+          if (currentAff >= -50) {
+            let gainRate = isSameSpecies ? (dt * 1.0) : (dt * 0.35);
+
+            if (!isSameSpecies) {
+              const colorBoost = getColorSimilarityBoost(myColor, otherColor);
+              gainRate *= colorBoost;
+            }
+
+            this.affinities[other.id] = Math.min(100, currentAff + gainRate);
+          }
+
+          if (this.affinities[other.id] >= 30) {
+            allyAffinitySumInZone += this.affinities[other.id];
+          }
+        }
+      }
+
+      // Boost Zone Affinity when accompanied by trusted allies in this zone
+      if (allyAffinitySumInZone > 0) {
+        geo.affinity = Math.min(100, geo.affinity + dt * 0.08 * (allyAffinitySumInZone / 100));
+      }
+
+      // 3. Territorial Zone Demarcation for Territorial Creatures
+      const isTerritorial = (this.personality?.aggression || 0) >= 0.4 || ["wolf", "bear", "dragon", "goblin"].includes(mySpecies);
+      if (isTerritorial && geo.affinity >= 20) {
+        if (!this.territoryZoneKey || (this.geoMemory[this.territoryZoneKey]?.affinity || 0) < geo.affinity) {
+          this.territoryZoneKey = zoneKey;
         }
       }
     }
@@ -475,7 +630,7 @@ export function createCombatProp(attackInterval = 1.2, aggroRange = 3) {
 }
 
 /**
- * Locomotion / Motor Behavior (Intelligent Navigation: Hunger, Thirst, Predation, Wandering)
+ * Locomotion / Motor Behavior (Intelligent Navigation: Memory, Hunger, Thirst, Predation, Wandering)
  */
 export function createLocomotionProp() {
   return {
@@ -515,11 +670,10 @@ export function createLocomotionProp() {
       // Priority 1: Thirst (Water <= 50%) -> Seek water to drink
       // -----------------------------------------------------------------------
       if (waterRatio <= 0.50 && world) {
-        // Check if already adjacent to water to drink
         const cardinalOffsets = [{ dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 }];
         let drank = false;
         for (const off of cardinalOffsets) {
-          if (world.getTile(ent.x + off.dx, ent.y + off.dy) === 2) { // Water tile!
+          if (world.getTile(ent.x + off.dx, ent.y + off.dy) === 2) {
             if (ent.properties.bladder) {
               ent.properties.bladder.water = Math.min(ent.properties.bladder.maxWater, ent.properties.bladder.water + 600);
             }
@@ -529,7 +683,6 @@ export function createLocomotionProp() {
         }
 
         if (!drank) {
-          // Find closest water tile in view range
           const waterTarget = findNearestWaterTile(world, ent.x, ent.y, viewRange);
           if (waterTarget) {
             chosenDx = Math.sign(waterTarget.x - ent.x);
@@ -540,25 +693,62 @@ export function createLocomotionProp() {
       }
 
       // -----------------------------------------------------------------------
-      // Priority 2: Hunger (Energy <= 50% or Empty Stomach) -> Seek Food on ground
+      // Priority 2: Hunger (Energy <= 50% or Empty Stomach) -> Seek Food in view OR from Object Memory
       // -----------------------------------------------------------------------
       if (!hasIntention && (energyRatio <= 0.50 || (ent.properties.stomach?.items.length === 0))) {
-        let closestFood = null;
-        let minFoodDist = Infinity;
+        let bestFood = null;
+        let highestFoodScore = -Infinity;
 
+        // 1. Scan visible food in perception range
         for (const item of entities) {
           if (!item.destroyed && item.properties.edible) {
             const dist = Math.abs(item.x - ent.x) + Math.abs(item.y - ent.y);
-            if (dist <= viewRange && dist < minFoodDist) {
-              minFoodDist = dist;
-              closestFood = item;
+            if (dist <= viewRange) {
+              let score = 100 - dist * 5;
+              const ed = item.properties.edible;
+
+              // Factor in dietary preferences
+              const prefs = ent.properties.brain?.preferences;
+              if (prefs) {
+                if (prefs.likes.some(l => (l.type === "part" && ed.partKey?.includes(l.value)) || (l.type === "species" && ed.sourceSpecies === l.value))) {
+                  score += 40;
+                }
+                if (prefs.dislikes.some(d => (d.type === "part" && ed.partKey?.includes(d.value)) || (d.type === "species" && ed.sourceSpecies === d.value))) {
+                  score -= 30;
+                }
+              }
+
+              if (score > highestFoodScore) {
+                highestFoodScore = score;
+                bestFood = item;
+              }
             }
           }
         }
 
-        if (closestFood) {
-          chosenDx = Math.sign(closestFood.x - ent.x);
-          chosenDy = Math.sign(closestFood.y - ent.y);
+        // 2. If no food in immediate view, navigate to memorized food in Object Memory!
+        if (!bestFood && ent.properties.brain?.objectMemory?.length > 0) {
+          for (let i = ent.properties.brain.objectMemory.length - 1; i >= 0; i--) {
+            const memObj = ent.properties.brain.objectMemory[i];
+            const dist = Math.abs(memObj.x - ent.x) + Math.abs(memObj.y - ent.y);
+
+            // If we arrived at the memorized spot and the item is gone, forget it!
+            if (dist === 0) {
+              const stillThere = entities.some(e => !e.destroyed && e.id === memObj.entityId);
+              if (!stillThere) {
+                ent.properties.brain.objectMemory.splice(i, 1);
+                continue;
+              }
+            }
+
+            bestFood = { x: memObj.x, y: memObj.y };
+            break;
+          }
+        }
+
+        if (bestFood) {
+          chosenDx = Math.sign(bestFood.x - ent.x);
+          chosenDy = Math.sign(bestFood.y - ent.y);
           hasIntention = true;
         }
       }
@@ -575,7 +765,6 @@ export function createLocomotionProp() {
             const dist = Math.abs(prey.x - ent.x) + Math.abs(prey.y - ent.y);
             if (dist <= viewRange) {
               const affinity = ent.properties.brain?.affinities?.[prey.id] !== undefined ? ent.properties.brain.affinities[prey.id] : 0;
-              // Avoid attacking trusted friends (affinity > 50) unless impossible
               if (affinity < 50) {
                 const preyEnergy = prey.properties.life.energy || 1000;
                 const preyScore = (100 - affinity) - (preyEnergy * 0.01) - (dist * 8);
@@ -599,7 +788,6 @@ export function createLocomotionProp() {
       // Priority 4: Calm Wandering or Social Affection (Approach Allies)
       // -----------------------------------------------------------------------
       if (!hasIntention) {
-        // Occasional approach to high affinity friends
         let bestFriend = null;
         for (const other of entities) {
           if (other !== ent && !other.destroyed && other.properties.life) {
@@ -644,19 +832,65 @@ export function createLocomotionProp() {
             if (other !== ent && !other.destroyed && other.x === ent.x && other.y === ent.y && other.properties.edible) {
               const ed = other.properties.edible;
 
+              // Large Seed: spit out onto the ground immediately upon eating
               if (ed.seed && ed.seed.type === "large") {
                 const seedEnt = createSeedEntity(ent.x, ent.y, "large", ed.seed.species);
                 entities.push(seedEnt);
               }
 
+              // Calculate preference nutrition modifier
+              let nutMultiplier = 1.0;
+              const prefs = ent.properties.brain?.preferences;
+              if (prefs) {
+                if (prefs.likes.some(l => (l.type === "part" && ed.partKey?.includes(l.value)) || (l.type === "species" && ed.sourceSpecies === l.value))) {
+                  nutMultiplier = 1.35;
+                }
+                if (prefs.dislikes.some(d => (d.type === "part" && ed.partKey?.includes(d.value)) || (d.type === "species" && ed.sourceSpecies === d.value))) {
+                  nutMultiplier = 0.65;
+                }
+              }
+
+              const finalNutrition = Math.round((ed.nutrition || 2000) * nutMultiplier);
+
               ent.properties.stomach.items.push({
                 name: other.properties.name || "Alimento",
-                nutrition: ed.nutrition || 2000,
+                nutrition: finalNutrition,
                 foodType: ed.foodType || "fruit",
                 totalTurns: ed.digestDuration || 30,
                 remainingTurns: ed.digestDuration || 30,
                 seed: ed.seed?.type === "small" ? ed.seed : null
               });
+
+              // Forget from memory
+              if (ent.properties.brain?.forgetObject) {
+                ent.properties.brain.forgetObject(other.id);
+              }
+
+              // Build detailed feed provenance message
+              const foodName = other.properties.name || "Alimento";
+              const provenance = ed.sourceName ? `(proveniente de ${ed.sourceName})` : "";
+              const feedMsg = `${ent.properties.name || `Entidade #${ent.id}`} comeu ${foodName} ${provenance} na posição [X: ${ent.x}, Y: ${ent.y}]!`;
+
+              // Log indexed FEED event
+              recordWorldEvent({
+                type: "FEED",
+                primaryEntityId: ent.id,
+                secondaryEntityId: other.id,
+                location: { x: ent.x, y: ent.y },
+                description: feedMsg,
+                tick: currentTick,
+                timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
+                metadata: { foodName, nutrition: finalNutrition, sourceName: ed.sourceName, sourceSpecies: ed.sourceSpecies }
+              });
+
+              // Store in short-term perception memory
+              if (ent.properties.brain?.addShortTerm) {
+                ent.properties.brain.addShortTerm({
+                  type: "FEED",
+                  desc: `Comeu ${foodName} ${provenance}`,
+                  location: { x: ent.x, y: ent.y }
+                });
+              }
 
               other.destroyed = true;
               break;
@@ -1011,10 +1245,11 @@ export function createKnight(x, y, gender = "male") {
   return createEntity(
     {
       name: "Cavaleiro Imperial",
+      species: "human",
       render: { skin: "Human_Knight_M.png", color: 0xffdcdce6, backcolor: 0xff1e283c },
       life: createLifeProp(6000, 6000),
       lungs: createLungsProp(),
-      brain: createBrainProp(16, { bravery: 0.9, curiosity: 0.5, aggression: 0.4 }),
+      brain: createBrainProp(16, { bravery: 0.9, curiosity: 0.5, aggression: 0.4 }, 1.2),
       stomach: createStomachProp(4, { meat: 1.0, plant: 0.8, fruit: 1.0, organ: 0.9, bone: 0.1 }),
       bladder: createBladderProp(3000, 3000),
       kidney: createKidneyProp(0.75),
@@ -1039,10 +1274,11 @@ export function createArcher(x, y, gender = "female") {
   return createEntity(
     {
       name: "Arqueira da Floresta",
+      species: "human",
       render: { skin: "Human_Archer_F.png", color: 0xffa0e678, backcolor: 0xff1e3214 },
       life: createLifeProp(5000, 5000),
       lungs: createLungsProp(),
-      brain: createBrainProp(16, { bravery: 0.6, curiosity: 0.8, aggression: 0.3 }),
+      brain: createBrainProp(16, { bravery: 0.6, curiosity: 0.8, aggression: 0.3 }, 1.1),
       stomach: createStomachProp(3, { meat: 0.9, plant: 1.0, fruit: 1.2, organ: 0.8, bone: 0.1 }),
       bladder: createBladderProp(2500, 2500),
       kidney: createKidneyProp(0.7),
@@ -1067,10 +1303,11 @@ export function createCat(x, y, infected = false) {
   const cat = createEntity(
     {
       name: infected ? "Gato Silvestre (Infectado)" : "Gato Silvestre",
+      species: "cat",
       render: { skin: "Creature_Cat_U.png", color: 0xfff0b464, backcolor: 0xff321e0f },
       life: createLifeProp(3500, 3500),
       lungs: createLungsProp(),
-      brain: createBrainProp(12, { bravery: 0.4, curiosity: 0.9, aggression: 0.3 }),
+      brain: createBrainProp(12, { bravery: 0.4, curiosity: 0.9, aggression: 0.3 }, 1.0),
       stomach: createStomachProp(2, { meat: 1.3, plant: 0.2, fruit: 0.5, organ: 1.4, bone: 0.4 }),
       bladder: createBladderProp(1500, 1500),
       kidney: createKidneyProp(0.6),
@@ -1101,10 +1338,11 @@ export function createWolf(x, y) {
   return createEntity(
     {
       name: "Lobo Alfa Feroz",
+      species: "wolf",
       render: { skin: "Creature_Wolf_U.png", color: 0xffc8c8dc, backcolor: 0xff28283c },
       life: createLifeProp(4500, 4500),
       lungs: createLungsProp(),
-      brain: createBrainProp(14, { bravery: 0.8, curiosity: 0.7, aggression: 0.7 }),
+      brain: createBrainProp(14, { bravery: 0.8, curiosity: 0.7, aggression: 0.7 }, 1.1),
       stomach: createStomachProp(3, { meat: 1.4, plant: 0.1, fruit: 0.3, organ: 1.3, bone: 0.6 }),
       bladder: createBladderProp(2000, 2000),
       kidney: createKidneyProp(0.7),
@@ -1128,10 +1366,11 @@ export function createBear(x, y) {
   return createEntity(
     {
       name: "Urso Pardo Gigante",
+      species: "bear",
       render: { skin: "Creature_Bear_U.png", color: 0xff965a28, backcolor: 0xff32190a },
       life: createLifeProp(12000, 12000),
       lungs: createLungsProp(),
-      brain: createBrainProp(16, { bravery: 0.9, curiosity: 0.6, aggression: 0.6 }),
+      brain: createBrainProp(16, { bravery: 0.9, curiosity: 0.6, aggression: 0.6 }, 1.3),
       stomach: createStomachProp(6, { meat: 1.3, plant: 0.9, fruit: 1.4, organ: 1.2, bone: 0.5 }),
       bladder: createBladderProp(5000, 5000),
       kidney: createKidneyProp(0.75),
@@ -1156,10 +1395,11 @@ export function createGoblin(x, y) {
   return createEntity(
     {
       name: "Goblin Saqueador",
+      species: "goblin",
       render: { skin: "Creature_Goblin_U.png", color: 0xff78d250, backcolor: 0xff283c14 },
       life: createLifeProp(3200, 3200),
       lungs: createLungsProp(),
-      brain: createBrainProp(12, { bravery: 0.3, curiosity: 0.9, aggression: 0.6 }),
+      brain: createBrainProp(12, { bravery: 0.3, curiosity: 0.9, aggression: 0.6 }, 0.9),
       stomach: createStomachProp(3, { meat: 1.0, plant: 1.0, fruit: 1.1, organ: 1.0, bone: 0.4 }),
       bladder: createBladderProp(1800, 1800),
       kidney: createKidneyProp(0.7),
@@ -1184,11 +1424,12 @@ export function createBat(x, y) {
   return createEntity(
     {
       name: "Morcego Noturno",
+      species: "bat",
       render: { skin: "Creature_Bat_U.png", color: 0xffb496dc, backcolor: 0xff281e3c },
       life: createLifeProp(2000, 2000),
       lungs: createLungsProp(),
       wings: createWingsProp(1.0, 100, 100, 15.0),
-      brain: createBrainProp(10, { bravery: 0.3, curiosity: 0.8, aggression: 0.2 }),
+      brain: createBrainProp(10, { bravery: 0.3, curiosity: 0.8, aggression: 0.2 }, 0.8),
       stomach: createStomachProp(2, { meat: 0.5, fruit: 1.4, organ: 1.0 }),
       bladder: createBladderProp(1000, 1000),
       kidney: createKidneyProp(0.6),
@@ -1207,10 +1448,11 @@ export function createSeaSerpent(x, y) {
   return createEntity(
     {
       name: "Serpente das Profundezas",
+      species: "serpent",
       render: { skin: "Creature_Snake_U.png", color: 0xff32c8d2, backcolor: 0xff0a2832 },
       life: createLifeProp(8000, 8000),
       gills: createGillsProp(),
-      brain: createBrainProp(14, { bravery: 0.7, curiosity: 0.6, aggression: 0.7 }),
+      brain: createBrainProp(14, { bravery: 0.7, curiosity: 0.6, aggression: 0.7 }, 1.2),
       stomach: createStomachProp(4, { meat: 1.4, organ: 1.3, bone: 0.4 }),
       bladder: createBladderProp(4000, 4000),
       kidney: createKidneyProp(0.5),
@@ -1233,10 +1475,11 @@ export function createDragon(x, y) {
   return createEntity(
     {
       name: "Dragão Ancião Alado",
+      species: "dragon",
       render: { skin: "Creature_Dragon_U.png", color: 0xffff4646, backcolor: 0xff3c0f0f },
       life: createLifeProp(30000, 30000),
       lungs: createLungsProp(),
-      brain: createBrainProp(24, { bravery: 1.0, curiosity: 0.4, aggression: 0.9 }),
+      brain: createBrainProp(24, { bravery: 1.0, curiosity: 0.4, aggression: 0.9 }, 1.8),
       stomach: createStomachProp(8, { meat: 1.5, plant: 0.1, fruit: 0.2, organ: 1.5, bone: 1.0 }),
       bladder: createBladderProp(12000, 12000),
       kidney: createKidneyProp(0.8),
@@ -1263,6 +1506,7 @@ export function createOakTree(x, y) {
   return createEntity(
     {
       name: "Carvalho Ancestral (Semente Grande)",
+      species: "oak",
       render: { skin: "Feature_Tree_Full.png", color: 0xff78dc5a, backcolor: 0xff284619 },
       life: createLifeProp(12000, 12000, 1.2),
       bladder: createBladderProp(6000, 6000),
@@ -1281,6 +1525,7 @@ export function createWillowTree(x, y) {
   return createEntity(
     {
       name: "Salgueiro Ribeirinho (Semente Pequena)",
+      species: "willow",
       render: { skin: "Feature_Tree_Pine.png", color: 0xff64c850, backcolor: 0xff1e3c1e },
       life: createLifeProp(9000, 9000, 1.0),
       bladder: createBladderProp(4000, 4000),
@@ -1299,6 +1544,7 @@ export function createPineTree(x, y) {
   return createEntity(
     {
       name: "Pinheiro das Terras Altas",
+      species: "pine",
       render: { skin: "Feature_Tree_Pine.png", color: 0xff3c8250, backcolor: 0xff0f2814 },
       life: createLifeProp(11000, 11000, 1.1),
       bladder: createBladderProp(5000, 5000),
@@ -1317,6 +1563,7 @@ export function createWaterLily(x, y) {
   return createEntity(
     {
       name: "Vitória-Régia Aquática",
+      species: "waterlily",
       render: { skin: "Feature_Flower.png", color: 0xff50dca0, backcolor: 0xff0f3c28 },
       life: createLifeProp(5000, 5000, 0.6),
       bladder: createBladderProp(4000, 4000),
@@ -1334,6 +1581,7 @@ export function createSeaweed(x, y) {
   return createEntity(
     {
       name: "Alga Marinha Subaquática",
+      species: "seaweed",
       render: { skin: "Feature_Foliage.png", color: 0xff32b478, backcolor: 0xff0a321e },
       life: createLifeProp(4000, 4000, 0.5),
       bladder: createBladderProp(3000, 3000),
@@ -1355,6 +1603,8 @@ export function createFruit(x, y, seedType = "large", species = "oak") {
         nutrition: 2500,
         foodType: "fruit",
         digestDuration: 30,
+        sourceName: species === "willow" ? "Salgueiro" : (species === "pine" ? "Pinheiro" : "Carvalho"),
+        sourceSpecies: species,
         seed: { type: seedType, species }
       }
     },

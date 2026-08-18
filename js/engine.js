@@ -150,33 +150,35 @@ export function explodeEntityOnDeath(entity, entitiesArray, world) {
 
   const ex = entity.x || 0;
   const ey = entity.y || 0;
+  const entityName = entity.properties.name || `Criatura #${entity.id}`;
+  const species = entity.properties.species || "desconhecida";
 
   for (const [key, prop] of Object.entries(entity.properties)) {
     if (prop && prop.nutrition && prop.foodType) {
       let skin = "Item_Steak.png";
       let color = 0xffe65a5a;
-      let name = `Carne (${key})`;
+      let name = `Carne de ${entityName} (${key})`;
 
       if (prop.foodType === "meat") {
         skin = "Item_Steak.png";
         color = 0xffe65a5a;
-        name = `Pedaço de Carne (${key})`;
+        name = `Pedaço de Carne (${key}) de ${entityName}`;
       } else if (prop.foodType === "bone") {
         skin = "Item_Bone.png";
         color = 0xffe6e6d2;
-        name = `Osso (${key})`;
+        name = `Osso (${key}) de ${entityName}`;
       } else if (prop.foodType === "plant" || prop.foodType === "veg") {
         skin = "Item_Vegetable.png";
         color = 0xff78dc50;
-        name = `Vegetal (${key})`;
+        name = `Vegetal (${key}) de ${entityName}`;
       } else if (prop.foodType === "fruit") {
         skin = "Item_Fruit.png";
         color = 0xfffaa03c;
-        name = `Fruto (${key})`;
+        name = `Fruto (${key}) de ${entityName}`;
       } else if (prop.foodType === "organ") {
         skin = "Item_Eyeball.png";
         color = 0xffc83232;
-        name = `Víscera (${key})`;
+        name = `Víscera (${key}) de ${entityName}`;
       }
 
       const foodItem = createEntity(
@@ -186,7 +188,11 @@ export function explodeEntityOnDeath(entity, entitiesArray, world) {
           edible: {
             nutrition: prop.nutrition,
             foodType: prop.foodType,
-            digestDuration: prop.digestDuration || 20
+            digestDuration: prop.digestDuration || 20,
+            sourceEntityId: entity.id,
+            sourceName: entityName,
+            sourceSpecies: species,
+            partKey: key
           }
         },
         ex + (Math.floor(Math.random() * 3) - 1),
@@ -199,15 +205,15 @@ export function explodeEntityOnDeath(entity, entitiesArray, world) {
     }
   }
 
-  // Record indexed world event for death
+  // Record indexed world event for death with exact position
   recordWorldEvent({
     type: "DEATH",
     primaryEntityId: entity.id,
     location: { x: ex, y: ey },
-    description: `${entity.properties.name || `Entidade #${entity.id}`} morreu por exaustão de energia vital!`,
+    description: `${entityName} morreu por exaustão de energia vital na posição [X: ${ex}, Y: ${ey}]!`,
     tick: currentTick,
     timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
-    metadata: { name: entity.properties.name }
+    metadata: { name: entityName, species }
   });
 }
 
