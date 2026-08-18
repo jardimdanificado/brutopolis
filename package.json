@@ -1,6 +1,6 @@
 {
   "name": "brutopolis",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Brutopolis",
   "type": "module",
   "main": "runner.js",
@@ -13,7 +13,6 @@
     "server": "node server.js",
     "dev": "node --watch server.js",
     "build": "make all",
-    "gen-assets": "python3 gen_assets.py",
     "clean": "make clean"
   },
   "keywords": [
