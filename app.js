@@ -52,6 +52,11 @@ import {
   createBat,
   createSeaSerpent,
   createDragon,
+  createCactus,
+  createScorpion,
+  createLizard,
+  createAlpineShrub,
+  createMountainGoat,
   createOakTree,
   createWillowTree,
   createPineTree,
@@ -86,6 +91,10 @@ let isPaused = false;
 let currentTps = 60;
 let simAccumulator = 0;
 let lastSelectedId = -1;
+let lastRenderedEntityId = -1;
+let lastGlobalEventsCount = -1;
+let lastEntityEventsCount = -1;
+let currentEventFilter = "ALL";
 
 // UI Elements
 const hudClock = document.getElementById("hud-clock");
@@ -102,9 +111,17 @@ const btnZoomIn = document.getElementById("btn-zoom-in");
 const btnZoomOut = document.getElementById("btn-zoom-out");
 const btnCenter = document.getElementById("btn-center");
 
+const cursorPos = document.getElementById("cursor-pos");
+const cursorEntity = document.getElementById("cursor-entity");
+
 const statPop = document.getElementById("stat-pop");
 const statLiving = document.getElementById("stat-living");
 const statFood = document.getElementById("stat-food");
+
+// Tabs Elements
+const tabBtns = document.querySelectorAll(".tab-btn");
+const tabPanes = document.querySelectorAll(".tab-pane");
+const tabEventsBadge = document.getElementById("tab-events-badge");
 
 // Inspector Elements
 const inspIdBadge = document.getElementById("insp-id-badge");
@@ -112,8 +129,16 @@ const inspEmpty = document.getElementById("insp-empty");
 const inspDetails = document.getElementById("insp-details");
 const inspAvatar = document.getElementById("insp-avatar");
 const inspName = document.getElementById("insp-name");
+const inspSpecies = document.getElementById("insp-species");
 const inspPropsCount = document.getElementById("insp-props-count");
 const inspPos = document.getElementById("insp-pos");
+const inspVitalsContainer = document.getElementById("insp-vitals-container");
+const inspAmputationsContainer = document.getElementById("insp-amputations-container");
+const inspRespirationBadge = document.getElementById("insp-respiration-badge");
+const inspBrainCard = document.getElementById("insp-brain-card");
+const inspBrainContent = document.getElementById("insp-brain-content");
+const inspStomachCard = document.getElementById("insp-stomach-card");
+const inspStomachContent = document.getElementById("insp-stomach-content");
 const inspPropsList = document.getElementById("insp-props-list");
 const inspEventList = document.getElementById("insp-event-list");
 const globalEventsList = document.getElementById("global-events-list");
@@ -134,12 +159,47 @@ const btnSpawnGoblin = document.getElementById("btn-spawn-goblin");
 const btnSpawnBat = document.getElementById("btn-spawn-bat");
 const btnSpawnSerpent = document.getElementById("btn-spawn-serpent");
 const btnSpawnDragon = document.getElementById("btn-spawn-dragon");
+const btnSpawnCactus = document.getElementById("btn-spawn-cactus");
+const btnSpawnScorpion = document.getElementById("btn-spawn-scorpion");
+const btnSpawnLizard = document.getElementById("btn-spawn-lizard");
+const btnSpawnGoat = document.getElementById("btn-spawn-goat");
+const btnSpawnShrub = document.getElementById("btn-spawn-shrub");
 const btnSpawnSeed = document.getElementById("btn-spawn-seed");
 const btnSpawnFruit = document.getElementById("btn-spawn-fruit");
 
 // Scratch pointers for Avatar preview
 const SPRITE_BUF_PTR = mem.heapBase + FRAMEBUFFER_SIZE + 16384;
 const NAME_PTR = mem.heapBase + FRAMEBUFFER_SIZE + 20480;
+
+// ---------------------------------------------------------------------------
+// Tab Switching Controller
+// ---------------------------------------------------------------------------
+
+function activateTab(tabId) {
+  tabBtns.forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.tab === tabId);
+  });
+  tabPanes.forEach(pane => {
+    pane.classList.toggle("active", pane.id === tabId);
+  });
+}
+
+tabBtns.forEach(btn => {
+  btn.addEventListener("click", () => {
+    activateTab(btn.dataset.tab);
+  });
+});
+
+// Event Log Filter Chips
+document.querySelectorAll(".filter-chip").forEach(chip => {
+  chip.addEventListener("click", (e) => {
+    document.querySelectorAll(".filter-chip").forEach(c => c.classList.remove("active"));
+    chip.classList.add("active");
+    currentEventFilter = chip.dataset.filter;
+    lastGlobalEventsCount = -1; // Force immediate re-render
+    updateGlobalEventsList();
+  });
+});
 
 // ---------------------------------------------------------------------------
 // Mouse & Keyboard Controls (Aspect-Ratio Aware & Precise Drag/Click)
@@ -208,6 +268,42 @@ window.addEventListener("mousemove", (e) => {
   mouseX = coords.x;
   mouseY = coords.y;
 
+  // Update hovered tile info overlay
+  if (coords.inside && shader && world) {
+    const zoom = shader.exports.wasm_get_camera_zoom();
+    const tileSize = 16.0 * zoom;
+    const cx = shader.exports.wasm_get_camera_x();
+    const cy = shader.exports.wasm_get_camera_y();
+    const worldTileX = Math.floor(cx + (coords.x - CANVAS_WIDTH / 2) / tileSize);
+    const worldTileY = Math.floor(cy + (coords.y - CANVAS_HEIGHT / 2) / tileSize);
+
+    if (cursorPos) cursorPos.textContent = `POS: ${worldTileX}, ${worldTileY}`;
+
+    // Find if entity is under cursor
+    let foundEnt = null;
+    for (let i = entities.length - 1; i >= 0; i--) {
+      const ent = entities[i];
+      if (!ent.destroyed && ent.x === worldTileX && ent.y === worldTileY) {
+        foundEnt = ent;
+        break;
+      }
+    }
+
+    if (cursorEntity) {
+      if (foundEnt) {
+        const entName = foundEnt.properties.name || `Entidade #${foundEnt.id}`;
+        cursorEntity.textContent = `🎯 ${entName}`;
+        cursorEntity.style.color = "var(--yellow-bright)";
+      } else {
+        const tile = world.getTile(worldTileX, worldTileY);
+        const tileName = tile === 0 ? "Solo Fértil" : tile === 1 ? "Montanha" : tile === 2 ? "Água Oceânica" : "Vazio";
+        cursorEntity.textContent = `🗺️ ${tileName}`;
+        cursorEntity.style.color = "var(--fg3)";
+      }
+    }
+  }
+
+  // Panning drag
   if (isMouseDown && shader) {
     const totalDist = Math.hypot(e.clientX - dragStartClientX, e.clientY - dragStartClientY);
     if (totalDist > 4) {
@@ -233,6 +329,9 @@ window.addEventListener("mouseup", (e) => {
       if (coords.inside) {
         const foundId = shader.exports.wasm_select_at(coords.x, coords.y, CANVAS_WIDTH, CANVAS_HEIGHT);
         lastSelectedId = foundId;
+        if (foundId > 0) {
+          activateTab("tab-insp");
+        }
         updateInspector();
       }
     }
@@ -324,9 +423,8 @@ function resetWorld() {
   world.refresh();
   entities = [];
   lastSelectedId = -1;
-
-  const cx = Math.floor(shader.exports.wasm_get_camera_x());
-  const cy = Math.floor(shader.exports.wasm_get_camera_y());
+  lastRenderedEntityId = -1;
+  lastGlobalEventsCount = -1;
 
   // Helper to spawn entities randomly across entire 512x512 map
   function spawnRandomGlobal(count, factoryFn, conditionFn) {
@@ -343,57 +441,54 @@ function resetWorld() {
     }
   }
 
-  // 1. Adult Trees Spread Globally (Oak, Willow, Pine)
-  spawnRandomGlobal(70, createOakTree, (x, y) => world.getTile(x, y) === 0);
-  spawnRandomGlobal(60, createWillowTree, (x, y) => world.getTile(x, y) === 0 || world.getTile(x, y) === 2);
-  spawnRandomGlobal(50, createPineTree, (x, y) => world.getTile(x, y) === 0 || world.getTile(x, y) === 1);
+  // 1. Flora Distribution by Biome
+  // Fertile Forest / Grassland (Tile 0)
+  spawnRandomGlobal(35, createOakTree, (x, y) => world.getTile(x, y) === 0);
+  spawnRandomGlobal(25, createWillowTree, (x, y) => world.getTile(x, y) === 0 || world.getTile(x, y) === 3);
 
-  // 2. Aquatic Plants in Seas and Lakes (Vitória-Régia & Seaweed)
-  spawnRandomGlobal(80, createWaterLily, (x, y) => world.getTile(x, y) === 2);
-  spawnRandomGlobal(100, createSeaweed, (x, y) => world.getTile(x, y) === 2);
+  // Desert & Dunes (Tile 3 - Sand)
+  spawnRandomGlobal(30, createCactus, (x, y) => world.getTile(x, y) === 3);
 
-  // 3. Seeds & Fruits Scattered Globally
-  spawnRandomGlobal(150, (x, y) => createSeedEntity(x, y, Math.random() < 0.5 ? "large" : "small", Math.random() < 0.5 ? "oak" : "willow"), (x, y) => world.getTile(x, y) === 0);
-  spawnRandomGlobal(80, (x, y) => createFruit(x, y, Math.random() < 0.5 ? "large" : "small", Math.random() < 0.5 ? "oak" : "willow"), (x, y) => world.isWalkable(x, y));
+  // Rocky Foothills & Mountain Slopes (Tile 4 - Stone & Tile 1)
+  spawnRandomGlobal(25, createAlpineShrub, (x, y) => world.getTile(x, y) === 4 || world.getTile(x, y) === 1);
+  spawnRandomGlobal(20, createPineTree, (x, y) => world.getTile(x, y) === 4 || world.getTile(x, y) === 0);
 
-  // 4. Large Fauna Distributed Worldwide (Empty stomachs)
-  // Terrestrial & Forest Dwellers
-  spawnRandomGlobal(50, (x, y) => createKnight(x, y, Math.random() < 0.5 ? "male" : "female"), (x, y) => world.isWalkable(x, y));
-  spawnRandomGlobal(45, (x, y) => createArcher(x, y, Math.random() < 0.5 ? "female" : "male"), (x, y) => world.isWalkable(x, y));
-  spawnRandomGlobal(55, (x, y) => createWolf(x, y), (x, y) => world.isWalkable(x, y));
-  spawnRandomGlobal(35, (x, y) => createBear(x, y), (x, y) => world.isWalkable(x, y));
-  spawnRandomGlobal(50, (x, y) => createCat(x, y, Math.random() < 0.25), (x, y) => world.isWalkable(x, y));
-  spawnRandomGlobal(50, (x, y) => createGoblin(x, y), (x, y) => world.isWalkable(x, y));
+  // Aquatic Flora (Tile 2 - Water)
+  spawnRandomGlobal(40, createWaterLily, (x, y) => world.getTile(x, y) === 2);
+  spawnRandomGlobal(50, createSeaweed, (x, y) => world.getTile(x, y) === 2);
 
-  // Aerial & Flying Dwellers
-  spawnRandomGlobal(50, (x, y) => createBat(x, y), () => true);
-  spawnRandomGlobal(12, (x, y) => createDragon(x, y), () => true);
+  // 2. Seeds & Fruits Scattered Globally per Biome
+  spawnRandomGlobal(60, (x, y) => createSeedEntity(x, y, "large", "oak"), (x, y) => world.getTile(x, y) === 0);
+  spawnRandomGlobal(40, (x, y) => createSeedEntity(x, y, "small", "willow"), (x, y) => world.getTile(x, y) === 0 || world.getTile(x, y) === 3);
+  spawnRandomGlobal(30, (x, y) => createSeedEntity(x, y, "large", "cactus"), (x, y) => world.getTile(x, y) === 3);
+  spawnRandomGlobal(30, (x, y) => createFruit(x, y, "large", "cactus"), (x, y) => world.getTile(x, y) === 3);
+  spawnRandomGlobal(40, (x, y) => createFruit(x, y, "large", "oak"), (x, y) => world.isWalkable(x, y));
 
-  // Aquatic Creatures with Gills
-  spawnRandomGlobal(80, (x, y) => createSeaSerpent(x, y), (x, y) => world.getTile(x, y) === 2);
+  // 3. Desert Fauna (Sand Biome)
+  spawnRandomGlobal(25, createScorpion, (x, y) => world.getTile(x, y) === 3);
+  spawnRandomGlobal(20, createLizard, (x, y) => world.getTile(x, y) === 3 || world.getTile(x, y) === 0);
 
-  // 5. Initial Focal Cluster around Camera for Immediate Action
-  for (let i = 0; i < 4; i++) {
-    const rx = cx + Math.floor((Math.random() - 0.5) * 30);
-    const ry = cy + Math.floor((Math.random() - 0.5) * 30);
-    if (world.isWalkable(rx, ry)) entities.push(createKnight(rx, ry));
-  }
-  for (let i = 0; i < 4; i++) {
-    const rx = cx + Math.floor((Math.random() - 0.5) * 30);
-    const ry = cy + Math.floor((Math.random() - 0.5) * 30);
-    if (world.isWalkable(rx, ry)) entities.push(createWolf(rx, ry));
-  }
-  for (let i = 0; i < 5; i++) {
-    const rx = cx + Math.floor((Math.random() - 0.5) * 30);
-    const ry = cy + Math.floor((Math.random() - 0.5) * 30);
-    if (world.isWalkable(rx, ry)) entities.push(createFruit(rx, ry));
-  }
-  const focusDragon = createDragon(cx + 4, cy + 4);
-  entities.push(focusDragon);
-  lastSelectedId = focusDragon.id;
-  shader.exports.wasm_select_entity(focusDragon.id);
+  // 4. Mountain & Rocky Fauna (Stone & Mountain Biome)
+  spawnRandomGlobal(20, createMountainGoat, (x, y) => world.getTile(x, y) === 4 || world.getTile(x, y) === 1);
+  spawnRandomGlobal(4, createDragon, (x, y) => world.getTile(x, y) === 1 || world.getTile(x, y) === 4);
 
+  // 5. Forest & Grassland Fauna
+  spawnRandomGlobal(20, (x, y) => createCat(x, y, false), (x, y) => world.getTile(x, y) === 0);
+  spawnRandomGlobal(8, (x, y) => createCat(x, y, true), (x, y) => world.getTile(x, y) === 0);
+  spawnRandomGlobal(18, createWolf, (x, y) => world.getTile(x, y) === 0 || world.getTile(x, y) === 4);
+  spawnRandomGlobal(10, createBear, (x, y) => world.getTile(x, y) === 0);
+  spawnRandomGlobal(25, createBat, (x, y) => true);
+  spawnRandomGlobal(18, (x, y) => createKnight(x, y, Math.random() < 0.5 ? "male" : "female"), (x, y) => world.getTile(x, y) === 0);
+  spawnRandomGlobal(18, (x, y) => createArcher(x, y, Math.random() < 0.5 ? "male" : "female"), (x, y) => world.getTile(x, y) === 0);
+  spawnRandomGlobal(22, createGoblin, (x, y) => world.getTile(x, y) === 0 || world.getTile(x, y) === 4);
+
+  // 6. Aquatic Ocean Fauna
+  spawnRandomGlobal(20, createSeaSerpent, (x, y) => world.getTile(x, y) === 2);
+
+  console.log(`✓ World initialized with ${entities.length} active entities.`);
+  updateStatsAndClock();
   updateInspector();
+  updateGlobalEventsList();
 }
 
 btnReset.addEventListener("click", resetWorld);
@@ -442,7 +537,10 @@ btnInspKill.addEventListener("click", () => {
 // Property Injector Handler
 btnInjectProp.addEventListener("click", () => {
   const entity = getEntityById(lastSelectedId);
-  if (!entity) return;
+  if (!entity) {
+    alert("Selecione primeiro uma criatura no mapa para injetar a propriedade!");
+    return;
+  }
 
   const propType = selectInjectProp.value;
   if (propType === "lungs") {
@@ -459,6 +557,10 @@ btnInjectProp.addEventListener("click", () => {
     entity.properties.surface_root = createSurfaceRootProp(8);
   } else if (propType === "deep_root") {
     entity.properties.deep_root = createDeepRootProp(18.0, 12.0);
+  } else if (propType === "terrain_sand") {
+    entity.properties.terrain_pref = createTerrainPreferenceProp([3], "Areia / Deserto");
+  } else if (propType === "terrain_stone") {
+    entity.properties.terrain_pref = createTerrainPreferenceProp([4, 1], "Chão Rochoso e Montanha");
   } else if (propType === "terrain_water") {
     entity.properties.terrain_pref = createTerrainPreferenceProp([2], "Água");
   } else if (propType === "terrain_floor") {
@@ -476,13 +578,12 @@ btnInjectProp.addEventListener("click", () => {
   } else if (propType === "burn") {
     entity.properties.burn = createBurnProp(0.5, 40);
   }
+  lastRenderedEntityId = -1; // Force re-render of inspector
+  activateTab("tab-insp");
   updateInspector();
 });
 
-// ---------------------------------------------------------------------------
 // Spawner Actions
-// ---------------------------------------------------------------------------
-
 function spawnEntityAtCamera(factoryFn) {
   if (!shader) return;
   const cx = Math.floor(shader.exports.wasm_get_camera_x());
@@ -491,6 +592,7 @@ function spawnEntityAtCamera(factoryFn) {
   entities.push(ent);
   lastSelectedId = ent.id;
   shader.exports.wasm_select_entity(ent.id);
+  activateTab("tab-insp");
   updateInspector();
 }
 
@@ -503,11 +605,16 @@ btnSpawnGoblin?.addEventListener("click", () => spawnEntityAtCamera(createGoblin
 btnSpawnBat?.addEventListener("click", () => spawnEntityAtCamera(createBat));
 btnSpawnSerpent?.addEventListener("click", () => spawnEntityAtCamera(createSeaSerpent));
 btnSpawnDragon?.addEventListener("click", () => spawnEntityAtCamera(createDragon));
+btnSpawnCactus?.addEventListener("click", () => spawnEntityAtCamera(createCactus));
+btnSpawnScorpion?.addEventListener("click", () => spawnEntityAtCamera(createScorpion));
+btnSpawnLizard?.addEventListener("click", () => spawnEntityAtCamera(createLizard));
+btnSpawnGoat?.addEventListener("click", () => spawnEntityAtCamera(createMountainGoat));
+btnSpawnShrub?.addEventListener("click", () => spawnEntityAtCamera(createAlpineShrub));
 btnSpawnSeed?.addEventListener("click", () => spawnEntityAtCamera(createSeedEntity));
 btnSpawnFruit?.addEventListener("click", () => spawnEntityAtCamera(createFruit));
 
 // ---------------------------------------------------------------------------
-// Dynamic Biological Inspector
+// Dynamic Biological Inspector & Fast DOM Reconciliation
 // ---------------------------------------------------------------------------
 
 function updateStatsAndClock() {
@@ -521,7 +628,8 @@ function updateStatsAndClock() {
   let livingCount = 0;
   let foodCount = 0;
 
-  for (const e of entities) {
+  for (let i = 0; i < entities.length; i++) {
+    const e = entities[i];
     if (e.properties.life) livingCount++;
     if (e.properties.edible || e.properties.germination) foodCount++;
   }
@@ -530,39 +638,59 @@ function updateStatsAndClock() {
   statLiving.textContent = livingCount;
   statFood.textContent = foodCount;
 
-  // Global Event Log update
+  if (tabEventsBadge) tabEventsBadge.textContent = allEvents.length;
+}
+
+function updateGlobalEventsList() {
+  if (!globalEventsList) return;
+  if (lastGlobalEventsCount === allEvents.length) return;
+  lastGlobalEventsCount = allEvents.length;
+
   if (logEventsCount) logEventsCount.textContent = `${allEvents.length} EVTS`;
-  if (globalEventsList) {
-    const recents = getRecentWorldEvents(12);
-    globalEventsList.innerHTML = "";
-    if (recents.length === 0) {
-      globalEventsList.innerHTML = `<span style="color: var(--gray); font-style: italic;">Nenhum acontecimento ainda...</span>`;
-    } else {
-      for (const ev of recents) {
-        const evDiv = document.createElement("div");
-        evDiv.style.padding = "3px 6px";
-        evDiv.style.background = "var(--bg0-soft)";
-        evDiv.style.borderRadius = "2px";
-        evDiv.style.borderLeft = "3px solid " + (
-          ev.type === "AMPUTATION" ? "var(--red-bright)" :
-          ev.type === "ATTACK" ? "var(--orange-bright)" :
-          ev.type === "DEATH" ? "var(--red)" :
-          ev.type === "SPROUT" ? "var(--green-bright)" : "var(--blue-bright)"
-        );
-        evDiv.innerHTML = `<span style="color: var(--gray); font-size: 9px;">[D${ev.timestamp.day} ${String(ev.timestamp.hour).padStart(2,"0")}:${String(ev.timestamp.minute).padStart(2,"0")}]</span> <b style="color: var(--fg0);">${ev.type}:</b> <span style="color: var(--fg2);">${ev.description}</span>`;
-        globalEventsList.appendChild(evDiv);
-      }
-    }
+
+  const recents = getRecentWorldEvents(20);
+  const filtered = currentEventFilter === "ALL"
+    ? recents
+    : recents.filter(ev => ev.type === currentEventFilter);
+
+  globalEventsList.innerHTML = "";
+  if (filtered.length === 0) {
+    globalEventsList.innerHTML = `<span style="color: var(--gray); font-style: italic; padding: 6px;">Nenhum acontecimento registrado para este filtro.</span>`;
+    return;
   }
+
+  const fragment = document.createDocumentFragment();
+  for (const ev of filtered) {
+    const evDiv = document.createElement("div");
+    evDiv.className = `event-item ${ev.type.toLowerCase()}`;
+
+    const timeTag = `<span style="color: var(--gray); font-size: 9px;">[D${ev.timestamp.day} ${String(ev.timestamp.hour).padStart(2, "0")}:${String(ev.timestamp.minute).padStart(2, "0")}]</span>`;
+    const typeTag = `<b style="color: var(--fg0);">${ev.type}:</b>`;
+    const descTag = `<span style="color: var(--fg2);">${ev.description}</span>`;
+
+    evDiv.innerHTML = `${timeTag} ${typeTag} ${descTag}`;
+
+    if (ev.location && (ev.location.x || ev.location.y)) {
+      evDiv.style.cursor = "pointer";
+      evDiv.title = `Clique para focar câmera na posição [${ev.location.x}, ${ev.location.y}]`;
+      evDiv.addEventListener("click", () => {
+        if (shader) shader.exports.wasm_set_camera(ev.location.x, ev.location.y, shader.exports.wasm_get_camera_zoom());
+      });
+    }
+
+    fragment.appendChild(evDiv);
+  }
+  globalEventsList.appendChild(fragment);
 }
 
 function updateInspector() {
   const entity = getEntityById(lastSelectedId);
   if (!entity || entity.destroyed) {
-    inspEmpty.style.display = "block";
+    inspEmpty.style.display = "flex";
     inspDetails.style.display = "none";
     inspIdBadge.textContent = "#--";
     lastSelectedId = -1;
+    lastRenderedEntityId = -1;
     return;
   }
 
@@ -572,39 +700,176 @@ function updateInspector() {
   inspName.textContent = entity.properties.name || `Entidade #${entity.id}`;
   inspPos.textContent = `POS: ${entity.x}, ${entity.y}`;
 
+  if (inspSpecies) {
+    inspSpecies.textContent = entity.properties.species || "Espécie";
+  }
+
   const propEntries = Object.entries(entity.properties);
   inspPropsCount.textContent = `${propEntries.length} PROPS`;
 
-  // 1. Render Avatar Preview
+  // 1. Render Avatar Preview (only when selection changed)
   const r = entity.properties.render;
-  if (r && r.skin && shader) {
-    wash_write_string(mem, r.skin, NAME_PTR);
-    const ok = shader.exports.wasm_get_sprite_data(NAME_PTR, r.color || 0xffffffff, r.backcolor || 0, SPRITE_BUF_PTR);
-    if (ok) {
-      const spriteBytes = new Uint8ClampedArray(mem.buffer, SPRITE_BUF_PTR, 16 * 16 * 4);
-      let avatarCanvas = document.getElementById("avatar-canvas");
-      if (!avatarCanvas) {
-        avatarCanvas = document.createElement("canvas");
-        avatarCanvas.id = "avatar-canvas";
-        avatarCanvas.width = 16;
-        avatarCanvas.height = 16;
-        avatarCanvas.style.width = "36px";
-        avatarCanvas.style.height = "36px";
-        avatarCanvas.style.imageRendering = "pixelated";
-        inspAvatar.innerHTML = "";
-        inspAvatar.appendChild(avatarCanvas);
+  if (lastRenderedEntityId !== entity.id) {
+    lastRenderedEntityId = entity.id;
+
+    if (r && r.skin && shader) {
+      wash_write_string(mem, r.skin, NAME_PTR);
+      const ok = shader.exports.wasm_get_sprite_data(NAME_PTR, r.color || 0xffffffff, r.backcolor !== undefined ? r.backcolor : 0, SPRITE_BUF_PTR);
+      if (ok) {
+        const spriteBytes = new Uint8ClampedArray(mem.buffer, SPRITE_BUF_PTR, 16 * 16 * 4);
+        let avatarCanvas = document.getElementById("avatar-canvas");
+        if (!avatarCanvas) {
+          avatarCanvas = document.createElement("canvas");
+          avatarCanvas.id = "avatar-canvas";
+          avatarCanvas.width = 16;
+          avatarCanvas.height = 16;
+          avatarCanvas.style.width = "36px";
+          avatarCanvas.style.height = "36px";
+          avatarCanvas.style.imageRendering = "pixelated";
+          inspAvatar.innerHTML = "";
+          inspAvatar.appendChild(avatarCanvas);
+        }
+        const actx = avatarCanvas.getContext("2d");
+        const imgData = new ImageData(spriteBytes, 16, 16);
+        actx.clearRect(0, 0, 16, 16);
+        actx.putImageData(imgData, 0, 0);
       }
-      const actx = avatarCanvas.getContext("2d");
-      const imgData = new ImageData(spriteBytes, 16, 16);
-      actx.clearRect(0, 0, 16, 16);
-      actx.putImageData(imgData, 0, 0);
+    } else {
+      inspAvatar.innerHTML = `<span style="font-size: 16px; color: var(--gray);">∅</span>`;
     }
-  } else {
-    inspAvatar.innerHTML = `<span style="font-size: 16px; color: var(--gray);">∅</span>`;
   }
 
-  // 2. Dynamic Property Cards
+  // 2. Structured Vitals & Physical Condition Bars
+  let vitalsHtml = "";
+
+  // Vital Energy Bar
+  if (entity.properties.life) {
+    const lp = entity.properties.life;
+    const energyPct = Math.max(0, Math.min(100, (lp.energy / (lp.max || 100)) * 100));
+    vitalsHtml += `
+      <div class="stat-row">
+        <div class="stat-header">
+          <span>⚡ Energia Vital</span>
+          <span><b>${Math.round(lp.energy)}</b>/${lp.max || 100} (${Math.round(energyPct)}%)</span>
+        </div>
+        <div class="bar-bg">
+          <div class="bar-fill" style="background: var(--green-bright); width: ${energyPct}%;"></div>
+        </div>
+      </div>`;
+  }
+
+  // Physical Integrity / Condition Bar
+  const condLimb = Object.values(entity.properties).find(p => p && typeof p.condition === "number" && typeof p.maxCondition === "number");
+  if (condLimb) {
+    const condPct = Math.round((condLimb.condition / condLimb.maxCondition) * 100);
+    const condColor = condPct > 60 ? "var(--aqua-bright)" : condPct > 25 ? "var(--yellow-bright)" : "var(--red-bright)";
+    vitalsHtml += `
+      <div class="stat-row">
+        <div class="stat-header">
+          <span>🛡️ Condição Física</span>
+          <span><b>${Math.round(condLimb.condition)}</b>/${condLimb.maxCondition} (${condPct}%)</span>
+        </div>
+        <div class="bar-bg">
+          <div class="bar-fill" style="background: ${condColor}; width: ${Math.max(0, Math.min(100, condPct))}%;"></div>
+        </div>
+      </div>`;
+  }
+
+  // Water / Bladder Bar
+  if (entity.properties.bladder) {
+    const bp = entity.properties.bladder;
+    const waterPct = Math.max(0, Math.min(100, (bp.water / (bp.maxWater || 100)) * 100));
+    vitalsHtml += `
+      <div class="stat-row">
+        <div class="stat-header">
+          <span>💧 Água & Bexiga</span>
+          <span><b>${Math.round(bp.water)}</b>/${bp.maxWater || 100}</span>
+        </div>
+        <div class="bar-bg">
+          <div class="bar-fill" style="background: var(--blue-bright); width: ${waterPct}%;"></div>
+        </div>
+      </div>`;
+  }
+
+  inspVitalsContainer.innerHTML = vitalsHtml;
+
+  // Active Amputations & Bleeding Loss
+  let ampAlerts = "";
+  for (const [k, p] of propEntries) {
+    if (k.startsWith("amputated_")) {
+      ampAlerts += `<div style="background: rgba(251, 73, 52, 0.15); border: 1px solid var(--red-bright); color: var(--red-bright); padding: 4px 8px; border-radius: 4px; font-size: 10px; font-weight: 700; margin-top: 4px;">
+        ⚠️ MEMBRO AMPUTADO (${p.part || k}): Hemorragia -${p.bleedRate} cal/s
+      </div>`;
+    }
+  }
+  inspAmputationsContainer.innerHTML = ampAlerts;
+
+  // Respiration Badge
+  if (entity.properties.gills) {
+    inspRespirationBadge.innerHTML = `<span class="pill" style="border-color: var(--aqua-bright); color: var(--aqua-bright); background: rgba(142, 192, 124, 0.1);">🫁 Respiração: Branquial (Aquático)</span>`;
+  } else if (entity.properties.lungs) {
+    inspRespirationBadge.innerHTML = `<span class="pill" style="border-color: var(--yellow-bright); color: var(--yellow-bright); background: rgba(250, 189, 47, 0.1);">🫁 Respiração: Pulmonar (Terrestre)</span>`;
+  } else {
+    inspRespirationBadge.innerHTML = "";
+  }
+
+  // 3. Brain & Cognition Card
+  if (entity.properties.brain) {
+    inspBrainCard.style.display = "flex";
+    const bp = entity.properties.brain;
+    const affEntries = Object.entries(bp.affinities || {});
+    let affText = affEntries.length > 0
+      ? affEntries.slice(0, 5).map(([tid, val]) => `<span class="pill" style="font-size: 9px;">#${tid}: ${val >= 0 ? "+" : ""}${Math.round(val)}</span>`).join(" ")
+      : "<span style='color: var(--gray);'>Nenhuma afinidade</span>";
+
+    const knownZonesCount = Object.keys(bp.geoMemory || {}).length;
+    const territoryTxt = bp.territoryZoneKey ? `Zona ${bp.territoryZoneKey}` : "Nenhum";
+    const objMemCount = bp.objectMemory?.length || 0;
+    const shortMemCount = bp.shortTermMemory?.length || 0;
+    const longMemCount = bp.longTermMemory?.length || 0;
+
+    let prefsTxt = "Geral";
+    if (bp.preferences) {
+      const likes = bp.preferences.likes.map(l => `<span style="color: var(--green-bright);">+${l.value}</span>`).join(", ");
+      const dislikes = bp.preferences.dislikes.map(d => `<span style="color: var(--red-bright);">-${d.value}</span>`).join(", ");
+      prefsTxt = `${likes}${dislikes ? ` | ${dislikes}` : ""}`;
+    }
+
+    inspBrainContent.innerHTML = `
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-bottom: 6px;">
+        <div><b>Humor:</b> <span style="color: var(--yellow-bright);">${bp.mood || "calmo"}</span></div>
+        <div><b>Território:</b> <span style="color: var(--aqua-bright);">${territoryTxt}</span></div>
+      </div>
+      <div style="margin-bottom: 4px;"><b>Zonas 8x8 Conhecidas:</b> ${knownZonesCount} zonas | <b>Recursos:</b> ${objMemCount}/${bp.objectCapacity || 5}</div>
+      <div style="margin-bottom: 4px;"><b>Memórias:</b> Recente (${shortMemCount}) | Longo Prazo (${longMemCount})</div>
+      <div style="margin-bottom: 4px;"><b>Gosto Alimentar:</b> ${prefsTxt}</div>
+      <div style="margin-top: 6px;"><b>Afinidades Sociais:</b><div style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px;">${affText}</div></div>
+    `;
+  } else {
+    inspBrainCard.style.display = "none";
+  }
+
+  // 4. Stomach & Digestion Card
+  if (entity.properties.stomach) {
+    inspStomachCard.style.display = "flex";
+    const sp = entity.properties.stomach;
+    if (!sp.items || sp.items.length === 0) {
+      inspStomachContent.innerHTML = `<span style="color: var(--gray); font-style: italic;">Estômago vazio (0/${sp.capacity || 4} itens)</span>`;
+    } else {
+      let itemsHtml = `<b>Em Digestão (${sp.items.length}/${sp.capacity || 4}):</b><ul style="margin: 4px 0 0 16px; padding: 0;">`;
+      for (const it of sp.items) {
+        itemsHtml += `<li><b>${it.name}</b> (+${it.nutrition} cal, ${Math.round(it.remainingTurns)}s restantes)</li>`;
+      }
+      itemsHtml += `</ul>`;
+      inspStomachContent.innerHTML = itemsHtml;
+    }
+  } else {
+    inspStomachCard.style.display = "none";
+  }
+
+  // 5. Dynamic Flat Property Bag
   inspPropsList.innerHTML = "";
+  const propFragment = document.createDocumentFragment();
 
   for (const [key, prop] of propEntries) {
     if (prop === undefined || prop === null) continue;
@@ -612,7 +877,6 @@ function updateInspector() {
     const card = document.createElement("div");
     card.className = "prop-card";
 
-    // Header with name & delete button
     const header = document.createElement("div");
     header.className = "prop-header";
 
@@ -627,173 +891,12 @@ function updateInspector() {
     delBtn.title = `Remover propriedade '${key}'`;
     delBtn.addEventListener("click", () => {
       delete entity.properties[key];
+      lastRenderedEntityId = -1;
       updateInspector();
     });
     header.appendChild(delBtn);
     card.appendChild(header);
 
-    // If property is 'life' -> render Energy Bar
-    if (key === "life" && typeof prop.energy === "number" && typeof prop.max === "number") {
-      const barContainer = document.createElement("div");
-      barContainer.className = "prop-bar-container";
-
-      const barHeader = document.createElement("div");
-      barHeader.className = "prop-bar-header";
-      barHeader.innerHTML = `<span>⚡ Energia Vital</span><span><b>${Math.round(prop.energy)}</b>/${prop.max}</span>`;
-      barContainer.appendChild(barHeader);
-
-      const barBg = document.createElement("div");
-      barBg.className = "bar-bg";
-
-      const barFill = document.createElement("div");
-      barFill.className = "bar-fill";
-      barFill.style.background = "var(--green-bright)";
-      barFill.style.width = `${Math.max(0, Math.min(100, (prop.energy / prop.max) * 100))}%`;
-
-      barBg.appendChild(barFill);
-      barContainer.appendChild(barBg);
-      card.appendChild(barContainer);
-    }
-
-    // If property has condition and maxCondition -> render Physical Condition Bar
-    if (typeof prop.condition === "number" && typeof prop.maxCondition === "number") {
-      const barContainer = document.createElement("div");
-      barContainer.className = "prop-bar-container";
-
-      const barHeader = document.createElement("div");
-      barHeader.className = "prop-bar-header";
-      const condPct = Math.round((prop.condition / prop.maxCondition) * 100);
-      barHeader.innerHTML = `<span>Condição Física</span><span><b>${Math.round(prop.condition)}</b>/${prop.maxCondition} (${condPct}%)</span>`;
-      barContainer.appendChild(barHeader);
-
-      const barBg = document.createElement("div");
-      barBg.className = "bar-bg";
-
-      const barFill = document.createElement("div");
-      barFill.className = "bar-fill";
-      barFill.style.background = condPct > 60 ? "var(--aqua-bright)" : (condPct > 25 ? "var(--yellow-bright)" : "var(--red-bright)");
-      barFill.style.width = `${Math.max(0, Math.min(100, condPct))}%`;
-
-      barBg.appendChild(barFill);
-      barContainer.appendChild(barBg);
-      card.appendChild(barContainer);
-    }
-
-    // If property is 'bladder' -> render Water Bar
-    if (key === "bladder" && typeof prop.water === "number" && typeof prop.maxWater === "number") {
-      const barContainer = document.createElement("div");
-      barContainer.className = "prop-bar-container";
-
-      const barHeader = document.createElement("div");
-      barHeader.className = "prop-bar-header";
-      barHeader.innerHTML = `<span>💧 Água (Bexiga)</span><span><b>${Math.round(prop.water)}</b>/${prop.maxWater}</span>`;
-      barContainer.appendChild(barHeader);
-
-      const barBg = document.createElement("div");
-      barBg.className = "bar-bg";
-
-      const barFill = document.createElement("div");
-      barFill.className = "bar-fill";
-      barFill.style.background = "var(--blue-bright)";
-      barFill.style.width = `${Math.max(0, Math.min(100, (prop.water / prop.maxWater) * 100))}%`;
-
-      barBg.appendChild(barFill);
-      barContainer.appendChild(barBg);
-      card.appendChild(barContainer);
-    }
-
-    // If property is 'stomach' with digesting items
-    if (key === "stomach" && Array.isArray(prop.items)) {
-      const digestBox = document.createElement("div");
-      digestBox.style.fontSize = "10px";
-      digestBox.style.color = "var(--orange-bright)";
-      digestBox.style.marginTop = "4px";
-
-      if (prop.items.length === 0) {
-        digestBox.innerHTML = `<i>Estômago Vazio (0/${prop.capacity} itens)</i>`;
-      } else {
-        let itemsHtml = `<b>Em Digestão (${prop.items.length}/${prop.capacity}):</b><ul style="margin: 2px 0 0 14px; padding: 0;">`;
-        for (const item of prop.items) {
-          itemsHtml += `<li>${item.name} (${Math.round(item.remainingTurns)}s restantes | +${item.nutrition} cal)</li>`;
-        }
-        itemsHtml += `</ul>`;
-        digestBox.innerHTML = itemsHtml;
-      }
-      card.appendChild(digestBox);
-    }
-
-    // If property is 'brain' (Mood, Personality, Affinities, 8x8 Zones, Short/Long Memory, Object Memory, Dietary Prefs)
-    if (key === "brain") {
-      const brainBox = document.createElement("div");
-      brainBox.style.fontSize = "10px";
-      brainBox.style.color = "var(--purple-bright)";
-      brainBox.style.marginTop = "4px";
-
-      const affEntries = Object.entries(prop.affinities || {});
-      let affText = "Nenhuma";
-      if (affEntries.length > 0) {
-        affText = affEntries.slice(0, 6).map(([tid, val]) => `#${tid}: ${val >= 0 ? "+" : ""}${Math.round(val)}`).join(", ");
-        if (affEntries.length > 6) affText += ` (+${affEntries.length - 6})`;
-      }
-
-      // Geo zones & territory
-      const knownZonesCount = Object.keys(prop.geoMemory || {}).length;
-      const territoryTxt = prop.territoryZoneKey ? `Zona ${prop.territoryZoneKey}` : "Nenhum";
-
-      // Dietary preferences
-      let prefsTxt = "Geral";
-      if (prop.preferences) {
-        const likes = prop.preferences.likes.map(l => `+${l.value}`).join(", ");
-        const dislikes = prop.preferences.dislikes.map(d => `-${d.value}`).join(", ");
-        prefsTxt = `${likes}${dislikes ? ` | ${dislikes}` : ""}`;
-      }
-
-      // Object memory
-      const objMemCount = prop.objectMemory?.length || 0;
-      const shortMemCount = prop.shortTermMemory?.length || 0;
-      const longMemCount = prop.longTermMemory?.length || 0;
-
-      let html = `<b>Humor:</b> ${prop.mood || "calmo"}<br>`;
-      html += `<b>Raça/Espécie:</b> <span style="color: var(--fg0);">${entity.properties.species || "N/A"}</span><br>`;
-      html += `<b>Afinidades:</b> <span style="color: var(--fg2);">${affText}</span><br>`;
-      html += `<b>Zonas 8x8:</b> ${knownZonesCount} conhecidas | <b>Território:</b> ${territoryTxt}<br>`;
-      html += `<b>Memória de Objetos:</b> ${objMemCount}/${prop.objectCapacity || 5} recursos salvos<br>`;
-      html += `<b>Memórias:</b> Recente (${shortMemCount}/${prop.shortTermCapacity || 10}) | Longo Prazo (${longMemCount})<br>`;
-      html += `<b>Gosto Alimentar:</b> <span style="color: var(--orange-bright);">${prefsTxt}</span>`;
-
-      brainBox.innerHTML = html;
-      card.appendChild(brainBox);
-    }
-
-    // If property is 'amputated_*'
-    if (key.startsWith("amputated_")) {
-      const ampBox = document.createElement("div");
-      ampBox.style.fontSize = "10px";
-      ampBox.style.color = "var(--red-bright)";
-      ampBox.style.marginTop = "3px";
-      ampBox.style.fontWeight = "bold";
-      ampBox.innerHTML = `⚠️ MEMBRO AMPUTADO! Hemorragia ativa: <b>-${prop.bleedRate}</b> energia/s`;
-      card.appendChild(ampBox);
-    }
-
-    // If property is 'lungs' or 'gills'
-    if (key === "lungs") {
-      const lungBox = document.createElement("div");
-      lungBox.style.fontSize = "10px";
-      lungBox.style.color = "var(--yellow-bright)";
-      lungBox.style.marginTop = "2px";
-      lungBox.innerHTML = `Respiração: <b>Pulmonar (Afoga na água)</b>`;
-      card.appendChild(lungBox);
-    } else if (key === "gills") {
-      const gillBox = document.createElement("div");
-      gillBox.style.fontSize = "10px";
-      gillBox.style.color = "var(--aqua-bright)";
-      gillBox.style.marginTop = "2px";
-      gillBox.innerHTML = `Respiração: <b>Branquial (Asfixia fora d'água)</b>`;
-      card.appendChild(gillBox);
-    }
-
-    // Display fields of the property object or primitive value
     const fields = document.createElement("div");
     fields.className = "prop-fields";
 
@@ -804,6 +907,11 @@ function updateInspector() {
           fieldKey === "items" ||
           fieldKey === "rootEntityIds" ||
           fieldKey === "affinities" ||
+          fieldKey === "geoMemory" ||
+          fieldKey === "objectMemory" ||
+          fieldKey === "shortTermMemory" ||
+          fieldKey === "longTermMemory" ||
+          fieldKey === "preferences" ||
           fieldKey.startsWith("_")
         )
           continue;
@@ -824,7 +932,7 @@ function updateInspector() {
         const effectBadge = document.createElement("span");
         effectBadge.className = "prop-field-item";
         effectBadge.style.color = "var(--green-bright)";
-        effectBadge.textContent = prop.rate ? `efeito (rate: ${prop.rate}s)` : "efeito (tick)";
+        effectBadge.textContent = prop.rate ? `efeito (${prop.rate}s)` : "efeito (tick)";
         fields.appendChild(effectBadge);
       }
     } else {
@@ -835,29 +943,25 @@ function updateInspector() {
     }
 
     card.appendChild(fields);
-    inspPropsList.appendChild(card);
+    propFragment.appendChild(card);
   }
+  inspPropsList.appendChild(propFragment);
 
-  // 3. Render Personal Event History for Selected Entity
+  // 6. Entity Personal Event History
   if (inspEventList) {
-    const entityEvents = getEventsForEntity(entity.id, 12);
+    const entityEvents = getEventsForEntity(entity.id, 10);
     inspEventList.innerHTML = "";
     if (entityEvents.length === 0) {
-      inspEventList.innerHTML = `<span style="color: var(--gray); font-style: italic;">Nenhum evento registrado nesta criatura.</span>`;
+      inspEventList.innerHTML = `<span style="color: var(--gray); font-style: italic; padding: 4px;">Nenhum evento registrado nesta criatura.</span>`;
     } else {
+      const frag = document.createDocumentFragment();
       for (const ev of entityEvents.reverse()) {
         const evDiv = document.createElement("div");
-        evDiv.style.padding = "2px 6px";
-        evDiv.style.background = "var(--bg0-hard)";
-        evDiv.style.borderRadius = "2px";
-        evDiv.style.borderLeft = "2px solid " + (
-          ev.type === "AMPUTATION" ? "var(--red-bright)" :
-          ev.type === "ATTACK" ? "var(--orange-bright)" :
-          ev.type === "DEATH" ? "var(--red)" : "var(--yellow-bright)"
-        );
-        evDiv.innerHTML = `<span style="color: var(--gray); font-size: 9px;">[D${ev.timestamp.day} ${String(ev.timestamp.hour).padStart(2,"0")}:${String(ev.timestamp.minute).padStart(2,"0")}]</span> <b style="color: var(--fg0);">${ev.type}:</b> <span style="color: var(--fg2);">${ev.description}</span>`;
-        inspEventList.appendChild(evDiv);
+        evDiv.className = `event-item ${ev.type.toLowerCase()}`;
+        evDiv.innerHTML = `<span style="color: var(--gray); font-size: 9px;">[D${ev.timestamp.day} ${String(ev.timestamp.hour).padStart(2, "0")}:${String(ev.timestamp.minute).padStart(2, "0")}]</span> <b style="color: var(--fg0);">${ev.type}:</b> <span style="color: var(--fg2);">${ev.description}</span>`;
+        frag.appendChild(evDiv);
       }
+      inspEventList.appendChild(frag);
     }
   }
 }
@@ -924,12 +1028,15 @@ function frame(time) {
     imageData.data.set(pixelsU8);
     ctx.putImageData(imageData, 0, 0);
 
-    // 6. Update HUD and Inspector periodically
+    // 6. Update HUD, Global Logs & Inspector periodically (100ms throttle)
     hudUpdateTimer += dt;
     if (hudUpdateTimer >= 0.1) {
       hudUpdateTimer = 0;
       updateStatsAndClock();
-      updateInspector();
+      updateGlobalEventsList();
+      if (lastSelectedId > 0) {
+        updateInspector();
+      }
     }
   }
 

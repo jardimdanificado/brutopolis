@@ -150,7 +150,7 @@ bool world_gen_is_walkable(const uint8_t map[MAP_HEIGHT][MAP_WIDTH], int x, int 
     if (t == VOID_TILE) return false;
     if (move_type == 3) return true; // Fly
     if (move_type == 2) return (t == WATER); // Aquatic
-    if (move_type == 1) return (t == FLOOR); // Terrestrial / Walk
+    if (move_type == 1) return (t == FLOOR || t == SAND || t == STONE); // Terrestrial / Walk
     return false; // Static
 }
 
@@ -218,6 +218,68 @@ void world_gen_generate(uint8_t map[MAP_HEIGHT][MAP_WIDTH], const MapGenConfig* 
 
     if (cfg.ca_smooth_iterations > 0) {
         ca_smooth(map, cfg.ca_smooth_iterations);
+    }
+
+    // 2. Generate Random Desert Sand Bands (arid regions)
+    for (int y = 0; y < MAP_HEIGHT; y++) {
+        for (int x = 0; x < MAP_WIDTH; x++) {
+            if (map[y][x] == FLOOR) {
+                float nx = x * 0.015f + 42.0f;
+                float ny = y * 0.015f + 88.0f;
+                float desert_noise = fbm(nx, ny, 3);
+                if (desert_noise > 0.62f) {
+                    map[y][x] = SAND;
+                }
+            }
+        }
+    }
+
+    // 3. Post-process Biome Borders:
+    // - Water edges -> Beach SAND
+    // - Mountain edges -> Rocky STONE
+    uint8_t temp_map[MAP_HEIGHT][MAP_WIDTH];
+    for (int y = 0; y < MAP_HEIGHT; y++) {
+        for (int x = 0; x < MAP_WIDTH; x++) {
+            temp_map[y][x] = map[y][x];
+        }
+    }
+
+    for (int y = 1; y < MAP_HEIGHT - 1; y++) {
+        for (int x = 1; x < MAP_WIDTH - 1; x++) {
+            uint8_t cur = temp_map[y][x];
+            if (cur == FLOOR || cur == STONE) {
+                // Check if adjacent to water -> Beach Sand
+                bool near_water = false;
+                for (int dy = -1; dy <= 1 && !near_water; dy++) {
+                    for (int dx = -1; dx <= 1; dx++) {
+                        if (temp_map[y + dy][x + dx] == WATER) {
+                            near_water = true;
+                            break;
+                        }
+                    }
+                }
+                if (near_water) {
+                    map[y][x] = SAND;
+                    continue;
+                }
+            }
+
+            if (cur == FLOOR) {
+                // Check if adjacent to mountain -> Rocky Stone Ground
+                bool near_mountain = false;
+                for (int dy = -1; dy <= 1 && !near_mountain; dy++) {
+                    for (int dx = -1; dx <= 1; dx++) {
+                        if (temp_map[y + dy][x + dx] == MOUNTAIN) {
+                            near_mountain = true;
+                            break;
+                        }
+                    }
+                }
+                if (near_mountain) {
+                    map[y][x] = STONE;
+                }
+            }
+        }
     }
 
     // Find center walkable spawn

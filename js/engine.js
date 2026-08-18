@@ -278,6 +278,16 @@ export function tickEntities(entities, dt, world) {
   }
 }
 
+const skinCache = new Map();
+function getSkinBytes(skinStr) {
+  let cached = skinCache.get(skinStr);
+  if (!cached) {
+    cached = encoder.encode(skinStr);
+    skinCache.set(skinStr, cached);
+  }
+  return cached;
+}
+
 /**
  * Directly syncs renderable entities into WASM shared memory
  */
@@ -324,7 +334,7 @@ export function syncRenderToWasm(entities, wasmMemory, wasmExports) {
     view.setInt32(offset + 40, e.combatFlash > 0 ? 1 : 0, true);
 
     const skinStr = r.skin || "Human_Knight_M.png";
-    const skinBytes = encoder.encode(skinStr);
+    const skinBytes = getSkinBytes(skinStr);
     const skinOffset = offset + 44;
     const copyLen = Math.min(63, skinBytes.length);
     u8.set(skinBytes.subarray(0, copyLen), skinOffset);

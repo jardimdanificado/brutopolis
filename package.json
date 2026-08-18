@@ -1,0 +1,29 @@
+{
+  "name": "brutopolis",
+  "version": "1.0.0",
+  "description": "Brutopolis — Biological Simulation Engine & WASM Graphics Pipeline",
+  "type": "module",
+  "main": "runner.js",
+  "bin": {
+    "brutopolis": "./runner.js"
+  },
+  "scripts": {
+    "start": "node runner.js",
+    "cli": "node runner.js",
+    "server": "node server.js",
+    "dev": "node --watch server.js",
+    "build": "make all",
+    "gen-assets": "python3 gen_assets.py",
+    "clean": "make clean"
+  },
+  "keywords": [
+    "wasm",
+    "simulation",
+    "biology",
+    "ecosystem",
+    "roguelike",
+    "webassembly"
+  ],
+  "author": "jardel",
+  "license": "MIT"
+}

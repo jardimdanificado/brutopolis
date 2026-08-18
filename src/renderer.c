@@ -212,7 +212,20 @@ Image load_image(const char* filename) {
 
     // Load and decode from embedded WAGNER_ASSETS
     const WagnerAsset* asset = find_wagner_asset(filename);
-    if (!asset) return (Image){0};
+    if (!asset) {
+        if (s_tex_count < MAX_TEX_CACHE) {
+            int k = 0;
+            while (k < 63 && filename[k]) {
+                s_tex_cache[s_tex_count].path[k] = filename[k];
+                k++;
+            }
+            s_tex_cache[s_tex_count].path[k] = '\0';
+            s_tex_cache[s_tex_count].img = (Image){0};
+            s_tex_cache[s_tex_count].loaded = true;
+            s_tex_count++;
+        }
+        return (Image){0};
+    }
 
     unsigned char* decoded = NULL;
     unsigned w = 0, h = 0;
@@ -419,6 +432,14 @@ static Image get_tile_image(TileType t) {
         if (!img_tiles[WATER].pixels) img_tiles[WATER] = load_image("Feature_Waves.png");
         return img_tiles[WATER];
     }
+    if (t == SAND) {
+        if (!img_tiles[SAND].pixels) img_tiles[SAND] = load_image("Feature_Stone_A.png");
+        return img_tiles[SAND];
+    }
+    if (t == STONE) {
+        if (!img_tiles[STONE].pixels) img_tiles[STONE] = load_image("Feature_Stone_C.png");
+        return img_tiles[STONE];
+    }
     return (Image){0};
 }
 
@@ -480,14 +501,12 @@ void render_frame(uint8_t* framebuffer, int width, int height, float time, float
                   int pop_count, bool is_paused, int target_tps) {
     if (!framebuffer || width <= 0 || height <= 0) return;
 
-    // Clear background
+    // Clear background (fast 32-bit word write)
     ColorRGBA bg_color = rgb(15, 18, 22);
-    for (int i = 0; i < width * height; i++) {
-        int idx = i * 4;
-        framebuffer[idx + 0] = color_r(bg_color);
-        framebuffer[idx + 1] = color_g(bg_color);
-        framebuffer[idx + 2] = color_b(bg_color);
-        framebuffer[idx + 3] = 255;
+    uint32_t* fb32 = (uint32_t*)framebuffer;
+    int total_pixels = width * height;
+    for (int i = 0; i < total_pixels; i++) {
+        fb32[i] = bg_color;
     }
 
     int tile_size = (int)(16 * zoom);
@@ -527,6 +546,12 @@ void render_frame(uint8_t* framebuffer, int width, int height, float time, float
                 bg = rgb(20, 45, 90);
                 float wave = __builtin_sinf(time * 2.0f + tx * 0.5f + ty * 0.3f) * 0.1f;
                 fg = color_scale(fg, 1.0f + wave);
+            } else if (t == SAND) {
+                fg = rgb(235, 205, 115);
+                bg = rgb(95, 78, 35);
+            } else if (t == STONE) {
+                fg = rgb(165, 165, 175);
+                bg = rgb(55, 55, 62);
             }
 
             Image tile_img = get_tile_image(t);

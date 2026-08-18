@@ -8,11 +8,13 @@
 #define MAP_HEIGHT 512
 
 typedef enum {
-    FLOOR = 0,
-    MOUNTAIN = 1,
-    WATER = 2,
-    VOID_TILE = 3,
-    NUM_TILES = 4
+    FLOOR = 0,       // Solo Fértil / Gramado
+    MOUNTAIN = 1,    // Pico de Montanha (Intransponível)
+    WATER = 2,       // Água Oceânica / Lagos
+    SAND = 3,        // Areia / Praia Costeira / Deserto
+    STONE = 4,       // Chão Rochoso / Sopé de Montanha
+    VOID_TILE = 5,
+    NUM_TILES = 6
 } TileType;
 
 typedef struct {

@@ -51,10 +51,10 @@ gen-assets:
 	python3 gen_assets.py
 
 run: all
-	node /home/jardel/repos/wash/bin/wash.js $(TARGET)
+	node runner.js
 
 serve: all
-	python3 -m http.server 8080
+	node server.js
 
 clean:
 	rm -f $(TARGET)

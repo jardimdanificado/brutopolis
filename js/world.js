@@ -71,8 +71,19 @@ export class World {
   }
 
   getTile(x, y) {
-    if (x < 0 || x >= MAP_WIDTH || y < 0 || y >= MAP_HEIGHT) return 3; // VOID
+    if (x < 0 || x >= MAP_WIDTH || y < 0 || y >= MAP_HEIGHT) return 5; // VOID
     return this.map[y * MAP_WIDTH + x];
+  }
+
+  getTileName(t) {
+    switch (t) {
+      case 0: return "Solo Fértil / Floresta";
+      case 1: return "Pico de Montanha";
+      case 2: return "Água Oceânica";
+      case 3: return "Areia / Deserto / Praia";
+      case 4: return "Chão Rochoso / Sopé";
+      default: return "Vazio";
+    }
   }
 
   setTile(x, y, tile) {
@@ -83,6 +94,7 @@ export class World {
 
   isWalkable(x, y) {
     if (x < 0 || x >= MAP_WIDTH || y < 0 || y >= MAP_HEIGHT) return false;
-    return this.map[y * MAP_WIDTH + x] === 0; // 0 = FLOOR
+    const t = this.map[y * MAP_WIDTH + x];
+    return t === 0 || t === 3 || t === 4; // Floor, Sand, Stone
   }
 }

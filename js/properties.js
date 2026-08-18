@@ -532,7 +532,8 @@ export function createCombatProp(attackInterval = 1.2, aggroRange = 3) {
       this.attackTimer = 0;
 
       // 1. Determine Weapon / Limb Used for Attack
-      let attackPower = 150;
+      let attackPower = 0;
+      let usedLimbName = "golpe corporal";
       let usedLimb = null;
 
       // Check arms first
@@ -540,9 +541,11 @@ export function createCombatProp(attackInterval = 1.2, aggroRange = 3) {
         if (key.startsWith("arm") && prop && prop.condition > 10) {
           const limbFactor = (prop.condition / prop.maxCondition) * prop.quality;
           if (prop.heldItem && prop.heldItem.damage) {
-            attackPower = prop.heldItem.damage * 18 * limbFactor;
+            attackPower = (prop.heldItem.damage * 0.9) * limbFactor;
+            usedLimbName = prop.heldItem.name || key;
           } else {
-            attackPower = (prop.punchDamage || 180) * limbFactor;
+            attackPower = 28 * limbFactor;
+            usedLimbName = `braço (${key})`;
           }
           usedLimb = prop;
           break;
@@ -554,7 +557,8 @@ export function createCombatProp(attackInterval = 1.2, aggroRange = 3) {
         for (const [key, prop] of Object.entries(ent.properties)) {
           if (key.startsWith("leg") && prop && prop.condition > 15) {
             const limbFactor = (prop.condition / prop.maxCondition) * prop.quality;
-            attackPower = (prop.kickDamage || 250) * limbFactor;
+            attackPower = 32 * limbFactor;
+            usedLimbName = `chute (${key})`;
             usedLimb = prop;
             break;
           }
@@ -563,7 +567,7 @@ export function createCombatProp(attackInterval = 1.2, aggroRange = 3) {
 
       if (attackPower <= 0) return;
 
-      // 2. Target Defense Calculation
+      // 2. Target Defense Calculation (Impact absorbed by shield or defending limb)
       let absorbedDamage = 0;
       let defendingLimb = null;
 
@@ -572,36 +576,67 @@ export function createCombatProp(attackInterval = 1.2, aggroRange = 3) {
           const limbFactor = (prop.condition / prop.maxCondition) * prop.quality;
 
           if (prop.heldItem && prop.heldItem.defense) {
-            absorbedDamage = prop.heldItem.defense * 20 * limbFactor;
+            absorbedDamage = prop.heldItem.defense * 1.5 * limbFactor;
             prop.heldItem.defense = Math.max(0, prop.heldItem.defense - 1);
             defendingLimb = prop;
             break;
           } else if (!defendingLimb) {
-            absorbedDamage = 100 * limbFactor;
+            absorbedDamage = 10 * limbFactor;
             defendingLimb = prop;
           }
         }
       }
 
       if (defendingLimb && !defendingLimb.heldItem?.defense) {
-        defendingLimb.condition = Math.max(0, defendingLimb.condition - 15);
+        defendingLimb.condition = Math.max(0, defendingLimb.condition - Math.round(absorbedDamage * 0.6));
       }
 
-      // 3. Apply Damage to Target's Life Energy
-      const finalDamage = Math.max(50, attackPower - absorbedDamage);
-      target.properties.life.energy = Math.max(0, target.properties.life.energy - finalDamage);
+      // 3. Apply Damage DIRECTLY to Target's Physical Body Parts
+      const netDamage = Math.max(8, attackPower - absorbedDamage);
       target.combatFlash = 6;
 
+      const physicalParts = [];
+      for (const [pk, p] of Object.entries(target.properties)) {
+        if (p && typeof p.condition === "number" && typeof p.maxCondition === "number" && p.condition > 0) {
+          physicalParts.push({ key: pk, prop: p });
+        }
+      }
+
+      let hitPartName = "corpo";
+      if (physicalParts.length > 0) {
+        // Pick primary target part for direct physical damage
+        const primaryTarget = physicalParts[Math.floor(Math.random() * physicalParts.length)];
+        const mainDamage = Math.round(netDamage * 0.75);
+        primaryTarget.prop.condition = Math.max(0, primaryTarget.prop.condition - mainDamage);
+        hitPartName = `${primaryTarget.key} (-${mainDamage} cond)`;
+
+        // Secondary splash trauma to other body parts
+        for (const pt of physicalParts) {
+          if (pt !== primaryTarget && Math.random() < 0.45) {
+            const splash = Math.round(Math.max(2, netDamage * 0.18));
+            pt.prop.condition = Math.max(0, pt.prop.condition - splash);
+          }
+        }
+      }
+
+      // Minor direct shock to vital energy (~10% of physical blow)
+      if (target.properties.life) {
+        const energyShock = Math.max(10, Math.round(netDamage * 2.5));
+        target.properties.life.energy = Math.max(0, target.properties.life.energy - energyShock);
+      }
+
       // 4. Record indexed ATTACK event
+      const attackDesc = `${ent.properties.name || `Entidade #${ent.id}`} atingiu ${hitPartName} de ${target.properties.name || `Entidade #${target.id}`} com ${usedLimbName} na posição [X: ${ent.x}, Y: ${ent.y}]!`;
+
       recordWorldEvent({
         type: "ATTACK",
         primaryEntityId: ent.id,
         secondaryEntityId: target.id,
         location: { x: ent.x, y: ent.y },
-        description: `${ent.properties.name || `Entidade #${ent.id}`} atacou ${target.properties.name || `Entidade #${target.id}`} causando ${Math.round(finalDamage)} de dano!`,
+        description: attackDesc,
         tick: currentTick,
         timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
-        metadata: { damage: finalDamage, absorbed: absorbedDamage }
+        metadata: { usedLimbName, hitPartName, netDamage, absorbed: absorbedDamage }
       });
 
       // 5. Affinity Dynamics upon Attack: Victim sets affinity with attacker to minimum (-100)!
@@ -612,18 +647,6 @@ export function createCombatProp(attackInterval = 1.2, aggroRange = 3) {
       if (ent.properties.brain) {
         if (!ent.properties.brain.affinities) ent.properties.brain.affinities = {};
         ent.properties.brain.affinities[target.id] = Math.min(-30, (ent.properties.brain.affinities[target.id] || 0) - 50);
-      }
-
-      // 6. Splash Damage to Victim's Limbs and Organs
-      const victimPhysicalProps = Object.values(target.properties).filter(
-        p => p && typeof p.condition === "number" && typeof p.maxCondition === "number"
-      );
-
-      for (const p of victimPhysicalProps) {
-        if (Math.random() < 0.40) {
-          const trauma = Math.floor(8 + Math.random() * 18);
-          p.condition = Math.max(0, p.condition - trauma);
-        }
       }
     }
   };
@@ -1130,49 +1153,6 @@ export function createFruitingProp(fruitInterval = 25.0, seedType = "large", spe
   };
 }
 
-/**
- * Seed Germination (Low chance for seeds or feces to sprout into a tree)
- */
-export function createSeedGerminationProp(species = "oak", checkInterval = 6.0, sproutChance = 0.012) {
-  return {
-    timer: 0,
-    species,
-    checkInterval,
-    sproutChance,
-    effect(ent, dt, world, entities) {
-      this.timer = (this.timer || 0) + dt;
-      if (this.timer >= this.checkInterval) {
-        this.timer = 0;
-
-        if (world && world.getTile(ent.x, ent.y) === 0) {
-          if (Math.random() < this.sproutChance) {
-            let newTree = null;
-            if (this.species === "willow") {
-              newTree = createWillowTree(ent.x, ent.y);
-            } else {
-              newTree = createOakTree(ent.x, ent.y);
-            }
-
-            ent.destroyed = true;
-            if (entities && newTree) {
-              entities.push(newTree);
-              recordWorldEvent({
-                type: "SPROUT",
-                primaryEntityId: newTree.id,
-                secondaryEntityId: ent.id,
-                location: { x: ent.x, y: ent.y },
-                description: `Uma semente germinou gerando um jovem ${newTree.properties.name}!`,
-                tick: currentTick,
-                timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
-                metadata: { species: this.species }
-              });
-            }
-          }
-        }
-      }
-    }
-  };
-}
 
 /**
  * Terrain Preference
@@ -1502,6 +1482,179 @@ export function createDragon(x, y) {
   );
 }
 
+/**
+ * Seed Germination (Low chance for seeds or feces to sprout into a tree/plant)
+ */
+export function createSeedGerminationProp(species = "oak", checkInterval = 6.0, sproutChance = 0.012) {
+  return {
+    timer: 0,
+    species,
+    checkInterval,
+    sproutChance,
+    effect(ent, dt, world, entities) {
+      this.timer = (this.timer || 0) + dt;
+      if (this.timer >= this.checkInterval) {
+        this.timer = 0;
+
+        if (world) {
+          const tile = world.getTile(ent.x, ent.y);
+          const isSuitable =
+            (this.species === "cactus" && tile === 3) ||
+            (this.species === "lichen" && (tile === 4 || tile === 1)) ||
+            (this.species === "pine" && (tile === 0 || tile === 4 || tile === 1)) ||
+            (tile === 0);
+
+          if (isSuitable && Math.random() < this.sproutChance) {
+            let newPlant = null;
+            if (this.species === "willow") {
+              newPlant = createWillowTree(ent.x, ent.y);
+            } else if (this.species === "pine") {
+              newPlant = createPineTree(ent.x, ent.y);
+            } else if (this.species === "cactus") {
+              newPlant = createCactus(ent.x, ent.y);
+            } else if (this.species === "lichen") {
+              newPlant = createAlpineShrub(ent.x, ent.y);
+            } else {
+              newPlant = createOakTree(ent.x, ent.y);
+            }
+
+            ent.destroyed = true;
+            if (entities && newPlant) {
+              entities.push(newPlant);
+              recordWorldEvent({
+                type: "SPROUT",
+                primaryEntityId: newPlant.id,
+                secondaryEntityId: ent.id,
+                location: { x: ent.x, y: ent.y },
+                description: `Uma semente germinou gerando ${newPlant.properties.name}!`,
+                tick: currentTick,
+                timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
+                metadata: { species: this.species }
+              });
+            }
+          }
+        }
+      }
+    }
+  };
+}
+
+// ---------------------------------------------------------------------------
+// 4. Biome-Specific Flora and Fauna Prefabs
+// ---------------------------------------------------------------------------
+
+export function createCactus(x, y) {
+  return createEntity(
+    {
+      name: "Cacto do Deserto (Semente de Cacto)",
+      species: "cactus",
+      render: { skin: "Feature_Tree_Pine.png", color: 0xff50c850, backcolor: 0xff28501e },
+      life: createLifeProp(8000, 8000, 0.4),
+      bladder: createBladderProp(12000, 12000),
+      deep_root: createDeepRootProp(22.0, 14.0),
+      photosynthesis: createPhotosynthesisProp(0.2, 38.0),
+      fruiting: createFruitingProp(20.0, "large", "cactus"),
+      terrain_pref: createTerrainPreferenceProp([3], "Areia / Deserto Árido"),
+      plant_flesh: { nutrition: 1600, foodType: "plant" }
+    },
+    x,
+    y
+  );
+}
+
+export function createScorpion(x, y) {
+  return createEntity(
+    {
+      name: "Escorpião das Dunas",
+      species: "scorpion",
+      render: { skin: "Creature_Spider_U.png", color: 0xffe6b432, backcolor: 0xff3c2805 },
+      life: createLifeProp(3800, 3800),
+      lungs: createLungsProp(),
+      brain: createBrainProp(12, { bravery: 0.7, curiosity: 0.6, aggression: 0.8 }, 1.0),
+      stomach: createStomachProp(2, { meat: 1.4, organ: 1.2, plant: 0.1 }),
+      bladder: createBladderProp(1800, 1800),
+      kidney: createKidneyProp(0.5),
+      combat: createCombatProp(1.1, 2),
+      arm_left: createArmProp("pincher", 1.1, 100, 100, { name: "Pinça Esmagadora", damage: 32 }),
+      arm_right: createArmProp("stinger", 1.2, 100, 100, { name: "Ferrão Venenoso", damage: 46 }),
+      leg_left: createLegProp("legs_left", 1.2, 100, 100),
+      leg_right: createLegProp("legs_right", 1.2, 100, 100),
+      terrain_pref: createTerrainPreferenceProp([3], "Areia do Deserto"),
+      locomotion: createLocomotionProp(),
+      carapace: { condition: 100, maxCondition: 100, defense: 25, nutrition: 800, foodType: "bone" },
+      flesh: { condition: 100, maxCondition: 100, nutrition: 1500, foodType: "meat" }
+    },
+    x,
+    y
+  );
+}
+
+export function createLizard(x, y) {
+  return createEntity(
+    {
+      name: "Lagarto das Areias",
+      species: "lizard",
+      render: { skin: "Creature_Snake_U.png", color: 0xffd2c850, backcolor: 0xff32280a },
+      life: createLifeProp(2400, 2400),
+      lungs: createLungsProp(),
+      brain: createBrainProp(10, { bravery: 0.3, curiosity: 0.8, aggression: 0.2 }, 0.9),
+      stomach: createStomachProp(2, { meat: 1.1, fruit: 1.3, plant: 0.8 }),
+      bladder: createBladderProp(1200, 1200),
+      kidney: createKidneyProp(0.6),
+      leg_front: createLegProp("front", 1.2, 100, 100),
+      leg_back: createLegProp("back", 1.2, 100, 100),
+      terrain_pref: createTerrainPreferenceProp([3, 0], "Areia e Solo"),
+      locomotion: createLocomotionProp(),
+      flesh: { condition: 100, maxCondition: 100, nutrition: 900, foodType: "meat" }
+    },
+    x,
+    y
+  );
+}
+
+export function createAlpineShrub(x, y) {
+  return createEntity(
+    {
+      name: "Líquen das Rochas (Arbusto)",
+      species: "lichen",
+      render: { skin: "Feature_Flower.png", color: 0xffb4c8a0, backcolor: 0xff283228 },
+      life: createLifeProp(4500, 4500, 0.4),
+      bladder: createBladderProp(2500, 2500),
+      surface_root: createSurfaceRootProp(6),
+      photosynthesis: createPhotosynthesisProp(0.25, 26.0),
+      terrain_pref: createTerrainPreferenceProp([4, 1], "Chão Rochoso e Montanha"),
+      plant_flesh: { nutrition: 800, foodType: "plant" }
+    },
+    x,
+    y
+  );
+}
+
+export function createMountainGoat(x, y) {
+  return createEntity(
+    {
+      name: "Bode Montanhês",
+      species: "goat",
+      render: { skin: "Creature_Bear_U.png", color: 0xffe6e6dc, backcolor: 0xff3c3c3c },
+      life: createLifeProp(5200, 5200),
+      lungs: createLungsProp(),
+      brain: createBrainProp(14, { bravery: 0.6, curiosity: 0.7, aggression: 0.4 }, 1.1),
+      stomach: createStomachProp(4, { plant: 1.4, fruit: 1.0, meat: 0.1 }),
+      bladder: createBladderProp(2500, 2500),
+      kidney: createKidneyProp(0.7),
+      combat: createCombatProp(1.0, 3),
+      arm_head: createArmProp("horns", 1.2, 100, 100, { name: "Chifres de Montanha", damage: 38 }),
+      leg_front: createLegProp("front", 1.3, 100, 100),
+      leg_back: createLegProp("back", 1.3, 100, 100),
+      terrain_pref: createTerrainPreferenceProp([4, 1, 0], "Montanhas e Pedregulhos"),
+      locomotion: createLocomotionProp(),
+      flesh: { condition: 100, maxCondition: 100, nutrition: 2600, foodType: "meat" }
+    },
+    x,
+    y
+  );
+}
+
 export function createOakTree(x, y) {
   return createEntity(
     {
@@ -1595,15 +1748,21 @@ export function createSeaweed(x, y) {
 }
 
 export function createFruit(x, y, seedType = "large", species = "oak") {
+  let fruitName = "Fruto";
+  if (species === "cactus") fruitName = "Pitaia / Fruto do Cacto";
+  else if (species === "willow") fruitName = "Fruto de Salgueiro";
+  else if (species === "pine") fruitName = "Pinha / Fruto do Pinheiro";
+  else fruitName = "Bolota / Fruto de Carvalho";
+
   return createEntity(
     {
-      name: `Fruto de ${species === "willow" ? "Salgueiro" : (species === "pine" ? "Pinheiro" : "Carvalho")}`,
-      render: { skin: "Item_Fruit.png", color: 0xfffaa03c, backcolor: 0xff46230a },
+      name: fruitName,
+      render: { skin: "Item_Fruit.png", color: species === "cactus" ? 0xfffa5078 : 0xfffaa03c, backcolor: 0xff46230a },
       edible: {
-        nutrition: 2500,
+        nutrition: species === "cactus" ? 3000 : 2500,
         foodType: "fruit",
         digestDuration: 30,
-        sourceName: species === "willow" ? "Salgueiro" : (species === "pine" ? "Pinheiro" : "Carvalho"),
+        sourceName: species === "cactus" ? "Cacto do Deserto" : (species === "willow" ? "Salgueiro" : (species === "pine" ? "Pinheiro" : "Carvalho")),
         sourceSpecies: species,
         seed: { type: seedType, species }
       }
@@ -1614,11 +1773,18 @@ export function createFruit(x, y, seedType = "large", species = "oak") {
 }
 
 export function createSeedEntity(x, y, seedType = "large", species = "oak") {
+  let seedName = `Semente de ${species}`;
+  if (species === "cactus") seedName = "Semente de Cacto";
+  else if (species === "lichen") seedName = "Esporo de Líquen";
+  else if (species === "willow") seedName = "Semente de Salgueiro";
+  else if (species === "pine") seedName = "Pinhão";
+  else seedName = "Bolota de Carvalho";
+
   return createEntity(
     {
-      name: `Semente Grande de ${species === "willow" ? "Salgueiro" : (species === "pine" ? "Pinheiro" : "Carvalho")}`,
-      render: { skin: "Item_Nut.png", color: 0xffc88c50, backcolor: 0x00000000 },
-      germination: createSeedGerminationProp(species, 6.0, 0.018),
+      name: seedName,
+      render: { skin: "Item_Nut.png", color: species === "cactus" ? 0xff50c850 : 0xffc88c50, backcolor: 0x00000000 },
+      germination: createSeedGerminationProp(species, 6.0, 0.02),
       edible: { nutrition: 600, foodType: "plant", digestDuration: 20 },
       lifespan: {
         current: 0,
@@ -1654,7 +1820,7 @@ export function createPoopEntity(x, y, seed = null) {
   );
 
   if (seed && seed.type === "small") {
-    poop.properties.germination = createSeedGerminationProp(seed.species, 8.0, 0.015);
+    poop.properties.germination = createSeedGerminationProp(seed.species, 8.0, 0.018);
   }
 
   return poop;

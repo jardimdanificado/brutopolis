@@ -6,7 +6,7 @@
   <title>Brutopolis — Biological Simulation Engine</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -15,7 +15,7 @@
   <header>
     <div class="logo-group">
       <span class="logo">BRUTOPOLIS</span>
-      <span class="badge">BIOLOGICAL ECOSYSTEM</span>
+      <span class="badge">ECOSSISTEMA BIOLÓGICO</span>
     </div>
 
     <!-- Clock & Ambient HUD -->
@@ -26,11 +26,11 @@
       </div>
       <div class="hud-item">
         <span class="hud-label">Luz Solar:</span>
-        <span class="hud-value" id="hud-light" style="color: var(--yellow);">100%</span>
+        <span class="hud-value" id="hud-light" style="color: var(--yellow-bright);">100%</span>
       </div>
       <div class="hud-item">
         <span class="hud-label">Temperatura:</span>
-        <span class="hud-value" id="hud-heat" style="color: var(--orange);">85%</span>
+        <span class="hud-value" id="hud-heat" style="color: var(--orange-bright);">85%</span>
       </div>
     </div>
 
@@ -62,7 +62,12 @@
     <div class="canvas-container">
       <canvas id="canvas" width="480" height="360"></canvas>
 
-      <!-- Floating Camera Tools -->
+      <!-- Floating Canvas Info & Camera Tools -->
+      <div class="canvas-info-overlay" id="canvas-cursor-info">
+        <span id="cursor-pos">POS: --, --</span>
+        <span id="cursor-entity">SELECIONE UMA CRIATURA</span>
+      </div>
+
       <div class="floating-tools">
         <button id="btn-zoom-in" title="Aumentar Zoom (E / Scroll)">+</button>
         <button id="btn-zoom-out" title="Diminuir Zoom (Q / Scroll)">−</button>
@@ -70,112 +75,199 @@
       </div>
     </div>
 
-    <!-- Dynamic Biological Inspector -->
+    <!-- Dynamic Biological Inspector Sidebar with Tabs -->
     <aside class="inspector-sidebar">
-      <div class="sidebar-header">
-        <span>INSPETOR BIOLÓGICO</span>
-        <span id="insp-id-badge" style="color: var(--gray);">#--</span>
+      <!-- Tab Navigation Header -->
+      <div class="sidebar-tabs">
+        <button class="tab-btn active" data-tab="tab-insp" id="tab-btn-insp">🔬 Inspetor</button>
+        <button class="tab-btn" data-tab="tab-events" id="tab-btn-events">📜 Eventos <span id="tab-events-badge" class="tab-badge">0</span></button>
+        <button class="tab-btn" data-tab="tab-spawn" id="tab-btn-spawn">⚡ Spawner</button>
+        <button class="tab-btn" data-tab="tab-inject" id="tab-btn-inject">🧬 Bio-Injetor</button>
       </div>
 
-      <div class="sidebar-content" id="insp-content">
-        <!-- Empty State -->
-        <div id="insp-empty" style="color: var(--gray); text-align: center; padding: 40px 0;">
-          Clique em qualquer criatura ou planta no mapa para inspecionar órgãos, pulmões/brânquias, afinidades e digestão.
-        </div>
-
-        <!-- Entity Details -->
-        <div id="insp-details" style="display: none;" class="entity-card">
-          <div class="entity-top">
-            <div class="entity-avatar" id="insp-avatar">
-              <span style="font-size: 18px;">?</span>
+      <div class="sidebar-content">
+        
+        <!-- TAB 1: BIOLOGICAL INSPECTOR -->
+        <div id="tab-insp" class="tab-pane active">
+          <!-- Empty State -->
+          <div id="insp-empty" class="empty-state">
+            <div class="empty-icon">🔬</div>
+            <div class="empty-title">Nenhuma Criatura Selecionada</div>
+            <div class="empty-desc">
+              Clique em qualquer criatura, animal ou planta no mapa para inspecionar órgãos, sinais vitais, cognição e digestão em tempo real.
             </div>
-            <div class="entity-names">
-              <div style="display: flex; align-items: center; gap: 6px;">
-                <span class="entity-name" id="insp-name">Entidade</span>
-                <span class="pill" id="insp-props-count" style="font-size: 9px; padding: 1px 4px; border-color: var(--yellow); color: var(--yellow-bright);">0 PROPS</span>
+          </div>
+
+          <!-- Entity Details Container -->
+          <div id="insp-details" style="display: none;" class="entity-inspector-view">
+            <!-- Hero Card -->
+            <div class="entity-card entity-hero">
+              <div class="entity-top">
+                <div class="entity-avatar" id="insp-avatar">
+                  <span style="font-size: 18px;">?</span>
+                </div>
+                <div class="entity-names">
+                  <div class="entity-title-row">
+                    <span class="entity-name" id="insp-name">Entidade</span>
+                    <span id="insp-id-badge" class="pill" style="color: var(--yellow-bright); border-color: var(--yellow);">#--</span>
+                  </div>
+                  <div class="entity-meta-row">
+                    <span class="entity-title" id="insp-pos">POS: 0, 0</span>
+                    <span class="pill bio" id="insp-species">Espécie</span>
+                    <span class="pill" id="insp-props-count">0 PROPS</span>
+                  </div>
+                </div>
               </div>
-              <span class="entity-title" id="insp-pos">POS: 0, 0</span>
+
+              <!-- Quick Control Actions -->
+              <div class="sidebar-actions">
+                <button id="btn-insp-follow" class="action-btn">◎ Focar Câmera</button>
+                <button id="btn-insp-kill" class="danger action-btn">💥 Eliminar</button>
+              </div>
+            </div>
+
+            <!-- Vitals & Condition Card -->
+            <div class="entity-card">
+              <div class="card-section-title">⚡ SINAIS VITAIS & FISIOLOGIA</div>
+              <div class="stat-bars" id="insp-vitals-container">
+                <!-- Energy, Condition, Bladder dynamic bars -->
+              </div>
+              <div id="insp-amputations-container"></div>
+              <div id="insp-respiration-badge" style="margin-top: 4px;"></div>
+            </div>
+
+            <!-- Brain & Cognition Card -->
+            <div class="entity-card" id="insp-brain-card">
+              <div class="card-section-title">🧠 COGNIÇÃO & MEMÓRIA</div>
+              <div id="insp-brain-content" style="font-size: 11px; line-height: 1.6;"></div>
+            </div>
+
+            <!-- Digestion & Stomach Card -->
+            <div class="entity-card" id="insp-stomach-card">
+              <div class="card-section-title">🍖 NUTRIÇÃO & DIGESTÃO</div>
+              <div id="insp-stomach-content" style="font-size: 11px;"></div>
+            </div>
+
+            <!-- All Properties Bag -->
+            <div class="entity-card">
+              <div class="card-section-title">📦 SACO DE PROPRIEDADES (FLAT BAG)</div>
+              <div class="prop-list" id="insp-props-list"></div>
+            </div>
+
+            <!-- Entity Event History Card -->
+            <div class="entity-card">
+              <div class="card-section-title">📜 HISTÓRICO DESTA CRIATURA</div>
+              <div class="event-list" id="insp-event-list"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 2: WORLD & ENTITY EVENT LOG -->
+        <div id="tab-events" class="tab-pane">
+          <div class="entity-card">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <span class="card-section-title" style="margin-bottom: 0;">HISTÓRICO DO MUNDO</span>
+              <span id="log-events-count" class="pill" style="font-size: 10px;">0 EVTS</span>
+            </div>
+            <!-- Event Filters -->
+            <div class="event-filter-bar">
+              <button class="filter-chip active" data-filter="ALL">Todos</button>
+              <button class="filter-chip" data-filter="ATTACK">⚔️ Combate</button>
+              <button class="filter-chip" data-filter="AMPUTATION">🩸 Amputação</button>
+              <button class="filter-chip" data-filter="DEATH">💀 Morte</button>
+              <button class="filter-chip" data-filter="SPROUT">🌱 Botânica</button>
+            </div>
+            <div id="global-events-list" class="event-list global-log-list"></div>
+          </div>
+        </div>
+
+        <!-- TAB 3: SPAWNER TOOLS -->
+        <div id="tab-spawn" class="tab-pane">
+          <div class="entity-card">
+            <div class="card-section-title">HUMANÓIDES & CIVILIZAÇÃO</div>
+            <div class="spawner-grid">
+              <button id="btn-spawn-knight" style="color: var(--blue-bright);" title="Cavaleiro Terrestre Armado com Espada e Escudo">+ Cavaleiro Imperial</button>
+              <button id="btn-spawn-archer" style="color: var(--green-bright);" title="Arqueira com Arco Longo e Olhos Aguçados">+ Arqueira da Floresta</button>
             </div>
           </div>
 
-          <!-- Dynamic Properties List Container -->
-          <div style="font-weight: 700; font-size: 11px; color: var(--fg0); margin-top: 4px;">
-            ÓRGÃOS & PROPRIEDADES:
-          </div>
-          <div class="prop-list" id="insp-props-list">
-            <!-- Dynamically populated by app.js -->
+          <div class="entity-card">
+            <div class="card-section-title">FERAS & PREDADORES</div>
+            <div class="spawner-grid">
+              <button id="btn-spawn-wolf" style="color: var(--fg0);" title="Lobo Alfa com Mordida Poderosa">+ Lobo Alfa</button>
+              <button id="btn-spawn-bear" style="color: var(--orange-bright);" title="Urso Gigante com Garras Esmagadoras">+ Urso Pardo</button>
+              <button id="btn-spawn-cat" style="color: var(--yellow-bright);" title="Gato Silvestre Ágil">+ Gato Silvestre</button>
+            </div>
           </div>
 
-          <!-- Property Injector Tool -->
-          <div style="background: var(--bg0); border: 1px solid var(--bg2); padding: 8px; display: flex; flex-direction: column; gap: 6px; margin-top: 4px;">
-            <span style="font-size: 11px; font-weight: 600; color: var(--fg2);">+ Injetar Órgão / Propriedade:</span>
-            <div style="display: flex; gap: 4px;">
-              <select id="select-inject-prop" style="flex: 1; font-size: 11px; padding: 4px;">
-                <option value="lungs">Pulmões (Afoga em água)</option>
-                <option value="gills">Brânquias (Asfixia fora d'água)</option>
-                <option value="body_regen">Regeneração Corporal (cura membros 10:1)</option>
-                <option value="combat">Comportamento de Combate</option>
-                <option value="wings">Asas (Voo aéreo)</option>
-                <option value="surface_root">Raiz Superficial (busca água no mapa)</option>
-                <option value="deep_root">Raiz Profunda (água do subsolo)</option>
-                <option value="terrain_water">Pref. Terreno: Água</option>
-                <option value="terrain_floor">Pref. Terreno: Solo Fértil</option>
-                <option value="parasites">Parasitas</option>
-                <option value="stomach">Estômago</option>
-                <option value="bladder">Bexiga</option>
-                <option value="kidney">Rim</option>
-                <option value="brain">Cérebro</option>
-                <option value="burn">Queimadura</option>
+          <div class="entity-card">
+            <div class="card-section-title">MONSTROS & CRIATURAS MÍTICAS</div>
+            <div class="spawner-grid">
+              <button id="btn-spawn-goblin" style="color: #78d250;" title="Goblin Saqueador Ágil com Adaga">+ Goblin</button>
+              <button id="btn-spawn-bat" style="color: var(--purple-bright);" title="Morcego Noturno com Voo Aéreo">+ Morcego Alado</button>
+              <button id="btn-spawn-serpent" style="color: var(--aqua-bright);" title="Serpente Marinha com Brânquias">+ Serpente Aquática</button>
+              <button id="btn-spawn-dragon" style="color: var(--red-bright);" title="Dragão Ancião com Asas e Regeneração">+ Dragão Ancião</button>
+            </div>
+          </div>
+
+          <div class="entity-card">
+            <div class="card-section-title">DESERTO & DUNAS DE AREIA</div>
+            <div class="spawner-grid">
+              <button id="btn-spawn-cactus" style="color: var(--green-bright);" title="Cacto do Deserto com Raiz Profunda">+ Cacto do Deserto</button>
+              <button id="btn-spawn-scorpion" style="color: var(--yellow-bright);" title="Escorpião das Dunas com Pinça e Ferrão">+ Escorpião</button>
+              <button id="btn-spawn-lizard" style="color: #e6dc50;" title="Lagarto Ágil das Areias">+ Lagarto da Areia</button>
+            </div>
+          </div>
+
+          <div class="entity-card">
+            <div class="card-section-title">MONTANHAS & ROCHAS</div>
+            <div class="spawner-grid">
+              <button id="btn-spawn-goat" style="color: var(--fg0);" title="Bode Montanhês com Chifres Fortes">+ Bode Montanhês</button>
+              <button id="btn-spawn-shrub" style="color: var(--aqua-bright);" title="Líquen / Arbusto das Pedras">+ Líquen das Rochas</button>
+            </div>
+          </div>
+
+          <div class="entity-card">
+            <div class="card-section-title">FLORA, SEMENTES & NUTRIÇÃO</div>
+            <div class="spawner-grid">
+              <button id="btn-spawn-seed" style="color: #c88c50;" title="Semente Grande para Germinar">+ Semente</button>
+              <button id="btn-spawn-fruit" style="color: var(--yellow-bright);" title="Fruto Silvestre Rico para Alimentação">+ Fruto Silvestre</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 4: BIO-INJECTOR -->
+        <div id="tab-inject" class="tab-pane">
+          <div class="entity-card">
+            <div class="card-section-title">🧬 INJETOR BIOLÓGICO DE ÓRGÃOS</div>
+            <p style="font-size: 11px; color: var(--fg3); line-height: 1.5; margin-bottom: 8px;">
+              Adicione órgãos, comportamentos de combate, sistemas respiratórios ou habilidades à criatura selecionada.
+            </p>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              <select id="select-inject-prop" style="width: 100%; font-size: 12px; padding: 6px;">
+                <option value="lungs">Pulmões (Respiração aérea / Afoga na água)</option>
+                <option value="gills">Brânquias (Respiração aquática / Asfixia em terra)</option>
+                <option value="body_regen">Regeneração Corporal (Cura membros 10:1)</option>
+                <option value="combat">Comportamento de Combate & Contra-Ataque</option>
+                <option value="wings">Asas (Voo aéreo e velocidade)</option>
+                <option value="surface_root">Raiz Superficial (Busca água vizinha no solo)</option>
+                <option value="deep_root">Raiz Profunda (Extrai água do subsolo)</option>
+                <option value="terrain_sand">Preferência de Terreno: Areia / Deserto</option>
+                <option value="terrain_stone">Preferência de Terreno: Chão Rochoso</option>
+                <option value="terrain_floor">Preferência de Terreno: Solo Fértil / Floresta</option>
+                <option value="terrain_water">Preferência de Terreno: Água Oceânica</option>
+                <option value="parasites">Parasitas no Estômago</option>
+                <option value="stomach">Estômago com Capacidade Digestiva</option>
+                <option value="bladder">Bexiga de Água</option>
+                <option value="kidney">Rim com Eficiência de Filtragem</option>
+                <option value="brain">Cérebro Cognitivo & Memória</option>
+                <option value="burn">Queimadura Ativa (Dano contínuo)</option>
               </select>
-              <button id="btn-inject-prop" class="primary" style="padding: 4px 8px; font-size: 11px;">Injetar</button>
+              <button id="btn-inject-prop" class="primary" style="width: 100%; padding: 8px; font-weight: 700;">+ Injetar na Criatura Selecionada</button>
             </div>
           </div>
-
-          <!-- Entity Event History -->
-          <div style="font-weight: 700; font-size: 11px; color: var(--fg0); margin-top: 6px;">
-            HISTÓRICO DESTA ENTIDADE:
-          </div>
-          <div class="event-list" id="insp-event-list" style="max-height: 130px; overflow-y: auto; font-size: 10px; display: flex; flex-direction: column; gap: 4px;">
-            <!-- Populated dynamically -->
-          </div>
-
-          <!-- Quick Actions -->
-          <div class="sidebar-actions">
-            <button id="btn-insp-follow">Focar Câmera</button>
-            <button id="btn-insp-kill" class="danger">Explodir / Eliminar</button>
-          </div>
         </div>
 
-        <!-- Global World Event Log Card -->
-        <div class="entity-card">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-            <span style="font-weight: 700; font-size: 11px; color: var(--fg0);">LOG DE ACONTECIMENTOS</span>
-            <span id="log-events-count" class="pill" style="font-size: 9px; padding: 1px 4px;">0 EVTS</span>
-          </div>
-          <div id="global-events-list" style="max-height: 160px; overflow-y: auto; font-size: 10px; display: flex; flex-direction: column; gap: 4px;">
-            <!-- Populated dynamically -->
-          </div>
-        </div>
-
-        <!-- Spawner Tools -->
-        <div class="entity-card">
-          <div style="font-weight: 700; font-size: 12px; color: var(--fg0); margin-bottom: 8px;">
-            SPAWNER DE CRIATURAS & NATUREZA
-          </div>
-          <div class="spawner-grid">
-            <button id="btn-spawn-knight" style="color: var(--blue-bright);" title="Cavaleiro Terrestre">+ Cavaleiro</button>
-            <button id="btn-spawn-archer" style="color: var(--green-bright);" title="Arqueira com Arco Longo">+ Arqueira</button>
-            <button id="btn-spawn-wolf" style="color: var(--fg0);" title="Lobo Predador">+ Lobo</button>
-            <button id="btn-spawn-bear" style="color: var(--orange-bright);" title="Urso Gigante">+ Urso</button>
-            <button id="btn-spawn-cat" style="color: var(--yellow-bright);" title="Gato Silvestre">+ Gato</button>
-            <button id="btn-spawn-goblin" style="color: #78d250;" title="Goblin Saqueador">+ Goblin</button>
-            <button id="btn-spawn-bat" style="color: var(--purple-bright);" title="Morcego Voador">+ Morcego</button>
-            <button id="btn-spawn-serpent" style="color: var(--aqua-bright);" title="Serpente Aquática com Brânquias">+ Serpente Marinha</button>
-            <button id="btn-spawn-dragon" style="color: var(--red-bright);" title="Dragão Ancião com Asas">+ Dragão Alado</button>
-            <button id="btn-spawn-seed" style="color: #c88c50;" title="Semente Grande para Germinar">+ Semente</button>
-            <button id="btn-spawn-fruit" style="color: var(--yellow-bright); grid-column: span 2;" title="Fruto Silvestre Rico (Alimento)">+ Fruto Silvestre</button>
-          </div>
-        </div>
       </div>
     </aside>
   </div>
@@ -183,16 +275,17 @@
   <!-- Bottom Footer Status HUD -->
   <footer>
     <div class="pop-stats">
-      <div class="pop-item"><span>População Total:</span> <b id="stat-pop">0</b></div>
-      <div class="pop-item"><span>Criaturas Vivas:</span> <b id="stat-living" style="color: var(--green-bright);">0</b></div>
-      <div class="pop-item"><span>Alimentos/Sementes:</span> <b id="stat-food" style="color: var(--yellow-bright);">0</b></div>
+      <div class="pop-item"><span class="dot-indicator blue"></span><span>População:</span> <b id="stat-pop">0</b></div>
+      <div class="pop-item"><span class="dot-indicator green"></span><span>Criaturas Vivas:</span> <b id="stat-living" style="color: var(--green-bright);">0</b></div>
+      <div class="pop-item"><span class="dot-indicator yellow"></span><span>Alimentos/Sementes:</span> <b id="stat-food" style="color: var(--yellow-bright);">0</b></div>
     </div>
 
     <div class="shortcuts">
       <kbd>Espaço</kbd> Pausa &nbsp;|&nbsp;
-      <kbd>WASD</kbd> Mover Câmera &nbsp;|&nbsp;
-      <kbd>Q</kbd>/<kbd>E</kbd> Zoom &nbsp;|&nbsp;
-      <kbd>R</kbd> Regenerar Mapa
+      <kbd>WASD</kbd> Mover &nbsp;|&nbsp;
+      <kbd>Scroll</kbd> / <kbd>Q</kbd>/<kbd>E</kbd> Zoom &nbsp;|&nbsp;
+      <kbd>Clique</kbd> Inspecionar &nbsp;|&nbsp;
+      <kbd>R</kbd> Novo Mundo
     </div>
   </footer>
 
