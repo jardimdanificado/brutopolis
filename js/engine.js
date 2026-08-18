@@ -150,7 +150,7 @@ export function amputateLimb(entity, propKey, prop, entitiesArray, world) {
     primaryEntityId: entity.id,
     secondaryEntityId: severedFood.id,
     location: { x: entity.x, y: entity.y },
-    description: `${entity.properties.name || `Entidade #${entity.id}`} teve o membro '${partName}' amputado!`,
+    description: `${entity.properties.name || `Entity #${entity.id}`} had their '${partName}' severed!`,
     tick: currentTick,
     timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
     metadata: { part: propKey, dropX, dropY }
@@ -165,51 +165,51 @@ export function explodeEntityOnDeath(entity, entitiesArray, world) {
 
   const ex = entity.x || 0;
   const ey = entity.y || 0;
-  const entityName = entity.properties.name || `Criatura #${entity.id}`;
-  const species = entity.properties.species || "desconhecida";
+  const entityName = entity.properties.name || `Creature #${entity.id}`;
+  const species = entity.properties.species || "unknown";
 
   for (const [key, prop] of Object.entries(entity.properties)) {
     if (prop && prop.nutrition && prop.foodType) {
       let skin = "Item_Steak.png";
       let color = 0xffe65a5a;
-      let name = `Carne de ${entityName} (${key})`;
+      let name = `Meat of ${entityName} (${key})`;
 
       if (key.includes("wing")) {
         skin = "Item_Cloak.png";
         color = 0xffe6e6f0;
-        name = `Asa (${key}) de ${entityName}`;
+        name = `Wing (${key}) of ${entityName}`;
       } else if (key.includes("arm") || key.includes("paw")) {
         skin = "Creature_Hand_U.png";
         color = 0xffe65a5a;
-        name = `Pata/Mão (${key}) de ${entityName}`;
+        name = `Paw/Hand (${key}) of ${entityName}`;
       } else if (key.includes("leg")) {
         skin = "Item_Drumstick.png";
         color = 0xffe65a5a;
-        name = `Coxa/Perna (${key}) de ${entityName}`;
+        name = `Leg/Limb (${key}) of ${entityName}`;
       } else if (key.includes("eye")) {
         skin = "Item_Eyeball.png";
         color = 0xff58c8f8;
-        name = `Olho (${key}) de ${entityName}`;
+        name = `Eye (${key}) of ${entityName}`;
       } else if (prop.foodType === "meat") {
         skin = "Item_Steak.png";
         color = 0xffe65a5a;
-        name = `Pedaço de Carne (${key}) de ${entityName}`;
+        name = `Meat Chunk (${key}) of ${entityName}`;
       } else if (prop.foodType === "bone") {
         skin = "Item_Bone.png";
         color = 0xffe6e6d2;
-        name = `Osso (${key}) de ${entityName}`;
+        name = `Bone (${key}) of ${entityName}`;
       } else if (prop.foodType === "plant" || prop.foodType === "veg") {
         skin = "Item_Vegetable.png";
         color = 0xff78dc50;
-        name = `Vegetal (${key}) de ${entityName}`;
+        name = `Vegetable (${key}) of ${entityName}`;
       } else if (prop.foodType === "fruit") {
         skin = "Item_Fruit.png";
         color = 0xfffaa03c;
-        name = `Fruto (${key}) de ${entityName}`;
+        name = `Fruit (${key}) of ${entityName}`;
       } else if (prop.foodType === "organ") {
         skin = "Other_Heart.png";
         color = 0xffc83232;
-        name = `Víscera (${key}) de ${entityName}`;
+        name = `Viscera (${key}) of ${entityName}`;
       }
 
       const foodItem = createEntity(
@@ -247,13 +247,13 @@ export function explodeEntityOnDeath(entity, entitiesArray, world) {
 
   if (isRecentAttack) {
     const killerId = entity._lastAttacker.id;
-    const killerName = entity._lastAttacker.name || `Criatura #${killerId}`;
+    const killerName = entity._lastAttacker.name || `Creature #${killerId}`;
     let killDesc = "";
 
     if (severelyDamaged || hasAmputations) {
-      killDesc = `${killerName} matou ${entityName} em decorrência de ferimentos graves e hemorragia na posição [X: ${ex}, Y: ${ey}]!`;
+      killDesc = `${killerName} killed ${entityName} as a result of severe wounds and blood loss at [X: ${ex}, Y: ${ey}]!`;
     } else {
-      killDesc = `${killerName} assassinou ${entityName} em combate na posição [X: ${ex}, Y: ${ey}]!`;
+      killDesc = `${killerName} slain ${entityName} in combat at [X: ${ex}, Y: ${ey}]!`;
     }
 
     recordWorldEvent({
@@ -270,7 +270,7 @@ export function explodeEntityOnDeath(entity, entitiesArray, world) {
     // Notify killer's brain long term memory and victim's clan/friends
     if (entitiesArray) {
       const killerEnt = entitiesArray.find(e => e.id === killerId && !e.destroyed);
-      const timeStr = world?.clock ? `Dia ${world.clock.day} às ${String(world.clock.hour).padStart(2,"0")}:${String(world.clock.minute).padStart(2,"0")}` : `Tick ${currentTick}`;
+      const timeStr = world?.clock ? `Day ${world.clock.day} at ${String(world.clock.hour).padStart(2,"0")}:${String(world.clock.minute).padStart(2,"0")}` : `Tick ${currentTick}`;
 
       if (killerEnt && killerEnt.properties.brain) {
         if (!killerEnt.properties.brain.longTermMemory) killerEnt.properties.brain.longTermMemory = [];
@@ -281,7 +281,7 @@ export function explodeEntityOnDeath(entity, entitiesArray, world) {
           killerName,
           victimName: entityName,
           location: { x: ex, y: ey },
-          desc: `Assassinei ${entityName} em combate na posição [${ex},${ey}] no ${timeStr}`,
+          desc: `Slain ${entityName} in combat at [${ex},${ey}] on ${timeStr}`,
           emotion: killerEnt.properties.violent ? 50 : -35
         });
       }
@@ -304,7 +304,7 @@ export function explodeEntityOnDeath(entity, entitiesArray, world) {
             killerName,
             victimName: entityName,
             location: { x: ex, y: ey },
-            desc: `${killerName} assassinou brutalmente ${entityName} em [${ex},${ey}] no ${timeStr}`,
+            desc: `${killerName} brutally murdered ${entityName} at [${ex},${ey}] on ${timeStr}`,
             emotion: -80
           });
         }
@@ -314,9 +314,9 @@ export function explodeEntityOnDeath(entity, entitiesArray, world) {
     // Natural / Exhaustion / Untended Wound Death
     let deathDesc = "";
     if (severelyDamaged || hasAmputations) {
-      deathDesc = `${entityName} sucumbiu e morreu em decorrência de ferimentos graves e hemorragia na posição [X: ${ex}, Y: ${ey}]!`;
+      deathDesc = `${entityName} succumbed and died from untended wounds and blood loss at [X: ${ex}, Y: ${ey}]!`;
     } else {
-      deathDesc = `${entityName} morreu por exaustão de energia vital e inanição na posição [X: ${ex}, Y: ${ey}]!`;
+      deathDesc = `${entityName} died from vital energy exhaustion and starvation at [X: ${ex}, Y: ${ey}]!`;
     }
 
     recordWorldEvent({

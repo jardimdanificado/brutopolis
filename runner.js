@@ -69,6 +69,8 @@ import {
   createHumanCrafter,
   createHumanFarmer,
   createHumanMatriarch,
+  createHumanHunter,
+  createHumanExplorer,
   createGroup,
   createFarmerProp,
   createMysticGraceProp,
@@ -365,46 +367,46 @@ function resetWorld(presetId = 0) {
     if (found) break;
   }
 
-  // 2. Founding Human Clan: Miner, Builder, Crafter, Farmer and Pregnant Matriarch
-  const miner = createHumanMiner(startX, startY, "Aldor, o Minerador");
-  const builder = createHumanBuilder(startX + 1, startY, "Brom, o Construtor");
-  const crafter = createHumanCrafter(startX, startY + 1, "Cedric, o Artesão");
-  const farmer = createHumanFarmer(startX - 1, startY, "Farid, o Fazendeiro");
-  const matriarch = createHumanMatriarch(startX + 1, startY + 1, "Elena, a Matriarca");
+  // 2. Founding Pioneers Clan: 2 Builders, 1 Farmer, 2 Matriarchs, 2 Explorers, 1 Miner, 2 Hunters
+  const miner = createHumanMiner(startX, startY, "Aldor, the Miner");
+  const builder1 = createHumanBuilder(startX + 1, startY, "Brom, the Builder");
+  const builder2 = createHumanBuilder(startX + 2, startY, "Torben, the Builder");
+  const farmer = createHumanFarmer(startX - 1, startY, "Farid, the Farmer");
+  const matriarch1 = createHumanMatriarch(startX + 1, startY + 1, "Elena, the Matriarch");
+  const matriarch2 = createHumanMatriarch(startX - 1, startY + 1, "Maya, the Matriarch");
+  const explorer1 = createHumanExplorer(startX, startY + 2, "Lyra, the Explorer");
+  const explorer2 = createHumanExplorer(startX + 2, startY + 2, "Silas, the Explorer");
+  const hunter1 = createHumanHunter(startX, startY - 1, "Kael, the Hunter");
+  const hunter2 = createHumanHunter(startX + 1, startY - 1, "Rowan, the Huntress");
 
   const zx = Math.floor(startX / 8);
   const zy = Math.floor(startY / 8);
   const zone1 = `${zx},${zy}`;
   const zone2 = `${zx + 1},${zy}`;
 
-  const foundingClan = createGroup("Clã dos Pioneiros", miner, [zx, zy], [zone1, zone2]);
-  foundingClan.storage = ["stone", "stone", "stone", "stone", "wood", "wood", "wood", "wood"];
-  miner.properties.group = foundingClan;
-  builder.properties.group = foundingClan;
-  crafter.properties.group = foundingClan;
-  farmer.properties.group = foundingClan;
-  matriarch.properties.group = foundingClan;
+  const foundingClan = createGroup("Pioneers Clan", miner, [zx, zy], [zone1, zone2]);
+  foundingClan.storage = ["stone", "stone", "stone", "stone", "wood", "wood", "wood", "wood", "meat", "meat"];
 
-  foundingClan.members = [miner.id, builder.id, crafter.id, farmer.id, matriarch.id];
+  const clanMembers = [miner, builder1, builder2, farmer, matriarch1, matriarch2, explorer1, explorer2, hunter1, hunter2];
 
-  // Mutual high initial affinity (+85) and initial mystic grace
-  const clanMembers = [miner, builder, crafter, farmer, matriarch];
-  for (const m1 of clanMembers) {
-    m1.properties.mystic_grace = createMysticGraceProp(180);
-    if (m1.properties.brain) {
-      if (!m1.properties.brain.affinities) m1.properties.brain.affinities = {};
-      for (const m2 of clanMembers) {
-        if (m1 !== m2) m1.properties.brain.affinities[m2.id] = 85;
+  for (const m of clanMembers) {
+    m.properties.group = foundingClan;
+    m.properties.mystic_grace = createMysticGraceProp(180);
+    if (m.properties.brain) {
+      if (!m.properties.brain.affinities) m.properties.brain.affinities = {};
+      for (const other of clanMembers) {
+        if (m !== other) m.properties.brain.affinities[other.id] = 85;
       }
     }
   }
 
-  entities.push(miner, builder, crafter, farmer, matriarch);
+  foundingClan.members = clanMembers.map(m => m.id);
+  entities.push(...clanMembers);
 
   // Initial clan resources in territory
-  for (let i = 0; i < 4; i++) {
-    entities.push(createWoodItem(startX + (i % 2), startY + Math.floor(i / 2)));
-    entities.push(createStoneItem(startX - 1 + (i % 2), startY + Math.floor(i / 2)));
+  for (let i = 0; i < 6; i++) {
+    entities.push(createWoodItem(startX + (i % 3), startY + Math.floor(i / 3)));
+    entities.push(createStoneItem(startX - 1 + (i % 3), startY + Math.floor(i / 3)));
   }
 
   selectedEntityId = miner.id;
@@ -738,19 +740,19 @@ function renderGroupsRegistryScreen() {
     if (selGroup) {
       const stockpile = getGroupStockpile(selGroup, entities);
       const stockEntries = Object.entries(stockpile.items);
-      let stockStr = "\x1b[90mVazio (Nenhum item em estoque)\x1b[0m";
+      let stockStr = "\x1b[90mEmpty (No items in stockpile)\x1b[0m";
       if (stockEntries.length > 0) {
         stockStr = stockEntries.map(([name, count]) => `\x1b[1;33m${name}\x1b[0m: \x1b[1;32mx${count}\x1b[0m`).join("  •  ");
       }
 
-      const panelHeader = `─── 📦 \x1b[1;38;5;208mESTOQUE & INVENTÁRIO DO GRUPO:\x1b[0m \x1b[1;37m${(selGroup.name || "Clan").toUpperCase()}\x1b[0m `;
+      const panelHeader = `─── 📦 \x1b[1;38;5;208mGROUP STOCKPILE & INVENTORY:\x1b[0m \x1b[1;37m${(selGroup.name || "Clan").toUpperCase()}\x1b[0m `;
       out += `\x1b[90m${panelHeader}${"─".repeat(Math.max(1, termCols - stripAnsi(panelHeader).length))}\x1b[0m\x1b[K\n`;
-      out += ` \x1b[1;36mTotal em Estoque:\x1b[0m \x1b[1;32m${stockpile.totalCount} itens\x1b[0m \x1b[90m│\x1b[0m \x1b[37m[No Chão do Território: ${stockpile.breakdown.ground} │ Com Membros: ${stockpile.breakdown.members} │ Reserva: ${stockpile.breakdown.storage}]\x1b[0m\x1b[K\n`;
-      out += ` \x1b[1;36mItens:\x1b[0m ${stockStr}\x1b[K\n`;
+      out += ` \x1b[1;36mTotal Stockpile:\x1b[0m \x1b[1;32m${stockpile.totalCount} items\x1b[0m \x1b[90m│\x1b[0m \x1b[37m[Territory Ground: ${stockpile.breakdown.ground} │ With Members: ${stockpile.breakdown.members} │ Clan Storage: ${stockpile.breakdown.storage}]\x1b[0m\x1b[K\n`;
+      out += ` \x1b[1;36mItems:\x1b[0m ${stockStr}\x1b[K\n`;
     }
   }
 
-  const foot = `\x1b[1;33m[Up/Down/Wheel]\x1b[0m Select \x1b[90m│\x1b[0m \x1b[1;33m[Enter/I]\x1b[0m Ver Tudo / Dossiê \x1b[90m│\x1b[0m \x1b[1;33m[Z]\x1b[0m Ver Zona \x1b[90m│\x1b[0m \x1b[1;33m[Space]\x1b[0m Focar Líder \x1b[90m│\x1b[0m \x1b[1;33m[ESC/G]\x1b[0m Back`;
+  const foot = `\x1b[1;33m[Up/Down/Wheel]\x1b[0m Select \x1b[90m│\x1b[0m \x1b[1;33m[Enter/I]\x1b[0m Full Dossier \x1b[90m│\x1b[0m \x1b[1;33m[Z]\x1b[0m View Zone \x1b[90m│\x1b[0m \x1b[1;33m[Space]\x1b[0m Focus Leader \x1b[90m│\x1b[0m \x1b[1;33m[ESC/G]\x1b[0m Back`;
   out += `\x1b[48;5;235m ${foot}${" ".repeat(Math.max(1, termCols - stripAnsi(foot).length - 2))} \x1b[0m\x1b[K`;
 
   process.stdout.write(out);
@@ -762,58 +764,58 @@ function renderGroupDetailScreen(g) {
   const leaderEnt = entities.find(e => e.id === g.members[0] && !e.destroyed);
   const stockpile = getGroupStockpile(g, entities);
 
-  const header = ` 🛡️ \x1b[1;38;5;208mDOSSIÊ DETALHADO DO CLÃ:\x1b[0m \x1b[1;37m${(g.name || "Clan").toUpperCase()}\x1b[0m \x1b[1;41;37m [PAUSED] \x1b[0m`;
+  const header = ` 🛡️ \x1b[1;38;5;208mDETAILED CLAN DOSSIER:\x1b[0m \x1b[1;37m${(g.name || "Clan").toUpperCase()}\x1b[0m \x1b[1;41;37m [PAUSED] \x1b[0m`;
   out += `\x1b[48;5;235m${header}${" ".repeat(Math.max(2, termCols - stripAnsi(header).length))}\x1b[0m\x1b[K\n`;
 
   // 1. Clan Overview & Territory
-  out += `\n \x1b[1;33m❖ LÍDER/FUNDADOR:\x1b[0m ${leaderEnt ? leaderEnt.properties.name : `Membro #${g.members[0]}`} \x1b[90m│\x1b[0m \x1b[1;32mPopulação:\x1b[0m ${livingMembers.length}/${g.members.length} membros vivos\x1b[K\n`;
+  out += `\n \x1b[1;33m❖ LEADER/FOUNDER:\x1b[0m ${leaderEnt ? leaderEnt.properties.name : `Member #${g.members[0]}`} \x1b[90m│\x1b[0m \x1b[1;32mPopulation:\x1b[0m ${livingMembers.length}/${g.members.length} living members\x1b[K\n`;
   
   const zonesStr = (g.claimedZones || []).map(zk => {
     const parts = zk.includes("_") ? zk.split("_") : zk.split(",");
     const zx = parseInt(parts[0], 10);
     const zy = parseInt(parts[1], 10);
-    return isNaN(zx) ? zk : `Zona [${zx},${zy}] (X:${zx*8}..${zx*8+7}, Y:${zy*8}..${zy*8+7})`;
+    return isNaN(zx) ? zk : `Zone [${zx},${zy}] (X:${zx*8}..${zx*8+7}, Y:${zy*8}..${zy*8+7})`;
   }).join(" | ");
-  out += ` \x1b[1;33m❖ TERRITÓRIO REIVINDICADO:\x1b[0m \x1b[36m${zonesStr || "Nenhum"}\x1b[0m\x1b[K\n`;
+  out += ` \x1b[1;33m❖ CLAIMED TERRITORY:\x1b[0m \x1b[36m${zonesStr || "None"}\x1b[0m\x1b[K\n`;
 
   // 2. Full Itemized Stockpile
-  out += `\n \x1b[1;38;5;208m─── 📦 ESTOQUE & ARMAZENAMENTO TOTAL (${stockpile.totalCount} ITENS DISPONÍVEIS) ───\x1b[0m\x1b[K\n`;
-  out += ` \x1b[37mDistribuição:\x1b[0m \x1b[33mNo Chão do Território: ${stockpile.breakdown.ground}\x1b[0m \x1b[90m│\x1b[0m \x1b[32mCom Membros: ${stockpile.breakdown.members}\x1b[0m \x1b[90m│\x1b[0m \x1b[36mNa Reserva: ${stockpile.breakdown.storage}\x1b[0m\x1b[K\n`;
+  out += `\n \x1b[1;38;5;208m─── 📦 TOTAL STOCKPILE (${stockpile.totalCount} ITEMS AVAILABLE) ───\x1b[0m\x1b[K\n`;
+  out += ` \x1b[37mDistribution:\x1b[0m \x1b[33mOn Territory Ground: ${stockpile.breakdown.ground}\x1b[0m \x1b[90m│\x1b[0m \x1b[32mWith Members: ${stockpile.breakdown.members}\x1b[0m \x1b[90m│\x1b[0m \x1b[36mIn Clan Storage: ${stockpile.breakdown.storage}\x1b[0m\x1b[K\n`;
 
   const stockEntries = Object.entries(stockpile.items);
   if (stockEntries.length === 0) {
-    out += ` \x1b[90m  Nenhum recurso ou item encontrado no estoque do clã.\x1b[0m\x1b[K\n`;
+    out += ` \x1b[90m  No resources or items currently found in clan stockpile.\x1b[0m\x1b[K\n`;
   } else {
     for (const [name, count] of stockEntries) {
-      out += `   \x1b[1;33m• ${name}\x1b[0m: \x1b[1;32m${count} unidade(s)\x1b[0m\x1b[K\n`;
+      out += `   \x1b[1;33m• ${name}\x1b[0m: \x1b[1;32m${count} unit(s)\x1b[0m\x1b[K\n`;
     }
   }
 
   // 3. Member Roster & Individual Hands
-  out += `\n \x1b[1;38;5;208m─── 👥 ROSTER DE MEMBROS & INVENTÁRIOS (${livingMembers.length}/${g.members.length}) ───\x1b[0m\x1b[K\n`;
+  out += `\n \x1b[1;38;5;208m─── 👥 MEMBER ROSTER & INVENTORIES (${livingMembers.length}/${g.members.length}) ───\x1b[0m\x1b[K\n`;
   for (const mid of g.members) {
     const mEnt = entities.find(e => e.id === mid && !e.destroyed);
     const isAlive = !!mEnt;
-    const mName = mEnt ? mEnt.properties.name : `Membro #${mid} (Morto)`;
+    const mName = mEnt ? mEnt.properties.name : `Member #${mid} (Dead)`;
     const mRole = mEnt ? (mEnt.properties.role || mEnt.properties.species || "Human") : "-";
     const hpStr = mEnt?.properties.life ? `${Math.round(mEnt.properties.life.energy)} HP` : "0 HP";
 
-    let heldStr = "Mãos vazias";
+    let heldStr = "Hands empty";
     if (mEnt) {
       const left = mEnt.properties.arm_left?.heldItem;
       const right = mEnt.properties.arm_right?.heldItem;
       const held = [];
-      if (left) held.push(`Esq: ${left.resourceType || left.name || "Item"}`);
-      if (right) held.push(`Dir: ${right.resourceType || right.name || "Item"}`);
+      if (left) held.push(`L: ${left.resourceType || left.name || "Item"}`);
+      if (right) held.push(`R: ${right.resourceType || right.name || "Item"}`);
       if (held.length > 0) heldStr = held.join(", ");
     }
 
     const lineCol = isAlive ? "\x1b[1;37m" : "\x1b[90m";
-    out += `   ${lineCol}• ${mName.padEnd(24)}\x1b[0m \x1b[36m[${mRole}]\x1b[0m \x1b[32m(${hpStr})\x1b[0m \x1b[90m│\x1b[0m \x1b[33mCarregando: ${heldStr}\x1b[0m\x1b[K\n`;
+    out += `   ${lineCol}• ${mName.padEnd(24)}\x1b[0m \x1b[36m[${mRole}]\x1b[0m \x1b[32m(${hpStr})\x1b[0m \x1b[90m│\x1b[0m \x1b[33mCarrying: ${heldStr}\x1b[0m\x1b[K\n`;
   }
 
   out += `\n`;
-  const foot = `\x1b[1;33m[ESC/G/Enter]\x1b[0m Voltar ao Registro de Grupos \x1b[90m│\x1b[0m \x1b[1;33m[Z]\x1b[0m Ver Território \x1b[90m│\x1b[0m \x1b[1;33m[Space]\x1b[0m Focar Líder`;
+  const foot = `\x1b[1;33m[ESC/G/Enter]\x1b[0m Back to Groups \x1b[90m│\x1b[0m \x1b[1;33m[Z]\x1b[0m View Territory \x1b[90m│\x1b[0m \x1b[1;33m[Space]\x1b[0m Focus Leader`;
   out += `\x1b[48;5;235m ${foot}${" ".repeat(Math.max(1, termCols - stripAnsi(foot).length - 2))} \x1b[0m\x1b[K`;
 
   process.stdout.write(out);

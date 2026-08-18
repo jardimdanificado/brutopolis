@@ -276,19 +276,19 @@ export function createKidneyProp(ratio = 0.75) {
 
 export function getMoodLabel(moodVal) {
   const m = typeof moodVal === "number" ? moodVal : 0;
-  if (m >= 70) return `Eufórico (+${Math.round(m)})`;
-  if (m >= 25) return `Feliz (+${Math.round(m)})`;
-  if (m >= -20) return `Sereno (${Math.round(m)})`;
-  if (m >= -60) return `Ansioso (${Math.round(m)})`;
-  return `Deprimido (${Math.round(m)})`;
+  if (m >= 70) return `Euphoric (+${Math.round(m)})`;
+  if (m >= 25) return `Happy (+${Math.round(m)})`;
+  if (m >= -20) return `Serene (${Math.round(m)})`;
+  if (m >= -60) return `Anxious (${Math.round(m)})`;
+  return `Depressed (${Math.round(m)})`;
 }
 
 /**
  * Brain (Quality, Short/Long-Term Memory, 8x8 Geographic Zones & Territorial Affinities, Object Memory, Dietary Preferences)
  */
-export function createBrainProp(maxPath = 16, personality = { bravery: 0.7, curiosity: 0.8, aggression: 0.3 }, quality = 1.0) {
+export function createBrainProp(maxPath = 16, personality = { bravery: 0.7, curiosity: 0.8, aggression: 0.3 }, quality = 1.0, isExplorer = false) {
   const shortCap = Math.max(4, Math.floor(quality * 10));
-  const objCap = Math.max(3, Math.floor(quality * 6));
+  const objCap = isExplorer ? Infinity : Math.max(4, Math.floor(quality * 8));
 
   return {
     quality,
@@ -328,7 +328,9 @@ export function createBrainProp(maxPath = 16, personality = { bravery: 0.7, curi
     },
 
     rememberObject(item) {
-      const idx = this.objectMemory.findIndex(m => m.entityId === item.id);
+      if (!item) return;
+      const itemId = item.id !== undefined ? item.id : item.entityId;
+      const idx = this.objectMemory.findIndex(m => (m.entityId === itemId || m.id === itemId));
       if (idx >= 0) {
         this.objectMemory[idx].x = item.x;
         this.objectMemory[idx].y = item.y;
@@ -337,32 +339,26 @@ export function createBrainProp(maxPath = 16, personality = { bravery: 0.7, curi
       }
 
       const rec = {
-        entityId: item.id,
-        name: item.properties.name || "Objeto",
-        foodType: item.properties.edible?.foodType || "food",
-        nutrition: item.properties.edible?.nutrition || 1000,
+        entityId: itemId,
+        id: itemId,
+        name: item.properties?.name || item.name || "Object",
+        species: item.properties?.species || item.species || "item",
+        resourceType: item.properties?.resourceType || item.resourceType,
+        foodType: item.properties?.edible?.foodType || item.foodType,
+        nutrition: item.properties?.edible?.nutrition || item.nutrition || 0,
         x: item.x,
         y: item.y,
         seenTick: currentTick
       };
 
-      if (this.objectMemory.length < this.objectCapacity) {
-        this.objectMemory.push(rec);
-      } else {
-        let replaceIdx = 0;
-        let oldestTick = Infinity;
-        for (let i = 0; i < this.objectMemory.length; i++) {
-          if (this.objectMemory[i].seenTick < oldestTick) {
-            oldestTick = this.objectMemory[i].seenTick;
-            replaceIdx = i;
-          }
-        }
-        this.objectMemory[replaceIdx] = rec;
+      this.objectMemory.push(rec);
+      if (this.objectMemory.length > this.objectCapacity) {
+        this.objectMemory.shift();
       }
     },
 
     forgetObject(entityId) {
-      this.objectMemory = this.objectMemory.filter(m => m.entityId !== entityId);
+      this.objectMemory = this.objectMemory.filter(m => (m.entityId !== entityId && m.id !== entityId));
     },
 
     condition: 100,
@@ -451,7 +447,7 @@ export function createBrainProp(maxPath = 16, personality = { bravery: 0.7, curi
       // 4. Spontaneous Flashback from Long-Term Memory (Affects mood and affinities slightly)
       if (this.longTermMemory.length > 0 && Math.random() < 0.006) {
         const mem = this.longTermMemory[Math.floor(Math.random() * this.longTermMemory.length)];
-        const memoryDesc = mem.desc || mem.description || `acontecimento de ${mem.type}`;
+        const memoryDesc = mem.desc || mem.description || `${mem.type} event`;
 
         if (mem.type === "AMPUTATION" || mem.type === "ATTACK" || mem.type === "DEATH" || mem.type === "KILL_WITNESS") {
           this.mood = Math.max(-100, this.mood - 18);
@@ -470,7 +466,7 @@ export function createBrainProp(maxPath = 16, personality = { bravery: 0.7, curi
           type: "DIALOGUE",
           primaryEntityId: ent.id,
           location: { x: ent.x, y: ent.y },
-          description: `${ent.properties.name} relembrou em silêncio: "${memoryDesc}" [Humor: ${moodLabel}]`,
+          description: `${ent.properties.name} quietly reminisced: "${memoryDesc}" [Mood: ${moodLabel}]`,
           tick: currentTick,
           timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
         });
@@ -484,27 +480,63 @@ export function createBrainProp(maxPath = 16, personality = { bravery: 0.7, curi
         if (affVal >= 50 && prevMilestone !== "friend") {
           this.affinityMilestones[tId] = "friend";
           const friend = entities?.find(e => e.id === tId && !e.destroyed);
-          const friendName = friend?.properties.name || `Entidade #${tId}`;
+          const friendName = friend?.properties.name || `Entity #${tId}`;
           recordWorldEvent({
             type: "RELATION",
             primaryEntityId: ent.id,
             secondaryEntityId: tId,
             location: { x: ent.x, y: ent.y },
-            description: `${ent.properties.name} desenvolveu grande laço de amizade com ${friendName} (afinidade +${Math.round(affVal)})!`,
+            description: `${ent.properties.name} developed a deep bond of friendship with ${friendName} (affinity +${Math.round(affVal)})!`,
             tick: currentTick
           });
         } else if (affVal <= -50 && prevMilestone !== "enemy") {
           this.affinityMilestones[tId] = "enemy";
           const enemy = entities?.find(e => e.id === tId && !e.destroyed);
-          const enemyName = enemy?.properties.name || `Entidade #${tId}`;
+          const enemyName = enemy?.properties.name || `Entity #${tId}`;
           recordWorldEvent({
             type: "RELATION",
             primaryEntityId: ent.id,
             secondaryEntityId: tId,
             location: { x: ent.x, y: ent.y },
-            description: `${ent.properties.name} declarou ódio e inimizade mortal contra ${enemyName} (afinidade ${Math.round(affVal)})!`,
+            description: `${ent.properties.name} declared mortal hatred and rivalry against ${enemyName} (affinity ${Math.round(affVal)})!`,
             tick: currentTick
           });
+        }
+      }
+
+      // 6. Knowledge Sharing Between Nearby Allies & Friends
+      if (entities && Math.random() < 0.04) {
+        for (const other of entities) {
+          if (other !== ent && !other.destroyed && other.properties.brain && other.properties.life) {
+            const dist = Math.abs(other.x - ent.x) + Math.abs(other.y - ent.y);
+            if (dist <= 4) {
+              const isClan = ent.properties.group && other.properties.group === ent.properties.group;
+              const aff = this.affinities?.[other.id] || 0;
+              if (isClan || aff >= 15) {
+                if (this.objectMemory.length > 0) {
+                  const randomObj = this.objectMemory[Math.floor(Math.random() * this.objectMemory.length)];
+                  if (!other.properties.brain.objectMemory.some(o => o.entityId === randomObj.entityId || o.id === randomObj.id)) {
+                    other.properties.brain.rememberObject(randomObj);
+                    if (!this.affinities) this.affinities = {};
+                    if (!other.properties.brain.affinities) other.properties.brain.affinities = {};
+                    this.affinities[other.id] = Math.min(100, (this.affinities[other.id] || 0) + 12);
+                    other.properties.brain.affinities[ent.id] = Math.min(100, (other.properties.brain.affinities[ent.id] || 0) + 12);
+
+                    recordWorldEvent({
+                      type: "DIALOGUE",
+                      primaryEntityId: ent.id,
+                      secondaryEntityId: other.id,
+                      location: { x: ent.x, y: ent.y },
+                      description: `${ent.properties.name} pointed out the location of ${randomObj.name} at [X: ${randomObj.x}, Y: ${randomObj.y}] to ${other.properties.name}, strengthening their bond!`,
+                      tick: currentTick,
+                      timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
+                    });
+                    break;
+                  }
+                }
+              }
+            }
+          }
         }
       }
 
@@ -1346,7 +1378,7 @@ export function createMinerProp() {
           type: "RELATION",
           primaryEntityId: ent.id,
           location: { x: ent.x, y: ent.y },
-          description: `${ent.properties.name} entregou um bloco de pedra ao estoque do clã '${group.name}'!`,
+          description: `${ent.properties.name} delivered a stone block to the '${group.name}' clan stockpile!`,
           tick: currentTick,
           timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
         });
@@ -1360,17 +1392,17 @@ export function createMinerProp() {
 
         if (currentTile === 4 || currentTile === 1) {
           const toolBoost = (ent.properties.arm_left?.heldItem?.damage || ent.properties.arm_right?.heldItem?.damage || 15) / 20;
-          const interval = Math.max(1.2, 3.0 / toolBoost);
+          const interval = Math.max(1.0, 2.5 / toolBoost);
 
           if (this.mineTimer >= interval) {
             this.mineTimer = 0;
-            freeArm.heldItem = { name: "Bloco de Pedra", resourceType: "stone", weight: 1 };
+            freeArm.heldItem = { name: "Stone Block", resourceType: "stone", weight: 1 };
 
             recordWorldEvent({
               type: "FEED",
               primaryEntityId: ent.id,
               location: { x: ent.x, y: ent.y },
-              description: `${ent.properties.name} golpeou a montanha e extraiu 1 bloco de pedra com sua picareta!`,
+              description: `${ent.properties.name} quarried 1 stone block from the mountain rock!`,
               tick: currentTick,
               timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
             });
@@ -1392,7 +1424,7 @@ export function createBuilderProp() {
       if (!ent.properties.group || !world || !entities) return;
 
       this.buildTimer = (this.buildTimer || 0) + dt;
-      if (this.buildTimer < 2.0) return;
+      if (this.buildTimer < 0.8) return;
       this.buildTimer = 0;
 
       const group = ent.properties.group;
@@ -1403,40 +1435,63 @@ export function createBuilderProp() {
       const freeArm = getFreeArm(ent);
       const isCarryingStone = isCarryingItem(ent, "stone");
 
-      // 1. If carrying stone and arrived on an unfilled perimeter tile: Build stone wall!
+      // 1. If carrying stone, check if on/adjacent to perimeter tile to build stone wall!
       if (isCarryingStone && inClaimedZone) {
-        const isPerimeter = (ent.x % 8 === 0 || ent.x % 8 === 7 || ent.y % 8 === 0 || ent.y % 8 === 7);
-        const wallAlreadyThere = entities.some(e => !e.destroyed && e.properties.structure && e.x === ent.x && e.y === ent.y);
+        for (const zk of group.claimedZones || []) {
+          const zp = zk.includes("_") ? zk.split("_") : zk.split(",");
+          const pzx = parseInt(zp[0], 10);
+          const pzy = parseInt(zp[1], 10);
+          for (let ox = 0; ox < 8; ox++) {
+            for (let oy = 0; oy < 8; oy++) {
+              if (ox === 0 || ox === 7 || oy === 0 || oy === 7) {
+                const px = pzx * 8 + ox;
+                const py = pzy * 8 + oy;
+                const dist = Math.abs(px - ent.x) + Math.abs(py - ent.y);
+                if (dist <= 1) {
+                  const wallAlreadyThere = entities.some(e => !e.destroyed && e.properties.structure && e.x === px && e.y === py);
+                  if (!wallAlreadyThere) {
+                    // Consume stone from hand
+                    for (const [k, p] of Object.entries(ent.properties)) {
+                      if (k.startsWith("arm") && p && p.heldItem?.resourceType === "stone") {
+                        p.heldItem = null;
+                        break;
+                      }
+                    }
 
-        if (isPerimeter && !wallAlreadyThere) {
-          for (const [k, p] of Object.entries(ent.properties)) {
-            if (k.startsWith("arm") && p && p.heldItem?.resourceType === "stone") {
-              p.heldItem = null;
-              break;
+                    const wall = createStoneWallEntity(px, py, group.name);
+                    entities.push(wall);
+
+                    recordWorldEvent({
+                      type: "SPROUT",
+                      primaryEntityId: ent.id,
+                      location: { x: px, y: py },
+                      description: `${ent.properties.name} erected a defensive Stone Wall fortifying '${group.name}'!`,
+                      tick: currentTick,
+                      timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
+                    });
+                    return;
+                  }
+                }
+              }
             }
           }
-
-          const wall = createStoneWallEntity(ent.x, ent.y, group.name);
-          entities.push(wall);
-
-          recordWorldEvent({
-            type: "SPROUT",
-            primaryEntityId: ent.id,
-            location: { x: ent.x, y: ent.y },
-            description: `${ent.properties.name} ergueu uma Muralha de Pedra fortificando a fronteira do clã '${group.name}'!`,
-            tick: currentTick,
-            timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
-          });
-          return;
         }
       }
 
-      // 2. If free arm is available, pick up 1 stone block from territory stockpile/ground
+      // 2. If free arm and no stone in hand: take stone from group storage or ground in claimed zones
       if (freeArm && !isCarryingStone && inClaimedZone) {
-        const groundStone = entities.find(e => !e.destroyed && e.properties.resourceType === "stone" && Math.abs(e.x - ent.x) <= 2 && Math.abs(e.y - ent.y) <= 2);
+        if (group.storage && group.storage.includes("stone")) {
+          const sIdx = group.storage.indexOf("stone");
+          group.storage.splice(sIdx, 1);
+          freeArm.heldItem = { name: "Stone Block", resourceType: "stone", weight: 1 };
+          return;
+        }
+
+        const groundStone = entities.find(e => !e.destroyed && e.properties.resourceType === "stone" && Math.abs(e.x - ent.x) <= 4 && Math.abs(e.y - ent.y) <= 4);
         if (groundStone) {
           groundStone.destroyed = true;
-          freeArm.heldItem = { name: "Bloco de Pedra", resourceType: "stone", weight: 1 };
+          freeArm.heldItem = { name: "Stone Block", resourceType: "stone", weight: 1 };
+          return;
         }
       }
     }
@@ -1444,7 +1499,7 @@ export function createBuilderProp() {
 }
 
 /**
- * Farmer Trait: Forages for seeds, plants crops/trees in territory, and tends agriculture
+ * Farmer Trait: Forages for seeds, plants crops/trees in territory, and tends agriculture (1 seed = 1 tree)
  */
 export function createFarmerProp() {
   return {
@@ -1454,7 +1509,7 @@ export function createFarmerProp() {
       if (!ent.properties.group || !world || !entities) return;
 
       this.farmTimer = (this.farmTimer || 0) + dt;
-      if (this.farmTimer < 2.0) return;
+      if (this.farmTimer < 1.0) return;
       this.farmTimer = 0;
 
       const group = ent.properties.group;
@@ -1465,18 +1520,24 @@ export function createFarmerProp() {
       const freeArm = getFreeArm(ent);
       const isCarryingSeed = isCarryingItem(ent, "seed");
 
-      // 1. If carrying a seed inside claimed territory on fertile soil: Plant it!
+      // 1. If carrying a seed inside claimed territory on fertile soil: Plant it & consume seed from hand!
       if (isCarryingSeed && inClaimedZone) {
         const tile = world.getTile(ent.x, ent.y);
         const hasPlantHere = entities.some(e => !e.destroyed && (e.properties.photosynthesis || e.properties.deep_root || e.properties.surface_root) && e.x === ent.x && e.y === ent.y);
 
         if (!hasPlantHere && (tile === 0 || tile === 3)) {
-          const seedItem = dropHeldItem(ent, entities, world);
-          const species = seedItem?.seedSpecies || (tile === 3 ? "cactus" : "oak");
+          let seedSpecies = "oak";
+          for (const [k, p] of Object.entries(ent.properties)) {
+            if (k.startsWith("arm") && p && p.heldItem?.resourceType === "seed") {
+              seedSpecies = p.heldItem.seedSpecies || (tile === 3 ? "cactus" : "oak");
+              p.heldItem = null; // Cleanly consume seed directly from hand!
+              break;
+            }
+          }
 
           let plantedTree = null;
-          if (species === "cactus") plantedTree = createCactus(ent.x, ent.y);
-          else if (species === "willow") plantedTree = createWillowTree(ent.x, ent.y);
+          if (seedSpecies === "cactus") plantedTree = createCactus(ent.x, ent.y);
+          else if (seedSpecies === "willow") plantedTree = createWillowTree(ent.x, ent.y);
           else plantedTree = createOakTree(ent.x, ent.y);
 
           entities.push(plantedTree);
@@ -1486,7 +1547,7 @@ export function createFarmerProp() {
             primaryEntityId: ent.id,
             secondaryEntityId: plantedTree.id,
             location: { x: ent.x, y: ent.y },
-            description: `${ent.properties.name} preparou a terra e cultivou uma ${plantedTree.properties.name} para o clã '${group.name}'!`,
+            description: `${ent.properties.name} tilled the soil and cultivated a ${plantedTree.properties.name} for clan '${group.name}'!`,
             tick: currentTick,
             timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
           });
@@ -1494,25 +1555,150 @@ export function createFarmerProp() {
         }
       }
 
-      // 2. If free arm is available, pick up loose seed from the ground
+      // 2. Pick up loose seed from the ground
       if (freeArm && !isCarryingSeed) {
-        const looseSeed = entities.find(e => !e.destroyed && (e.properties.germination || e.properties.name?.includes("Semente") || e.properties.name?.includes("Seed")) && e.x === ent.x && e.y === ent.y);
+        const looseSeed = entities.find(e => !e.destroyed && (e.properties.germination || e.properties.resourceType === "seed" || e.properties.name?.includes("Seed") || e.properties.name?.includes("Semente")) && Math.abs(e.x - ent.x) <= 1 && Math.abs(e.y - ent.y) <= 1);
         if (looseSeed) {
           looseSeed.destroyed = true;
           freeArm.heldItem = {
-            name: looseSeed.properties.name || "Semente Fértil",
+            name: looseSeed.properties.name || "Fertile Seed",
             resourceType: "seed",
             seedSpecies: looseSeed.properties.germination?.species || "oak",
             weight: 1
           };
-          recordWorldEvent({
-            type: "FEED",
-            primaryEntityId: ent.id,
-            location: { x: ent.x, y: ent.y },
-            description: `${ent.properties.name} coletou uma semente fértil para a lavoura do clã!`,
-            tick: currentTick,
-            timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
-          });
+          return;
+        }
+      }
+    }
+  };
+}
+
+/**
+ * Hunter Trait: Hunts wild animals when clan food is low, harvests meat, and delivers it to base
+ */
+export function createHunterProp() {
+  return {
+    role: "hunter",
+    huntTimer: 0,
+    effect(ent, dt, world, entities) {
+      if (!ent.properties.group || !world || !entities || !ent.properties.life) return;
+
+      this.huntTimer = (this.huntTimer || 0) + dt;
+      if (this.huntTimer < 1.0) return;
+      this.huntTimer = 0;
+
+      const group = ent.properties.group;
+      const zx = Math.floor(ent.x / 8);
+      const zy = Math.floor(ent.y / 8);
+      const inClaimedZone = group.claimedZones?.includes(`${zx}_${zy}`) || group.claimedZones?.includes(`${zx},${zy}`);
+
+      const freeArm = getFreeArm(ent);
+      const isCarryingMeat = isCarryingItem(ent, "meat");
+
+      // 1. If carrying meat and reached claimed territory: deliver to clan storage!
+      if (isCarryingMeat && inClaimedZone) {
+        for (const [k, p] of Object.entries(ent.properties)) {
+          if (k.startsWith("arm") && p && p.heldItem?.resourceType === "meat") {
+            p.heldItem = null;
+            break;
+          }
+        }
+        if (!group.storage) group.storage = [];
+        group.storage.push("meat");
+
+        recordWorldEvent({
+          type: "FEED",
+          primaryEntityId: ent.id,
+          location: { x: ent.x, y: ent.y },
+          description: `${ent.properties.name} delivered fresh game meat to the '${group.name}' stockpile!`,
+          tick: currentTick,
+          timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
+        });
+        return;
+      }
+
+      // 2. Pick up loose meat from the ground
+      if (freeArm && !isCarryingMeat) {
+        const groundMeat = entities.find(e => !e.destroyed && (e.properties.edible?.foodType === "meat" || e.properties.resourceType === "meat" || e.properties.name?.includes("Meat") || e.properties.name?.includes("Carne")) && Math.abs(e.x - ent.x) <= 1 && Math.abs(e.y - ent.y) <= 1);
+        if (groundMeat) {
+          groundMeat.destroyed = true;
+          freeArm.heldItem = { name: "Fresh Game Meat", resourceType: "meat", weight: 1, nutrition: 2000 };
+          return;
+        }
+      }
+    }
+  };
+}
+
+/**
+ * Explorer Trait: Maps unknown regions with infinite memory and shares cartography with clan members
+ */
+export function createExplorerProp() {
+  return {
+    role: "explorer",
+    exploreTimer: 0,
+    effect(ent, dt, world, entities) {
+      if (!ent.properties.brain || !world || !entities) return;
+
+      this.exploreTimer = (this.exploreTimer || 0) + dt;
+      if (this.exploreTimer < 1.0) return;
+      this.exploreTimer = 0;
+
+      const brain = ent.properties.brain;
+      const viewRange = ent.properties.eye_left?.viewRange || ent.properties.eye_right?.viewRange || 14;
+
+      // 1. Scan and map all entities and resources into infinite object memory
+      for (const other of entities) {
+        if (!other.destroyed && other !== ent) {
+          const dist = Math.abs(other.x - ent.x) + Math.abs(other.y - ent.y);
+          if (dist <= viewRange) {
+            brain.rememberObject(other);
+          }
+        }
+      }
+
+      // 2. Share discoveries with nearby allies / clan members
+      for (const other of entities) {
+        if (!other.destroyed && other !== ent && other.properties.brain && other.properties.life) {
+          const dist = Math.abs(other.x - ent.x) + Math.abs(other.y - ent.y);
+          if (dist <= 6) {
+            const isSameClan = ent.properties.group && other.properties.group === ent.properties.group;
+            const currentAff = brain.affinities?.[other.id] || 0;
+
+            if (isSameClan || currentAff >= 15) {
+              let sharedCount = 0;
+              for (let i = brain.objectMemory.length - 1; i >= 0 && sharedCount < 3; i--) {
+                const mem = brain.objectMemory[i];
+                if (!other.properties.brain.objectMemory.some(o => o.entityId === mem.entityId || o.id === mem.id)) {
+                  other.properties.brain.rememberObject(mem);
+                  sharedCount++;
+                }
+              }
+
+              for (const [zk, zdata] of Object.entries(brain.geoMemory)) {
+                if (!other.properties.brain.geoMemory[zk]) {
+                  other.properties.brain.geoMemory[zk] = { ...zdata, affinity: 10 };
+                }
+              }
+
+              if (sharedCount > 0 && Math.random() < 0.25) {
+                if (!brain.affinities) brain.affinities = {};
+                if (!other.properties.brain.affinities) other.properties.brain.affinities = {};
+                brain.affinities[other.id] = Math.min(100, (brain.affinities[other.id] || 0) + 18);
+                other.properties.brain.affinities[ent.id] = Math.min(100, (other.properties.brain.affinities[ent.id] || 0) + 18);
+
+                recordWorldEvent({
+                  type: "DIALOGUE",
+                  primaryEntityId: ent.id,
+                  secondaryEntityId: other.id,
+                  location: { x: ent.x, y: ent.y },
+                  description: `${ent.properties.name} shared map coordinates and discovered resources with ${other.properties.name}!`,
+                  tick: currentTick,
+                  timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
+                });
+              }
+            }
+          }
         }
       }
     }
@@ -1525,7 +1711,7 @@ export function createFarmerProp() {
 export function createWoodItem(x, y) {
   return createEntity(
     {
-      name: "Toro de Madeira",
+      name: "Wood Log",
       resourceType: "wood",
       render: { skin: "Item_Pole.png", color: 0xffa06e32, backcolor: 0x00000000 },
       edible: { nutrition: 200, foodType: "plant", digestDuration: 30 }
@@ -1541,7 +1727,7 @@ export function createWoodItem(x, y) {
 export function createStoneItem(x, y) {
   return createEntity(
     {
-      name: "Pedra de Rocha Mineral",
+      name: "Stone Block",
       resourceType: "stone",
       render: { skin: "Feature_Stone_A.png", color: 0xffc8c8c8, backcolor: 0x00000000 },
       edible: { nutrition: 50, foodType: "bone", digestDuration: 10 }
@@ -1554,10 +1740,10 @@ export function createStoneItem(x, y) {
 /**
  * Tooth Item (Drop when mouth loses teeth)
  */
-export function createToothItem(x, y, ownerName = "Criatura") {
+export function createToothItem(x, y, ownerName = "Creature") {
   return createEntity(
     {
-      name: `Dente de ${ownerName}`,
+      name: `Tooth of ${ownerName}`,
       render: { skin: "Item_Bone.png", color: 0xfff5f5f0, backcolor: 0x00000000 },
       edible: { nutrition: 150, foodType: "bone", digestDuration: 15, sourceName: ownerName }
     },
@@ -2295,6 +2481,66 @@ export function createLocomotionProp() {
             hasIntention = true;
           }
         }
+
+        // E. Hunter: If carrying meat -> deliver to base. If not -> hunt wildlife!
+        else if (ent.properties.hunter) {
+          const isCarryingMeat = isCarryingItem(ent, "meat");
+          if (isCarryingMeat) {
+            chosenDx = Math.sign(homeBaseX - ent.x);
+            chosenDy = Math.sign(homeBaseY - ent.y);
+            hasIntention = true;
+          } else {
+            let targetPrey = null;
+            let minPreyDist = 9999;
+            for (const other of entities) {
+              if (other !== ent && !other.destroyed && other.properties.life && !other.properties.group && other.properties.species !== "human") {
+                const dist = Math.abs(other.x - ent.x) + Math.abs(other.y - ent.y);
+                if (dist < minPreyDist && dist <= 50) {
+                  minPreyDist = dist;
+                  targetPrey = other;
+                }
+              }
+            }
+
+            if (targetPrey) {
+              chosenDx = Math.sign(targetPrey.x - ent.x);
+              chosenDy = Math.sign(targetPrey.y - ent.y);
+              hasIntention = true;
+            }
+          }
+        }
+
+        // F. Explorer: Navigate towards unexplored or oldest-visited 8x8 zones
+        else if (ent.properties.explorer) {
+          const brain = ent.properties.brain;
+          let bestZone = null;
+          let oldestVisit = Infinity;
+
+          const curZx = Math.floor(ent.x / 8);
+          const curZy = Math.floor(ent.y / 8);
+
+          for (let dzx = -4; dzx <= 4; dzx++) {
+            for (let dzy = -4; dzy <= 4; dzy++) {
+              const testZx = curZx + dzx;
+              const testZy = curZy + dzy;
+              if (testZx >= 0 && testZx < 64 && testZy >= 0 && testZy < 64) {
+                const zk = `${testZx}_${testZy}`;
+                const mem = brain.geoMemory[zk];
+                const lastVisited = mem ? mem.lastVisitedTick : 0;
+                if (lastVisited < oldestVisit) {
+                  oldestVisit = lastVisited;
+                  bestZone = { x: testZx * 8 + 4, y: testZy * 8 + 4 };
+                }
+              }
+            }
+          }
+
+          if (bestZone) {
+            chosenDx = Math.sign(bestZone.x - ent.x);
+            chosenDy = Math.sign(bestZone.y - ent.y);
+            hasIntention = true;
+          }
+        }
       }
 
       // -----------------------------------------------------------------------
@@ -2799,7 +3045,7 @@ export function createFruitingProp(interval = 14.0, seedType = "small", species 
 
         const fruit = createEntity(
           {
-            name: `Fruto Maduro de ${ent.properties.name}`,
+            name: `Ripe Fruit of ${ent.properties.name}`,
             render: { skin: "Item_Fruit.png", color: 0xffff3250, backcolor: 0x00000000 },
             edible: {
               nutrition: 1200,
@@ -2824,7 +3070,7 @@ export function createFruitingProp(interval = 14.0, seedType = "small", species 
 /**
  * Terrain Preference
  */
-export function createTerrainPreferenceProp(preferred = [0], name = "Solo Fértil") {
+export function createTerrainPreferenceProp(preferred = [0], name = "Fertile Soil") {
   return {
     preferred,
     preferredName: name,
@@ -3464,11 +3710,11 @@ export function createSeaweed(x, y) {
 }
 
 export function createFruit(x, y, seedType = "large", species = "oak") {
-  let fruitName = "Fruto";
-  if (species === "cactus") fruitName = "Pitaia / Fruto do Cacto";
-  else if (species === "willow") fruitName = "Fruto de Salgueiro";
-  else if (species === "pine") fruitName = "Pinha / Fruto do Pinheiro";
-  else fruitName = "Bolota / Fruto de Carvalho";
+  let fruitName = "Fruit";
+  if (species === "cactus") fruitName = "Dragon Fruit / Cactus Pear";
+  else if (species === "willow") fruitName = "Willow Fig";
+  else if (species === "pine") fruitName = "Pine Cone Fruit";
+  else fruitName = "Acorn / Oak Fruit";
 
   return createEntity(
     {
@@ -3478,7 +3724,7 @@ export function createFruit(x, y, seedType = "large", species = "oak") {
         nutrition: species === "cactus" ? 3000 : 2500,
         foodType: "fruit",
         digestDuration: 30,
-        sourceName: species === "cactus" ? "Cacto do Deserto" : (species === "willow" ? "Salgueiro" : (species === "pine" ? "Pinheiro" : "Carvalho")),
+        sourceName: species === "cactus" ? "Desert Cactus" : (species === "willow" ? "Willow" : (species === "pine" ? "Pine" : "Oak")),
         sourceSpecies: species,
         seed: { type: seedType, species }
       }
@@ -3489,12 +3735,12 @@ export function createFruit(x, y, seedType = "large", species = "oak") {
 }
 
 export function createSeedEntity(x, y, seedType = "large", species = "oak") {
-  let seedName = `Semente de ${species}`;
-  if (species === "cactus") seedName = "Semente de Cacto";
-  else if (species === "lichen") seedName = "Esporo de Líquen";
-  else if (species === "willow") seedName = "Semente de Salgueiro";
-  else if (species === "pine") seedName = "Pinhão";
-  else seedName = "Bolota de Carvalho";
+  let seedName = `${species} Seed`;
+  if (species === "cactus") seedName = "Cactus Seed";
+  else if (species === "lichen") seedName = "Lichen Spore";
+  else if (species === "willow") seedName = "Willow Seed";
+  else if (species === "pine") seedName = "Pine Nut";
+  else seedName = "Oak Acorn";
 
   return createEntity(
     {
@@ -3519,7 +3765,7 @@ export function createSeedEntity(x, y, seedType = "large", species = "oak") {
 export function createPoopEntity(x, y, seed = null) {
   const poop = createEntity(
     {
-      name: seed ? `Fezes com Semente (${seed.species})` : "Fezes / Excremento",
+      name: seed ? `Feces with Seed (${seed.species})` : "Excrement / Feces",
       resourceType: "feces",
       render: { skin: "Item_Nugget.png", color: 0xff643c14, backcolor: 0x00000000 },
       fertilizer: { quality: 1.0 },
@@ -3545,10 +3791,10 @@ export function createPoopEntity(x, y, seed = null) {
 }
 
 // ---------------------------------------------------------------------------
-// 6. Founding Human Archetypes (Miner, Builder, Crafter, Pregnant Matriarch)
+// 6. Founding Human Archetypes (Miner, Builder, Crafter, Farmer, Matriarch, Hunter, Explorer)
 // ---------------------------------------------------------------------------
 
-export function createHumanMiner(x, y, name = "Aldor, o Minerador") {
+export function createHumanMiner(x, y, name = "Aldor, the Miner") {
   return createEntity(
     {
       name,
@@ -3565,7 +3811,7 @@ export function createHumanMiner(x, y, name = "Aldor, o Minerador") {
       body_regen: createBodyRegenerationProp(1.0, 4, 10),
       combat: createCombatProp(1.2, 3),
       miner: createMinerProp(),
-      arm_left: createArmProp("left", 1.0, 100, 100, { name: "Picareta de Ferro", damage: 28, isTool: true }),
+      arm_left: createArmProp("left", 1.0, 100, 100, { name: "Iron Pickaxe", damage: 28, isTool: true }),
       arm_right: createArmProp("right", 1.0, 100, 100),
       leg_left: createLegProp("left", 1.0, 100, 100),
       leg_right: createLegProp("right", 1.0, 100, 100),
@@ -3580,7 +3826,7 @@ export function createHumanMiner(x, y, name = "Aldor, o Minerador") {
   );
 }
 
-export function createHumanBuilder(x, y, name = "Brom, o Construtor") {
+export function createHumanBuilder(x, y, name = "Brom, the Builder") {
   return createEntity(
     {
       name,
@@ -3597,7 +3843,7 @@ export function createHumanBuilder(x, y, name = "Brom, o Construtor") {
       body_regen: createBodyRegenerationProp(1.0, 4, 10),
       combat: createCombatProp(1.1, 3),
       builder: createBuilderProp(),
-      arm_left: createArmProp("left", 1.0, 100, 100, { name: "Martelo de Carpintaria", damage: 22, isTool: true }),
+      arm_left: createArmProp("left", 1.0, 100, 100, { name: "Carpenter Hammer", damage: 22, isTool: true }),
       arm_right: createArmProp("right", 1.0, 100, 100),
       leg_left: createLegProp("left", 1.0, 100, 100),
       leg_right: createLegProp("right", 1.0, 100, 100),
@@ -3612,7 +3858,7 @@ export function createHumanBuilder(x, y, name = "Brom, o Construtor") {
   );
 }
 
-export function createHumanCrafter(x, y, name = "Cedric, o Artesão") {
+export function createHumanCrafter(x, y, name = "Cedric, the Crafter") {
   return createEntity(
     {
       name,
@@ -3629,7 +3875,7 @@ export function createHumanCrafter(x, y, name = "Cedric, o Artesão") {
       body_regen: createBodyRegenerationProp(1.0, 4, 10),
       combat: createCombatProp(1.0, 2),
       crafter: createCrafterProp(),
-      arm_left: createArmProp("left", 1.0, 100, 100, { name: "Faca de Entalhe", damage: 18, isTool: true }),
+      arm_left: createArmProp("left", 1.0, 100, 100, { name: "Carving Knife", damage: 18, isTool: true }),
       arm_right: createArmProp("right", 1.0, 100, 100),
       leg_left: createLegProp("left", 1.0, 100, 100),
       leg_right: createLegProp("right", 1.0, 100, 100),
@@ -3644,7 +3890,7 @@ export function createHumanCrafter(x, y, name = "Cedric, o Artesão") {
   );
 }
 
-export function createHumanFarmer(x, y, name = "Farid, o Fazendeiro") {
+export function createHumanFarmer(x, y, name = "Farid, the Farmer") {
   return createEntity(
     {
       name,
@@ -3661,7 +3907,7 @@ export function createHumanFarmer(x, y, name = "Farid, o Fazendeiro") {
       body_regen: createBodyRegenerationProp(1.0, 4, 10),
       combat: createCombatProp(1.0, 2),
       farmer: createFarmerProp(),
-      arm_left: createArmProp("left", 1.0, 100, 100, { name: "Enxada de Cultivo", damage: 18, isTool: true, toolType: "hoe" }),
+      arm_left: createArmProp("left", 1.0, 100, 100, { name: "Cultivation Hoe", damage: 18, isTool: true, toolType: "hoe" }),
       arm_right: createArmProp("right", 1.0, 100, 100),
       leg_left: createLegProp("left", 1.0, 100, 100),
       leg_right: createLegProp("right", 1.0, 100, 100),
@@ -3676,7 +3922,7 @@ export function createHumanFarmer(x, y, name = "Farid, o Fazendeiro") {
   );
 }
 
-export function createHumanMatriarch(x, y, name = "Elena, a Matriarca") {
+export function createHumanMatriarch(x, y, name = "Elena, the Matriarch") {
   return createEntity(
     {
       name,
@@ -3699,6 +3945,70 @@ export function createHumanMatriarch(x, y, name = "Elena, a Matriarca") {
       eye_left: createEyeProp("left", 9),
       eye_right: createEyeProp("right", 9),
       genitalia: createGenitaliaProp("vagina", true), // Start pregnant!
+      locomotion: createLocomotionProp(),
+      torso: { condition: 100, maxCondition: 100, nutrition: 2500, foodType: "meat" }
+    },
+    x,
+    y
+  );
+}
+
+export function createHumanHunter(x, y, name = "Kael, the Hunter") {
+  return createEntity(
+    {
+      name,
+      species: "human",
+      render: { skin: "Human_Guard_U.png", color: 0xffc87850, backcolor: 0xff3c140a },
+      life: createLifeProp(7500, 7500),
+      terrestrial: createTerrestrialProp(),
+      mouth: createMouthProp(32, 32),
+      communication: createCommunicationProp(1.6),
+      brain: createBrainProp(22, { bravery: 0.95, curiosity: 0.7, aggression: 0.75 }, 1.4),
+      stomach: createStomachProp(5, { meat: 1.4, plant: 0.7, fruit: 0.8, organ: 1.2, bone: 0.2 }),
+      bladder: createBladderProp(4000, 4000),
+      kidney: createKidneyProp(0.7),
+      body_regen: createBodyRegenerationProp(1.0, 4, 10),
+      combat: createCombatProp(1.3, 4),
+      hunter: createHunterProp(),
+      arm_left: createArmProp("left", 1.0, 100, 100, { name: "Hunting Spear", damage: 45, isWeapon: true }),
+      arm_right: createArmProp("right", 1.0, 100, 100),
+      leg_left: createLegProp("left", 1.2, 100, 100),
+      leg_right: createLegProp("right", 1.2, 100, 100),
+      eye_left: createEyeProp("left", 12),
+      eye_right: createEyeProp("right", 12),
+      genitalia: createGenitaliaProp("penis", false),
+      locomotion: createLocomotionProp(),
+      torso: { condition: 100, maxCondition: 100, nutrition: 3000, foodType: "meat" }
+    },
+    x,
+    y
+  );
+}
+
+export function createHumanExplorer(x, y, name = "Lyra, the Explorer") {
+  return createEntity(
+    {
+      name,
+      species: "human",
+      render: { skin: "Human_Normal_F.png", color: 0xff78dce6, backcolor: 0xff0a323c },
+      life: createLifeProp(6800, 6800),
+      terrestrial: createTerrestrialProp(),
+      mouth: createMouthProp(32, 32),
+      communication: createCommunicationProp(2.2),
+      brain: createBrainProp(28, { bravery: 0.9, curiosity: 1.0, aggression: 0.1 }, 1.8, true), // Infinite object memory!
+      stomach: createStomachProp(4, { meat: 1.0, plant: 1.1, fruit: 1.2, organ: 0.9, bone: 0.1 }),
+      bladder: createBladderProp(4500, 4500),
+      kidney: createKidneyProp(0.65),
+      body_regen: createBodyRegenerationProp(1.2, 4, 10),
+      combat: createCombatProp(1.0, 2),
+      explorer: createExplorerProp(),
+      arm_left: createArmProp("left", 1.0, 100, 100, { name: "Explorer Staff", damage: 20, isTool: true }),
+      arm_right: createArmProp("right", 1.0, 100, 100),
+      leg_left: createLegProp("left", 1.3, 100, 100),
+      leg_right: createLegProp("right", 1.3, 100, 100),
+      eye_left: createEyeProp("left", 14),
+      eye_right: createEyeProp("right", 14),
+      genitalia: createGenitaliaProp("vagina", false),
       locomotion: createLocomotionProp(),
       torso: { condition: 100, maxCondition: 100, nutrition: 2500, foodType: "meat" }
     },
