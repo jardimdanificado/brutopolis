@@ -1,5 +1,4 @@
 .vscode
 *.tar
-*.wasm
 EXPORT.sh
 Scroll-o-Sprites
