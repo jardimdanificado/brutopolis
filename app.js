@@ -526,6 +526,9 @@ function resetWorld(presetId = 0) {
     entities.push(createWoodItem(startX + (i % 3), startY + Math.floor(i / 3)));
     entities.push(createStoneItem(startX - 1 + (i % 3), startY + Math.floor(i / 3)));
   }
+  for (let i = 0; i < 4; i++) {
+    entities.push(createSeedEntity(startX + 1 + (i % 2), startY + Math.floor(i / 2), "large", "oak"));
+  }
 
   // Position camera and selection right on the founding clan!
   lastSelectedId = miner.id;

@@ -1365,23 +1365,38 @@ export function createMinerProp() {
       const zy = Math.floor(ent.y / 8);
       const inClaimedZone = group.claimedZones?.includes(`${zx}_${zy}`) || group.claimedZones?.includes(`${zx},${zy}`);
 
+      const firstZone = group.claimedZones?.[0] || "32_32";
+      const parts = firstZone.includes("_") ? firstZone.split("_") : firstZone.split(",");
+      const baseZx = parseInt(parts[0], 10) || 32;
+      const baseZy = parseInt(parts[1], 10) || 32;
+      const homeBaseX = baseZx * 8 + 4;
+      const homeBaseY = baseZy * 8 + 4;
+
       const freeArm = getFreeArm(ent);
       const isCarryingStone = isCarryingItem(ent, "stone");
 
-      // 1. If carrying stone and inside claimed territory: deposit into stockpile!
-      if (isCarryingStone && inClaimedZone) {
-        dropHeldItem(ent, entities, world);
-        if (!group.storage) group.storage = [];
-        group.storage.push("stone");
+      // 1. If carrying stone and arrived at base center: drop stone on ground and add to stockpile!
+      const distToBase = Math.abs(ent.x - homeBaseX) + Math.abs(ent.y - homeBaseY);
+      if (isCarryingStone && inClaimedZone && distToBase <= 2) {
+        for (const [k, p] of Object.entries(ent.properties)) {
+          if (k.startsWith("arm") && p && p.heldItem?.resourceType === "stone") {
+            p.heldItem = null;
+            const stoneItem = createStoneItem(ent.x, ent.y);
+            entities.push(stoneItem);
+            if (!group.storage) group.storage = [];
+            group.storage.push("stone");
 
-        recordWorldEvent({
-          type: "RELATION",
-          primaryEntityId: ent.id,
-          location: { x: ent.x, y: ent.y },
-          description: `${ent.properties.name} delivered a stone block to the '${group.name}' clan stockpile!`,
-          tick: currentTick,
-          timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
-        });
+            recordWorldEvent({
+              type: "RELATION",
+              primaryEntityId: ent.id,
+              location: { x: ent.x, y: ent.y },
+              description: `${ent.properties.name} hauled and unloaded a stone block at base center for '${group.name}'!`,
+              tick: currentTick,
+              timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
+            });
+            break;
+          }
+        }
         return;
       }
 
@@ -1389,8 +1404,18 @@ export function createMinerProp() {
       if (freeArm && !isCarryingStone) {
         this.mineTimer = (this.mineTimer || 0) + dt;
         const currentTile = world.getTile(ent.x, ent.y);
+        let adjacentStoneTile = (currentTile === 4 || currentTile === 1);
+        if (!adjacentStoneTile) {
+          for (const off of [{dx:1,dy:0}, {dx:-1,dy:0}, {dx:0,dy:1}, {dx:0,dy:-1}]) {
+            const at = world.getTile(ent.x + off.dx, ent.y + off.dy);
+            if (at === 4 || at === 1) {
+              adjacentStoneTile = true;
+              break;
+            }
+          }
+        }
 
-        if (currentTile === 4 || currentTile === 1) {
+        if (adjacentStoneTile) {
           const toolBoost = (ent.properties.arm_left?.heldItem?.damage || ent.properties.arm_right?.heldItem?.damage || 15) / 20;
           const interval = Math.max(1.0, 2.5 / toolBoost);
 
@@ -1444,6 +1469,13 @@ export function createBuilderProp() {
           for (let ox = 0; ox < 8; ox++) {
             for (let oy = 0; oy < 8; oy++) {
               if (ox === 0 || ox === 7 || oy === 0 || oy === 7) {
+                // Leave 2-tile wide entrances on each of the 4 cardinal wall sides
+                const isGateway = (oy === 0 && (ox === 3 || ox === 4)) ||
+                                  (oy === 7 && (ox === 3 || ox === 4)) ||
+                                  (ox === 0 && (oy === 3 || oy === 4)) ||
+                                  (ox === 7 && (oy === 3 || oy === 4));
+                if (isGateway) continue;
+
                 const px = pzx * 8 + ox;
                 const py = pzy * 8 + oy;
                 const dist = Math.abs(px - ent.x) + Math.abs(py - ent.y);
@@ -1520,25 +1552,41 @@ export function createFarmerProp() {
       const freeArm = getFreeArm(ent);
       const isCarryingSeed = isCarryingItem(ent, "seed");
 
-      // 1. If carrying a seed inside claimed territory on fertile soil: Plant it & consume seed from hand!
+      // 1. If carrying a seed inside claimed territory: plant with minimum 2-tile spacing!
       if (isCarryingSeed && inClaimedZone) {
-        const tile = world.getTile(ent.x, ent.y);
-        const hasPlantHere = entities.some(e => !e.destroyed && (e.properties.photosynthesis || e.properties.deep_root || e.properties.surface_root) && e.x === ent.x && e.y === ent.y);
+        let targetX = ent.x;
+        let targetY = ent.y;
+        let canPlant = false;
 
-        if (!hasPlantHere && (tile === 0 || tile === 3)) {
+        for (const off of [{dx:0,dy:0}, {dx:1,dy:0}, {dx:-1,dy:0}, {dx:0,dy:1}, {dx:0,dy:-1}]) {
+          const px = ent.x + off.dx;
+          const py = ent.y + off.dy;
+          const tile = world.getTile(px, py);
+          const isLand = (tile !== 2 && tile !== 5 && tile !== 1 && tile !== 4);
+          const hasNearbyPlant = entities.some(e => !e.destroyed && (e.properties.photosynthesis || e.properties.deep_root || e.properties.surface_root || e.properties.species === "oak" || e.properties.species === "willow" || e.properties.species === "cactus" || e.properties.species === "pine") && Math.abs(e.x - px) <= 2 && Math.abs(e.y - py) <= 2);
+          if (isLand && !hasNearbyPlant) {
+            targetX = px;
+            targetY = py;
+            canPlant = true;
+            break;
+          }
+        }
+
+        if (canPlant) {
           let seedSpecies = "oak";
           for (const [k, p] of Object.entries(ent.properties)) {
             if (k.startsWith("arm") && p && p.heldItem?.resourceType === "seed") {
-              seedSpecies = p.heldItem.seedSpecies || (tile === 3 ? "cactus" : "oak");
+              seedSpecies = p.heldItem.seedSpecies || "oak";
               p.heldItem = null; // Cleanly consume seed directly from hand!
               break;
             }
           }
 
           let plantedTree = null;
-          if (seedSpecies === "cactus") plantedTree = createCactus(ent.x, ent.y);
-          else if (seedSpecies === "willow") plantedTree = createWillowTree(ent.x, ent.y);
-          else plantedTree = createOakTree(ent.x, ent.y);
+          const plantTile = world.getTile(targetX, targetY);
+          if (seedSpecies === "cactus" || plantTile === 3) plantedTree = createCactus(targetX, targetY);
+          else if (seedSpecies === "willow") plantedTree = createWillowTree(targetX, targetY);
+          else plantedTree = createOakTree(targetX, targetY);
 
           entities.push(plantedTree);
 
@@ -1546,8 +1594,8 @@ export function createFarmerProp() {
             type: "SPROUT",
             primaryEntityId: ent.id,
             secondaryEntityId: plantedTree.id,
-            location: { x: ent.x, y: ent.y },
-            description: `${ent.properties.name} tilled the soil and cultivated a ${plantedTree.properties.name} for clan '${group.name}'!`,
+            location: { x: targetX, y: targetY },
+            description: `${ent.properties.name} tilled the soil and cultivated a spaced ${plantedTree.properties.name} for clan '${group.name}'!`,
             tick: currentTick,
             timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
           });
@@ -1555,9 +1603,9 @@ export function createFarmerProp() {
         }
       }
 
-      // 2. Pick up loose seed from the ground
+      // 2. Pick up loose seed from the ground (must not be an already planted tree)
       if (freeArm && !isCarryingSeed) {
-        const looseSeed = entities.find(e => !e.destroyed && (e.properties.germination || e.properties.resourceType === "seed" || e.properties.name?.includes("Seed") || e.properties.name?.includes("Semente")) && Math.abs(e.x - ent.x) <= 1 && Math.abs(e.y - ent.y) <= 1);
+        const looseSeed = entities.find(e => !e.destroyed && !e.properties.photosynthesis && !e.properties.deep_root && !e.properties.surface_root && (e.properties.germination || e.properties.resourceType === "seed" || e.properties.name?.includes("Seed") || e.properties.name?.includes("Semente")) && Math.abs(e.x - ent.x) <= 1 && Math.abs(e.y - ent.y) <= 1);
         if (looseSeed) {
           looseSeed.destroyed = true;
           freeArm.heldItem = {
@@ -2089,14 +2137,17 @@ export function createCombatProp(attackInterval = 1.2, aggroRange = 3) {
 
             // Group Betrayal: If spectator is in attacker's group, but loves the victim!
             if (ent.properties.group && spectator.properties.group === ent.properties.group) {
-              const loveForVictim = spectator.properties.brain.affinities[target.id] || 0;
+              const loveForVictim = spectator.properties.brain?.affinities?.[target.id] || 0;
               if (loveForVictim >= 60) {
-                // Abandon attacker's group immediately!
-                ent.properties.group.members = ent.properties.group.members.filter(id => id !== spectator.id);
+                const groupName = ent.properties.group.name || "Clan";
+                if (ent.properties.group.members) {
+                  ent.properties.group.members = ent.properties.group.members.filter(id => id !== spectator.id);
+                }
                 delete spectator.properties.group;
+                if (!spectator.properties.brain.affinities) spectator.properties.brain.affinities = {};
                 spectator.properties.brain.affinities[ent.id] = -100;
 
-                if (target.properties.group) {
+                if (target.properties?.group) {
                   tryJoinGroup(spectator, target.properties.group, entities);
                 }
 
@@ -2105,7 +2156,7 @@ export function createCombatProp(attackInterval = 1.2, aggroRange = 3) {
                   primaryEntityId: spectator.id,
                   secondaryEntityId: ent.id,
                   location: { x: spectator.x, y: spectator.y },
-                  description: `${spectator.properties.name} rompeu com a facção '${ent.properties.group.name}' em defesa de seu amigo ${target.properties.name}!`,
+                  description: `${spectator.properties?.name || "Member"} severed ties with '${groupName}' to defend their friend ${target.properties?.name || "Friend"}!`,
                   tick: currentTick
                 });
               }
@@ -2219,9 +2270,9 @@ export function createLocomotionProp() {
       }
 
       // -----------------------------------------------------------------------
-      // Priority 2: Hunger (Energy <= 60% or Empty Stomach) -> Seek Food in radius 35
+      // Priority 2: Hunger (Energy <= 50%) -> Seek Food in radius 35
       // -----------------------------------------------------------------------
-      if (!hasIntention && (energyRatio <= 0.60 || (ent.properties.stomach?.items.length === 0))) {
+      if (!hasIntention && energyRatio <= 0.50) {
         let bestFood = null;
         let highestFoodScore = -Infinity;
 
@@ -2231,6 +2282,15 @@ export function createLocomotionProp() {
             if (dist <= 35) {
               let score = 100 - dist * 3;
               const ed = item.properties.edible;
+
+              // Feces is an absolute last resort during extreme starvation (energy <= 15%) unless scatological
+              if (ed.foodType === "feces" && !ent.properties.scatological) {
+                if (energyRatio > 0.15) {
+                  score = -9999;
+                } else {
+                  score -= 300;
+                }
+              }
 
               const prefs = ent.properties.brain?.preferences;
               if (prefs) {
@@ -2309,19 +2369,20 @@ export function createLocomotionProp() {
             chosenDy = Math.sign(homeBaseY - ent.y);
             hasIntention = true;
           } else {
-            // Seek stone/mountain tiles outside or loose stone items
+            // Seek stone/mountain tiles in radius
             let targetStone = null;
             let minDist = 9999;
 
             if (world) {
-              for (let r = 1; r <= 40; r += 2) {
-                for (let dy = -r; dy <= r; dy += 2) {
-                  for (let dx = -r; dx <= r; dx += 2) {
+              for (let r = 1; r <= 100; r++) {
+                for (let dy = -r; dy <= r; dy++) {
+                  for (let dx = -r; dx <= r; dx++) {
+                    if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
                     const tx = ent.x + dx;
                     const ty = ent.y + dy;
                     if (tx >= 0 && tx < (world.width || 512) && ty >= 0 && ty < (world.height || 512)) {
                       const t = world.getTile(tx, ty);
-                      if (t === 4 || t === 1) { // Stone or Mountain
+                      if (t === 4 || t === 1) { // Stone (4) or Mountain (1)
                         const dist = Math.abs(dx) + Math.abs(dy);
                         if (dist < minDist) {
                           minDist = dist;
@@ -2330,9 +2391,26 @@ export function createLocomotionProp() {
                       }
                     }
                   }
-                  if (targetStone && minDist <= r + 2) break;
                 }
                 if (targetStone) break;
+              }
+            }
+
+            // Also check loose stone items outside base
+            if (!targetStone && entities) {
+              for (const it of entities) {
+                if (!it.destroyed && it.properties.resourceType === "stone") {
+                  const izx = Math.floor(it.x / 8);
+                  const izy = Math.floor(it.y / 8);
+                  const inBase = group.claimedZones?.includes(`${izx}_${izy}`) || group.claimedZones?.includes(`${izx},${izy}`);
+                  if (!inBase) {
+                    const dist = Math.abs(it.x - ent.x) + Math.abs(it.y - ent.y);
+                    if (dist < minDist && dist <= 80) {
+                      minDist = dist;
+                      targetStone = { x: it.x, y: it.y };
+                    }
+                  }
+                }
               }
             }
 
@@ -2358,6 +2436,13 @@ export function createLocomotionProp() {
               for (let ox = 0; ox < 8; ox++) {
                 for (let oy = 0; oy < 8; oy++) {
                   if (ox === 0 || ox === 7 || oy === 0 || oy === 7) {
+                    // Leave 2-tile wide entrances on each of the 4 cardinal wall sides
+                    const isGateway = (oy === 0 && (ox === 3 || ox === 4)) ||
+                                      (oy === 7 && (ox === 3 || ox === 4)) ||
+                                      (ox === 0 && (oy === 3 || oy === 4)) ||
+                                      (ox === 7 && (oy === 3 || oy === 4));
+                    if (isGateway) continue;
+
                     const px = zx * 8 + ox;
                     const py = zy * 8 + oy;
                     const hasWall = entities.some(e => !e.destroyed && e.properties.structure && e.x === px && e.y === py);
@@ -2388,7 +2473,7 @@ export function createLocomotionProp() {
           }
         }
 
-        // C. Farmer: Forage for seeds and plant inside claimed territory
+        // C. Farmer: Forage for seeds and plant spaced crops inside claimed territory
         else if (ent.properties.farmer) {
           const isCarryingSeed = isCarryingItem(ent, "seed");
           if (isCarryingSeed) {
@@ -2404,9 +2489,10 @@ export function createLocomotionProp() {
                   const px = zx * 8 + ox;
                   const py = zy * 8 + oy;
                   const t = world ? world.getTile(px, py) : 0;
-                  if (t === 0 || t === 3) {
-                    const hasCrop = entities.some(e => !e.destroyed && (e.properties.photosynthesis || e.properties.deep_root || e.properties.surface_root) && e.x === px && e.y === py);
-                    if (!hasCrop) {
+                  const isLand = (t !== 2 && t !== 5 && t !== 1 && t !== 4);
+                  if (isLand) {
+                    const hasNearbyCrop = entities.some(e => !e.destroyed && (e.properties.photosynthesis || e.properties.deep_root || e.properties.surface_root || e.properties.species === "oak" || e.properties.species === "willow" || e.properties.species === "cactus" || e.properties.species === "pine") && Math.abs(e.x - px) <= 2 && Math.abs(e.y - py) <= 2);
+                    if (!hasNearbyCrop) {
                       const dist = Math.abs(px - ent.x) + Math.abs(py - ent.y);
                       if (dist < minPlotDist) {
                         minPlotDist = dist;
@@ -2440,13 +2526,14 @@ export function createLocomotionProp() {
               }
             }
 
-            if (cropCount < 8) {
+            // Cap at 6 trees per territory
+            if (cropCount < 6) {
               let targetSeed = null;
               let minSeedDist = 9999;
               for (const item of entities) {
-                if (!item.destroyed && (item.properties.germination || item.properties.name?.includes("Semente") || item.properties.name?.includes("Seed"))) {
+                if (!item.destroyed && !item.properties.photosynthesis && (item.properties.germination || item.properties.resourceType === "seed" || item.properties.name?.includes("Semente") || item.properties.name?.includes("Seed"))) {
                   const dist = Math.abs(item.x - ent.x) + Math.abs(item.y - ent.y);
-                  if (dist < minSeedDist && dist <= 40) {
+                  if (dist < minSeedDist && dist <= 50) {
                     minSeedDist = dist;
                     targetSeed = { x: item.x, y: item.y };
                   }
@@ -2690,6 +2777,12 @@ export function createLocomotionProp() {
             // Food Consumption
             if (other.properties.edible && ent.properties.stomach && ent.properties.stomach.items.length < ent.properties.stomach.capacity) {
               const ed = other.properties.edible;
+
+              // Never eat feces unless specifically Scatological OR in extreme starvation (vital energy <= 15%)
+              if (ed.foodType === "feces" && !ent.properties.scatological && energyRatio > 0.15) {
+                continue;
+              }
+
               let mouthBoost = 1.0;
               if (ent.properties.mouth && ent.properties.mouth.teethCount > 0) {
                 mouthBoost = 1.0 + (ent.properties.mouth.teethCount / ent.properties.mouth.maxTeeth) * 0.25;
@@ -2709,7 +2802,7 @@ export function createLocomotionProp() {
               const finalNutrition = Math.round((ed.nutrition || 2000) * nutMultiplier * mouthBoost);
 
               ent.properties.stomach.items.push({
-                name: other.properties.name || "Alimento",
+                name: other.properties.name || "Food Item",
                 nutrition: finalNutrition,
                 foodType: ed.foodType || "fruit",
                 totalTurns: ed.digestDuration || 45,
@@ -2735,7 +2828,7 @@ export function createLocomotionProp() {
                       type: "SPROUT",
                       primaryEntityId: ent.id,
                       location: { x: ent.x, y: ent.y },
-                      description: `${ent.properties.name} comeu fezes em desespero e adquiriu a bizarra preferência Escatológica!`,
+                      description: `${ent.properties.name} ate feces in desperation and acquired the bizarre Scatological trait!`,
                       tick: currentTick,
                       timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
                     });
@@ -2756,7 +2849,7 @@ export function createLocomotionProp() {
                           primaryEntityId: spec.id,
                           secondaryEntityId: ent.id,
                           location: { x: spec.x, y: spec.y },
-                          description: `${spec.properties.name} observou com sincera admiração ${ent.properties.name} saboreando excrementos!`,
+                          description: `${spec.properties.name} looked upon ${ent.properties.name} with genuine admiration for savoring excrement!`,
                           tick: currentTick,
                           timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
                         });
@@ -2767,7 +2860,7 @@ export function createLocomotionProp() {
                           primaryEntityId: spec.id,
                           secondaryEntityId: ent.id,
                           location: { x: spec.x, y: spec.y },
-                          description: `${spec.properties.name} presenciou com profunda repugnância ${ent.properties.name} comendo fezes!`,
+                          description: `${spec.properties.name} witnessed ${ent.properties.name} eating feces with utter disgust!`,
                           tick: currentTick,
                           timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
                         });
@@ -2778,9 +2871,9 @@ export function createLocomotionProp() {
               }
 
               // Build detailed feed provenance message
-              const foodName = other.properties.name || "Alimento";
-              const provenance = ed.sourceName ? `(proveniente de ${ed.sourceName})` : "";
-              const feedMsg = `${ent.properties.name || `Entidade #${ent.id}`} comeu ${foodName} ${provenance} na posição [X: ${ent.x}, Y: ${ent.y}]!`;
+              const foodName = other.properties.name || "Food";
+              const provenance = ed.sourceName ? `(from ${ed.sourceName})` : "";
+              const feedMsg = `${ent.properties.name || `Entity #${ent.id}`} ate ${foodName} ${provenance} at [X: ${ent.x}, Y: ${ent.y}]!`;
 
               // Log indexed FEED event
               recordWorldEvent({
@@ -2798,7 +2891,7 @@ export function createLocomotionProp() {
               if (ent.properties.brain?.addShortTerm) {
                 ent.properties.brain.addShortTerm({
                   type: "FEED",
-                  desc: `Comeu ${foodName} ${provenance}`,
+                  desc: `Ate ${foodName} ${provenance}`,
                   location: { x: ent.x, y: ent.y }
                 });
               }
@@ -2895,31 +2988,22 @@ export function findNearestWaterTile(world, startX, startY, maxRadius = 14) {
 }
 
 /**
- * Plant Life & Water Thirst: Without access to water, plants suffer extreme energy starvation
+ * Plant Life Prop (Robust Flora Metabolism)
  */
-export function createPlantLifeProp(max = 10000, basalRate = 0.6) {
+export function createPlantLifeProp(max = 10000, basalRate = 0.2) {
   return {
-    energy: max * 0.5,
+    energy: max * 0.8,
     max,
     basalRate,
     effect(ent, dt, world) {
       if (!world) return;
-
-      const hasWater = hasNearbyWater(world, ent.x, ent.y, 4);
-
-      if (!hasWater) {
-        // Severe desiccation energy consumption!
-        this.energy = Math.max(0, this.energy - dt * 45.0);
-        ent.combatFlash = 1;
-      } else {
-        this.energy = Math.max(0, this.energy - dt * this.basalRate);
-      }
+      this.energy = Math.max(0, this.energy - dt * this.basalRate);
     }
   };
 }
 
 /**
- * Photosynthesis (Daylight Energy Generation, Disabled Without Nearby Water)
+ * Photosynthesis (Daylight Energy Generation with Moisture Boost)
  */
 export function createPhotosynthesisProp(rate = 0.5, energyPerSun = 18.0) {
   return {
@@ -2928,14 +3012,13 @@ export function createPhotosynthesisProp(rate = 0.5, energyPerSun = 18.0) {
     effect(ent, dt, world) {
       if (!world || !ent.properties.life) return;
 
-      const hasWater = hasNearbyWater(world, ent.x, ent.y, 4);
-      if (!hasWater) return; // Cannot photosynthesize when thirsty!
-
       const sunFactor = world.sunlight !== undefined ? world.sunlight : 1.0;
       if (sunFactor > 0.05) {
+        const hasWater = hasNearbyWater(world, ent.x, ent.y, 8);
+        const waterBoost = hasWater ? 1.5 : 1.0;
         ent.properties.life.energy = Math.min(
           ent.properties.life.max,
-          ent.properties.life.energy + dt * this.energyPerSun * sunFactor
+          ent.properties.life.energy + dt * this.energyPerSun * sunFactor * waterBoost
         );
       }
     }
@@ -3022,7 +3105,7 @@ export function createSurfaceRootProp(maxRoots = 6, spreadInterval = 8.0) {
 /**
  * Fruiting (Generates Edible Fruits with Seeds, Disabled without Nearby Water)
  */
-export function createFruitingProp(interval = 14.0, seedType = "small", species = "oak") {
+export function createFruitingProp(interval = 18.0, seedType = "small", species = "oak") {
   return {
     interval,
     seedType,
@@ -3030,11 +3113,7 @@ export function createFruitingProp(interval = 14.0, seedType = "small", species 
     timer: 0,
     effect(ent, dt, world, entities) {
       if (!ent.properties.life || !entities || !world) return;
-
-      const hasWater = hasNearbyWater(world, ent.x, ent.y, 4);
-      if (!hasWater) return;
-
-      if (ent.properties.life.energy < ent.properties.life.max * 0.4) return;
+      if (ent.properties.life.energy < ent.properties.life.max * 0.35) return;
 
       this.timer = (this.timer || 0) + dt;
       if (this.timer >= this.interval) {
@@ -3061,7 +3140,7 @@ export function createFruitingProp(interval = 14.0, seedType = "small", species 
         );
 
         entities.push(fruit);
-        ent.properties.life.energy -= 60;
+        ent.properties.life.energy -= 40;
       }
     }
   };
@@ -3620,7 +3699,7 @@ export function createMountainGoat(x, y) {
 export function createOakTree(x, y) {
   return createEntity(
     {
-      name: "Carvalho Ancestral (Semente Grande)",
+      name: "Ancestral Oak (Large Seed)",
       species: "oak",
       render: { skin: "Feature_Tree_Full.png", color: 0xff78dc5a, backcolor: 0xff284619 },
       life: createLifeProp(12000, 12000, 1.2),
@@ -3628,7 +3707,7 @@ export function createOakTree(x, y) {
       deep_root: createDeepRootProp(20.0, 12.0),
       photosynthesis: createPhotosynthesisProp(0.3, 35.0),
       fruiting: createFruitingProp(25.0, "large", "oak"),
-      terrain_pref: createTerrainPreferenceProp([0], "Solo Terrestre Fértil"),
+      terrain_pref: createTerrainPreferenceProp([0], "Fertile Land"),
       wood: { nutrition: 2000, foodType: "plant" }
     },
     x,
@@ -3639,7 +3718,7 @@ export function createOakTree(x, y) {
 export function createWillowTree(x, y) {
   return createEntity(
     {
-      name: "Salgueiro Ribeirinho (Semente Pequena)",
+      name: "River Willow (Small Seed)",
       species: "willow",
       render: { skin: "Feature_Tree_Pine.png", color: 0xff64c850, backcolor: 0xff1e3c1e },
       life: createLifeProp(9000, 9000, 1.0),
@@ -3647,7 +3726,7 @@ export function createWillowTree(x, y) {
       surface_root: createSurfaceRootProp(8),
       photosynthesis: createPhotosynthesisProp(0.3, 30.0),
       fruiting: createFruitingProp(20.0, "small", "willow"),
-      terrain_pref: createTerrainPreferenceProp([0, 2], "Margem / Terreno Úmido"),
+      terrain_pref: createTerrainPreferenceProp([0, 2], "Riverbank / Moist Soil"),
       wood: { nutrition: 1500, foodType: "plant" }
     },
     x,
@@ -3658,7 +3737,7 @@ export function createWillowTree(x, y) {
 export function createPineTree(x, y) {
   return createEntity(
     {
-      name: "Pinheiro das Terras Altas",
+      name: "Highland Pine",
       species: "pine",
       render: { skin: "Feature_Tree_Pine.png", color: 0xff3c8250, backcolor: 0xff0f2814 },
       life: createLifeProp(11000, 11000, 1.1),
@@ -3666,7 +3745,7 @@ export function createPineTree(x, y) {
       deep_root: createDeepRootProp(18.0, 14.0),
       photosynthesis: createPhotosynthesisProp(0.3, 32.0),
       fruiting: createFruitingProp(22.0, "large", "pine"),
-      terrain_pref: createTerrainPreferenceProp([0, 1], "Solo e Montanha"),
+      terrain_pref: createTerrainPreferenceProp([0, 1], "Soil and Mountain"),
       wood: { nutrition: 1800, foodType: "plant" }
     },
     x,
@@ -3677,14 +3756,14 @@ export function createPineTree(x, y) {
 export function createWaterLily(x, y) {
   return createEntity(
     {
-      name: "Vitória-Régia Aquática",
+      name: "Aquatic Water Lily",
       species: "waterlily",
       render: { skin: "Feature_Flower.png", color: 0xff50dca0, backcolor: 0xff0f3c28 },
       life: createLifeProp(5000, 5000, 0.6),
       bladder: createBladderProp(4000, 4000),
       deep_root: createDeepRootProp(20.0, 10.0),
       photosynthesis: createPhotosynthesisProp(0.2, 30.0),
-      terrain_pref: createTerrainPreferenceProp([2], "Água Exclusiva"),
+      terrain_pref: createTerrainPreferenceProp([2], "Water Only"),
       plant_flesh: { nutrition: 900, foodType: "plant" }
     },
     x,
@@ -3695,13 +3774,13 @@ export function createWaterLily(x, y) {
 export function createSeaweed(x, y) {
   return createEntity(
     {
-      name: "Alga Marinha Subaquática",
+      name: "Underwater Seaweed",
       species: "seaweed",
       render: { skin: "Item_Leaf.png", color: 0xff32b478, backcolor: 0xff0a321e },
       life: createLifeProp(4000, 4000, 0.5),
       bladder: createBladderProp(3000, 3000),
       photosynthesis: createPhotosynthesisProp(0.1, 25.0),
-      terrain_pref: createTerrainPreferenceProp([2], "Água Oceânica"),
+      terrain_pref: createTerrainPreferenceProp([2], "Ocean Water"),
       edible: { nutrition: 1200, foodType: "plant", digestDuration: 25 }
     },
     x,

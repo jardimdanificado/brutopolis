@@ -2,6 +2,4 @@
 *.tar
 *.wasm
 EXPORT.sh
-assets.h
-assets_js.h
 Scroll-o-Sprites
