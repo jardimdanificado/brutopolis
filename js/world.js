@@ -60,11 +60,15 @@ export class World {
   constructor(wasmMemory, wasmExports) {
     this.mem = wasmMemory;
     this.wasm = wasmExports;
+    this.width = MAP_WIDTH;
+    this.height = MAP_HEIGHT;
     this.clock = new WorldClock();
     this.refresh();
   }
 
   refresh() {
+    this.width = MAP_WIDTH;
+    this.height = MAP_HEIGHT;
     const ptr = this.wasm.wasm_get_map_ptr();
     this.map = new Uint8Array(this.mem.buffer, ptr, MAP_WIDTH * MAP_HEIGHT);
     this.clock.reset();
@@ -77,12 +81,12 @@ export class World {
 
   getTileName(t) {
     switch (t) {
-      case 0: return "Solo Fértil / Floresta";
-      case 1: return "Pico de Montanha";
-      case 2: return "Água Oceânica";
-      case 3: return "Areia / Deserto / Praia";
-      case 4: return "Chão Rochoso / Sopé";
-      default: return "Vazio";
+      case 0: return "Fertile Soil / Forest";
+      case 1: return "Mountain Peak";
+      case 2: return "Ocean Water";
+      case 3: return "Sand Dunes / Desert";
+      case 4: return "Rocky Foothills / Stone";
+      default: return "Void";
     }
   }
 

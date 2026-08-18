@@ -663,7 +663,7 @@ void render_frame(uint8_t* framebuffer, int width, int height, float time, float
 
     char time_str[64];
     int t_idx = 0;
-    time_str[t_idx++] = 'D'; time_str[t_idx++] = 'I'; time_str[t_idx++] = 'A'; time_str[t_idx++] = ' ';
+    time_str[t_idx++] = 'D'; time_str[t_idx++] = 'A'; time_str[t_idx++] = 'Y'; time_str[t_idx++] = ' ';
     time_str[t_idx++] = '0' + (day / 10); time_str[t_idx++] = '0' + (day % 10);
     time_str[t_idx++] = ' '; time_str[t_idx++] = ' ';
     time_str[t_idx++] = '0' + (hour / 10); time_str[t_idx++] = '0' + (hour % 10);
@@ -684,7 +684,7 @@ void render_frame(uint8_t* framebuffer, int width, int height, float time, float
     draw_text(framebuffer, width, height, pop_str, 120, 6, rgb(160, 240, 160), 1);
 
     if (is_paused) {
-        draw_text(framebuffer, width, height, "[PAUSADO]", width - 90, 6, rgb(255, 90, 90), 1);
+        draw_text(framebuffer, width, height, "[PAUSED]", width - 85, 6, rgb(255, 90, 90), 1);
     } else {
         char tps_str[32];
         int s_idx = 0;

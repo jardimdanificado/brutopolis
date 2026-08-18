@@ -32,8 +32,38 @@ export function recordWorldEvent({
   timestamp = null,
   metadata = {}
 }) {
+  // Aggregate repeated attacks between same attacker and target
+  if (type === "ATTACK" && allEvents.length > 0) {
+    const last = allEvents[allEvents.length - 1];
+    if (
+      last &&
+      last.type === "ATTACK" &&
+      last.primaryEntityId === primaryEntityId &&
+      last.secondaryEntityId === secondaryEntityId &&
+      Math.abs(tick - last.tick) < 180
+    ) {
+      last.count = (last.count || 1) + 1;
+      last.tick = tick;
+      last.timestamp = timestamp || last.timestamp;
+      last.location = { x: Math.round(location.x), y: Math.round(location.y) };
+
+      const prevDmg = last.metadata?.totalDamage || last.metadata?.netDamage || 0;
+      const newDmg = metadata?.netDamage || 0;
+      const totalDmg = prevDmg + newDmg;
+      last.metadata.totalDamage = totalDmg;
+
+      const pName = metadata?.attackerName || description.split(" atingiu ")[0] || `Entity #${primaryEntityId}`;
+      const tPart = metadata?.hitPartName || "corpo";
+      const tName = metadata?.targetName || `Entity #${secondaryEntityId}`;
+
+      last.description = `${pName} atacou ${tName} (${last.count}x) atingindo ${tPart}, causando ${Math.round(totalDmg)} de dano acumulado [X: ${last.location.x}, Y: ${last.location.y}]!`;
+      return last;
+    }
+  }
+
   const event = {
     id: nextEventId++,
+    count: 1,
     tick,
     timestamp: timestamp || { day: 0, hour: 0, minute: 0 },
     type, // "BIRTH", "DEATH", "ATTACK", "AMPUTATION", "FEED", "SPROUT"

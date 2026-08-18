@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 
 // =============================================================================
-// Brutopolis — Terminal-Based Biological Ecosystem Runner (ANSI 24-bit TrueColor)
+// Brutopolis — Terminal Roguelike Biological Simulation Runner & Explorer
 // =============================================================================
 
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { wash_memory, wash_load, wash_write_string } from "./wash.js";
-import { World } from "./js/world.js";
+import { wash_memory, wash_load } from "./wash.js";
+import { World, MAP_WIDTH, MAP_HEIGHT } from "./js/world.js";
 import {
   createEntity,
   tickEntities,
@@ -37,20 +37,40 @@ import {
   createBat,
   createSeaSerpent,
   createDragon,
+  createCactus,
+  createScorpion,
+  createLizard,
+  createAlpineShrub,
+  createMountainGoat,
+  createWoodItem,
+  createStoneItem,
   createOakTree,
   createWillowTree,
   createPineTree,
   createWaterLily,
   createSeaweed,
   createFruit,
-  createSeedEntity
+  createSeedEntity,
+  createMouthProp,
+  createCommunicationProp,
+  createCrafterProp,
+  createMinerProp,
+  createBuilderProp,
+  createBruiseProp,
+  createConcussionProp,
+  createScarProp,
+  createLungsProp,
+  createGillsProp,
+  createWingsProp,
+  createCombatProp,
+  createBodyRegenerationProp
 } from "./js/properties.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // ---------------------------------------------------------------------------
-// Simulation State
+// Simulation State & Modes ("MAP", "INSPECT", "ENTITIES", "GROUPS", "LOGS")
 // ---------------------------------------------------------------------------
 
 let shader = null;
@@ -61,53 +81,166 @@ let mem = null;
 let isPaused = false;
 let currentTps = 60;
 let simAccumulator = 0;
-let selectedEntityId = -1;
 let currentPreset = 0;
-let showHelp = false;
-let isMouseEnabled = true;
 
-// Timing & FPS
+let appMode = "MAP";
+let inspectScroll = 0;
+let inspectedEntity = null;
+
+// Registry State
+let registrySelectedIdx = 0;
+let registryFilter = "ALL"; // "ALL", "LIVING", "ITEMS", "HUMANOID", "BEAST", "FLORA"
+let groupSelectedIdx = 0;
+let logSelectedIdx = 0;
+let logFilter = "ALL"; // "ALL", "ATTACK", "AMPUTATION", "DEATH", "SPROUT", "COMMUNICATION"
+
+// Cursor & Viewport
+let cursorX = 256;
+let cursorY = 256;
+let camX = 256;
+let camY = 256;
+let selectedEntityId = -1;
+
+// Performance & Terminal Layout
 let lastTime = Date.now();
 let fpsFrames = 0;
 let currentFps = 60;
 let lastFpsUpdate = Date.now();
 
-// ---------------------------------------------------------------------------
-// Terminal Setup & Mouse SGR Handling
-// ---------------------------------------------------------------------------
-
 let termCols = process.stdout.columns || 120;
 let termRows = process.stdout.rows || 40;
-
-// Dynamic Viewport Dimensions
-let sidebarWidth = 46;
-let mapCols = Math.max(30, termCols - sidebarWidth - 1);
-let mapRows = Math.max(15, termRows - 2);
-
-// Framebuffer dimensions (2 vertical pixels per terminal character row using half-blocks ▀)
-let fbWidth = mapCols;
-let fbHeight = mapRows * 2;
-let framePixels = new Uint8Array(fbWidth * fbHeight * 4);
+let mapCols = termCols;
+let mapRows = Math.max(10, termRows - 2);
 
 function updateLayoutDimensions() {
   termCols = process.stdout.columns || 120;
   termRows = process.stdout.rows || 40;
-
-  sidebarWidth = termCols >= 110 ? 46 : (termCols >= 90 ? 38 : 30);
-  mapCols = Math.max(20, termCols - sidebarWidth - 1);
+  mapCols = termCols;
   mapRows = Math.max(10, termRows - 2);
-
-  fbWidth = mapCols;
-  fbHeight = mapRows * 2;
-  const newSize = fbWidth * fbHeight * 4;
-  if (framePixels.length !== newSize) {
-    framePixels = new Uint8Array(newSize);
-  }
 }
 
 process.stdout.on("resize", () => {
   updateLayoutDimensions();
 });
+
+function stripAnsi(str) {
+  return str.replace(/\x1b\[[0-9;]*m/g, "");
+}
+
+// ---------------------------------------------------------------------------
+// Roguelike Glyph Dictionary & Palette
+// ---------------------------------------------------------------------------
+
+const TERRAIN_GLYPHS = [
+  // 0: Fertile Soil / Forest
+  { glyph: ".", fg: "\x1b[38;5;71m", bg: "\x1b[48;5;234m", name: "Fertile Soil / Forest" },
+  // 1: Mountain Peak
+  { glyph: "▲", fg: "\x1b[38;5;252m", bg: "\x1b[48;5;237m", name: "Mountain Peak" },
+  // 2: Ocean Water
+  { glyph: "≈", fg: "\x1b[38;5;75m", bg: "\x1b[48;5;17m", name: "Ocean Water" },
+  // 3: Sand Dunes / Desert
+  { glyph: "░", fg: "\x1b[38;5;221m", bg: "\x1b[48;5;58m", name: "Sand Dunes / Desert" },
+  // 4: Rocky Foothills / Stone
+  { glyph: "#", fg: "\x1b[38;5;245m", bg: "\x1b[48;5;236m", name: "Rocky Foothills / Stone" },
+  // 5: Void
+  { glyph: " ", fg: "\x1b[38;5;235m", bg: "\x1b[48;5;232m", name: "Void" }
+];
+
+function getEntityGlyph(ent) {
+  if (!ent || !ent.properties) return { glyph: "?", fg: "\x1b[37m", bg: "\x1b[40m" };
+
+  const name = ent.properties.name || "";
+  const skin = ent.properties.render?.skin || "";
+  const species = ent.properties.species || "";
+
+  // 1. Sentient Humanoids
+  if (name.includes("Knight") || name.includes("Cavaleiro") || skin.includes("Knight")) {
+    return { glyph: "@", fg: "\x1b[1;38;5;231m", bg: "\x1b[48;5;24m" };
+  }
+  if (name.includes("Archer") || name.includes("Arqueira") || skin.includes("Archer")) {
+    return { glyph: "a", fg: "\x1b[1;38;5;119m", bg: "\x1b[48;5;22m" };
+  }
+  if (name.includes("Goblin") || skin.includes("Goblin")) {
+    return { glyph: "g", fg: "\x1b[1;38;5;113m", bg: "\x1b[48;5;58m" };
+  }
+
+  // 2. Predators & Beasts
+  if (name.includes("Wolf") || name.includes("Lobo") || skin.includes("Wolf")) {
+    return { glyph: "d", fg: "\x1b[1;38;5;153m", bg: "\x1b[48;5;236m" };
+  }
+  if (name.includes("Bear") || name.includes("Urso") || skin.includes("Bear")) {
+    return { glyph: "B", fg: "\x1b[1;38;5;172m", bg: "\x1b[48;5;52m" };
+  }
+  if (name.includes("Cat") || name.includes("Gato") || skin.includes("Cat")) {
+    return { glyph: "c", fg: "\x1b[1;38;5;220m", bg: "\x1b[48;5;94m" };
+  }
+  if (name.includes("Goat") || name.includes("Bode") || species === "goat") {
+    return { glyph: "q", fg: "\x1b[1;38;5;254m", bg: "\x1b[48;5;238m" };
+  }
+  if (name.includes("Scorpion") || name.includes("Escorpião") || species === "scorpion") {
+    return { glyph: "s", fg: "\x1b[1;38;5;214m", bg: "\x1b[48;5;58m" };
+  }
+  if (name.includes("Lizard") || name.includes("Lagarto") || species === "lizard") {
+    return { glyph: "l", fg: "\x1b[1;38;5;149m", bg: "\x1b[48;5;94m" };
+  }
+  if (name.includes("Bat") || name.includes("Morcego") || skin.includes("Bat")) {
+    return { glyph: "b", fg: "\x1b[1;38;5;176m", bg: "\x1b[48;5;54m" };
+  }
+  if (name.includes("Serpent") || name.includes("Serpente") || skin.includes("Snake")) {
+    return { glyph: "S", fg: "\x1b[1;38;5;44m", bg: "\x1b[48;5;23m" };
+  }
+  if (name.includes("Dragon") || name.includes("Dragão") || skin.includes("Dragon")) {
+    return { glyph: "D", fg: "\x1b[1;38;5;196m", bg: "\x1b[48;5;52m" };
+  }
+
+  // 3. Flora & Trees
+  if (name.includes("Oak") || name.includes("Carvalho") || species === "oak") {
+    return { glyph: "♣", fg: "\x1b[1;38;5;78m", bg: "\x1b[48;5;22m" };
+  }
+  if (name.includes("Willow") || name.includes("Salgueiro") || species === "willow") {
+    return { glyph: "¶", fg: "\x1b[1;38;5;114m", bg: "\x1b[48;5;23m" };
+  }
+  if (name.includes("Pine") || name.includes("Pinheiro") || species === "pine") {
+    return { glyph: "▲", fg: "\x1b[1;38;5;71m", bg: "\x1b[48;5;235m" };
+  }
+  if (name.includes("Cactus") || name.includes("Cacto") || species === "cactus") {
+    return { glyph: "ψ", fg: "\x1b[1;38;5;112m", bg: "\x1b[48;5;58m" };
+  }
+  if (name.includes("Shrub") || name.includes("Líquen") || species === "shrub") {
+    return { glyph: "*", fg: "\x1b[1;38;5;116m", bg: "\x1b[48;5;236m" };
+  }
+  if (name.includes("Lily") || name.includes("Vitória-Régia")) {
+    return { glyph: "o", fg: "\x1b[1;38;5;170m", bg: "\x1b[48;5;17m" };
+  }
+  if (name.includes("Seaweed") || name.includes("Alga")) {
+    return { glyph: "∫", fg: "\x1b[1;38;5;42m", bg: "\x1b[48;5;18m" };
+  }
+
+  // 4. Items & Resources
+  if (ent.properties.edible?.foodType === "fruit" || name.includes("Fruit") || name.includes("Fruto")) {
+    return { glyph: "%", fg: "\x1b[1;38;5;208m", bg: "\x1b[48;5;94m" };
+  }
+  if (ent.properties.germination || name.includes("Seed") || name.includes("Semente")) {
+    return { glyph: "·", fg: "\x1b[1;38;5;179m", bg: "\x1b[48;5;234m" };
+  }
+  if (ent.properties.resourceType === "wood" || name.includes("Wood") || name.includes("Madeira")) {
+    return { glyph: "=", fg: "\x1b[1;38;5;137m", bg: "\x1b[48;5;235m" };
+  }
+  if (ent.properties.resourceType === "stone" || name.includes("Stone") || name.includes("Pedra")) {
+    return { glyph: "*", fg: "\x1b[1;38;5;248m", bg: "\x1b[48;5;237m" };
+  }
+  if (ent.properties.heatSource || name.includes("Campfire") || name.includes("Fogueira")) {
+    return { glyph: "*", fg: "\x1b[1;38;5;202m", bg: "\x1b[48;5;52m" };
+  }
+  if (ent.properties.fertilizer || name.includes("Feces") || name.includes("Fezes")) {
+    return { glyph: "~", fg: "\x1b[38;5;94m", bg: "\x1b[48;5;234m" };
+  }
+  if (ent.properties.edible?.foodType === "meat" || name.includes("Meat") || name.includes("Carne")) {
+    return { glyph: "%", fg: "\x1b[1;38;5;167m", bg: "\x1b[48;5;52m" };
+  }
+
+  return { glyph: "?", fg: "\x1b[37m", bg: "\x1b[40m" };
+}
 
 // ---------------------------------------------------------------------------
 // World Initialization
@@ -136,51 +269,61 @@ function resetWorld(presetId = 0) {
   resetWorldEvents();
   world.refresh();
   entities = [];
-  selectedEntityId = -1;
 
-  // 1. Adult Trees Spread Globally (Oak, Willow, Pine)
-  spawnRandomGlobal(70, createOakTree, (x, y) => world.getTile(x, y) === 0);
-  spawnRandomGlobal(60, createWillowTree, (x, y) => world.getTile(x, y) === 0 || world.getTile(x, y) === 2);
-  spawnRandomGlobal(50, createPineTree, (x, y) => world.getTile(x, y) === 0 || world.getTile(x, y) === 1);
+  cursorX = Math.floor(shader.exports.wasm_get_camera_x()) || 256;
+  cursorY = Math.floor(shader.exports.wasm_get_camera_y()) || 256;
+  camX = cursorX;
+  camY = cursorY;
 
-  // 2. Aquatic Plants in Seas and Lakes
-  spawnRandomGlobal(80, createWaterLily, (x, y) => world.getTile(x, y) === 2);
-  spawnRandomGlobal(100, createSeaweed, (x, y) => world.getTile(x, y) === 2);
+  // Biome Flora
+  spawnRandomGlobal(35, createOakTree, (x, y) => world.getTile(x, y) === 0);
+  spawnRandomGlobal(25, createWillowTree, (x, y) => world.getTile(x, y) === 0 || world.getTile(x, y) === 3);
+  spawnRandomGlobal(30, createCactus, (x, y) => world.getTile(x, y) === 3);
+  spawnRandomGlobal(25, createAlpineShrub, (x, y) => world.getTile(x, y) === 4 || world.getTile(x, y) === 1);
+  spawnRandomGlobal(20, createPineTree, (x, y) => world.getTile(x, y) === 4 || world.getTile(x, y) === 0);
+  spawnRandomGlobal(40, createWaterLily, (x, y) => world.getTile(x, y) === 2);
+  spawnRandomGlobal(50, createSeaweed, (x, y) => world.getTile(x, y) === 2);
 
-  // 3. Seeds & Fruits Scattered Globally
-  spawnRandomGlobal(150, (x, y) => createSeedEntity(x, y, Math.random() < 0.5 ? "large" : "small", Math.random() < 0.5 ? "oak" : "willow"), (x, y) => world.getTile(x, y) === 0);
-  spawnRandomGlobal(80, (x, y) => createFruit(x, y, Math.random() < 0.5 ? "large" : "small", Math.random() < 0.5 ? "oak" : "willow"), (x, y) => world.isWalkable(x, y));
+  // Resources & Items
+  spawnRandomGlobal(60, (x, y) => createSeedEntity(x, y, "large", "oak"), (x, y) => world.getTile(x, y) === 0);
+  spawnRandomGlobal(40, (x, y) => createSeedEntity(x, y, "small", "willow"), (x, y) => world.getTile(x, y) === 0 || world.getTile(x, y) === 3);
+  spawnRandomGlobal(30, (x, y) => createFruit(x, y, "large", "cactus"), (x, y) => world.getTile(x, y) === 3);
+  spawnRandomGlobal(40, (x, y) => createFruit(x, y, "large", "oak"), (x, y) => world.isWalkable(x, y));
+  spawnRandomGlobal(50, createWoodItem, (x, y) => world.getTile(x, y) === 0);
+  spawnRandomGlobal(50, createStoneItem, (x, y) => world.getTile(x, y) === 4 || world.getTile(x, y) === 1);
 
-  // 4. Animals & Humanoids
-  spawnRandomGlobal(25, (x, y) => createCat(x, y, false), (x, y) => world.getTile(x, y) === 0);
-  spawnRandomGlobal(18, createWolf, (x, y) => world.getTile(x, y) === 0 || world.getTile(x, y) === 1);
+  // Biome Fauna
+  spawnRandomGlobal(25, createScorpion, (x, y) => world.getTile(x, y) === 3);
+  spawnRandomGlobal(20, createLizard, (x, y) => world.getTile(x, y) === 3 || world.getTile(x, y) === 0);
+  spawnRandomGlobal(20, createMountainGoat, (x, y) => world.getTile(x, y) === 4 || world.getTile(x, y) === 1);
+  spawnRandomGlobal(20, (x, y) => createCat(x, y, false), (x, y) => world.getTile(x, y) === 0);
+  spawnRandomGlobal(18, createWolf, (x, y) => world.getTile(x, y) === 0 || world.getTile(x, y) === 4);
   spawnRandomGlobal(10, createBear, (x, y) => world.getTile(x, y) === 0);
-  spawnRandomGlobal(30, createBat, (x, y) => true);
+  spawnRandomGlobal(25, createBat, (x, y) => true);
   spawnRandomGlobal(20, createSeaSerpent, (x, y) => world.getTile(x, y) === 2);
-  spawnRandomGlobal(4, createDragon, (x, y) => world.getTile(x, y) === 1);
-  spawnRandomGlobal(20, (x, y) => createKnight(x, y, Math.random() < 0.5 ? "male" : "female"), (x, y) => world.getTile(x, y) === 0);
-  spawnRandomGlobal(20, (x, y) => createArcher(x, y, Math.random() < 0.5 ? "male" : "female"), (x, y) => world.getTile(x, y) === 0);
-  spawnRandomGlobal(25, createGoblin, (x, y) => world.getTile(x, y) === 0 || world.getTile(x, y) === 1);
+  spawnRandomGlobal(4, createDragon, (x, y) => world.getTile(x, y) === 1 || world.getTile(x, y) === 4);
+  spawnRandomGlobal(18, (x, y) => createKnight(x, y, Math.random() < 0.5 ? "male" : "female"), (x, y) => world.getTile(x, y) === 0);
+  spawnRandomGlobal(18, (x, y) => createArcher(x, y, Math.random() < 0.5 ? "male" : "female"), (x, y) => world.getTile(x, y) === 0);
+  spawnRandomGlobal(22, createGoblin, (x, y) => world.getTile(x, y) === 0 || world.getTile(x, y) === 4);
 
-  // Select first living entity
+  // Focus on first living entity
   const firstLiving = entities.find(e => e.properties && e.properties.life);
   if (firstLiving) {
     selectedEntityId = firstLiving.id;
-    shader.exports.wasm_select_entity(firstLiving.id);
+    cursorX = firstLiving.x;
+    cursorY = firstLiving.y;
+    camX = cursorX;
+    camY = cursorY;
   }
 }
 
-function spawnEntityAtCamera(factoryFn) {
-  if (!shader) return;
-  const cx = Math.floor(shader.exports.wasm_get_camera_x());
-  const cy = Math.floor(shader.exports.wasm_get_camera_y());
-  const ent = factoryFn(cx, cy);
+function spawnEntityAtCursor(factoryFn) {
+  const ent = factoryFn(cursorX, cursorY);
   entities.push(ent);
   selectedEntityId = ent.id;
-  shader.exports.wasm_select_entity(ent.id);
 }
 
-function cycleNextEntity() {
+function cycleNextLivingEntity() {
   if (entities.length === 0) return;
   const living = entities.filter(e => !e.destroyed && e.properties && e.properties.life);
   if (living.length === 0) return;
@@ -189,24 +332,410 @@ function cycleNextEntity() {
   const nextIdx = (curIdx + 1) % living.length;
   const nextEnt = living[nextIdx];
   selectedEntityId = nextEnt.id;
-  if (shader) {
-    shader.exports.wasm_select_entity(nextEnt.id);
-    shader.exports.wasm_set_camera(nextEnt.x, nextEnt.y, shader.exports.wasm_get_camera_zoom());
-  }
+  cursorX = nextEnt.x;
+  cursorY = nextEnt.y;
+  keepCursorInCamera();
+}
+
+function keepCursorInCamera() {
+  cursorX = Math.max(0, Math.min(MAP_WIDTH - 1, cursorX));
+  cursorY = Math.max(0, Math.min(MAP_HEIGHT - 1, cursorY));
+
+  const halfW = Math.floor(mapCols / 2);
+  const halfH = Math.floor(mapRows / 2);
+
+  camX = Math.max(halfW, Math.min(MAP_WIDTH - halfW, cursorX));
+  camY = Math.max(halfH, Math.min(MAP_HEIGHT - halfH, cursorY));
 }
 
 // ---------------------------------------------------------------------------
-// High-Speed ANSI Half-Block Frame Renderer
+// Stringify Object with ANSI Syntax Highlighting
 // ---------------------------------------------------------------------------
 
-function renderTerminalFrame() {
-  if (!shader || !world) return;
+function stringifyObjectWithColors(obj, indent = 2) {
+  const spaces = " ".repeat(indent);
+  if (obj === null) return "\x1b[38;5;244mnull\x1b[0m";
+  if (obj === undefined) return "\x1b[38;5;244mundefined\x1b[0m";
+  if (typeof obj === "number") return `\x1b[38;5;220m${Number.isInteger(obj) ? obj : obj.toFixed(2)}\x1b[0m`;
+  if (typeof obj === "boolean") return `\x1b[38;5;214m${obj}\x1b[0m`;
+  if (typeof obj === "string") return `\x1b[38;5;114m"${obj}"\x1b[0m`;
+  if (typeof obj === "function") return `\x1b[38;5;119m[Function: ${obj.name || "effect"}]\x1b[0m`;
+
+  if (Array.isArray(obj)) {
+    if (obj.length === 0) return "[]";
+    let out = "[\n";
+    for (let i = 0; i < obj.length; i++) {
+      out += `${spaces}  ${stringifyObjectWithColors(obj[i], indent + 2)}${i < obj.length - 1 ? "," : ""}\n`;
+    }
+    out += `${spaces}]`;
+    return out;
+  }
+
+  if (typeof obj === "object") {
+    const keys = Object.keys(obj);
+    if (keys.length === 0) return "{}";
+    let out = "{\n";
+    for (let i = 0; i < keys.length; i++) {
+      const k = keys[i];
+      const valStr = stringifyObjectWithColors(obj[k], indent + 2);
+      out += `${spaces}  \x1b[1;38;5;178m"${k}"\x1b[0m: ${valStr}${i < keys.length - 1 ? "," : ""}\n`;
+    }
+    out += `${spaces}}`;
+    return out;
+  }
+
+  return String(obj);
+}
+
+// ---------------------------------------------------------------------------
+// 1. Dedicated Full-Screen Biological Dossier / Inspector
+// ---------------------------------------------------------------------------
+
+function openDedicatedInspector(target) {
+  if (!target) {
+    target = entities.find(e => !e.destroyed && e.x === cursorX && e.y === cursorY);
+  }
+  if (!target && selectedEntityId > 0) {
+    target = getEntityById(selectedEntityId);
+  }
+
+  inspectedEntity = target || null;
+  inspectScroll = 0;
+  appMode = "INSPECT";
+  renderInspectorScreen();
+}
+
+function renderInspectorScreen() {
+  let out = "\x1b[H";
+
+  const title = inspectedEntity ? `BIOLOGICAL DOSSIER: ${inspectedEntity.properties.name || "Entity"} (#${inspectedEntity.id})` : "TERRAIN INSPECTION (NO CREATURE)";
+  const header = ` 🔬 \x1b[1;38;5;208m${title}\x1b[0m \x1b[90m│ POS: [X: ${cursorX}, Y: ${cursorY}]\x1b[0m \x1b[1;41;37m [PAUSED] \x1b[0m`;
+  out += `\x1b[48;5;235m${header}${" ".repeat(Math.max(2, termCols - stripAnsi(header).length))}\x1b[0m\x1b[K\n`;
+
+  const lines = [];
+  const divider = "\x1b[90m" + "─".repeat(termCols - 2) + "\x1b[0m";
+
+  if (!inspectedEntity) {
+    const t = world ? world.getTile(cursorX, cursorY) : 0;
+    const tName = world ? world.getTileName(t) : "Unknown";
+    lines.push(`\x1b[1;33m📍 TERRAIN DETAILS AT THIS COORDINATE:\x1b[0m`);
+    lines.push(`   Coordinates: \x1b[36m[X: ${cursorX}, Y: ${cursorY}]\x1b[0m`);
+    lines.push(`   Terrain Type: \x1b[32m${tName}\x1b[0m (Tile Code: ${t})`);
+    lines.push(`   Walkable: \x1b[33m${world && world.isWalkable(cursorX, cursorY) ? "Yes" : "No"}\x1b[0m`);
+    lines.push(``);
+    lines.push(`\x1b[90mNo active creature or item found at this exact tile.\x1b[0m`);
+  } else {
+    const ent = inspectedEntity;
+    const props = ent.properties;
+    const eg = getEntityGlyph(ent);
+
+    // Hero Summary
+    lines.push(`\x1b[1;37m╔══ GENERAL OVERVIEW ═══════════════════════════════════════════════════════════════════════════╗\x1b[0m`);
+    lines.push(`  Glyph: ${eg.bg}${eg.fg} ${eg.glyph} \x1b[0m  Name: \x1b[1;33m${props.name || "N/A"}\x1b[0m (ID: #${ent.id})  Species: \x1b[32m${props.species || "N/A"}\x1b[0m  Group: \x1b[36m${props.group?.name || "Solitary"}\x1b[0m`);
+    lines.push(`  Position: \x1b[36mX:${ent.x}, Y:${ent.y}\x1b[0m  Status: \x1b[1;32m${props.life ? (props.life.energy > 0 ? "🟢 ALIVE" : "💀 DEAD") : "📦 ITEM"}\x1b[0m  Active Properties: \x1b[33m${Object.keys(props).length}\x1b[0m`);
+    lines.push(`\x1b[1;37m╚════════════════════════════════════════════════════════════════════════════════════════════════╝\x1b[0m`);
+    lines.push(``);
+
+    // Vital Gauges
+    if (props.life) {
+      lines.push(`  \x1b[1;32m⚡ Vital Energy:\x1b[0m      ${Math.round(props.life.energy)} / ${props.life.max} cal (${Math.round((props.life.energy / props.life.max) * 100)}%)`);
+    }
+    const condProp = Object.values(props).find(p => p && typeof p.condition === "number" && typeof p.maxCondition === "number");
+    if (condProp) {
+      lines.push(`  \x1b[1;36m🛡️ Physical Condition:\x1b[0m ${Math.round(condProp.condition)} / ${condProp.maxCondition} (${Math.round((condProp.condition / condProp.maxCondition) * 100)}%)`);
+    }
+    if (props.bladder) {
+      lines.push(`  \x1b[1;34m💧 Bladder / Water:\x1b[0m    ${Math.round(props.bladder.water)} / ${props.bladder.maxWater} ml`);
+    }
+
+    // Amputations
+    for (const [k, p] of Object.entries(props)) {
+      if (k.startsWith("amputated_")) {
+        lines.push(`  \x1b[1;41;37m ⚠️ AMPUTATED LIMB: ${p.part || k} ─ Bleeding: -${p.bleedRate} cal/s \x1b[0m`);
+      }
+    }
+    lines.push(``);
+
+    // Complete Object Dump
+    lines.push(`\x1b[1;36m📦 COMPLETE ENTITY.PROPERTIES OBJECT DUMP (RAW MEMORY STRUCTURE):\x1b[0m`);
+    lines.push(divider);
+
+    const fullDump = stringifyObjectWithColors(props, 2);
+    const dumpLines = fullDump.split("\n");
+    for (const dl of dumpLines) {
+      lines.push("  " + dl);
+    }
+    lines.push(divider);
+    lines.push(``);
+
+    // Event History
+    const myEvents = getEventsForEntity(ent.id, 10);
+    if (myEvents.length > 0) {
+      lines.push(`\x1b[1;33m📜 EVENT LOG FOR THIS CREATURE (${myEvents.length} events):\x1b[0m`);
+      for (const ev of myEvents) {
+        const typeColor = ev.type === "DEATH" ? "\x1b[31m" : ev.type === "ATTACK" ? "\x1b[33m" : ev.type === "AMPUTATION" ? "\x1b[35m" : "\x1b[32m";
+        lines.push(`  ${typeColor}• [${ev.type}]\x1b[0m \x1b[90m[Day ${ev.timestamp.day} ${String(ev.timestamp.hour).padStart(2,"0")}:${String(ev.timestamp.minute).padStart(2,"0")}]\x1b[0m ${ev.description}`);
+      }
+      lines.push(``);
+    }
+  }
+
+  const visibleRows = termRows - 2;
+  const maxScroll = Math.max(0, lines.length - visibleRows);
+  inspectScroll = Math.max(0, Math.min(maxScroll, inspectScroll));
+
+  for (let r = 0; r < visibleRows - 1; r++) {
+    const line = lines[inspectScroll + r] || "";
+    out += `${line}\x1b[K\n`;
+  }
+
+  const scrollInfo = maxScroll > 0 ? `\x1b[90m(Lines ${inspectScroll + 1}-${Math.min(lines.length, inspectScroll + visibleRows)} of ${lines.length} │ Arrows / Wheel to scroll)\x1b[0m ` : "";
+  const footerPrompt = `\x1b[1;33m[ Press ESC, ENTER, SPACE or I to exit dossier ]\x1b[0m`;
+  out += `\x1b[48;5;235m ${footerPrompt} ${scrollInfo}\x1b[0m\x1b[K`;
+
+  process.stdout.write(out);
+}
+
+// ---------------------------------------------------------------------------
+// 2. Global Entities Explorer & Registry Screen (Hotkey: E)
+// ---------------------------------------------------------------------------
+
+function getFilteredEntities() {
+  return entities.filter(e => {
+    if (e.destroyed) return false;
+    if (registryFilter === "LIVING") return !!e.properties.life;
+    if (registryFilter === "ITEMS") return !!e.properties.edible || !!e.properties.resourceType || !!e.properties.germination;
+    if (registryFilter === "HUMANOID") return e.properties.name?.includes("Knight") || e.properties.name?.includes("Archer") || e.properties.name?.includes("Goblin");
+    if (registryFilter === "BEAST") return e.properties.species === "wolf" || e.properties.species === "bear" || e.properties.species === "cat" || e.properties.species === "scorpion" || e.properties.species === "lizard" || e.properties.species === "goat" || e.properties.species === "dragon";
+    if (registryFilter === "FLORA") return e.properties.species === "oak" || e.properties.species === "willow" || e.properties.species === "pine" || e.properties.species === "cactus" || e.properties.species === "shrub";
+    return true;
+  });
+}
+
+function renderEntitiesRegistryScreen() {
+  let out = "\x1b[H";
+
+  const list = getFilteredEntities();
+  registrySelectedIdx = Math.max(0, Math.min(list.length - 1, registrySelectedIdx));
+
+  const filterTabs = `Filter: [1:ALL (${entities.length})] [2:LIVING] [3:ITEMS] [4:HUMANOIDS] [5:BEASTS] [6:FLORA]`;
+  const header = ` 📋 \x1b[1;38;5;208mGLOBAL ENTITIES REGISTRY (${list.length} shown)\x1b[0m \x1b[90m│ ${filterTabs}\x1b[0m \x1b[1;41;37m [PAUSED] \x1b[0m`;
+  out += `\x1b[48;5;235m${header}${" ".repeat(Math.max(2, termCols - stripAnsi(header).length))}\x1b[0m\x1b[K\n`;
+
+  const colHeader = `  \x1b[1;37mID   GLYPH  NAME                         SPECIES         POS        ENERGY / MAX        STATUS    GROUP\x1b[0m`;
+  out += `${colHeader}\x1b[K\n`;
+
+  const visibleRows = termRows - 4;
+  const startIdx = Math.max(0, Math.min(list.length - visibleRows, registrySelectedIdx - Math.floor(visibleRows / 2)));
+
+  for (let i = startIdx; i < startIdx + visibleRows; i++) {
+    if (i >= list.length) {
+      out += `\x1b[K\n`;
+      continue;
+    }
+
+    const ent = list[i];
+    const isSelected = i === registrySelectedIdx;
+    const eg = getEntityGlyph(ent);
+    const idStr = String(ent.id).padEnd(5);
+    const nameStr = (ent.properties.name || "Entity").slice(0, 26).padEnd(27);
+    const speciesStr = (ent.properties.species || "-").slice(0, 14).padEnd(15);
+    const posStr = `[${ent.x},${ent.y}]`.padEnd(10);
+    
+    let energyStr = "-";
+    if (ent.properties.life) {
+      energyStr = `${Math.round(ent.properties.life.energy)}/${ent.properties.life.max}`;
+    }
+    energyStr = energyStr.slice(0, 18).padEnd(19);
+
+    const statusStr = ent.properties.life ? (ent.properties.life.energy > 0 ? "\x1b[32mALIVE\x1b[0m" : "\x1b[31mDEAD\x1b[0m") : "\x1b[33mITEM\x1b[0m";
+    const groupStr = (ent.properties.group?.name || "-").slice(0, 16);
+
+    const lineText = ` ${idStr} ${eg.bg}${eg.fg} ${eg.glyph} \x1b[0m ${nameStr} ${speciesStr} ${posStr} ${energyStr} ${statusStr}   ${groupStr}`;
+
+    if (isSelected) {
+      out += `\x1b[7;1;38;5;226m▶${lineText}\x1b[0m\x1b[K\n`;
+    } else {
+      out += ` ${lineText}\x1b[0m\x1b[K\n`;
+    }
+  }
+
+  const foot = `\x1b[1;33m[Up/Down/Wheel]\x1b[0m Navigate \x1b[90m│\x1b[0m \x1b[1;33m[Enter/I]\x1b[0m Dossier \x1b[90m│\x1b[0m \x1b[1;33m[Space/C]\x1b[0m Focus Map \x1b[90m│\x1b[0m \x1b[1;33m[K]\x1b[0m Kill \x1b[90m│\x1b[0m \x1b[1;33m[1-6]\x1b[0m Filter \x1b[90m│\x1b[0m \x1b[1;33m[ESC/E]\x1b[0m Back`;
+  out += `\x1b[48;5;235m ${foot}${" ".repeat(Math.max(1, termCols - stripAnsi(foot).length - 2))} \x1b[0m\x1b[K`;
+
+  process.stdout.write(out);
+}
+
+// ---------------------------------------------------------------------------
+// 3. Global Groups & Factions Registry Screen (Hotkey: G)
+// ---------------------------------------------------------------------------
+
+function getAllGroups() {
+  const map = new Map();
+  for (const e of entities) {
+    if (e.destroyed) continue;
+    if (e.properties && e.properties.group) {
+      const g = e.properties.group;
+      if (!map.has(g.id)) {
+        map.set(g.id, g);
+      }
+    }
+  }
+  return Array.from(map.values());
+}
+
+function renderGroupsRegistryScreen() {
+  let out = "\x1b[H";
+
+  const groups = getAllGroups();
+  groupSelectedIdx = Math.max(0, Math.min(groups.length - 1, groupSelectedIdx));
+
+  const header = ` 🛡️ \x1b[1;38;5;208mGLOBAL GROUPS & FACTIONS REGISTRY (${groups.length} active clans)\x1b[0m \x1b[1;41;37m [PAUSED] \x1b[0m`;
+  out += `\x1b[48;5;235m${header}${" ".repeat(Math.max(2, termCols - stripAnsi(header).length))}\x1b[0m\x1b[K\n`;
+
+  if (groups.length === 0) {
+    out += `\n  \x1b[90mNo active social groups or factions founded yet.\x1b[0m\n`;
+    out += `  \x1b[90mCreatures form groups via social communication or bio-injection.\x1b[0m\n`;
+  } else {
+    const colHeader = `  \x1b[1;37mID   GROUP NAME                   LEADER/FOUNDER        MEMBERS   CLAIMED ZONES   CAMPFIRE\x1b[0m`;
+    out += `${colHeader}\x1b[K\n`;
+
+    const visibleRows = termRows - 4;
+    const startIdx = Math.max(0, Math.min(groups.length - visibleRows, groupSelectedIdx - Math.floor(visibleRows / 2)));
+
+    for (let i = startIdx; i < startIdx + visibleRows; i++) {
+      if (i >= groups.length) {
+        out += `\x1b[K\n`;
+        continue;
+      }
+
+      const g = groups[i];
+      const isSelected = i === groupSelectedIdx;
+      const idStr = String(g.id).padEnd(4);
+      const nameStr = (g.name || `Clan #${g.id}`).slice(0, 26).padEnd(28);
+
+      const leaderEnt = entities.find(e => e.id === g.members[0] && !e.destroyed);
+      const leaderName = (leaderEnt ? leaderEnt.properties.name : `Member #${g.members[0]}`).slice(0, 20).padEnd(21);
+
+      const livingMembers = g.members.filter(mid => entities.some(e => e.id === mid && !e.destroyed)).length;
+      const memStr = `${livingMembers}/${g.members.length} alive`.padEnd(10);
+      const zonesStr = (g.claimedZones?.join(", ") || "None").slice(0, 15).padEnd(16);
+      const campStr = g.campfire ? `[${g.campfire.x}, ${g.campfire.y}]` : "None";
+
+      const lineText = ` ${idStr} ${nameStr} ${leaderName} ${memStr} ${zonesStr} ${campStr}`;
+
+      if (isSelected) {
+        out += `\x1b[7;1;38;5;226m▶${lineText}\x1b[0m\x1b[K\n`;
+      } else {
+        out += ` ${lineText}\x1b[0m\x1b[K\n`;
+      }
+    }
+  }
+
+  const foot = `\x1b[1;33m[Up/Down/Wheel]\x1b[0m Select \x1b[90m│\x1b[0m \x1b[1;33m[Enter/I]\x1b[0m Roster Details \x1b[90m│\x1b[0m \x1b[1;33m[Space/C]\x1b[0m Focus Leader \x1b[90m│\x1b[0m \x1b[1;33m[ESC/G]\x1b[0m Back`;
+  out += `\x1b[48;5;235m ${foot}${" ".repeat(Math.max(1, termCols - stripAnsi(foot).length - 2))} \x1b[0m\x1b[K`;
+
+  process.stdout.write(out);
+}
+
+// ---------------------------------------------------------------------------
+// 4. Global World Event Log Explorer Screen (Hotkey: L)
+// ---------------------------------------------------------------------------
+
+function getFilteredLogs() {
+  const events = allEvents.slice().reverse();
+  if (logFilter === "ALL") return events;
+  return events.filter(e => e.type === logFilter);
+}
+
+function renderWorldLogScreen() {
+  let out = "\x1b[H";
+
+  const list = getFilteredLogs();
+  logSelectedIdx = Math.max(0, Math.min(list.length - 1, logSelectedIdx));
+
+  const filterTabs = `Filter: [1:ALL (${allEvents.length})] [2:ATTACK] [3:AMPUTATION] [4:DEATH] [5:SPROUT] [6:COMM]`;
+  const header = ` 📜 \x1b[1;38;5;208mWORLD EVENT LOG (${list.length} recorded)\x1b[0m \x1b[90m│ ${filterTabs}\x1b[0m \x1b[1;41;37m [PAUSED] \x1b[0m`;
+  out += `\x1b[48;5;235m${header}${" ".repeat(Math.max(2, termCols - stripAnsi(header).length))}\x1b[0m\x1b[K\n`;
+
+  if (list.length === 0) {
+    out += `\n  \x1b[90mNo events recorded yet for this filter.\x1b[0m\n`;
+  } else {
+    const colHeader = `  \x1b[1;37mTIME        TYPE           LOCATION   DESCRIPTION\x1b[0m`;
+    out += `${colHeader}\x1b[K\n`;
+
+    const visibleRows = termRows - 4;
+    const startIdx = Math.max(0, Math.min(list.length - visibleRows, logSelectedIdx - Math.floor(visibleRows / 2)));
+
+    for (let i = startIdx; i < startIdx + visibleRows; i++) {
+      if (i >= list.length) {
+        out += `\x1b[K\n`;
+        continue;
+      }
+
+      const ev = list[i];
+      const isSelected = i === logSelectedIdx;
+
+      const timeStr = `[D${ev.timestamp.day} ${String(ev.timestamp.hour).padStart(2,"0")}:${String(ev.timestamp.minute).padStart(2,"0")}]`.padEnd(12);
+      
+      const typeColor = ev.type === "DEATH" ? "\x1b[1;31m" : ev.type === "ATTACK" ? "\x1b[1;33m" : ev.type === "AMPUTATION" ? "\x1b[1;35m" : ev.type === "SPROUT" ? "\x1b[1;32m" : "\x1b[1;36m";
+      const typeStr = (ev.type || "EVENT").padEnd(14);
+      const locStr = ev.location ? `[${ev.location.x},${ev.location.y}]`.padEnd(10) : "[--, --]  ";
+      const descStr = ev.description || "";
+
+      const lineText = ` ${timeStr} ${typeColor}${typeStr}\x1b[0m ${locStr} ${descStr}`;
+
+      if (isSelected) {
+        out += `\x1b[7;1;38;5;226m▶${lineText}\x1b[0m\x1b[K\n`;
+      } else {
+        out += ` ${lineText}\x1b[0m\x1b[K\n`;
+      }
+    }
+  }
+
+  // Selected Log Event Details Preview Box at the bottom if space permits
+  const selEv = list[logSelectedIdx];
+  if (selEv && termRows >= 18) {
+    out += `\x1b[1;30m${"─".repeat(termCols)}\x1b[0m\x1b[K\n`;
+    out += ` \x1b[1;33m[EVENT #${selEv.id} DETAIL]\x1b[0m \x1b[1;37mType:\x1b[0m ${selEv.type} \x1b[1;37mPos:\x1b[0m [${selEv.location?.x}, ${selEv.location?.y}]\x1b[K\n`;
+    out += ` \x1b[37m${selEv.description}\x1b[0m\x1b[K\n`;
+  }
+
+  const foot = `\x1b[1;33m[Up/Down/Wheel]\x1b[0m Select \x1b[90m│\x1b[0m \x1b[1;33m[Space/C/Enter]\x1b[0m Focus Event Map \x1b[90m│\x1b[0m \x1b[1;33m[1-6]\x1b[0m Filter \x1b[90m│\x1b[0m \x1b[1;33m[ESC/L]\x1b[0m Back`;
+  out += `\x1b[48;5;235m ${foot}${" ".repeat(Math.max(1, termCols - stripAnsi(foot).length - 2))} \x1b[0m\x1b[K`;
+
+  process.stdout.write(out);
+}
+
+// ---------------------------------------------------------------------------
+// 5. Main Roguelike Full-Width Map Screen
+// ---------------------------------------------------------------------------
+
+function renderRoguelikeScreen() {
+  if (appMode === "INSPECT") {
+    renderInspectorScreen();
+    return;
+  }
+  if (appMode === "ENTITIES") {
+    renderEntitiesRegistryScreen();
+    return;
+  }
+  if (appMode === "GROUPS") {
+    renderGroupsRegistryScreen();
+    return;
+  }
+  if (appMode === "LOGS") {
+    renderWorldLogScreen();
+    return;
+  }
+
+  if (!world) return;
 
   const now = Date.now();
   const dt = Math.min(0.1, (now - lastTime) * 0.001);
   lastTime = now;
 
-  // FPS Counter
+  // FPS Meter
   fpsFrames++;
   if (now - lastFpsUpdate >= 1000) {
     currentFps = fpsFrames;
@@ -231,230 +760,139 @@ function renderTerminalFrame() {
     if (steps >= maxSteps) simAccumulator = 0;
   }
 
-  // 2. Sync renderable entities into WASM shared memory
-  syncRenderToWasm(entities, mem, shader.exports);
+  // 2. Build Spatial Hash for Viewport
+  const halfW = Math.floor(mapCols / 2);
+  const halfH = Math.floor(mapRows / 2);
+  const minX = Math.max(0, camX - halfW);
+  const maxX = minX + mapCols;
+  const minY = Math.max(0, camY - halfH);
+  const maxY = minY + mapRows;
 
-  // 3. Update WASM clock & lighting
-  shader.exports.wasm_set_clock(
-    world.clock.day,
-    world.clock.hour,
-    world.clock.minute,
-    world.clock.globalLight,
-    world.clock.globalHeat,
-    entities.length
-  );
+  const entityGrid = new Map();
+  let entityUnderCursor = null;
 
-  // 4. Render 2D pixel map to WASM memory buffer
-  shader.exports._start(
-    mem.heapBase,
-    fbWidth,
-    fbHeight,
-    now * 0.001,
-    0,
-    0,
-    0,
-    dt
-  );
+  for (let i = 0; i < entities.length; i++) {
+    const e = entities[i];
+    if (e.destroyed) continue;
 
-  // Copy WASM rendered RGBA pixels
-  const wasmPixels = new Uint8Array(mem.buffer, mem.heapBase, fbWidth * fbHeight * 4);
-  framePixels.set(wasmPixels);
+    if (e.x === cursorX && e.y === cursorY) {
+      if (!entityUnderCursor || (e.properties.life && !entityUnderCursor.properties.life)) {
+        entityUnderCursor = e;
+      }
+    }
 
-  // 5. Build ANSI Text Buffer with Side-by-Side Split Screen
-  let output = "\x1b[H"; // Move cursor to top-left (0,0)
+    if (e.x >= minX && e.x < maxX && e.y >= minY && e.y < maxY) {
+      const key = `${e.x},${e.y}`;
+      const existing = entityGrid.get(key);
+      if (!existing || (e.properties.life && !existing.properties.life)) {
+        entityGrid.set(key, e);
+      }
+    }
+  }
 
-  // Top Header Bar
+  if (entityUnderCursor) {
+    selectedEntityId = entityUnderCursor.id;
+  }
+
+  // 3. Top Header Bar
+  let out = "\x1b[H";
   const clock = world.clock;
-  const timeStr = `DIA ${String(clock.day).padStart(2, "0")} ${String(clock.hour).padStart(2, "0")}:${String(clock.minute).padStart(2, "0")}`;
-  const lightStr = `LUZ ${Math.round(clock.globalLight * 100)}%`;
-  const tempStr = `TEMP ${Math.round(clock.globalHeat * 100)}%`;
-  const pauseBadge = isPaused ? "\x1b[1;41;37m [PAUSADO] \x1b[0m" : "\x1b[1;32m [RODANDO] \x1b[0m";
-  const presetNames = ["Arquipélago", "Continente", "Terras Altas"];
-  const headerLeft = ` \x1b[1;38;5;208m❖ BRUTOPOLIS\x1b[0m \x1b[90m│\x1b[0m \x1b[1;33m${timeStr}\x1b[0m \x1b[90m│\x1b[0m \x1b[33m${lightStr}\x1b[0m \x1b[90m│\x1b[0m \x1b[31m${tempStr}\x1b[0m \x1b[90m│\x1b[0m ${pauseBadge}`;
-  const headerRight = `\x1b[36m${presetNames[currentPreset] || "Mundo"}\x1b[0m \x1b[90m│\x1b[0m \x1b[32m${currentFps} FPS\x1b[0m \x1b[90m│\x1b[0m \x1b[33m${currentTps} TPS\x1b[0m `;
+  const timeStr = `DAY ${String(clock.day).padStart(2, "0")} ${String(clock.hour).padStart(2, "0")}:${String(clock.minute).padStart(2, "0")}`;
+  const lightStr = `LIGHT ${Math.round(clock.globalLight * 100)}%`;
+  const tempStr = `HEAT ${Math.round(clock.globalHeat * 100)}%`;
+  const pauseBadge = isPaused ? "\x1b[1;41;37m [PAUSED] \x1b[0m" : "\x1b[1;32m [RUNNING] \x1b[0m";
+  const presetNames = ["Archipelago", "Continent", "Highlands"];
   
-  // Format Header line
-  output += `\x1b[48;5;235m${headerLeft}${" ".repeat(Math.max(2, termCols - 68))}${headerRight}\x1b[0m\n`;
+  const headerLeft = ` \x1b[1;38;5;208m❖ BRUTOPOLIS ROGUELIKE\x1b[0m \x1b[90m│\x1b[0m \x1b[1;33m${timeStr}\x1b[0m \x1b[90m│\x1b[0m \x1b[33m${lightStr}\x1b[0m \x1b[90m│\x1b[0m \x1b[31m${tempStr}\x1b[0m \x1b[90m│\x1b[0m ${pauseBadge}`;
+  const headerRight = `\x1b[36m${presetNames[currentPreset] || "World"}\x1b[0m \x1b[90m│\x1b[0m \x1b[32m${currentFps} FPS\x1b[0m \x1b[90m│\x1b[0m \x1b[33m${currentTps} TPS\x1b[0m `;
+  
+  const visLeftLen = stripAnsi(headerLeft).length;
+  const visRightLen = stripAnsi(headerRight).length;
+  const headerGap = Math.max(1, termCols - visLeftLen - visRightLen);
 
-  // Get Inspected Entity Data
-  const inspected = getEntityById(selectedEntityId);
-  const sidebarLines = buildSidebarLines(inspected, sidebarWidth);
+  out += `\x1b[48;5;235m${headerLeft}${" ".repeat(headerGap)}${headerRight}\x1b[0m\x1b[K\n`;
 
-  // High-Speed ANSI Half-Block Row Rendering (▀)
-  let lastFg = -1;
-  let lastBg = -1;
+  // 4. Render Map Glyphs Grid
+  for (let r = 0; r < mapRows; r++) {
+    const worldY = minY + r;
+    let rowChars = "";
 
-  for (let row = 0; row < mapRows; row++) {
-    const yTop = row * 2;
-    const yBot = row * 2 + 1;
+    for (let c = 0; c < mapCols; c++) {
+      const worldX = minX + c;
+      const isCursor = worldX === cursorX && worldY === cursorY;
 
-    const rowTopOffset = yTop * fbWidth * 4;
-    const rowBotOffset = (yBot < fbHeight ? yBot : yTop) * fbWidth * 4;
+      const ent = entityGrid.get(`${worldX},${worldY}`);
 
-    for (let x = 0; x < mapCols; x++) {
-      const offTop = rowTopOffset + x * 4;
-      const offBot = rowBotOffset + x * 4;
-
-      const r1 = framePixels[offTop + 0];
-      const g1 = framePixels[offTop + 1];
-      const b1 = framePixels[offTop + 2];
-
-      const r2 = framePixels[offBot + 0];
-      const g2 = framePixels[offBot + 1];
-      const b2 = framePixels[offBot + 2];
-
-      const fgColor = (r1 << 16) | (g1 << 8) | b1;
-      const bgColor = (r2 << 16) | (g2 << 8) | b2;
-
-      if (fgColor !== lastFg) {
-        output += `\x1b[38;2;${r1};${g1};${b1}m`;
-        lastFg = fgColor;
+      if (isCursor) {
+        if (ent) {
+          const eg = getEntityGlyph(ent);
+          rowChars += `\x1b[7;1;38;5;226m${eg.glyph}\x1b[0m`;
+        } else {
+          const t = world.getTile(worldX, worldY);
+          const tg = TERRAIN_GLYPHS[t] || TERRAIN_GLYPHS[5];
+          rowChars += `\x1b[7;1;38;5;226m${tg.glyph}\x1b[0m`;
+        }
+      } else if (ent) {
+        const eg = getEntityGlyph(ent);
+        rowChars += `${eg.bg}${eg.fg}${eg.glyph}\x1b[0m`;
+      } else {
+        const t = world.getTile(worldX, worldY);
+        const tg = TERRAIN_GLYPHS[t] || TERRAIN_GLYPHS[5];
+        rowChars += `${tg.bg}${tg.fg}${tg.glyph}\x1b[0m`;
       }
-      if (bgColor !== lastBg) {
-        output += `\x1b[48;2;${r2};${g2};${b2}m`;
-        lastBg = bgColor;
-      }
-
-      output += "▀";
     }
-
-    // Reset Color at border separator
-    output += "\x1b[0m\x1b[90m│\x1b[0m";
-    lastFg = -1;
-    lastBg = -1;
-
-    // Append Sidebar Column Line
-    const sbLine = sidebarLines[row] || "";
-    output += `${sbLine}\x1b[0m\n`;
+    out += `${rowChars}\x1b[0m\x1b[K\n`;
   }
 
-  // Footer Command Bar
-  const footPop = `\x1b[32mPop: ${entities.length}\x1b[0m \x1b[90m(\x1b[32m${entities.filter(e => e.properties.life).length} vivos\x1b[90m)\x1b[0m`;
-  const footHelp = `\x1b[90m[\x1b[33mWASD\x1b[90m] Mover [\x1b[33mQ/E\x1b[90m] Zoom [\x1b[33mEspaço\x1b[90m] Pausa [\x1b[33mTab\x1b[90m] Próximo [\x1b[33m1-9\x1b[90m] Spawn [\x1b[33mK\x1b[90m] Kill [\x1b[33mR\x1b[90m] Reset [\x1b[33mH\x1b[90m] Ajuda\x1b[0m`;
-  output += `\x1b[48;5;235m ${footPop} \x1b[90m│\x1b[0m ${footHelp}${" ".repeat(Math.max(1, termCols - 92))}\x1b[0m`;
+  // 5. Bottom Status Bar with Contextual Cursor Details
+  const tileUnderCursor = world.getTile(cursorX, cursorY);
+  const tileName = world.getTileName(tileUnderCursor);
 
-  process.stdout.write(output);
+  let footActions = `\x1b[1;33m[I]\x1b[0m Dossier \x1b[90m│\x1b[0m \x1b[1;33m[E]\x1b[0m Entities \x1b[90m│\x1b[0m \x1b[1;33m[G]\x1b[0m Groups \x1b[90m│\x1b[0m \x1b[1;33m[L]\x1b[0m Logs \x1b[90m│\x1b[0m \x1b[33m[WASD]\x1b[0m Move \x1b[90m│\x1b[0m \x1b[33m[+/-]\x1b[0m TPS \x1b[90m│\x1b[0m \x1b[33m[Q]\x1b[0m Quit`;
+  if (termCols < 120) {
+    footActions = `\x1b[1;33m[I]\x1b[0m Info \x1b[90m│\x1b[0m \x1b[1;33m[E]\x1b[0m Ent \x1b[90m│\x1b[0m \x1b[1;33m[G]\x1b[0m Grp \x1b[90m│\x1b[0m \x1b[1;33m[L]\x1b[0m Log \x1b[90m│\x1b[0m \x1b[33m[WASD]\x1b[0m Move \x1b[90m│\x1b[0m \x1b[33m[+/-]\x1b[0m TPS \x1b[90m│\x1b[0m \x1b[33m[Q]\x1b[0m Quit`;
+  }
+  if (termCols < 90) {
+    footActions = `\x1b[1;33m[I]\x1b[0m Info \x1b[90m│\x1b[0m \x1b[1;33m[E]\x1b[0m Ent \x1b[90m│\x1b[0m \x1b[1;33m[G]\x1b[0m Grp \x1b[90m│\x1b[0m \x1b[1;33m[L]\x1b[0m Log \x1b[90m│\x1b[0m \x1b[33m[+/-]\x1b[0m TPS`;
+  }
+
+  const visActLen = stripAnsi(footActions).length;
+  const maxInfoLen = Math.max(12, termCols - visActLen - 4);
+
+  let cursorInfo = `\x1b[1;36m📍 [X:${cursorX}, Y:${cursorY}]\x1b[0m \x1b[90m─\x1b[0m \x1b[37m${tileName}\x1b[0m`;
+
+  if (entityUnderCursor) {
+    const eg = getEntityGlyph(entityUnderCursor);
+    let eName = entityUnderCursor.properties.name || `Entity #${entityUnderCursor.id}`;
+    const eLife = entityUnderCursor.properties.life ? `(${Math.round(entityUnderCursor.properties.life.energy)} cal)` : "";
+    
+    const baseLen = stripAnsi(`📍 [X:${cursorX}, Y:${cursorY}] ─ ${tileName} │ ${eg.glyph}  ${eLife}`).length;
+    const maxNameLen = Math.max(6, maxInfoLen - baseLen);
+    if (eName.length > maxNameLen) {
+      eName = eName.slice(0, maxNameLen - 1) + "…";
+    }
+
+    cursorInfo = `\x1b[1;36m📍 [X:${cursorX}, Y:${cursorY}]\x1b[0m \x1b[90m─\x1b[0m \x1b[37m${tileName}\x1b[0m \x1b[90m│\x1b[0m ${eg.bg}${eg.fg} ${eg.glyph} \x1b[0m \x1b[1;33m${eName}\x1b[0m \x1b[32m${eLife}\x1b[0m`;
+  }
+
+  const visInfoLen = stripAnsi(cursorInfo).length;
+  const footGap = Math.max(1, termCols - visInfoLen - visActLen - 2);
+
+  out += `\x1b[48;5;235m ${cursorInfo}${" ".repeat(footGap)}${footActions} \x1b[0m\x1b[K`;
+
+  process.stdout.write(out);
 }
 
 // ---------------------------------------------------------------------------
-// Sidebar Text Formatter
-// ---------------------------------------------------------------------------
-
-function buildProgressBar(value, max, length = 12, color = "\x1b[32m") {
-  const pct = Math.max(0, Math.min(1, max > 0 ? value / max : 0));
-  const filled = Math.round(pct * length);
-  const empty = length - filled;
-  return `${color}${"█".repeat(filled)}${"\x1b[90m"}${"░".repeat(empty)}\x1b[0m ${Math.round(pct * 100)}%`;
-}
-
-function buildSidebarLines(entity, width) {
-  const lines = [];
-  const pad = (s) => s.padEnd(width).slice(0, width);
-
-  lines.push(` \x1b[1;37m─── INSPETOR BIOLÓGICO ───\x1b[0m`);
-
-  if (!entity || entity.destroyed) {
-    lines.push(` \x1b[90mNenhuma criatura selecionada\x1b[0m`);
-    lines.push(` \x1b[90mClique no mapa ou use [Tab]\x1b[0m`);
-    lines.push(``);
-    lines.push(` \x1b[1;33mPOPULAÇÃO & NATUREZA:\x1b[0m`);
-    lines.push(`   Total: \x1b[37m${entities.length}\x1b[0m entidades`);
-    lines.push(`   Vivas: \x1b[32m${entities.filter(e => e.properties.life).length}\x1b[0m criaturas`);
-    lines.push(`   Alimentos: \x1b[33m${entities.filter(e => e.properties.edible).length}\x1b[0m itens`);
-    lines.push(``);
-    lines.push(` \x1b[1;36mÚLTIMOS ACONTECIMENTOS:\x1b[0m`);
-    const recent = getRecentWorldEvents(6);
-    for (const ev of recent) {
-      const typeColor = ev.type === "DEATH" ? "\x1b[31m" : ev.type === "ATTACK" ? "\x1b[33m" : ev.type === "AMPUTATION" ? "\x1b[35m" : "\x1b[36m";
-      lines.push(`  ${typeColor}•\x1b[0m \x1b[90m[${ev.type}]\x1b[0m \x1b[37m${ev.description.slice(0, width - 14)}\x1b[0m`);
-    }
-    return lines;
-  }
-
-  // Entity Details Header
-  const name = entity.properties.name || `Entidade #${entity.id}`;
-  const species = entity.properties.species || "desconhecida";
-  const pos = `X:${entity.x} Y:${entity.y}`;
-  lines.push(` \x1b[1;33m${name}\x1b[0m \x1b[90m(#${entity.id})\x1b[0m`);
-  lines.push(`   \x1b[90mEspécie:\x1b[0m \x1b[32m${species}\x1b[0m \x1b[90m│ POS:\x1b[0m \x1b[36m${pos}\x1b[0m`);
-
-  // Vital Bars
-  if (entity.properties.life) {
-    const lp = entity.properties.life;
-    lines.push(`   \x1b[1;37mEnergia Vital:\x1b[0m ${buildProgressBar(lp.energy, lp.max, 10, "\x1b[32m")} \x1b[90m(${Math.round(lp.energy)}/${lp.max})\x1b[0m`);
-  }
-
-  const condProp = Object.values(entity.properties).find(p => p && typeof p.condition === "number" && typeof p.maxCondition === "number");
-  if (condProp) {
-    lines.push(`   \x1b[1;37mCondição Fís:\x1b[0m  ${buildProgressBar(condProp.condition, condProp.maxCondition, 10, "\x1b[36m")}`);
-  }
-
-  if (entity.properties.bladder) {
-    const bp = entity.properties.bladder;
-    lines.push(`   \x1b[1;37mÁgua/Bexiga:\x1b[0m   ${buildProgressBar(bp.water, bp.maxWater, 10, "\x1b[34m")}`);
-  }
-
-  // Active Amputations / Bleeding
-  for (const [k, p] of Object.entries(entity.properties)) {
-    if (k.startsWith("amputated_")) {
-      lines.push(`   \x1b[1;41;37m ⚠️ MEMBRO AMPUTADO: -${p.bleedRate} cal/s \x1b[0m`);
-    }
-  }
-
-  // Respiration
-  if (entity.properties.gills) {
-    lines.push(`   \x1b[36m🫁 Respiração:\x1b[0m \x1b[1;36mBranquial (Aquático)\x1b[0m`);
-  } else if (entity.properties.lungs) {
-    lines.push(`   \x1b[33m🫁 Respiração:\x1b[0m \x1b[1;33mPulmonar (Terrestre)\x1b[0m`);
-  }
-
-  // Brain & Cognition
-  if (entity.properties.brain) {
-    const bp = entity.properties.brain;
-    lines.push(` \x1b[1;35m─── COGNIÇÃO & MEMÓRIA ───\x1b[0m`);
-    lines.push(`   \x1b[90mHumor:\x1b[0m \x1b[33m${bp.mood || "calmo"}\x1b[0m \x1b[90m│ Território:\x1b[0m \x1b[36m${bp.territoryZoneKey ? `Zona ${bp.territoryZoneKey}` : "Nenhum"}\x1b[0m`);
-    lines.push(`   \x1b[90mZonas 8x8:\x1b[0m ${Object.keys(bp.geoMemory || {}).length} conhecidas \x1b[90m│ Rec:\x1b[0m ${bp.objectMemory?.length || 0}/${bp.objectCapacity || 5}`);
-    lines.push(`   \x1b[90mMemórias:\x1b[0m Recente (${bp.shortTermMemory?.length || 0}) \x1b[90m│ Longo:\x1b[0m (${bp.longTermMemory?.length || 0})`);
-  }
-
-  // Stomach & Digestion
-  if (entity.properties.stomach) {
-    const sp = entity.properties.stomach;
-    lines.push(` \x1b[1;33m─── DIGESTÃO (${sp.items?.length || 0}/${sp.capacity || 4}) ───\x1b[0m`);
-    if (!sp.items || sp.items.length === 0) {
-      lines.push(`   \x1b[90mEstômago vazio\x1b[0m`);
-    } else {
-      for (const it of sp.items.slice(0, 2)) {
-        lines.push(`   \x1b[37m• ${it.name}\x1b[0m \x1b[90m(+${it.nutrition} cal, ${Math.round(it.remainingTurns)}s)\x1b[0m`);
-      }
-    }
-  }
-
-  // Personal Events
-  const myEvents = getEventsForEntity(entity.id, 4);
-  if (myEvents.length > 0) {
-    lines.push(` \x1b[1;36m─── HISTÓRICO PESSOAL ───\x1b[0m`);
-    for (const ev of myEvents.reverse()) {
-      const typeColor = ev.type === "DEATH" ? "\x1b[31m" : ev.type === "ATTACK" ? "\x1b[33m" : ev.type === "AMPUTATION" ? "\x1b[35m" : "\x1b[36m";
-      lines.push(`   ${typeColor}•\x1b[0m \x1b[90m[${ev.type}]\x1b[0m \x1b[37m${ev.description.slice(0, width - 14)}\x1b[0m`);
-    }
-  }
-
-  return lines;
-}
-
-// ---------------------------------------------------------------------------
-// Interactive Keyboard & Mouse Dispatcher
+// Keyboard & Mouse Dispatcher
 // ---------------------------------------------------------------------------
 
 function setupTerminal() {
-  process.stdout.write("\x1b[?1049h"); // Enable Alternate Screen Buffer
+  process.stdout.write("\x1b[?1049h"); // Alternate Screen Buffer
   process.stdout.write("\x1b[?25l");   // Hide Cursor
+  process.stdout.write("\x1b[?7l");    // Disable Auto-Wrap
   process.stdout.write("\x1b[2J");     // Clear Screen
-
-  if (isMouseEnabled) {
-    process.stdout.write("\x1b[?1000h\x1b[?1006h"); // Enable SGR Mouse tracking
-  }
+  process.stdout.write("\x1b[?1000h\x1b[?1006h"); // SGR Mouse tracking
 
   if (process.stdin.isTTY) {
     process.stdin.setRawMode(true);
@@ -465,9 +903,8 @@ function setupTerminal() {
 }
 
 function cleanupTerminal() {
-  if (isMouseEnabled) {
-    process.stdout.write("\x1b[?1000l\x1b[?1006l"); // Disable Mouse tracking
-  }
+  process.stdout.write("\x1b[?1000l\x1b[?1006l"); // Disable Mouse tracking
+  process.stdout.write("\x1b[?7h");    // Restore Auto-Wrap
   process.stdout.write("\x1b[?25h");   // Restore Cursor
   process.stdout.write("\x1b[?1049l"); // Exit Alternate Screen Buffer
   if (process.stdin.isTTY) {
@@ -476,102 +913,387 @@ function cleanupTerminal() {
 }
 
 function handleTerminalInput(key) {
-  // SGR Mouse Input: \x1b[<0;col;rowM (Press) or \x1b[<0;col;rowm (Release)
+  // SGR Mouse Input
   if (key.startsWith("\x1b[<")) {
     const match = key.match(/\x1b\[<(\d+);(\d+);(\d+)([Mm])/);
-    if (match && shader) {
+    if (match) {
       const btn = parseInt(match[1], 10);
-      const mouseCol = parseInt(match[2], 10) - 1; // 0-indexed column
-      const mouseRow = parseInt(match[3], 10) - 2; // 0-indexed row (offset for header)
-      const isPress = match[4] === "M";
+      const mouseCol = parseInt(match[2], 10) - 1;
+      const mouseRow = parseInt(match[3], 10) - 2;
 
-      if (isPress && mouseCol >= 0 && mouseCol < mapCols && mouseRow >= 0 && mouseRow < mapRows) {
-        const pixelX = mouseCol;
-        const pixelY = mouseRow * 2;
-        const foundId = shader.exports.wasm_select_at(pixelX, pixelY, fbWidth, fbHeight);
-        if (foundId > 0) {
-          selectedEntityId = foundId;
+      // Mouse Wheel Up (Button 64)
+      if (btn === 64 || btn === 96) {
+        if (appMode === "INSPECT") {
+          inspectScroll = Math.max(0, inspectScroll - 3);
+          renderInspectorScreen();
+        } else if (appMode === "ENTITIES") {
+          registrySelectedIdx = Math.max(0, registrySelectedIdx - 1);
+          renderEntitiesRegistryScreen();
+        } else if (appMode === "GROUPS") {
+          groupSelectedIdx = Math.max(0, groupSelectedIdx - 1);
+          renderGroupsRegistryScreen();
+        } else if (appMode === "LOGS") {
+          logSelectedIdx = Math.max(0, logSelectedIdx - 1);
+          renderWorldLogScreen();
+        } else {
+          cursorY = Math.max(0, cursorY - 2);
+          keepCursorInCamera();
         }
+        return;
+      }
+
+      // Mouse Wheel Down (Button 65)
+      if (btn === 65 || btn === 97) {
+        if (appMode === "INSPECT") {
+          inspectScroll += 3;
+          renderInspectorScreen();
+        } else if (appMode === "ENTITIES") {
+          registrySelectedIdx++;
+          renderEntitiesRegistryScreen();
+        } else if (appMode === "GROUPS") {
+          groupSelectedIdx++;
+          renderGroupsRegistryScreen();
+        } else if (appMode === "LOGS") {
+          logSelectedIdx++;
+          renderWorldLogScreen();
+        } else {
+          cursorY = Math.min(MAP_HEIGHT - 1, cursorY + 2);
+          keepCursorInCamera();
+        }
+        return;
+      }
+
+      // Left Click on Map
+      if (btn === 0 && match[4] === "M" && appMode === "MAP") {
+        if (mouseCol >= 0 && mouseCol < mapCols && mouseRow >= 0 && mouseRow < mapRows) {
+          const halfW = Math.floor(mapCols / 2);
+          const halfH = Math.floor(mapRows / 2);
+          const minX = Math.max(0, camX - halfW);
+          const minY = Math.max(0, camY - halfH);
+
+          cursorX = minX + mouseCol;
+          cursorY = minY + mouseRow;
+          keepCursorInCamera();
+        }
+        return;
       }
     }
     return;
   }
 
-  // Ctrl+C or 'q' -> Exit
-  if (key === "\u0003" || key === "q" || key === "Q") {
+  // Ctrl+C -> Force Exit
+  if (key === "\u0003") {
     cleanupTerminal();
-    console.log("\x1b[32mBrutopolis finalizado com sucesso.\x1b[0m");
+    console.log("\x1b[32mBrutopolis exited.\x1b[0m");
     process.exit(0);
   }
 
-  // Space -> Pause / Resume
-  if (key === " ") {
+  // -------------------------------------------------------------------------
+  // MODE: INSPECT (Dossier View)
+  // -------------------------------------------------------------------------
+  if (appMode === "INSPECT") {
+    if (key === "\x1b" || key === "\r" || key === "\n" || key === " " || key === "i" || key === "I" || key === "q" || key === "Q") {
+      appMode = "MAP";
+      process.stdout.write("\x1b[2J");
+      return;
+    }
+    if (key === "\x1b[B" || key === "j" || key === "J" || key === "s" || key === "S") {
+      inspectScroll += 3;
+      renderInspectorScreen();
+      return;
+    }
+    if (key === "\x1b[A" || key === "k" || key === "K" || key === "w" || key === "W") {
+      inspectScroll = Math.max(0, inspectScroll - 3);
+      renderInspectorScreen();
+      return;
+    }
+    return;
+  }
+
+  // -------------------------------------------------------------------------
+  // MODE: ENTITIES (Global Registry View)
+  // -------------------------------------------------------------------------
+  if (appMode === "ENTITIES") {
+    const list = getFilteredEntities();
+
+    if (key === "\x1b" || key === "e" || key === "E" || key === "q" || key === "Q") {
+      appMode = "MAP";
+      process.stdout.write("\x1b[2J");
+      return;
+    }
+    if (key === "\x1b[A" || key === "w" || key === "W" || key === "k" || key === "8") {
+      registrySelectedIdx = Math.max(0, registrySelectedIdx - 1);
+      renderEntitiesRegistryScreen();
+      return;
+    }
+    if (key === "\x1b[B" || key === "s" || key === "S" || key === "j" || key === "2") {
+      registrySelectedIdx = Math.min(list.length - 1, registrySelectedIdx + 1);
+      renderEntitiesRegistryScreen();
+      return;
+    }
+    if (key === "1") { registryFilter = "ALL"; registrySelectedIdx = 0; renderEntitiesRegistryScreen(); return; }
+    if (key === "2") { registryFilter = "LIVING"; registrySelectedIdx = 0; renderEntitiesRegistryScreen(); return; }
+    if (key === "3") { registryFilter = "ITEMS"; registrySelectedIdx = 0; renderEntitiesRegistryScreen(); return; }
+    if (key === "4") { registryFilter = "HUMANOID"; registrySelectedIdx = 0; renderEntitiesRegistryScreen(); return; }
+    if (key === "5") { registryFilter = "BEAST"; registrySelectedIdx = 0; renderEntitiesRegistryScreen(); return; }
+    if (key === "6") { registryFilter = "FLORA"; registrySelectedIdx = 0; renderEntitiesRegistryScreen(); return; }
+    if (key === "\t") {
+      const filters = ["ALL", "LIVING", "ITEMS", "HUMANOID", "BEAST", "FLORA"];
+      const nextIdx = (filters.indexOf(registryFilter) + 1) % filters.length;
+      registryFilter = filters[nextIdx];
+      registrySelectedIdx = 0;
+      renderEntitiesRegistryScreen();
+      return;
+    }
+    if (key === "\r" || key === "\n" || key === "i" || key === "I") {
+      const target = list[registrySelectedIdx];
+      if (target) openDedicatedInspector(target);
+      return;
+    }
+    if (key === " " || key === "c" || key === "C") {
+      const target = list[registrySelectedIdx];
+      if (target) {
+        cursorX = target.x;
+        cursorY = target.y;
+        selectedEntityId = target.id;
+        keepCursorInCamera();
+        appMode = "MAP";
+        process.stdout.write("\x1b[2J");
+      }
+      return;
+    }
+    if (key === "k" || key === "K" || key === "\x7f") {
+      const target = list[registrySelectedIdx];
+      if (target) {
+        explodeEntityOnDeath(target, entities, world);
+        destroyEntity(target, entities);
+        renderEntitiesRegistryScreen();
+      }
+      return;
+    }
+    return;
+  }
+
+  // -------------------------------------------------------------------------
+  // MODE: GROUPS (Factions View)
+  // -------------------------------------------------------------------------
+  if (appMode === "GROUPS") {
+    const groups = getAllGroups();
+
+    if (key === "\x1b" || key === "g" || key === "G" || key === "q" || key === "Q") {
+      appMode = "MAP";
+      process.stdout.write("\x1b[2J");
+      return;
+    }
+    if (key === "\x1b[A" || key === "w" || key === "W" || key === "k") {
+      groupSelectedIdx = Math.max(0, groupSelectedIdx - 1);
+      renderGroupsRegistryScreen();
+      return;
+    }
+    if (key === "\x1b[B" || key === "s" || key === "S" || key === "j") {
+      groupSelectedIdx = Math.min(groups.length - 1, groupSelectedIdx + 1);
+      renderGroupsRegistryScreen();
+      return;
+    }
+    if (key === " " || key === "c" || key === "C" || key === "\r" || key === "\n") {
+      const targetGroup = groups[groupSelectedIdx];
+      if (targetGroup) {
+        const leader = entities.find(e => e.id === targetGroup.members[0] && !e.destroyed);
+        if (leader) {
+          cursorX = leader.x;
+          cursorY = leader.y;
+          selectedEntityId = leader.id;
+        } else if (targetGroup.campfire) {
+          cursorX = targetGroup.campfire.x;
+          cursorY = targetGroup.campfire.y;
+        }
+        keepCursorInCamera();
+        appMode = "MAP";
+        process.stdout.write("\x1b[2J");
+      }
+      return;
+    }
+    return;
+  }
+
+  // -------------------------------------------------------------------------
+  // MODE: LOGS (World Event Log Explorer)
+  // -------------------------------------------------------------------------
+  if (appMode === "LOGS") {
+    const list = getFilteredLogs();
+
+    if (key === "\x1b" || key === "l" || key === "L" || key === "q" || key === "Q") {
+      appMode = "MAP";
+      process.stdout.write("\x1b[2J");
+      return;
+    }
+    if (key === "\x1b[A" || key === "w" || key === "W" || key === "k" || key === "8") {
+      logSelectedIdx = Math.max(0, logSelectedIdx - 1);
+      renderWorldLogScreen();
+      return;
+    }
+    if (key === "\x1b[B" || key === "s" || key === "S" || key === "j" || key === "2") {
+      logSelectedIdx = Math.min(list.length - 1, logSelectedIdx + 1);
+      renderWorldLogScreen();
+      return;
+    }
+    if (key === "1") { logFilter = "ALL"; logSelectedIdx = 0; renderWorldLogScreen(); return; }
+    if (key === "2") { logFilter = "ATTACK"; logSelectedIdx = 0; renderWorldLogScreen(); return; }
+    if (key === "3") { logFilter = "AMPUTATION"; logSelectedIdx = 0; renderWorldLogScreen(); return; }
+    if (key === "4") { logFilter = "DEATH"; logSelectedIdx = 0; renderWorldLogScreen(); return; }
+    if (key === "5") { logFilter = "SPROUT"; logSelectedIdx = 0; renderWorldLogScreen(); return; }
+    if (key === "6") { logFilter = "COMMUNICATION"; logSelectedIdx = 0; renderWorldLogScreen(); return; }
+    if (key === "\t") {
+      const filters = ["ALL", "ATTACK", "AMPUTATION", "DEATH", "SPROUT", "COMMUNICATION"];
+      const nextIdx = (filters.indexOf(logFilter) + 1) % filters.length;
+      logFilter = filters[nextIdx];
+      logSelectedIdx = 0;
+      renderWorldLogScreen();
+      return;
+    }
+    // Focus camera on event location
+    if (key === " " || key === "c" || key === "C" || key === "\r" || key === "\n") {
+      const targetEvent = list[logSelectedIdx];
+      if (targetEvent && targetEvent.location) {
+        cursorX = targetEvent.location.x;
+        cursorY = targetEvent.location.y;
+        keepCursorInCamera();
+        appMode = "MAP";
+        process.stdout.write("\x1b[2J");
+      }
+      return;
+    }
+    return;
+  }
+
+  // -------------------------------------------------------------------------
+  // MODE: MAP (Main Game Loop)
+  // -------------------------------------------------------------------------
+
+  // 'q' or 'Q' -> Quit
+  if (key === "q" || key === "Q") {
+    cleanupTerminal();
+    console.log("\x1b[32mBrutopolis Roguelike exited.\x1b[0m");
+    process.exit(0);
+  }
+
+  // 'i', 'I', or Enter -> Open Dossier
+  if (key === "i" || key === "I" || key === "\r" || key === "\n") {
+    openDedicatedInspector();
+    return;
+  }
+
+  // 'e' or 'E' -> Open Global Entities Registry
+  if (key === "e" || key === "E") {
+    appMode = "ENTITIES";
+    registrySelectedIdx = 0;
+    renderEntitiesRegistryScreen();
+    return;
+  }
+
+  // 'g' or 'G' -> Open Global Groups Registry
+  if (key === "g" || key === "G") {
+    appMode = "GROUPS";
+    groupSelectedIdx = 0;
+    renderGroupsRegistryScreen();
+    return;
+  }
+
+  // 'l' or 'L' -> Open Global World Log Explorer
+  if (key === "l" || key === "L") {
+    appMode = "LOGS";
+    logSelectedIdx = 0;
+    renderWorldLogScreen();
+    return;
+  }
+
+  // TPS Speed Controls (+ and -)
+  if (key === "+" || key === "=") {
+    currentTps = Math.min(240, currentTps + (currentTps >= 60 ? 30 : 10));
+    if (shader) shader.exports.wasm_set_tps(currentTps);
+    return;
+  }
+  if (key === "-" || key === "_") {
+    currentTps = Math.max(1, currentTps - (currentTps > 60 ? 30 : 10));
+    if (shader) shader.exports.wasm_set_tps(currentTps);
+    return;
+  }
+
+  // Space or 'p' -> Pause / Resume
+  if (key === " " || key === "p" || key === "P") {
     isPaused = !isPaused;
     if (shader) shader.exports.wasm_set_paused(isPaused ? 1 : 0);
     return;
   }
 
-  // Tab -> Cycle next creature
+  // Tab -> Cycle next living entity
   if (key === "\t") {
-    cycleNextEntity();
+    cycleNextLivingEntity();
     return;
   }
 
-  // WASD / Arrow Movement
-  if (shader) {
-    let cx = shader.exports.wasm_get_camera_x();
-    let cy = shader.exports.wasm_get_camera_y();
-    let zoom = shader.exports.wasm_get_camera_zoom();
-    const panStep = Math.max(2, Math.round(16.0 / zoom));
+  // Roguelike Cursor Movement
+  let dx = 0;
+  let dy = 0;
 
-    if (key === "w" || key === "W" || key === "\x1b[A") cy -= panStep;
-    if (key === "s" || key === "S" || key === "\x1b[B") cy += panStep;
-    if (key === "a" || key === "A" || key === "\x1b[D") cx -= panStep;
-    if (key === "d" || key === "D" || key === "\x1b[C") cx += panStep;
+  if (key === "\x1b[A" || key === "w" || key === "W" || key === "k" || key === "8") dy = -1;
+  else if (key === "\x1b[B" || key === "s" || key === "S" || key === "j" || key === "2") dy = 1;
+  else if (key === "\x1b[D" || key === "a" || key === "A" || key === "h" || key === "4") dx = -1;
+  else if (key === "\x1b[C" || key === "d" || key === "D" || key === "l" || key === "6") dx = 1;
+  else if (key === "y" || key === "7") { dx = -1; dy = -1; }
+  else if (key === "u" || key === "9") { dx = 1; dy = -1; }
+  else if (key === "b" || key === "1") { dx = -1; dy = 1; }
+  else if (key === "n" || key === "3") { dx = 1; dy = 1; }
 
-    // Zoom
-    if (key === "e" || key === "E" || key === "+") zoom = Math.min(4.0, zoom * 1.25);
-    if (key === "z" || key === "Z" || key === "-") zoom = Math.max(0.2, zoom / 1.25);
-
-    shader.exports.wasm_set_camera(cx, cy, zoom);
+  if (dx !== 0 || dy !== 0) {
+    cursorX += dx;
+    cursorY += dy;
+    keepCursorInCamera();
+    return;
   }
 
-  // Center on Selected
+  // Center on Cursor
   if (key === "c" || key === "C") {
-    const ent = getEntityById(selectedEntityId);
-    if (ent && shader) {
-      shader.exports.wasm_set_camera(ent.x, ent.y, shader.exports.wasm_get_camera_zoom());
-    } else if (shader) {
-      shader.exports.wasm_set_camera(256, 256, 1.0);
-    }
+    camX = cursorX;
+    camY = cursorY;
+    return;
   }
 
-  // Kill Selected Entity
-  if (key === "k" || key === "K") {
-    const ent = getEntityById(selectedEntityId);
+  // Kill / Explode Target
+  if (key === "k" || key === "K" || key === "\x7f") {
+    const ent = entities.find(e => !e.destroyed && e.x === cursorX && e.y === cursorY);
     if (ent) {
       explodeEntityOnDeath(ent, entities, world);
       destroyEntity(ent, entities);
-      cycleNextEntity();
+      cycleNextLivingEntity();
     }
+    return;
   }
 
   // Regenerate World
   if (key === "r" || key === "R") {
     resetWorld((currentPreset + 1) % 3);
+    return;
   }
 
   // Creature Spawners
-  if (key === "1") spawnEntityAtCamera(createKnight);
-  if (key === "2") spawnEntityAtCamera(createArcher);
-  if (key === "3") spawnEntityAtCamera(createWolf);
-  if (key === "4") spawnEntityAtCamera(createBear);
-  if (key === "5") spawnEntityAtCamera(createCat);
-  if (key === "6") spawnEntityAtCamera(createGoblin);
-  if (key === "7") spawnEntityAtCamera(createBat);
-  if (key === "8") spawnEntityAtCamera(createSeaSerpent);
-  if (key === "9") spawnEntityAtCamera(createDragon);
-  if (key === "0") spawnEntityAtCamera(createFruit);
+  if (key === "1") spawnEntityAtCursor(createKnight);
+  if (key === "2") spawnEntityAtCursor(createArcher);
+  if (key === "3") spawnEntityAtCursor(createWolf);
+  if (key === "4") spawnEntityAtCursor(createBear);
+  if (key === "5") spawnEntityAtCursor(createCat);
+  if (key === "6") spawnEntityAtCursor(createGoblin);
+  if (key === "7") spawnEntityAtCursor(createBat);
+  if (key === "8") spawnEntityAtCursor(createSeaSerpent);
+  if (key === "9") spawnEntityAtCursor(createDragon);
+  if (key === "0") spawnEntityAtCursor(createCactus);
+  if (key === "!") spawnEntityAtCursor(createScorpion);
+  if (key === "@") spawnEntityAtCursor(createLizard);
+  if (key === "#") spawnEntityAtCursor(createMountainGoat);
+  if (key === "$") spawnEntityAtCursor(createAlpineShrub);
+  if (key === "%") spawnEntityAtCursor(createFruit);
+  if (key === "^") spawnEntityAtCursor(createWoodItem);
+  if (key === "&") spawnEntityAtCursor(createStoneItem);
 }
 
 // ---------------------------------------------------------------------------
@@ -595,11 +1317,11 @@ async function main() {
 
     setupTerminal();
 
-    // Main 60 FPS Render Loop
-    setInterval(renderTerminalFrame, 1000 / 60);
+    // 60 FPS Render Loop
+    setInterval(renderRoguelikeScreen, 1000 / 60);
   } catch (err) {
     cleanupTerminal();
-    console.error("Erro fatal ao inicializar Brutopolis no terminal:", err);
+    console.error("Fatal error starting Brutopolis Roguelike:", err);
     process.exit(1);
   }
 }

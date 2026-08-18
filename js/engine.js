@@ -102,12 +102,27 @@ export function amputateLimb(entity, propKey, prop, entitiesArray, world) {
     }
   }
 
-  // Create severed food item
+  // Create severed food item with dedicated authentic sprites
   let skin = "Item_Steak.png";
   let color = 0xffe65a5a;
-  if (prop.foodType === "organ") {
+  if (propKey.includes("wing")) {
+    skin = "Item_Cloak.png";
+    color = 0xffe6e6f0;
+  } else if (propKey.includes("arm") || propKey.includes("paw")) {
+    skin = "Creature_Hand_U.png";
+    color = 0xffe65a5a;
+  } else if (propKey.includes("leg")) {
+    skin = "Item_Drumstick.png";
+    color = 0xffe65a5a;
+  } else if (propKey.includes("eye")) {
     skin = "Item_Eyeball.png";
+    color = 0xff58c8f8;
+  } else if (prop.foodType === "organ") {
+    skin = "Other_Heart.png";
     color = 0xffc83232;
+  } else if (prop.foodType === "bone") {
+    skin = "Item_Bone.png";
+    color = 0xfff5f5f0;
   } else if (prop.foodType === "plant") {
     skin = "Item_Root.png";
     color = 0xff8c643c;
@@ -159,7 +174,23 @@ export function explodeEntityOnDeath(entity, entitiesArray, world) {
       let color = 0xffe65a5a;
       let name = `Carne de ${entityName} (${key})`;
 
-      if (prop.foodType === "meat") {
+      if (key.includes("wing")) {
+        skin = "Item_Cloak.png";
+        color = 0xffe6e6f0;
+        name = `Asa (${key}) de ${entityName}`;
+      } else if (key.includes("arm") || key.includes("paw")) {
+        skin = "Creature_Hand_U.png";
+        color = 0xffe65a5a;
+        name = `Pata/Mão (${key}) de ${entityName}`;
+      } else if (key.includes("leg")) {
+        skin = "Item_Drumstick.png";
+        color = 0xffe65a5a;
+        name = `Coxa/Perna (${key}) de ${entityName}`;
+      } else if (key.includes("eye")) {
+        skin = "Item_Eyeball.png";
+        color = 0xff58c8f8;
+        name = `Olho (${key}) de ${entityName}`;
+      } else if (prop.foodType === "meat") {
         skin = "Item_Steak.png";
         color = 0xffe65a5a;
         name = `Pedaço de Carne (${key}) de ${entityName}`;
@@ -176,7 +207,7 @@ export function explodeEntityOnDeath(entity, entitiesArray, world) {
         color = 0xfffaa03c;
         name = `Fruto (${key}) de ${entityName}`;
       } else if (prop.foodType === "organ") {
-        skin = "Item_Eyeball.png";
+        skin = "Other_Heart.png";
         color = 0xffc83232;
         name = `Víscera (${key}) de ${entityName}`;
       }
