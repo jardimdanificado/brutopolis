@@ -8,11 +8,11 @@
 #define MAP_HEIGHT 512
 
 typedef enum {
-    FLOOR = 0,       // Solo Fértil / Gramado
-    MOUNTAIN = 1,    // Pico de Montanha (Intransponível)
-    WATER = 2,       // Água Oceânica / Lagos
-    SAND = 3,        // Areia / Praia Costeira / Deserto
-    STONE = 4,       // Chão Rochoso / Sopé de Montanha
+    FLOOR = 0,       // Fertile Soil / Grassland
+    MOUNTAIN = 1,    // Mountain Peak (High elevation)
+    WATER = 2,       // Ocean Water / Lakes
+    SAND = 3,        // Sand / Coastal Beach / Desert
+    STONE = 4,       // Rocky Ground / Mountain Foothill
     VOID_TILE = 5,
     NUM_TILES = 6
 } TileType;

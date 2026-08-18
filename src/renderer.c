@@ -196,6 +196,20 @@ static const WagnerAsset* find_wagner_asset(const char* path) {
         }
     }
 
+    // 5. Semantic Alias Fallbacks
+    if (str_contains_ci(clean_name, "nut") || str_contains_ci(clean_name, "acorn") || str_contains_ci(clean_name, "seed")) {
+        return find_wagner_asset("Item_Egg.png");
+    }
+    if (str_contains_ci(clean_name, "poop") || str_contains_ci(clean_name, "feces") || str_contains_ci(clean_name, "dung")) {
+        return find_wagner_asset("Item_Nugget.png");
+    }
+    if (str_contains_ci(clean_name, "wood") || str_contains_ci(clean_name, "log") || str_contains_ci(clean_name, "stick")) {
+        return find_wagner_asset("Item_Pole.png");
+    }
+    if (str_contains_ci(clean_name, "stone") || str_contains_ci(clean_name, "rock") || str_contains_ci(clean_name, "boulder")) {
+        return find_wagner_asset("Feature_Stone_A.png");
+    }
+
     return NULL;
 }
 

@@ -180,75 +180,75 @@ function getEntityGlyph(ent) {
   }
 
   // 2. Predators & Beasts
-  if (name.includes("Wolf") || name.includes("Lobo") || skin.includes("Wolf")) {
+  if (name.includes("Wolf") || skin.includes("Wolf")) {
     return { glyph: "d", fg: "\x1b[1;38;5;153m", bg: "\x1b[48;5;236m" };
   }
-  if (name.includes("Bear") || name.includes("Urso") || skin.includes("Bear")) {
+  if (name.includes("Bear") || skin.includes("Bear")) {
     return { glyph: "B", fg: "\x1b[1;38;5;172m", bg: "\x1b[48;5;52m" };
   }
-  if (name.includes("Cat") || name.includes("Gato") || skin.includes("Cat")) {
+  if (name.includes("Cat") || skin.includes("Cat")) {
     return { glyph: "c", fg: "\x1b[1;38;5;220m", bg: "\x1b[48;5;94m" };
   }
-  if (name.includes("Goat") || name.includes("Bode") || species === "goat") {
+  if (name.includes("Goat") || species === "goat") {
     return { glyph: "q", fg: "\x1b[1;38;5;254m", bg: "\x1b[48;5;238m" };
   }
-  if (name.includes("Scorpion") || name.includes("Escorpião") || species === "scorpion") {
+  if (name.includes("Scorpion") || species === "scorpion") {
     return { glyph: "s", fg: "\x1b[1;38;5;214m", bg: "\x1b[48;5;58m" };
   }
-  if (name.includes("Lizard") || name.includes("Lagarto") || species === "lizard") {
+  if (name.includes("Lizard") || species === "lizard") {
     return { glyph: "l", fg: "\x1b[1;38;5;149m", bg: "\x1b[48;5;94m" };
   }
-  if (name.includes("Bat") || name.includes("Morcego") || skin.includes("Bat")) {
+  if (name.includes("Bat") || skin.includes("Bat")) {
     return { glyph: "b", fg: "\x1b[1;38;5;176m", bg: "\x1b[48;5;54m" };
   }
-  if (name.includes("Serpent") || name.includes("Serpente") || skin.includes("Snake")) {
+  if (name.includes("Serpent") || skin.includes("Snake")) {
     return { glyph: "S", fg: "\x1b[1;38;5;44m", bg: "\x1b[48;5;23m" };
   }
-  if (name.includes("Dragon") || name.includes("Dragão") || skin.includes("Dragon")) {
+  if (name.includes("Dragon") || skin.includes("Dragon")) {
     return { glyph: "D", fg: "\x1b[1;38;5;196m", bg: "\x1b[48;5;52m" };
   }
 
   // 3. Flora & Trees
-  if (name.includes("Oak") || name.includes("Carvalho") || species === "oak") {
+  if (name.includes("Oak") || species === "oak") {
     return { glyph: "♣", fg: "\x1b[1;38;5;78m", bg: "\x1b[48;5;22m" };
   }
-  if (name.includes("Willow") || name.includes("Salgueiro") || species === "willow") {
+  if (name.includes("Willow") || species === "willow") {
     return { glyph: "¶", fg: "\x1b[1;38;5;114m", bg: "\x1b[48;5;23m" };
   }
-  if (name.includes("Pine") || name.includes("Pinheiro") || species === "pine") {
+  if (name.includes("Pine") || species === "pine") {
     return { glyph: "▲", fg: "\x1b[1;38;5;71m", bg: "\x1b[48;5;235m" };
   }
-  if (name.includes("Cactus") || name.includes("Cacto") || species === "cactus") {
+  if (name.includes("Cactus") || species === "cactus") {
     return { glyph: "ψ", fg: "\x1b[1;38;5;112m", bg: "\x1b[48;5;58m" };
   }
-  if (name.includes("Shrub") || name.includes("Líquen") || species === "shrub") {
+  if (name.includes("Shrub") || name.includes("Lichen") || species === "shrub" || species === "lichen") {
     return { glyph: "*", fg: "\x1b[1;38;5;116m", bg: "\x1b[48;5;236m" };
   }
-  if (name.includes("Lily") || name.includes("Vitória-Régia")) {
+  if (name.includes("Lily") || species === "waterlily") {
     return { glyph: "o", fg: "\x1b[1;38;5;170m", bg: "\x1b[48;5;17m" };
   }
-  if (name.includes("Seaweed") || name.includes("Alga")) {
+  if (name.includes("Seaweed") || species === "seaweed") {
     return { glyph: "∫", fg: "\x1b[1;38;5;42m", bg: "\x1b[48;5;18m" };
   }
 
   // 4. Items & Resources
-  if (ent.properties.edible?.foodType === "fruit" || name.includes("Fruit") || name.includes("Fruto")) {
+  if (ent.properties.edible?.foodType === "fruit" || name.includes("Fruit")) {
     return { glyph: "%", fg: "\x1b[1;38;5;208m", bg: "\x1b[48;5;94m" };
   }
-  if (ent.properties.germination || name.includes("Seed") || name.includes("Semente")) {
+  if (ent.properties.germination || name.includes("Seed")) {
     return { glyph: "·", fg: "\x1b[1;38;5;179m", bg: "\x1b[48;5;234m" };
   }
-  if (ent.properties.resourceType === "wood" || name.includes("Wood") || name.includes("Madeira")) {
+  if (ent.properties.resourceType === "wood" || name.includes("Wood")) {
     return { glyph: "=", fg: "\x1b[1;38;5;137m", bg: "\x1b[48;5;235m" };
   }
-  if (ent.properties.resourceType === "stone" || name.includes("Stone") || name.includes("Pedra")) {
+  if (ent.properties.resourceType === "stone" || name.includes("Stone")) {
     return { glyph: "*", fg: "\x1b[1;38;5;248m", bg: "\x1b[48;5;237m" };
   }
-  if (ent.properties.structure || name.includes("Muralha") || name.includes("Wall")) {
-    const hasN = entities.some(e => !e.destroyed && (e.properties?.structure || e.properties?.name?.includes("Wall") || e.properties?.name?.includes("Muralha")) && e.x === ent.x && e.y === ent.y - 1);
-    const hasS = entities.some(e => !e.destroyed && (e.properties?.structure || e.properties?.name?.includes("Wall") || e.properties?.name?.includes("Muralha")) && e.x === ent.x && e.y === ent.y + 1);
-    const hasE = entities.some(e => !e.destroyed && (e.properties?.structure || e.properties?.name?.includes("Wall") || e.properties?.name?.includes("Muralha")) && e.x === ent.x + 1 && e.y === ent.y);
-    const hasW = entities.some(e => !e.destroyed && (e.properties?.structure || e.properties?.name?.includes("Wall") || e.properties?.name?.includes("Muralha")) && e.x === ent.x - 1 && e.y === ent.y);
+  if (ent.properties.structure || name.includes("Wall")) {
+    const hasN = entities.some(e => !e.destroyed && (e.properties?.structure || e.properties?.name?.includes("Wall")) && e.x === ent.x && e.y === ent.y - 1);
+    const hasS = entities.some(e => !e.destroyed && (e.properties?.structure || e.properties?.name?.includes("Wall")) && e.x === ent.x && e.y === ent.y + 1);
+    const hasE = entities.some(e => !e.destroyed && (e.properties?.structure || e.properties?.name?.includes("Wall")) && e.x === ent.x + 1 && e.y === ent.y);
+    const hasW = entities.some(e => !e.destroyed && (e.properties?.structure || e.properties?.name?.includes("Wall")) && e.x === ent.x - 1 && e.y === ent.y);
 
     let g = "■";
     if (hasN && hasE && hasS && hasW) g = "┼";
@@ -267,10 +267,10 @@ function getEntityGlyph(ent) {
 
     return { glyph: g, fg: "\x1b[1;38;5;252m", bg: "\x1b[48;5;238m" };
   }
-  if (ent.properties.fertilizer || name.includes("Feces") || name.includes("Fezes")) {
+  if (ent.properties.fertilizer || name.includes("Feces")) {
     return { glyph: "~", fg: "\x1b[38;5;94m", bg: "\x1b[48;5;234m" };
   }
-  if (ent.properties.edible?.foodType === "meat" || name.includes("Meat") || name.includes("Carne")) {
+  if (ent.properties.edible?.foodType === "meat" || name.includes("Meat")) {
     return { glyph: "%", fg: "\x1b[1;38;5;167m", bg: "\x1b[48;5;52m" };
   }
 
@@ -368,16 +368,26 @@ function resetWorld(presetId = 0) {
   }
 
   // 2. Founding Pioneers Clan: 2 Builders, 1 Farmer, 2 Matriarchs, 2 Explorers, 1 Miner, 2 Hunters
-  const miner = createHumanMiner(startX, startY, "Aldor, the Miner");
-  const builder1 = createHumanBuilder(startX + 1, startY, "Brom, the Builder");
-  const builder2 = createHumanBuilder(startX + 2, startY, "Torben, the Builder");
-  const farmer = createHumanFarmer(startX - 1, startY, "Farid, the Farmer");
-  const matriarch1 = createHumanMatriarch(startX + 1, startY + 1, "Elena, the Matriarch");
-  const matriarch2 = createHumanMatriarch(startX - 1, startY + 1, "Maya, the Matriarch");
-  const explorer1 = createHumanExplorer(startX, startY + 2, "Lyra, the Explorer");
-  const explorer2 = createHumanExplorer(startX + 2, startY + 2, "Silas, the Explorer");
-  const hunter1 = createHumanHunter(startX, startY - 1, "Kael, the Hunter");
-  const hunter2 = createHumanHunter(startX + 1, startY - 1, "Rowan, the Huntress");
+  const miner = createHumanMiner(startX, startY, "Aldor Silveira, the Miner");
+  miner.properties.surname = "Silveira";
+  const builder1 = createHumanBuilder(startX + 1, startY, "Brom Rocha, the Builder");
+  builder1.properties.surname = "Rocha";
+  const builder2 = createHumanBuilder(startX + 2, startY, "Torben Barros, the Builder");
+  builder2.properties.surname = "Barros";
+  const farmer = createHumanFarmer(startX - 1, startY, "Farid Prado, the Farmer");
+  farmer.properties.surname = "Prado";
+  const matriarch1 = createHumanMatriarch(startX + 1, startY + 1, "Elena Silveira, the Matriarch");
+  matriarch1.properties.surname = "Silveira";
+  const matriarch2 = createHumanMatriarch(startX - 1, startY + 1, "Maya Vance, the Matriarch");
+  matriarch2.properties.surname = "Vance";
+  const explorer1 = createHumanExplorer(startX, startY + 2, "Lyra Montes, the Explorer");
+  explorer1.properties.surname = "Montes";
+  const explorer2 = createHumanExplorer(startX + 2, startY + 2, "Silas Ramos, the Explorer");
+  explorer2.properties.surname = "Ramos";
+  const hunter1 = createHumanHunter(startX, startY - 1, "Kael Torres, the Hunter");
+  hunter1.properties.surname = "Torres";
+  const hunter2 = createHumanHunter(startX + 1, startY - 1, "Rowan Valente, the Huntress");
+  hunter2.properties.surname = "Valente";
 
   const zx = Math.floor(startX / 8);
   const zy = Math.floor(startY / 8);
@@ -552,7 +562,7 @@ function renderInspectorScreen() {
     if (props.brain && typeof props.brain.mood === "number") {
       const moodLabel = getMoodLabel(props.brain.mood);
       const moodColor = props.brain.mood >= 25 ? "\x1b[1;32m" : props.brain.mood >= -20 ? "\x1b[1;36m" : "\x1b[1;31m";
-      lines.push(`  \x1b[1;35m🎭 Humor / Estado:\x1b[0m    ${moodColor}${moodLabel}\x1b[0m`);
+      lines.push(`  \x1b[1;35m🎭 Mood / State:\x1b[0m    ${moodColor}${moodLabel}\x1b[0m`);
     }
 
     // Amputations

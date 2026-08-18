@@ -486,16 +486,26 @@ function resetWorld(presetId = 0) {
   }
 
   // 2. Founding Pioneers Clan: 2 Builders, 1 Farmer, 2 Matriarchs, 2 Explorers, 1 Miner, 2 Hunters
-  const miner = createHumanMiner(startX, startY, "Aldor, the Miner");
-  const builder1 = createHumanBuilder(startX + 1, startY, "Brom, the Builder");
-  const builder2 = createHumanBuilder(startX + 2, startY, "Torben, the Builder");
-  const farmer = createHumanFarmer(startX - 1, startY, "Farid, the Farmer");
-  const matriarch1 = createHumanMatriarch(startX + 1, startY + 1, "Elena, the Matriarch");
-  const matriarch2 = createHumanMatriarch(startX - 1, startY + 1, "Maya, the Matriarch");
-  const explorer1 = createHumanExplorer(startX, startY + 2, "Lyra, the Explorer");
-  const explorer2 = createHumanExplorer(startX + 2, startY + 2, "Silas, the Explorer");
-  const hunter1 = createHumanHunter(startX, startY - 1, "Kael, the Hunter");
-  const hunter2 = createHumanHunter(startX + 1, startY - 1, "Rowan, the Huntress");
+  const miner = createHumanMiner(startX, startY, "Aldor Silveira, the Miner");
+  miner.properties.surname = "Silveira";
+  const builder1 = createHumanBuilder(startX + 1, startY, "Brom Rocha, the Builder");
+  builder1.properties.surname = "Rocha";
+  const builder2 = createHumanBuilder(startX + 2, startY, "Torben Barros, the Builder");
+  builder2.properties.surname = "Barros";
+  const farmer = createHumanFarmer(startX - 1, startY, "Farid Prado, the Farmer");
+  farmer.properties.surname = "Prado";
+  const matriarch1 = createHumanMatriarch(startX + 1, startY + 1, "Elena Silveira, the Matriarch");
+  matriarch1.properties.surname = "Silveira";
+  const matriarch2 = createHumanMatriarch(startX - 1, startY + 1, "Maya Vance, the Matriarch");
+  matriarch2.properties.surname = "Vance";
+  const explorer1 = createHumanExplorer(startX, startY + 2, "Lyra Montes, the Explorer");
+  explorer1.properties.surname = "Montes";
+  const explorer2 = createHumanExplorer(startX + 2, startY + 2, "Silas Ramos, the Explorer");
+  explorer2.properties.surname = "Ramos";
+  const hunter1 = createHumanHunter(startX, startY - 1, "Kael Torres, the Hunter");
+  hunter1.properties.surname = "Torres";
+  const hunter2 = createHumanHunter(startX + 1, startY - 1, "Rowan Valente, the Huntress");
+  hunter2.properties.surname = "Valente";
 
   const zx = Math.floor(startX / 8);
   const zy = Math.floor(startY / 8);
@@ -1029,7 +1039,7 @@ function renderDossierModal() {
   if (props.brain && typeof props.brain.mood === "number") {
     const moodVal = props.brain.mood;
     const moodCol = moodVal >= 25 ? "#58d854" : moodVal >= -20 ? "#3cbcfc" : "#f83800";
-    drawNESProgressBar(mx + 10, gaugeY, mw - 20, 18, moodVal + 100, 200, `HUMOR: ${getMoodLabel(moodVal).toUpperCase()}`, moodCol);
+    drawNESProgressBar(mx + 10, gaugeY, mw - 20, 18, moodVal + 100, 200, `MOOD: ${getMoodLabel(moodVal).toUpperCase()}`, moodCol);
     gaugeY += 22;
   }
 

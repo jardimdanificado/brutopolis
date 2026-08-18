@@ -1,5 +1,6 @@
 import { createEntity, getEntityById, currentTick } from "./engine.js";
 import { recordWorldEvent } from "./event_log.js";
+import { vocabulario } from "./vocabulario.js";
 
 // ---------------------------------------------------------------------------
 // 0. Energy Cost Multipliers Based on Physical Condition & Color Similarity
@@ -568,7 +569,7 @@ export function createBrainProp(maxPath = 16, personality = { bravery: 0.7, curi
             primaryEntityId: ent.id,
             secondaryEntityId: group.id,
             location: { x: ent.x, y: ent.y },
-            description: `${ent.properties.name} foi expulso da facção '${group.name}' pela maioria dos membros!`,
+            description: `${ent.properties.name} was expelled from faction '${group.name}' by vote of the majority!`,
             tick: currentTick
           });
         }
@@ -679,6 +680,178 @@ export function createArmProp(side = "left", quality = 1.0, condition = 100, max
   };
 }
 
+// --- Unique Name & Lineage Generator via Vocabulário Library ---
+const usedBabyNames = new Set();
+
+export function getRandomVocabWord() {
+  const words = vocabulario.palavras;
+  if (!words || words.length === 0) return "Pioneiro";
+  for (let i = 0; i < 60; i++) {
+    const raw = words[Math.floor(Math.random() * words.length)];
+    if (raw && typeof raw === "string") {
+      const clean = raw.trim().replace(/[^a-zA-ZáéíóúâêôãõçÁÉÍÓÚÂÊÔÃÕÇ]/g, "");
+      if (clean.length >= 3 && clean.length <= 12) {
+        return clean.charAt(0).toUpperCase() + clean.slice(1).toLowerCase();
+      }
+    }
+  }
+  return "Pioneiro";
+}
+
+export function getMotherSurname(mother) {
+  if (mother.properties?.surname) return mother.properties.surname;
+
+  // Extract from name if name contains a surname
+  const rawName = (mother.properties?.name || "").replace(/,\s*the\s+\w+/i, "").trim();
+  const parts = rawName.split(/\s+/);
+  if (parts.length >= 2 && !["Jr", "Jr.", "the", "Filho", "Filha", "Matriarch", "Explorer", "Builder", "Miner", "Hunter", "Farmer"].includes(parts[parts.length - 1])) {
+    mother.properties.surname = parts[parts.length - 1];
+    return mother.properties.surname;
+  }
+
+  // Otherwise assign a lineage surname from vocabulario
+  const newSurname = getRandomVocabWord();
+  if (mother.properties) mother.properties.surname = newSurname;
+  return newSurname;
+}
+
+export function generateBabyName(mother, entities = []) {
+  const motherSurname = getMotherSurname(mother);
+  let firstName = "";
+  let isTribute = false;
+  let tributeTargetName = null;
+
+  // Check if mother has high affinity (>= 60) with someone
+  const affinities = mother.properties?.brain?.affinities || {};
+  let bestPartner = null;
+  let highestAff = 59;
+
+  if (entities) {
+    for (const other of entities) {
+      if (other !== mother && !other.destroyed && other.properties?.name) {
+        const aff = affinities[other.id] || 0;
+        if (aff > highestAff) {
+          highestAff = aff;
+          bestPartner = other;
+        }
+      }
+    }
+  }
+
+  // 35% chance to tribute high-affinity friend/partner if available
+  if (bestPartner && Math.random() < 0.35) {
+    const friendRaw = (bestPartner.properties.name || "Friend")
+      .replace(/,\s*the\s+\w+/i, "")
+      .replace(/\s+Jr\.?/i, "")
+      .trim();
+    const friendFirstName = friendRaw.split(/\s+/)[0];
+    if (friendFirstName && friendFirstName.length >= 2) {
+      firstName = `${friendFirstName} Jr.`;
+      isTribute = true;
+      tributeTargetName = bestPartner.properties.name;
+    }
+  }
+
+  if (!firstName) {
+    firstName = getRandomVocabWord();
+  }
+
+  let finalName = `${firstName} ${motherSurname}`.trim();
+
+  // Guarantee global uniqueness
+  let attempts = 0;
+  while ((usedBabyNames.has(finalName) || (entities && entities.some(e => !e.destroyed && e.properties?.name === finalName))) && attempts < 25) {
+    attempts++;
+    const extraWord = getRandomVocabWord();
+    if (isTribute) {
+      finalName = `${firstName} ${extraWord} ${motherSurname}`.trim();
+    } else {
+      try {
+        const combined = vocabulario.combinar(firstName, extraWord, 'eufonia');
+        finalName = `${combined.charAt(0).toUpperCase() + combined.slice(1)} ${motherSurname}`;
+      } catch (e) {
+        finalName = `${firstName} ${extraWord} ${motherSurname}`.trim();
+      }
+    }
+  }
+
+  usedBabyNames.add(finalName);
+  return { name: finalName, isTribute, tributeTo: tributeTargetName, surname: motherSurname };
+}
+
+const usedGlobalNames = new Set();
+const usedWeaponNames = new Set();
+
+export function generateUniqueCreatureName(roleTitle = "Creature", species = "human") {
+  const firstName = getRandomVocabWord();
+  const surname = getRandomVocabWord();
+  let candidate = species === "human"
+    ? `${firstName} ${surname}, the ${roleTitle}`
+    : `${firstName} the ${roleTitle}`;
+
+  let attempts = 0;
+  while (usedGlobalNames.has(candidate) && attempts < 30) {
+    attempts++;
+    const extra = getRandomVocabWord();
+    try {
+      const combined = vocabulario.combinar(firstName, extra, 'eufonia');
+      const cFirst = combined.charAt(0).toUpperCase() + combined.slice(1);
+      candidate = species === "human"
+        ? `${cFirst} ${surname}, the ${roleTitle}`
+        : `${cFirst} the ${roleTitle}`;
+    } catch (e) {
+      candidate = `${firstName} ${extra} ${surname}, the ${roleTitle}`;
+    }
+  }
+
+  usedGlobalNames.add(candidate);
+  return { fullName: candidate, firstName, surname };
+}
+
+export function generateUniqueWeaponName(baseType = "Blade") {
+  const epithet = getRandomVocabWord();
+  let candidate = `${baseType} of ${epithet}`;
+
+  let attempts = 0;
+  while (usedWeaponNames.has(candidate) && attempts < 30) {
+    attempts++;
+    const epithet2 = getRandomVocabWord();
+    try {
+      const combined = vocabulario.combinar(epithet, epithet2, 'eufonia');
+      const cEp = combined.charAt(0).toUpperCase() + combined.slice(1);
+      candidate = `${baseType} of ${cEp}`;
+    } catch (e) {
+      candidate = `${baseType} of ${epithet} ${epithet2}`;
+    }
+  }
+
+  usedWeaponNames.add(candidate);
+  return candidate;
+}
+
+const usedFloraNames = new Set();
+
+export function generateUniqueFloraName(baseTitle = "Oak", species = "oak") {
+  const epithet = getRandomVocabWord();
+  let candidate = `${baseTitle} of ${epithet}`;
+
+  let attempts = 0;
+  while (usedFloraNames.has(candidate) && attempts < 30) {
+    attempts++;
+    const extra = getRandomVocabWord();
+    try {
+      const combined = vocabulario.combinar(epithet, extra, 'eufonia');
+      const cEp = combined.charAt(0).toUpperCase() + combined.slice(1);
+      candidate = `${baseTitle} of ${cEp}`;
+    } catch (e) {
+      candidate = `${baseTitle} of ${epithet} ${extra}`;
+    }
+  }
+
+  usedFloraNames.add(candidate);
+  return candidate;
+}
+
 /**
  * Genitalia (Sex & Procreation with Birth Event Logs)
  */
@@ -710,10 +883,9 @@ export function createGenitaliaProp(type = "penis", isPregnant = false) {
 
           const babySpecies = ent.properties.species || "human";
           const babyGender = Math.random() < 0.5 ? "female" : "male";
-          const isHuman = babySpecies === "human";
-          const babyName = isHuman
-            ? (babyGender === "female" ? `Filha de ${ent.properties.name}` : `Filho de ${ent.properties.name}`)
-            : `Filhote de ${ent.properties.name || "Criatura"}`;
+
+          const nameInfo = generateBabyName(ent, entities);
+          const babyName = nameInfo.name;
 
           const baby = createEntity(
             {
@@ -733,6 +905,9 @@ export function createGenitaliaProp(type = "penis", isPregnant = false) {
             ent.x + (Math.floor(Math.random() * 3) - 1),
             ent.y + (Math.floor(Math.random() * 3) - 1)
           );
+
+          // Store inherited lineage surname
+          baby.properties.surname = nameInfo.surname;
 
           // Sensory & Vital Organs
           if (ent.properties.terrestrial) baby.properties.terrestrial = createTerrestrialProp();
@@ -766,30 +941,35 @@ export function createGenitaliaProp(type = "penis", isPregnant = false) {
 
           // Inherit mother's group
           if (!ent.properties.group) {
-            ent.properties.group = createGroup(`Clã de ${ent.properties.name}`, ent);
+            ent.properties.group = createGroup(`Clan of ${ent.properties.name}`, ent);
           }
           baby.properties.group = ent.properties.group;
           ent.properties.group.members.push(baby.id);
 
-          // Immediate high mother-child bond (+90)
+          // Immediate high mother-child bond (+95)
           if (ent.properties.brain) {
             if (!ent.properties.brain.affinities) ent.properties.brain.affinities = {};
             ent.properties.brain.affinities[baby.id] = 95;
-            ent.properties.brain.mood = "joyful";
+            ent.properties.brain.mood = 90;
           }
           if (baby.properties.brain) {
             baby.properties.brain.affinities[ent.id] = 95;
-            baby.properties.brain.mood = "happy";
+            baby.properties.brain.mood = 80;
           }
 
           entities.push(baby);
+
+          let tributeNotice = "";
+          if (nameInfo.isTribute && nameInfo.tributeTo) {
+            tributeNotice = ` (named in honor of ${nameInfo.tributeTo})`;
+          }
 
           recordWorldEvent({
             type: "BIRTH",
             primaryEntityId: ent.id,
             secondaryEntityId: baby.id,
             location: { x: baby.x, y: baby.y },
-            description: `${ent.properties.name} deu à luz a um filhote saudável (${baby.properties.name}) na posição [X: ${baby.x}, Y: ${baby.y}]!`,
+            description: `${ent.properties.name} gave birth to a healthy newborn: ${baby.properties.name}${tributeNotice}!`,
             tick: currentTick,
             timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
           });
@@ -925,7 +1105,7 @@ export function createConcussionProp(duration = 45.0) {
 /**
  * Permanent Scar (Cicatriz permanente de batalha duradoura)
  */
-export function createScarProp(location = "torso", name = "Cicatriz de Lâmina") {
+export function createScarProp(location = "torso", name = "Blade Scar") {
   return {
     location,
     name,
@@ -957,7 +1137,7 @@ export function createGroup(name, founder, baseZone = null, claimedZones = null)
 
   const group = {
     id: nextGroupId++,
-    name: name || `Bando #${nextGroupId}`,
+    name: name || `Clan #${nextGroupId}`,
     members: founderId !== undefined && founderId !== null ? [founderId] : [],
     claimedZones: claimedZones || defaultZones,
     campfire: null, // { x, y }
@@ -987,12 +1167,12 @@ export function getGroupStockpile(group, entities) {
       name = rawName.name || rawName.resourceType || rawName.type || "Item";
     }
     name = String(name).trim();
-    if (name.toLowerCase() === "wood" || name.toLowerCase() === "madeira") name = "Madeira (Wood)";
-    else if (name.toLowerCase() === "stone" || name.toLowerCase() === "pedra") name = "Pedra (Stone)";
-    else if (name.toLowerCase() === "fruit" || name.toLowerCase() === "fruto") name = "Fruto (Fruit)";
-    else if (name.toLowerCase() === "seed" || name.toLowerCase() === "semente") name = "Semente (Seed)";
-    else if (name.toLowerCase() === "meat" || name.toLowerCase() === "carne") name = "Carne (Meat)";
-    else if (name.toLowerCase() === "feces" || name.toLowerCase() === "fezes") name = "Fezes (Fertilizer)";
+    if (name.toLowerCase() === "wood" || name.toLowerCase() === "madeira") name = "Wood";
+    else if (name.toLowerCase() === "stone" || name.toLowerCase() === "pedra") name = "Stone";
+    else if (name.toLowerCase() === "fruit" || name.toLowerCase() === "fruto") name = "Fruit";
+    else if (name.toLowerCase() === "seed" || name.toLowerCase() === "semente") name = "Seed";
+    else if (name.toLowerCase() === "meat" || name.toLowerCase() === "carne") name = "Meat";
+    else if (name.toLowerCase() === "feces" || name.toLowerCase() === "fezes") name = "Feces";
 
     items[name] = (items[name] || 0) + 1;
     if (category === "ground") groundCount++;
@@ -1038,9 +1218,13 @@ export function getGroupStockpile(group, entities) {
         ent.properties.species === "item" ||
         ent.properties.species === "resource" ||
         ent.properties.name?.includes("Madeira") ||
+        ent.properties.name?.includes("Wood") ||
         ent.properties.name?.includes("Pedra") ||
+        ent.properties.name?.includes("Stone") ||
         ent.properties.name?.includes("Fruto") ||
-        ent.properties.name?.includes("Semente")
+        ent.properties.name?.includes("Fruit") ||
+        ent.properties.name?.includes("Semente") ||
+        ent.properties.name?.includes("Seed")
       );
 
       if (isGroundItem && Array.isArray(group.claimedZones)) {
@@ -1048,7 +1232,7 @@ export function getGroupStockpile(group, entities) {
         const zy = Math.floor(ent.y / 8);
         const inZone = group.claimedZones.includes(`${zx}_${zy}`) || group.claimedZones.includes(`${zx},${zy}`);
         if (inZone) {
-          addItem(ent.properties.name || ent.properties.resourceType || "Objeto", "ground");
+          addItem(ent.properties.name || ent.properties.resourceType || "Object", "ground");
         }
       }
     }
@@ -1110,7 +1294,7 @@ export function tryJoinGroup(candidate, group, entities) {
         primaryEntityId: mem.id,
         secondaryEntityId: candidate.id,
         location: { x: mem.x, y: mem.y },
-        description: `${mem.properties.name} abandonou o grupo '${group.name}' furioso pela entrada de ${candidate.properties.name}!`,
+        description: `${mem.properties.name} left '${group.name}' in outrage over ${candidate.properties.name} joining!`,
         tick: currentTick
       });
       break;
@@ -1125,7 +1309,7 @@ export function tryJoinGroup(candidate, group, entities) {
     primaryEntityId: candidate.id,
     secondaryEntityId: group.id,
     location: { x: candidate.x, y: candidate.y },
-    description: `${candidate.properties.name} juntou-se ao grupo '${group.name}'!`,
+    description: `${candidate.properties.name} joined the clan '${group.name}'!`,
     tick: currentTick
   });
 
@@ -1173,7 +1357,7 @@ export function gossipBetweenCreatures(speaker, listener, world, entities) {
   // 1. Group Formation: If both have mutual affinity >= 60 and neither has a group
   if (spkAffToLis >= 60 && lisAffToSpk >= 60) {
     if (!speaker.properties.group && !listener.properties.group) {
-      const newGrp = createGroup(`Clã de ${speaker.properties.name}`, speaker);
+      const newGrp = createGroup(`Clan of ${speaker.properties.name}`, speaker);
       newGrp.members.push(listener.id);
       speaker.properties.group = newGrp;
       listener.properties.group = newGrp;
@@ -1183,7 +1367,7 @@ export function gossipBetweenCreatures(speaker, listener, world, entities) {
         primaryEntityId: speaker.id,
         secondaryEntityId: listener.id,
         location: { x: speaker.x, y: speaker.y },
-        description: `${speaker.properties.name} e ${listener.properties.name} fundaram a facção '${newGrp.name}'!`,
+        description: `${speaker.properties.name} and ${listener.properties.name} founded the faction '${newGrp.name}'!`,
         tick: currentTick
       });
     } else if (speaker.properties.group && !listener.properties.group) {
@@ -1218,10 +1402,10 @@ export function gossipBetweenCreatures(speaker, listener, world, entities) {
   // 3. Share Significant Long-Term Memories (Rich Descriptive Gossip)
   if (spkBrain.longTermMemory.length > 0 && Math.random() < 0.35) {
     const mem = spkBrain.longTermMemory[Math.floor(Math.random() * spkBrain.longTermMemory.length)];
-    const gossipDesc = mem.desc || mem.description || `acontecimento de ${mem.type}`;
+    const gossipDesc = mem.desc || mem.description || `${mem.type} event`;
     lisBrain.addShortTerm({
       type: "GOSSIP",
-      desc: `Ouviu de ${speaker.properties.name}: "${gossipDesc}"`,
+      desc: `Heard from ${speaker.properties.name}: "${gossipDesc}"`,
       location: { x: speaker.x, y: speaker.y }
     });
 
@@ -1230,7 +1414,7 @@ export function gossipBetweenCreatures(speaker, listener, world, entities) {
       primaryEntityId: speaker.id,
       secondaryEntityId: listener.id,
       location: { x: speaker.x, y: speaker.y },
-      description: `${speaker.properties.name} conversou com ${listener.properties.name}: "Você soube que ${gossipDesc}?"`,
+      description: `${speaker.properties.name} spoke with ${listener.properties.name}: "Did you hear that ${gossipDesc}?"`,
       tick: currentTick,
       timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
     });
@@ -1274,7 +1458,7 @@ export function dropHeldItem(ent, entities, world) {
 export function createStoneWallEntity(x, y, groupName = null) {
   return createEntity(
     {
-      name: groupName ? `Muralha (${groupName})` : "Muralha de Pedra",
+      name: groupName ? `Stone Wall (${groupName})` : "Stone Wall",
       species: "structure",
       render: { skin: "Wall_NESW.png", color: 0xffdcdce6, backcolor: 0xff282832 },
       structure: { condition: 800, maxCondition: 800, defense: 50 },
@@ -1307,7 +1491,7 @@ export function createCrafterProp() {
         res.destroyed = true;
 
         const isStone = res.properties.resourceType === "stone";
-        const weaponName = isStone ? "Lança de Pedra Pontiaguda" : "Clava de Madeira Maciça";
+        const weaponName = generateUniqueWeaponName(isStone ? "Pointed Stone Spear" : "Solid Wood Club");
         const dmg = isStone ? 48 : 34;
         const def = isStone ? 12 : 8;
 
@@ -1330,7 +1514,7 @@ export function createCrafterProp() {
                   primaryEntityId: ent.id,
                   secondaryEntityId: ally.id,
                   location: { x: ent.x, y: ent.y },
-                  description: `${ent.properties.name} forjou uma ${weaponName} e armou seu companheiro ${ally.properties.name}!`,
+                  description: `${ent.properties.name} forged a ${weaponName} and armed their companion ${ally.properties.name}!`,
                   tick: currentTick,
                   timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
                 });
@@ -1880,7 +2064,7 @@ export function createCombatProp(attackInterval = 1.2, aggroRange = 3) {
 
       // 1. Determine Weapon / Limb Used for Attack
       let attackPower = 0;
-      let usedLimbName = "golpe corporal";
+      let usedLimbName = "body strike";
       let usedLimb = null;
 
       // 1.1 Check arms first (bipeds with weapons/fists)
@@ -1892,7 +2076,7 @@ export function createCombatProp(attackInterval = 1.2, aggroRange = 3) {
             usedLimbName = prop.heldItem.name || key;
           } else {
             attackPower = 28 * limbFactor;
-            usedLimbName = `soco (${key})`;
+            usedLimbName = `punch (${key})`;
           }
           usedLimb = prop;
           break;
@@ -1906,10 +2090,10 @@ export function createCombatProp(attackInterval = 1.2, aggroRange = 3) {
             const limbFactor = (prop.condition / prop.maxCondition) * prop.quality;
             if (prop.clawsCount > 0) {
               attackPower = (prop.clawDamage * prop.clawsCount * 0.6 + 15) * limbFactor;
-              usedLimbName = `patada com garras (${key}, ${prop.clawsCount} garras)`;
+              usedLimbName = `claw swipe (${key}, ${prop.clawsCount} claws)`;
             } else {
               attackPower = 8 * limbFactor;
-              usedLimbName = `patada sem garras (${key})`;
+              usedLimbName = `paw swipe (${key})`;
             }
             usedLimb = prop;
             break;
@@ -1921,7 +2105,7 @@ export function createCombatProp(attackInterval = 1.2, aggroRange = 3) {
       if (!usedLimb && ent.properties.mouth && ent.properties.mouth.teethCount > 0) {
         const teethRatio = ent.properties.mouth.teethCount / ent.properties.mouth.maxTeeth;
         attackPower = (ent.properties.mouth.biteDamage || 32) * teethRatio;
-        usedLimbName = `mordida (${ent.properties.mouth.teethCount} dentes)`;
+        usedLimbName = `bite (${ent.properties.mouth.teethCount} teeth)`;
         usedLimb = ent.properties.mouth;
       }
 
@@ -1931,7 +2115,7 @@ export function createCombatProp(attackInterval = 1.2, aggroRange = 3) {
           if (key.startsWith("leg") && prop && prop.condition > 15) {
             const limbFactor = (prop.condition / prop.maxCondition) * prop.quality;
             attackPower = 32 * limbFactor;
-            usedLimbName = `chute (${key})`;
+            usedLimbName = `kick (${key})`;
             usedLimb = prop;
             break;
           }
@@ -1983,7 +2167,7 @@ export function createCombatProp(attackInterval = 1.2, aggroRange = 3) {
         }
       }
 
-      let hitPartName = "corpo";
+      let hitPartName = "body";
       if (physicalParts.length > 0) {
         // Pick primary target part for direct physical damage
         const primaryTarget = physicalParts[Math.floor(Math.random() * physicalParts.length)];
@@ -2017,7 +2201,7 @@ export function createCombatProp(attackInterval = 1.2, aggroRange = 3) {
           if (Math.random() < 0.5) target.properties.concussion = createConcussionProp(40.0);
         }
         if (mainDamage >= 35 && !target.properties.scar) {
-          target.properties.scar = createScarProp(primaryTarget.key, `Cicatriz em ${primaryTarget.key}`);
+          target.properties.scar = createScarProp(primaryTarget.key, `Scar on ${primaryTarget.key}`);
         }
 
         // Limb Amputation if Condition drops <= 0
@@ -2037,7 +2221,7 @@ export function createCombatProp(attackInterval = 1.2, aggroRange = 3) {
 
           const severedLimb = createEntity(
             {
-              name: `Membro (${primaryTarget.key}) de ${target.properties.name}`,
+              name: `Limb (${primaryTarget.key}) of ${target.properties.name}`,
               render: { skin: limbSkin, color: limbColor, backcolor: 0x00000000 },
               edible: { nutrition: 800, foodType: "meat", digestDuration: 25, partKey: primaryTarget.key }
             },
@@ -2062,7 +2246,7 @@ export function createCombatProp(attackInterval = 1.2, aggroRange = 3) {
             primaryEntityId: target.id,
             secondaryEntityId: ent.id,
             location: { x: target.x, y: target.y },
-            description: `${target.properties.name} teve o membro '${primaryTarget.key}' decepado pelo ataque de ${ent.properties.name}!`,
+            description: `${target.properties.name} had limb '${primaryTarget.key}' severed by the attack of ${ent.properties.name}!`,
             tick: currentTick,
             timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
           });
@@ -2076,15 +2260,15 @@ export function createCombatProp(attackInterval = 1.2, aggroRange = 3) {
       }
 
       // 4. Record indexed ATTACK event
-      const attackerName = ent.properties.name || `Entidade #${ent.id}`;
-      const targetName = target.properties.name || `Entidade #${target.id}`;
-      const attackDesc = `${attackerName} atingiu ${hitPartName} de ${targetName} com ${usedLimbName} na posição [X: ${ent.x}, Y: ${ent.y}]!`;
+      const attackerName = ent.properties.name || `Entity #${ent.id}`;
+      const targetName = target.properties.name || `Entity #${target.id}`;
+      const attackDesc = `${attackerName} struck ${targetName}'s ${hitPartName} with ${usedLimbName} at [X: ${ent.x}, Y: ${ent.y}]!`;
 
       // Track last attacker on victim for murder / kill causality determination
       target._lastAttacker = {
         id: ent.id,
         name: attackerName,
-        species: ent.properties.species || "desconhecida",
+        species: ent.properties.species || "unknown",
         tick: currentTick,
         time: Date.now()
       };
@@ -3214,9 +3398,11 @@ export function createBurnProp(rate = 0.5, damage = 40) {
 // ---------------------------------------------------------------------------
 
 export function createKnight(x, y, gender = "male") {
+  const naming = generateUniqueCreatureName("Imperial Knight", "human");
   return createEntity(
     {
-      name: "Cavaleiro Imperial",
+      name: naming.fullName,
+      surname: naming.surname,
       species: "human",
       render: { skin: "Human_Knight_M.png", color: 0xffdcdce6, backcolor: 0xff1e283c },
       life: createLifeProp(6000, 6000),
@@ -3231,8 +3417,8 @@ export function createKnight(x, y, gender = "male") {
       combat: createCombatProp(1.2, 3),
       crafter: createCrafterProp(),
       builder: createBuilderProp(),
-      arm_left: createArmProp("left", 1.0, 100, 100, { name: "Escudo de Ferro", defense: 20 }),
-      arm_right: createArmProp("right", 1.0, 100, 100, { name: "Espada de Aço", damage: 35 }),
+      arm_left: createArmProp("left", 1.0, 100, 100, { name: generateUniqueWeaponName("Iron Shield"), defense: 20 }),
+      arm_right: createArmProp("right", 1.0, 100, 100, { name: generateUniqueWeaponName("Steel Sword"), damage: 35, isWeapon: true }),
       leg_left: createLegProp("left", 1.0, 100, 100),
       leg_right: createLegProp("right", 1.0, 100, 100),
       eye_left: createEyeProp("left", 9),
@@ -3247,9 +3433,11 @@ export function createKnight(x, y, gender = "male") {
 }
 
 export function createArcher(x, y, gender = "female") {
+  const naming = generateUniqueCreatureName("Forest Archer", "human");
   return createEntity(
     {
-      name: "Arqueira da Floresta",
+      name: naming.fullName,
+      surname: naming.surname,
       species: "human",
       render: { skin: "Human_Archer_F.png", color: 0xffa0e678, backcolor: 0xff1e3214 },
       life: createLifeProp(5000, 5000),
@@ -3264,7 +3452,7 @@ export function createArcher(x, y, gender = "female") {
       combat: createCombatProp(1.0, 4),
       crafter: createCrafterProp(),
       arm_left: createArmProp("left", 1.0, 100, 100),
-      arm_right: createArmProp("right", 1.0, 100, 100, { name: "Arco Longo", damage: 40 }),
+      arm_right: createArmProp("right", 1.0, 100, 100, { name: generateUniqueWeaponName("Recurve Bow"), damage: 40, isWeapon: true }),
       leg_left: createLegProp("left", 1.1, 100, 100),
       leg_right: createLegProp("right", 1.1, 100, 100),
       eye_left: createEyeProp("left", 14),
@@ -3279,9 +3467,11 @@ export function createArcher(x, y, gender = "female") {
 }
 
 export function createCat(x, y, infected = false) {
+  const naming = generateUniqueCreatureName(infected ? "Infected Feline" : "Wild Feline", "cat");
   const cat = createEntity(
     {
-      name: infected ? "Gato Silvestre (Infectado)" : "Gato Silvestre",
+      name: naming.fullName,
+      surname: naming.surname,
       species: "cat",
       render: { skin: "Creature_Cat_U.png", color: 0xfff0b464, backcolor: 0xff321e0f },
       life: createLifeProp(3500, 3500),
@@ -3316,9 +3506,11 @@ export function createCat(x, y, infected = false) {
 }
 
 export function createWolf(x, y) {
+  const naming = generateUniqueCreatureName("Dire Wolf", "wolf");
   return createEntity(
     {
-      name: "Lobo Alfa Feroz",
+      name: naming.fullName,
+      surname: naming.surname,
       species: "wolf",
       render: { skin: "Creature_Wolf_U.png", color: 0xffc8c8dc, backcolor: 0xff28283c },
       life: createLifeProp(4500, 4500),
@@ -3347,9 +3539,11 @@ export function createWolf(x, y) {
 }
 
 export function createBear(x, y) {
+  const naming = generateUniqueCreatureName("Grizzly Bear", "bear");
   return createEntity(
     {
-      name: "Urso Pardo Gigante",
+      name: naming.fullName,
+      surname: naming.surname,
       species: "bear",
       render: { skin: "Creature_Bear_U.png", color: 0xff965a28, backcolor: 0xff32190a },
       life: createLifeProp(12000, 12000),
@@ -3379,9 +3573,11 @@ export function createBear(x, y) {
 }
 
 export function createGoblin(x, y) {
+  const naming = generateUniqueCreatureName("Goblin Scavenger", "goblin");
   return createEntity(
     {
-      name: "Goblin Saqueador",
+      name: naming.fullName,
+      surname: naming.surname,
       species: "goblin",
       render: { skin: "Creature_Goblin_U.png", color: 0xff78d250, backcolor: 0xff283c14 },
       life: createLifeProp(3200, 3200),
@@ -3397,7 +3593,7 @@ export function createGoblin(x, y) {
       miner: createMinerProp(),
       builder: createBuilderProp(),
       arm_left: createArmProp("left", 0.9, 100, 100),
-      arm_right: createArmProp("right", 0.9, 100, 100, { name: "Adaga Enferrujada", damage: 22 }),
+      arm_right: createArmProp("right", 0.9, 100, 100, { name: generateUniqueWeaponName("Rusty Dagger"), damage: 22, isWeapon: true }),
       leg_left: createLegProp("left", 1.0, 100, 100),
       leg_right: createLegProp("right", 1.0, 100, 100),
       eye_left: createEyeProp("left", 11),
@@ -3412,9 +3608,11 @@ export function createGoblin(x, y) {
 }
 
 export function createBat(x, y) {
+  const naming = generateUniqueCreatureName("Cave Bat", "bat");
   return createEntity(
     {
-      name: "Morcego Noturno",
+      name: naming.fullName,
+      surname: naming.surname,
       species: "bat",
       render: { skin: "Creature_Bat_U.png", color: 0xffb496dc, backcolor: 0xff281e3c },
       life: createLifeProp(2000, 2000),
@@ -3441,9 +3639,11 @@ export function createBat(x, y) {
 }
 
 export function createSeaSerpent(x, y) {
+  const naming = generateUniqueCreatureName("Abyssal Serpent", "serpent");
   return createEntity(
     {
-      name: "Serpente das Profundezas",
+      name: naming.fullName,
+      surname: naming.surname,
       species: "serpent",
       render: { skin: "Creature_Snake_U.png", color: 0xff32c8d2, backcolor: 0xff0a2832 },
       life: createLifeProp(8000, 8000),
@@ -3469,9 +3669,11 @@ export function createSeaSerpent(x, y) {
 }
 
 export function createDragon(x, y) {
+  const naming = generateUniqueCreatureName("Ancient Wyrm", "dragon");
   return createEntity(
     {
-      name: "Dragão Ancião Alado",
+      name: naming.fullName,
+      surname: naming.surname,
       species: "dragon",
       render: { skin: "Creature_Dragon_U.png", color: 0xffff4646, backcolor: 0xff3c0f0f },
       life: createLifeProp(30000, 30000),
@@ -3557,8 +3759,8 @@ export function createSeedGerminationProp(species = "oak", checkInterval = 4.0, 
               secondaryEntityId: ent.id,
               location: { x: ent.x, y: ent.y },
               description: instantSprout
-                ? `Uma semente em [X: ${ent.x}, Y: ${ent.y}] foi superfertilizada por adubo orgânico e brotou instantaneamente gerando ${newPlant.properties.name}!`
-                : `Uma semente germinou gerando ${newPlant.properties.name}!`,
+                ? `A seed at [X: ${ent.x}, Y: ${ent.y}] was super-fertilized by organic manure and instantly sprouted into ${newPlant.properties.name}!`
+                : `A seed germinated into ${newPlant.properties.name}!`,
               tick: currentTick,
               timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
               metadata: { species: this.species, superFertilized: instantSprout }
@@ -3577,7 +3779,7 @@ export function createSeedGerminationProp(species = "oak", checkInterval = 4.0, 
 export function createCactus(x, y) {
   return createEntity(
     {
-      name: "Cacto do Deserto (Semente de Cacto)",
+      name: generateUniqueFloraName("Desert Cactus", "cactus"),
       species: "cactus",
       render: { skin: "Feature_Tree_Pine.png", color: 0xff50c850, backcolor: 0xff28501e },
       life: createLifeProp(8000, 8000, 0.4),
@@ -3585,7 +3787,7 @@ export function createCactus(x, y) {
       deep_root: createDeepRootProp(22.0, 14.0),
       photosynthesis: createPhotosynthesisProp(0.2, 38.0),
       fruiting: createFruitingProp(20.0, "large", "cactus"),
-      terrain_pref: createTerrainPreferenceProp([3], "Areia / Deserto Árido"),
+      terrain_pref: createTerrainPreferenceProp([3], "Arid Desert Sand"),
       plant_flesh: { nutrition: 1600, foodType: "plant" }
     },
     x,
@@ -3594,9 +3796,11 @@ export function createCactus(x, y) {
 }
 
 export function createScorpion(x, y) {
+  const naming = generateUniqueCreatureName("Dune Scorpion", "scorpion");
   return createEntity(
     {
-      name: "Escorpião das Dunas",
+      name: naming.fullName,
+      surname: naming.surname,
       species: "scorpion",
       render: { skin: "Creature_Spider_U.png", color: 0xffe6b432, backcolor: 0xff3c2805 },
       life: createLifeProp(3800, 3800),
@@ -3607,11 +3811,11 @@ export function createScorpion(x, y) {
       bladder: createBladderProp(1800, 1800),
       kidney: createKidneyProp(0.5),
       combat: createCombatProp(1.1, 2),
-      arm_left: createArmProp("pincher", 1.1, 100, 100, { name: "Pinça Esmagadora", damage: 32 }),
-      arm_right: createArmProp("stinger", 1.2, 100, 100, { name: "Ferrão Venenoso", damage: 46 }),
+      arm_left: createArmProp("pincher", 1.1, 100, 100, { name: generateUniqueWeaponName("Crushing Pincer"), damage: 32 }),
+      arm_right: createArmProp("stinger", 1.2, 100, 100, { name: generateUniqueWeaponName("Venomous Stinger"), damage: 46 }),
       leg_left: createLegProp("legs_left", 1.2, 100, 100),
       leg_right: createLegProp("legs_right", 1.2, 100, 100),
-      terrain_pref: createTerrainPreferenceProp([3], "Areia do Deserto"),
+      terrain_pref: createTerrainPreferenceProp([3], "Desert Sand"),
       locomotion: createLocomotionProp(),
       carapace: { condition: 100, maxCondition: 100, defense: 25, nutrition: 800, foodType: "bone" },
       flesh: { condition: 100, maxCondition: 100, nutrition: 1500, foodType: "meat" }
@@ -3622,9 +3826,11 @@ export function createScorpion(x, y) {
 }
 
 export function createLizard(x, y) {
+  const naming = generateUniqueCreatureName("Sand Lizard", "lizard");
   return createEntity(
     {
-      name: "Lagarto das Areias",
+      name: naming.fullName,
+      surname: naming.surname,
       species: "lizard",
       render: { skin: "Creature_Snake_U.png", color: 0xffd2c850, backcolor: 0xff32280a },
       life: createLifeProp(2400, 2400),
@@ -3639,7 +3845,7 @@ export function createLizard(x, y) {
       paw_front_right: createPawProp("front_right", 1.1, 100, 100, 3, 3, 12),
       paw_back_left: createPawProp("back_left", 1.1, 100, 100, 3, 3, 12),
       paw_back_right: createPawProp("back_right", 1.1, 100, 100, 3, 3, 12),
-      terrain_pref: createTerrainPreferenceProp([3, 0], "Areia e Solo"),
+      terrain_pref: createTerrainPreferenceProp([3, 0], "Sand and Soil"),
       locomotion: createLocomotionProp(),
       flesh: { condition: 100, maxCondition: 100, nutrition: 900, foodType: "meat" }
     },
@@ -3651,14 +3857,14 @@ export function createLizard(x, y) {
 export function createAlpineShrub(x, y) {
   return createEntity(
     {
-      name: "Líquen das Rochas (Arbusto)",
+      name: generateUniqueFloraName("Rock Lichen", "lichen"),
       species: "lichen",
       render: { skin: "Feature_Flower.png", color: 0xffb4c8a0, backcolor: 0xff283228 },
       life: createLifeProp(4500, 4500, 0.4),
       bladder: createBladderProp(2500, 2500),
       surface_root: createSurfaceRootProp(6),
       photosynthesis: createPhotosynthesisProp(0.25, 26.0),
-      terrain_pref: createTerrainPreferenceProp([4, 1], "Chão Rochoso e Montanha"),
+      terrain_pref: createTerrainPreferenceProp([4, 1], "Rocky Ground and Mountain"),
       plant_flesh: { nutrition: 800, foodType: "plant" }
     },
     x,
@@ -3667,9 +3873,11 @@ export function createAlpineShrub(x, y) {
 }
 
 export function createMountainGoat(x, y) {
+  const naming = generateUniqueCreatureName("Mountain Goat", "goat");
   return createEntity(
     {
-      name: "Bode Montanhês",
+      name: naming.fullName,
+      surname: naming.surname,
       species: "goat",
       render: { skin: "Creature_Bear_U.png", color: 0xffe6e6dc, backcolor: 0xff3c3c3c },
       life: createLifeProp(5200, 5200),
@@ -3682,12 +3890,12 @@ export function createMountainGoat(x, y) {
       bladder: createBladderProp(2500, 2500),
       kidney: createKidneyProp(0.7),
       combat: createCombatProp(1.0, 3),
-      horns: createArmProp("horns", 1.2, 100, 100, { name: "Chifres de Montanha", damage: 38 }),
+      horns: createArmProp("horns", 1.2, 100, 100, { name: generateUniqueWeaponName("Mountain Horns"), damage: 38 }),
       paw_front_left: createPawProp("front_left", 1.2, 100, 100, 0, 0, 0),
       paw_front_right: createPawProp("front_right", 1.2, 100, 100, 0, 0, 0),
       paw_back_left: createPawProp("back_left", 1.2, 100, 100, 0, 0, 0),
       paw_back_right: createPawProp("back_right", 1.2, 100, 100, 0, 0, 0),
-      terrain_pref: createTerrainPreferenceProp([4, 1, 0], "Montanhas e Pedregulhos"),
+      terrain_pref: createTerrainPreferenceProp([4, 1, 0], "Mountains and Crags"),
       locomotion: createLocomotionProp(),
       flesh: { condition: 100, maxCondition: 100, nutrition: 2600, foodType: "meat" }
     },
@@ -3699,7 +3907,7 @@ export function createMountainGoat(x, y) {
 export function createOakTree(x, y) {
   return createEntity(
     {
-      name: "Ancestral Oak (Large Seed)",
+      name: generateUniqueFloraName("Ancestral Oak", "oak"),
       species: "oak",
       render: { skin: "Feature_Tree_Full.png", color: 0xff78dc5a, backcolor: 0xff284619 },
       life: createLifeProp(12000, 12000, 1.2),
@@ -3718,7 +3926,7 @@ export function createOakTree(x, y) {
 export function createWillowTree(x, y) {
   return createEntity(
     {
-      name: "River Willow (Small Seed)",
+      name: generateUniqueFloraName("River Willow", "willow"),
       species: "willow",
       render: { skin: "Feature_Tree_Pine.png", color: 0xff64c850, backcolor: 0xff1e3c1e },
       life: createLifeProp(9000, 9000, 1.0),
@@ -3737,7 +3945,7 @@ export function createWillowTree(x, y) {
 export function createPineTree(x, y) {
   return createEntity(
     {
-      name: "Highland Pine",
+      name: generateUniqueFloraName("Highland Pine", "pine"),
       species: "pine",
       render: { skin: "Feature_Tree_Pine.png", color: 0xff3c8250, backcolor: 0xff0f2814 },
       life: createLifeProp(11000, 11000, 1.1),
@@ -3756,7 +3964,7 @@ export function createPineTree(x, y) {
 export function createWaterLily(x, y) {
   return createEntity(
     {
-      name: "Aquatic Water Lily",
+      name: generateUniqueFloraName("Aquatic Water Lily", "waterlily"),
       species: "waterlily",
       render: { skin: "Feature_Flower.png", color: 0xff50dca0, backcolor: 0xff0f3c28 },
       life: createLifeProp(5000, 5000, 0.6),
@@ -3774,7 +3982,7 @@ export function createWaterLily(x, y) {
 export function createSeaweed(x, y) {
   return createEntity(
     {
-      name: "Underwater Seaweed",
+      name: generateUniqueFloraName("Underwater Seaweed", "seaweed"),
       species: "seaweed",
       render: { skin: "Item_Leaf.png", color: 0xff32b478, backcolor: 0xff0a321e },
       life: createLifeProp(4000, 4000, 0.5),
@@ -3815,16 +4023,35 @@ export function createFruit(x, y, seedType = "large", species = "oak") {
 
 export function createSeedEntity(x, y, seedType = "large", species = "oak") {
   let seedName = `${species} Seed`;
-  if (species === "cactus") seedName = "Cactus Seed";
-  else if (species === "lichen") seedName = "Lichen Spore";
-  else if (species === "willow") seedName = "Willow Seed";
-  else if (species === "pine") seedName = "Pine Nut";
-  else seedName = "Oak Acorn";
+  let seedSkin = "Other_Water.png"; // Teardrop seed / acorn shape
+  let seedColor = 0xffc88c50; // Acorn golden brown
+
+  if (species === "cactus") {
+    seedName = "Cactus Seed";
+    seedSkin = "Feature_Pebbles.png";
+    seedColor = 0xff50c850;
+  } else if (species === "lichen") {
+    seedName = "Lichen Spore";
+    seedSkin = "Item_Herb.png";
+    seedColor = 0xffa0dc78;
+  } else if (species === "willow") {
+    seedName = "Willow Seed";
+    seedSkin = "Item_Leaf.png";
+    seedColor = 0xff64b450;
+  } else if (species === "pine") {
+    seedName = "Pine Nut";
+    seedSkin = "Feature_Pebbles.png";
+    seedColor = 0xff966432;
+  } else {
+    seedName = "Oak Acorn";
+    seedSkin = "Other_Water.png";
+    seedColor = 0xffc88c50;
+  }
 
   return createEntity(
     {
       name: seedName,
-      render: { skin: "Item_Nut.png", color: species === "cactus" ? 0xff50c850 : 0xffc88c50, backcolor: 0x00000000 },
+      render: { skin: seedSkin, color: seedColor, backcolor: 0x00000000 },
       germination: createSeedGerminationProp(species, 6.0, 0.02),
       edible: { nutrition: 600, foodType: "plant", digestDuration: 20 },
       lifespan: {
@@ -3873,10 +4100,13 @@ export function createPoopEntity(x, y, seed = null) {
 // 6. Founding Human Archetypes (Miner, Builder, Crafter, Farmer, Matriarch, Hunter, Explorer)
 // ---------------------------------------------------------------------------
 
-export function createHumanMiner(x, y, name = "Aldor, the Miner") {
+export function createHumanMiner(x, y, name = null) {
+  const naming = name ? { fullName: name, surname: name.split(" ")[1] || getRandomVocabWord() } : generateUniqueCreatureName("Miner", "human");
+  usedGlobalNames.add(naming.fullName);
   return createEntity(
     {
-      name,
+      name: naming.fullName,
+      surname: naming.surname,
       species: "human",
       render: { skin: "Human_Guard_U.png", color: 0xffdcdce6, backcolor: 0xff1e283c },
       life: createLifeProp(7000, 7000),
@@ -3890,7 +4120,7 @@ export function createHumanMiner(x, y, name = "Aldor, the Miner") {
       body_regen: createBodyRegenerationProp(1.0, 4, 10),
       combat: createCombatProp(1.2, 3),
       miner: createMinerProp(),
-      arm_left: createArmProp("left", 1.0, 100, 100, { name: "Iron Pickaxe", damage: 28, isTool: true }),
+      arm_left: createArmProp("left", 1.0, 100, 100, { name: generateUniqueWeaponName("Iron Pickaxe"), damage: 28, isTool: true }),
       arm_right: createArmProp("right", 1.0, 100, 100),
       leg_left: createLegProp("left", 1.0, 100, 100),
       leg_right: createLegProp("right", 1.0, 100, 100),
@@ -3905,10 +4135,13 @@ export function createHumanMiner(x, y, name = "Aldor, the Miner") {
   );
 }
 
-export function createHumanBuilder(x, y, name = "Brom, the Builder") {
+export function createHumanBuilder(x, y, name = null) {
+  const naming = name ? { fullName: name, surname: name.split(" ")[1] || getRandomVocabWord() } : generateUniqueCreatureName("Builder", "human");
+  usedGlobalNames.add(naming.fullName);
   return createEntity(
     {
-      name,
+      name: naming.fullName,
+      surname: naming.surname,
       species: "human",
       render: { skin: "Human_Normal_M.png", color: 0xfff0c878, backcolor: 0xff3c2814 },
       life: createLifeProp(6500, 6500),
@@ -3922,7 +4155,7 @@ export function createHumanBuilder(x, y, name = "Brom, the Builder") {
       body_regen: createBodyRegenerationProp(1.0, 4, 10),
       combat: createCombatProp(1.1, 3),
       builder: createBuilderProp(),
-      arm_left: createArmProp("left", 1.0, 100, 100, { name: "Carpenter Hammer", damage: 22, isTool: true }),
+      arm_left: createArmProp("left", 1.0, 100, 100, { name: generateUniqueWeaponName("Carpenter Hammer"), damage: 22, isTool: true }),
       arm_right: createArmProp("right", 1.0, 100, 100),
       leg_left: createLegProp("left", 1.0, 100, 100),
       leg_right: createLegProp("right", 1.0, 100, 100),
@@ -3937,10 +4170,13 @@ export function createHumanBuilder(x, y, name = "Brom, the Builder") {
   );
 }
 
-export function createHumanCrafter(x, y, name = "Cedric, the Crafter") {
+export function createHumanCrafter(x, y, name = null) {
+  const naming = name ? { fullName: name, surname: name.split(" ")[1] || getRandomVocabWord() } : generateUniqueCreatureName("Crafter", "human");
+  usedGlobalNames.add(naming.fullName);
   return createEntity(
     {
-      name,
+      name: naming.fullName,
+      surname: naming.surname,
       species: "human",
       render: { skin: "Human_Normal_M.png", color: 0xffa0b4e6, backcolor: 0xff1e2846 },
       life: createLifeProp(6000, 6000),
@@ -3954,7 +4190,7 @@ export function createHumanCrafter(x, y, name = "Cedric, the Crafter") {
       body_regen: createBodyRegenerationProp(1.0, 4, 10),
       combat: createCombatProp(1.0, 2),
       crafter: createCrafterProp(),
-      arm_left: createArmProp("left", 1.0, 100, 100, { name: "Carving Knife", damage: 18, isTool: true }),
+      arm_left: createArmProp("left", 1.0, 100, 100, { name: generateUniqueWeaponName("Carving Knife"), damage: 18, isTool: true }),
       arm_right: createArmProp("right", 1.0, 100, 100),
       leg_left: createLegProp("left", 1.0, 100, 100),
       leg_right: createLegProp("right", 1.0, 100, 100),
@@ -3969,10 +4205,13 @@ export function createHumanCrafter(x, y, name = "Cedric, the Crafter") {
   );
 }
 
-export function createHumanFarmer(x, y, name = "Farid, the Farmer") {
+export function createHumanFarmer(x, y, name = null) {
+  const naming = name ? { fullName: name, surname: name.split(" ")[1] || getRandomVocabWord() } : generateUniqueCreatureName("Farmer", "human");
+  usedGlobalNames.add(naming.fullName);
   return createEntity(
     {
-      name,
+      name: naming.fullName,
+      surname: naming.surname,
       species: "human",
       render: { skin: "Human_Normal_M.png", color: 0xff82c878, backcolor: 0xff143c1e },
       life: createLifeProp(6500, 6500),
@@ -3986,7 +4225,7 @@ export function createHumanFarmer(x, y, name = "Farid, the Farmer") {
       body_regen: createBodyRegenerationProp(1.0, 4, 10),
       combat: createCombatProp(1.0, 2),
       farmer: createFarmerProp(),
-      arm_left: createArmProp("left", 1.0, 100, 100, { name: "Cultivation Hoe", damage: 18, isTool: true, toolType: "hoe" }),
+      arm_left: createArmProp("left", 1.0, 100, 100, { name: generateUniqueWeaponName("Cultivation Hoe"), damage: 18, isTool: true, toolType: "hoe" }),
       arm_right: createArmProp("right", 1.0, 100, 100),
       leg_left: createLegProp("left", 1.0, 100, 100),
       leg_right: createLegProp("right", 1.0, 100, 100),
@@ -4001,10 +4240,13 @@ export function createHumanFarmer(x, y, name = "Farid, the Farmer") {
   );
 }
 
-export function createHumanMatriarch(x, y, name = "Elena, the Matriarch") {
+export function createHumanMatriarch(x, y, name = null) {
+  const naming = name ? { fullName: name, surname: name.split(" ")[1] || getRandomVocabWord() } : generateUniqueCreatureName("Matriarch", "human");
+  usedGlobalNames.add(naming.fullName);
   return createEntity(
     {
-      name,
+      name: naming.fullName,
+      surname: naming.surname,
       species: "human",
       render: { skin: "Human_Normal_F.png", color: 0xffffb4c8, backcolor: 0xff461e28 },
       life: createLifeProp(6500, 6500),
@@ -4032,10 +4274,13 @@ export function createHumanMatriarch(x, y, name = "Elena, the Matriarch") {
   );
 }
 
-export function createHumanHunter(x, y, name = "Kael, the Hunter") {
+export function createHumanHunter(x, y, name = null) {
+  const naming = name ? { fullName: name, surname: name.split(" ")[1] || getRandomVocabWord() } : generateUniqueCreatureName("Hunter", "human");
+  usedGlobalNames.add(naming.fullName);
   return createEntity(
     {
-      name,
+      name: naming.fullName,
+      surname: naming.surname,
       species: "human",
       render: { skin: "Human_Guard_U.png", color: 0xffc87850, backcolor: 0xff3c140a },
       life: createLifeProp(7500, 7500),
@@ -4049,7 +4294,7 @@ export function createHumanHunter(x, y, name = "Kael, the Hunter") {
       body_regen: createBodyRegenerationProp(1.0, 4, 10),
       combat: createCombatProp(1.3, 4),
       hunter: createHunterProp(),
-      arm_left: createArmProp("left", 1.0, 100, 100, { name: "Hunting Spear", damage: 45, isWeapon: true }),
+      arm_left: createArmProp("left", 1.0, 100, 100, { name: generateUniqueWeaponName("Hunting Spear"), damage: 45, isWeapon: true }),
       arm_right: createArmProp("right", 1.0, 100, 100),
       leg_left: createLegProp("left", 1.2, 100, 100),
       leg_right: createLegProp("right", 1.2, 100, 100),
@@ -4064,10 +4309,13 @@ export function createHumanHunter(x, y, name = "Kael, the Hunter") {
   );
 }
 
-export function createHumanExplorer(x, y, name = "Lyra, the Explorer") {
+export function createHumanExplorer(x, y, name = null) {
+  const naming = name ? { fullName: name, surname: name.split(" ")[1] || getRandomVocabWord() } : generateUniqueCreatureName("Explorer", "human");
+  usedGlobalNames.add(naming.fullName);
   return createEntity(
     {
-      name,
+      name: naming.fullName,
+      surname: naming.surname,
       species: "human",
       render: { skin: "Human_Normal_F.png", color: 0xff78dce6, backcolor: 0xff0a323c },
       life: createLifeProp(6800, 6800),
@@ -4081,7 +4329,7 @@ export function createHumanExplorer(x, y, name = "Lyra, the Explorer") {
       body_regen: createBodyRegenerationProp(1.2, 4, 10),
       combat: createCombatProp(1.0, 2),
       explorer: createExplorerProp(),
-      arm_left: createArmProp("left", 1.0, 100, 100, { name: "Explorer Staff", damage: 20, isTool: true }),
+      arm_left: createArmProp("left", 1.0, 100, 100, { name: generateUniqueWeaponName("Explorer Staff"), damage: 20, isTool: true }),
       arm_right: createArmProp("right", 1.0, 100, 100),
       leg_left: createLegProp("left", 1.3, 100, 100),
       leg_right: createLegProp("right", 1.3, 100, 100),

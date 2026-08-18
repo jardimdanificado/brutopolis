@@ -52,11 +52,11 @@ export function recordWorldEvent({
       const totalDmg = prevDmg + newDmg;
       last.metadata.totalDamage = totalDmg;
 
-      const pName = metadata?.attackerName || description.split(" atingiu ")[0] || `Entity #${primaryEntityId}`;
-      const tPart = metadata?.hitPartName || "corpo";
+      const pName = metadata?.attackerName || description.split(" struck ")[0] || `Entity #${primaryEntityId}`;
+      const tPart = metadata?.hitPartName || "body";
       const tName = metadata?.targetName || `Entity #${secondaryEntityId}`;
 
-      last.description = `${pName} atacou ${tName} (${last.count}x) atingindo ${tPart}, causando ${Math.round(totalDmg)} de dano acumulado [X: ${last.location.x}, Y: ${last.location.y}]!`;
+      last.description = `${pName} attacked ${tName} (${last.count}x) hitting ${tPart}, dealing ${Math.round(totalDmg)} total damage [X: ${last.location.x}, Y: ${last.location.y}]!`;
       return last;
     }
   }
