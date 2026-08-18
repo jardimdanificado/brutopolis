@@ -11,7 +11,6 @@ export class WorldClock {
     this.hour = 10;
     this.minute = 0;
     this.globalLight = 1.0;
-    this.globalHeat = 0.8;
     this.minuteTimer = 0;
   }
 
@@ -20,7 +19,6 @@ export class WorldClock {
     this.hour = 10;
     this.minute = 0;
     this.globalLight = 1.0;
-    this.globalHeat = 0.8;
     this.minuteTimer = 0;
   }
 
@@ -49,10 +47,6 @@ export class WorldClock {
     } else {
       this.globalLight = 0.18;
     }
-
-    // Ambient heat curve
-    const heatAngle = (((timeOfDay + 20) % 24) / 24.0) * Math.PI * 2;
-    this.globalHeat = 0.4 + 0.4 * (0.5 + 0.5 * Math.sin(heatAngle));
   }
 }
 
@@ -99,6 +93,6 @@ export class World {
   isWalkable(x, y) {
     if (x < 0 || x >= MAP_WIDTH || y < 0 || y >= MAP_HEIGHT) return false;
     const t = this.map[y * MAP_WIDTH + x];
-    return t === 0 || t === 3 || t === 4; // Floor, Sand, Stone
+    return t !== 5; // All tiles except bedrock/abyss (5) are traversable
   }
 }

@@ -1,7 +1,7 @@
 {
   "name": "brutopolis",
-  "version": "1.0.0",
-  "description": "Brutopolis — Biological Simulation Engine & WASM Graphics Pipeline",
+  "version": "0.0.1",
+  "description": "Brutopolis",
   "type": "module",
   "main": "runner.js",
   "bin": {

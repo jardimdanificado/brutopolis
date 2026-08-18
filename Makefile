@@ -39,7 +39,7 @@ SRCS = \
 	$(DECODERS)/lodepng.c \
 	$(SHIM)/libc_shim.c
 
-.PHONY: all run gen-assets clean serve
+.PHONY: all run assets gen-assets generate-assets clean serve
 
 all: $(TARGET)
 
@@ -47,8 +47,12 @@ $(TARGET): $(SRCS) assets.h
 	$(CLANG) $(CFLAGS) $(LDFLAGS) -o $@ $(SRCS)
 	@echo "✓  Built $(TARGET) ($$(wc -c < $(TARGET)) bytes)"
 
+assets: gen-assets
+
 gen-assets:
 	python3 gen_assets.py
+
+generate-assets: gen-assets
 
 run: all
 	node runner.js

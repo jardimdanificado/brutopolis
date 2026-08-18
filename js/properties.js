@@ -48,62 +48,121 @@ export function generateRandomDietaryPreferences() {
 // ---------------------------------------------------------------------------
 
 /**
- * Lungs for Terrestrial & Aerial Animals (Severe drowning in water)
+ * Terrestrial Property (Land Dweller / Walker)
  */
-export function createLungsProp() {
+export function createTerrestrialProp() {
   return {
-    condition: 100,
-    maxCondition: 100,
-    nutrition: 400,
-    foodType: "organ",
+    type: "terrestrial",
+    struggleTimer: 0,
     effect(ent, dt, world) {
-      if (!ent.properties.life) return;
+      if (!ent.properties.life || !world) return;
+      const isFlying = !!ent.properties.flying || ent.properties.wings?.flying === true;
+      const isAquatic = !!ent.properties.aquatic;
+      const inWater = world.getTile(ent.x, ent.y) === 2;
 
-      const isFlying = ent.properties.wings?.flying === true;
-      const inWater = world && world.getTile(ent.x, ent.y) === 2;
+      // Terrestrial creatures in water suffer drowning / water exhaustion, but have a tiny chance to learn swimming!
+      if (inWater && !isFlying && !isAquatic) {
+        ent.properties.life.energy = Math.max(0, ent.properties.life.energy - dt * 25.0);
+        ent.combatFlash = 1;
 
-      if (inWater && !isFlying) {
-        ent.properties.life.energy = Math.max(0, ent.properties.life.energy - dt * 90.0);
-        this.condition = Math.max(0, this.condition - dt * 12.0);
-        ent.combatFlash = 2;
+        // Minuscule chance to learn how to swim while in water!
+        this.struggleTimer = (this.struggleTimer || 0) + dt;
+        if (this.struggleTimer > 3.0 && Math.random() < 0.003 * dt) {
+          ent.properties.aquatic = createAquaticProp();
+          recordWorldEvent({
+            type: "SPROUT",
+            primaryEntityId: ent.id,
+            location: { x: ent.x, y: ent.y },
+            description: `${ent.properties.name} superou o pânico das águas e aprendeu a nadar com destreza!`,
+            tick: currentTick,
+            timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
+          });
+        }
       } else {
-        const mult = getDamagedEnergyMultiplier(this.condition, this.maxCondition);
-        ent.properties.life.energy = Math.max(0, ent.properties.life.energy - dt * 0.2 * mult);
+        this.struggleTimer = 0;
       }
     }
   };
 }
 
 /**
- * Gills for Aquatic Creatures (Severe suffocation out of water)
+ * Mystic Grace (Proteção Mística Inicial que previne violência nos primeiros minutos)
  */
-export function createGillsProp() {
+export function createMysticGraceProp(durationSeconds = 180) {
   return {
-    condition: 100,
-    maxCondition: 100,
-    nutrition: 300,
-    foodType: "organ",
+    name: "Graça Mística",
+    duration: durationSeconds,
+    current: 0,
+    active: true,
     effect(ent, dt, world) {
-      if (!ent.properties.life) return;
-
-      const inWater = world && world.getTile(ent.x, ent.y) === 2;
-
-      if (!inWater) {
-        ent.properties.life.energy = Math.max(0, ent.properties.life.energy - dt * 90.0);
-        this.condition = Math.max(0, this.condition - dt * 15.0);
-        ent.combatFlash = 2;
-      } else {
-        const mult = getDamagedEnergyMultiplier(this.condition, this.maxCondition);
-        ent.properties.life.energy = Math.max(0, ent.properties.life.energy - dt * 0.2 * mult);
+      if (!this.active) return;
+      this.current += dt;
+      if (this.current >= this.duration) {
+        this.active = false;
+        delete ent.properties.mystic_grace;
+        recordWorldEvent({
+          type: "DIALOGUE",
+          primaryEntityId: ent.id,
+          location: { x: ent.x, y: ent.y },
+          description: `A Graça Mística que protegia ${ent.properties.name} dissipou-se nos ares.`,
+          tick: currentTick,
+          timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
+        });
       }
     }
   };
 }
 
 /**
- * Life / Basal Metabolic Energy
+ * Scatological Trait: Consumes feces with happiness, admires others who do the same
  */
-export function createLifeProp(energy = 6000, max = 6000, basalRate = 0.5) {
+export function createScatologicalProp() {
+  return {
+    name: "Escatológico",
+    description: "Sente prazer ao consumir dejetos e admira criaturas com hábitos semelhantes.",
+    effect(ent, dt) {}
+  };
+}
+
+/**
+ * Aquatic Property (Water Dweller / Swimmer)
+ */
+export function createAquaticProp() {
+  return {
+    type: "aquatic",
+    effect(ent, dt, world) {
+      if (!ent.properties.life || !world) return;
+      const isFlying = !!ent.properties.flying || ent.properties.wings?.flying === true;
+      const isTerrestrial = !!ent.properties.terrestrial;
+      const inWater = world.getTile(ent.x, ent.y) === 2;
+
+      // Pure aquatic creatures stranded on dry land suffer suffocation / desiccation
+      if (!inWater && !isFlying && !isTerrestrial) {
+        ent.properties.life.energy = Math.max(0, ent.properties.life.energy - dt * 60.0);
+        ent.combatFlash = 2;
+      }
+    }
+  };
+}
+
+/**
+ * Flying Property (Aerial Mobility - passes over all terrain including water and mountains)
+ */
+export function createFlyingProp(speedBonus = 2.0) {
+  return {
+    type: "flying",
+    flying: true,
+    speedBonus,
+    effect(ent, dt, world) {
+      // Soars above all terrains effortlessly
+    }
+  };
+}
+
+/**
+ * Life / Basal Metabolic Energy (Extended Duration & Slower Decay)
+ */
+export function createLifeProp(energy = 8000, max = 8000, basalRate = 0.25) {
   return {
     energy,
     max,
@@ -215,6 +274,15 @@ export function createKidneyProp(ratio = 0.75) {
   };
 }
 
+export function getMoodLabel(moodVal) {
+  const m = typeof moodVal === "number" ? moodVal : 0;
+  if (m >= 70) return `Eufórico (+${Math.round(m)})`;
+  if (m >= 25) return `Feliz (+${Math.round(m)})`;
+  if (m >= -20) return `Sereno (${Math.round(m)})`;
+  if (m >= -60) return `Ansioso (${Math.round(m)})`;
+  return `Deprimido (${Math.round(m)})`;
+}
+
 /**
  * Brain (Quality, Short/Long-Term Memory, 8x8 Geographic Zones & Territorial Affinities, Object Memory, Dietary Preferences)
  */
@@ -226,7 +294,7 @@ export function createBrainProp(maxPath = 16, personality = { bravery: 0.7, curi
     quality,
     maxPath,
     path: [],
-    mood: "calm",
+    mood: 35, // Numeric mood counter (-100 to +100)
     personality,
     affinities: {}, // { [targetEntityId]: number }
     preferences: generateRandomDietaryPreferences(),
@@ -381,26 +449,30 @@ export function createBrainProp(maxPath = 16, personality = { bravery: 0.7, curi
       }
 
       // 4. Spontaneous Flashback from Long-Term Memory (Affects mood and affinities slightly)
-      if (this.longTermMemory.length > 0 && Math.random() < 0.005) {
+      if (this.longTermMemory.length > 0 && Math.random() < 0.006) {
         const mem = this.longTermMemory[Math.floor(Math.random() * this.longTermMemory.length)];
-        if (mem.type === "AMPUTATION" || mem.type === "ATTACK" || mem.type === "DEATH") {
-          this.mood = "anxious";
+        const memoryDesc = mem.desc || mem.description || `acontecimento de ${mem.type}`;
+
+        if (mem.type === "AMPUTATION" || mem.type === "ATTACK" || mem.type === "DEATH" || mem.type === "KILL_WITNESS") {
+          this.mood = Math.max(-100, this.mood - 18);
           if (mem.secondaryEntityId && this.affinities[mem.secondaryEntityId] !== undefined) {
             this.affinities[mem.secondaryEntityId] = Math.max(-100, this.affinities[mem.secondaryEntityId] - 2);
           }
-        } else if (mem.type === "FEED" || mem.type === "BIRTH" || mem.type === "SPROUT") {
-          this.mood = "happy";
+        } else if (mem.type === "FEED" || mem.type === "BIRTH" || mem.type === "SPROUT" || mem.type === "KILL") {
+          this.mood = Math.min(100, this.mood + 18);
           if (mem.secondaryEntityId && this.affinities[mem.secondaryEntityId] !== undefined) {
             this.affinities[mem.secondaryEntityId] = Math.min(100, this.affinities[mem.secondaryEntityId] + 2);
           }
         }
 
+        const moodLabel = getMoodLabel(this.mood);
         recordWorldEvent({
           type: "DIALOGUE",
           primaryEntityId: ent.id,
           location: { x: ent.x, y: ent.y },
-          description: `${ent.properties.name} relembrou um evento marcante: "${mem.desc || mem.type}" [Humor: ${this.mood}]!`,
-          tick: currentTick
+          description: `${ent.properties.name} relembrou em silêncio: "${memoryDesc}" [Humor: ${moodLabel}]`,
+          tick: currentTick,
+          timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
         });
       }
 
@@ -578,14 +650,14 @@ export function createArmProp(side = "left", quality = 1.0, condition = 100, max
 /**
  * Genitalia (Sex & Procreation with Birth Event Logs)
  */
-export function createGenitaliaProp(type = "penis") {
+export function createGenitaliaProp(type = "penis", isPregnant = false) {
   return {
     type,
     reproduction: "sexual",
     condition: 100,
     maxCondition: 100,
-    pregnantTimer: 0,
-    isPregnant: false,
+    pregnantTimer: isPregnant ? 15.0 : 0,
+    isPregnant: !!isPregnant,
     matingCooldown: 0,
     nutrition: 300,
     foodType: "organ",
@@ -599,32 +671,66 @@ export function createGenitaliaProp(type = "penis") {
       // Pregnancy gestation and childbirth
       if (this.isPregnant) {
         this.pregnantTimer = (this.pregnantTimer || 0) + dt;
-        if (this.pregnantTimer >= 40.0 && entities) { // Birth after 40s
+        if (this.pregnantTimer >= 40.0 && entities) { // Childbirth after 40s
           this.isPregnant = false;
           this.pregnantTimer = 0;
-          this.matingCooldown = 60.0;
+          this.matingCooldown = 120.0; // Postpartum recovery cooldown
 
           const babySpecies = ent.properties.species || "human";
+          const babyGender = Math.random() < 0.5 ? "female" : "male";
+          const isHuman = babySpecies === "human";
+          const babyName = isHuman
+            ? (babyGender === "female" ? `Filha de ${ent.properties.name}` : `Filho de ${ent.properties.name}`)
+            : `Filhote de ${ent.properties.name || "Criatura"}`;
+
           const baby = createEntity(
             {
-              name: `Filhote de ${ent.properties.name || "Criatura"}`,
+              name: babyName,
               species: babySpecies,
               render: { ...ent.properties.render },
-              life: createLifeProp(Math.round(ent.properties.life.max * 0.5), Math.round(ent.properties.life.max * 0.5)),
-              brain: createBrainProp(12, { bravery: 0.5, curiosity: 0.9, aggression: 0.2 }, 0.9),
-              stomach: createStomachProp(2),
-              bladder: createBladderProp(1500, 1500),
+              life: createLifeProp(Math.round(ent.properties.life.max * 0.6), Math.round(ent.properties.life.max * 0.6)),
+              brain: createBrainProp(16, { bravery: 0.6, curiosity: 0.9, aggression: 0.1 }, 1.0),
+              stomach: createStomachProp(3, { meat: 1.0, plant: 1.0, fruit: 1.0, organ: 0.8, bone: 0.1 }),
+              bladder: createBladderProp(2000, 2000),
+              kidney: createKidneyProp(0.75),
+              body_regen: createBodyRegenerationProp(1.0, 4, 10),
+              combat: createCombatProp(0.8, 1),
               locomotion: createLocomotionProp(),
-              torso: { condition: 80, maxCondition: 80, nutrition: 800, foodType: "meat" }
+              torso: { condition: 80, maxCondition: 80, nutrition: 1200, foodType: "meat" }
             },
             ent.x + (Math.floor(Math.random() * 3) - 1),
             ent.y + (Math.floor(Math.random() * 3) - 1)
           );
 
-          if (ent.properties.lungs) baby.properties.lungs = createLungsProp();
-          if (ent.properties.gills) baby.properties.gills = createGillsProp();
-          if (ent.properties.mouth) baby.properties.mouth = createMouthProp(16, 16);
-          if (ent.properties.communication) baby.properties.communication = createCommunicationProp(2.0);
+          // Sensory & Vital Organs
+          if (ent.properties.terrestrial) baby.properties.terrestrial = createTerrestrialProp();
+          if (ent.properties.aquatic) baby.properties.aquatic = createAquaticProp();
+          if (ent.properties.flying) baby.properties.flying = createFlyingProp();
+          if (ent.properties.mouth) baby.properties.mouth = createMouthProp(20, 20);
+          if (ent.properties.communication) baby.properties.communication = createCommunicationProp(1.8);
+          baby.properties.eye_left = createEyeProp("left", 8);
+          baby.properties.eye_right = createEyeProp("right", 8);
+
+          // Physical Limbs: Legs / Paws / Arms
+          const hasPaws = Object.keys(ent.properties).some(k => k.startsWith("paw"));
+          if (hasPaws) {
+            baby.properties.paw_front_left = createPawProp("front_left", 0.75, 60, 60, 3, 3, 12);
+            baby.properties.paw_front_right = createPawProp("front_right", 0.75, 60, 60, 3, 3, 12);
+            baby.properties.paw_back_left = createPawProp("back_left", 0.75, 60, 60, 3, 3, 12);
+            baby.properties.paw_back_right = createPawProp("back_right", 0.75, 60, 60, 3, 3, 12);
+          } else {
+            // Humanoid Biped
+            baby.properties.arm_left = createArmProp("left", 0.8, 70, 70);
+            baby.properties.arm_right = createArmProp("right", 0.8, 70, 70);
+            baby.properties.leg_left = createLegProp("left", 0.8, 70, 70);
+            baby.properties.leg_right = createLegProp("right", 0.8, 70, 70);
+          }
+
+          if (ent.properties.wings) {
+            baby.properties.wings = createWingsProp(80, 80);
+          }
+
+          baby.properties.genitalia = createGenitaliaProp(babyGender === "female" ? "vagina" : "penis", false);
 
           // Inherit mother's group
           if (!ent.properties.group) {
@@ -633,6 +739,17 @@ export function createGenitaliaProp(type = "penis") {
           baby.properties.group = ent.properties.group;
           ent.properties.group.members.push(baby.id);
 
+          // Immediate high mother-child bond (+90)
+          if (ent.properties.brain) {
+            if (!ent.properties.brain.affinities) ent.properties.brain.affinities = {};
+            ent.properties.brain.affinities[baby.id] = 95;
+            ent.properties.brain.mood = "joyful";
+          }
+          if (baby.properties.brain) {
+            baby.properties.brain.affinities[ent.id] = 95;
+            baby.properties.brain.mood = "happy";
+          }
+
           entities.push(baby);
 
           recordWorldEvent({
@@ -640,7 +757,7 @@ export function createGenitaliaProp(type = "penis") {
             primaryEntityId: ent.id,
             secondaryEntityId: baby.id,
             location: { x: baby.x, y: baby.y },
-            description: `${ent.properties.name} deu à luz a um filhote (${baby.properties.name}) na posição [X: ${baby.x}, Y: ${baby.y}]!`,
+            description: `${ent.properties.name} deu à luz a um filhote saudável (${baby.properties.name}) na posição [X: ${baby.x}, Y: ${baby.y}]!`,
             tick: currentTick,
             timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
           });
@@ -649,11 +766,11 @@ export function createGenitaliaProp(type = "penis") {
       }
 
       // Mating attempt (female / vagina seeking male / penis of same species with mutual affinity >= 50)
-      if ((this.type === "vagina" || this.type === "female") && this.matingCooldown <= 0 && ent.properties.life.energy > ent.properties.life.max * 0.6) {
-        if (entities) {
+      if ((this.type === "vagina" || this.type === "female") && this.matingCooldown <= 0 && !this.isPregnant && ent.properties.life.energy > ent.properties.life.max * 0.7) {
+        if (entities && Math.random() < 0.1) {
           for (const mate of entities) {
             if (mate !== ent && !mate.destroyed && mate.properties.genitalia && (mate.properties.genitalia.type === "penis" || mate.properties.genitalia.type === "male")) {
-              if (mate.properties.species === ent.properties.species) {
+              if (mate.properties.species === ent.properties.species && (mate.properties.genitalia.matingCooldown || 0) <= 0) {
                 const dist = Math.abs(mate.x - ent.x) + Math.abs(mate.y - ent.y);
                 if (dist <= 1) {
                   const aff = ent.properties.brain?.affinities?.[mate.id] || 0;
@@ -661,7 +778,8 @@ export function createGenitaliaProp(type = "penis") {
                   if (aff >= 50 && mateAff >= 50) {
                     this.isPregnant = true;
                     this.pregnantTimer = 0;
-                    mate.properties.genitalia.matingCooldown = 60.0;
+                    this.matingCooldown = 180.0; // Cooldown while pregnant and post-birth
+                    mate.properties.genitalia.matingCooldown = 90.0;
 
                     recordWorldEvent({
                       type: "RELATION",
@@ -669,7 +787,8 @@ export function createGenitaliaProp(type = "penis") {
                       secondaryEntityId: mate.id,
                       location: { x: ent.x, y: ent.y },
                       description: `${ent.properties.name} e ${mate.properties.name} acasalaram em harmonia!`,
-                      tick: currentTick
+                      tick: currentTick,
+                      timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
                     });
                     break;
                   }
@@ -787,23 +906,128 @@ export function createScarProp(location = "torso", name = "Cicatriz de Lâmina")
  */
 let nextGroupId = 1;
 
-export function createGroup(name, founder) {
-  const zx = Math.floor(founder.x / 8);
-  const zy = Math.floor(founder.y / 8);
-  const zoneKey1 = `${zx}_${zy}`;
-  const zoneKey2 = `${zx + 1}_${zy}`;
+export function createGroup(name, founder, baseZone = null, claimedZones = null) {
+  let founderId = typeof founder === "object" && founder !== null ? founder.id : founder;
+  let zx = 32;
+  let zy = 32;
+  let groupColor = 0xffe6a032;
+
+  if (typeof founder === "object" && founder !== null) {
+    if (founder.x !== undefined) zx = Math.floor(founder.x / 8);
+    if (founder.y !== undefined) zy = Math.floor(founder.y / 8);
+    if (founder.properties?.render?.color) groupColor = founder.properties.render.color;
+  } else if (baseZone && Array.isArray(baseZone)) {
+    zx = baseZone[0] || 32;
+    zy = baseZone[1] || 32;
+  }
+
+  const defaultZones = [`${zx}_${zy}`, `${zx + 1}_${zy}`];
 
   const group = {
     id: nextGroupId++,
     name: name || `Bando #${nextGroupId}`,
-    members: [founder.id],
-    claimedZones: [zoneKey1, zoneKey2],
+    members: founderId !== undefined && founderId !== null ? [founderId] : [],
+    claimedZones: claimedZones || defaultZones,
     campfire: null, // { x, y }
     storage: [],
     createdTick: currentTick,
-    color: founder.properties.render?.color || 0xffe6a032
+    color: groupColor
   };
   return group;
+}
+
+/**
+ * Calculates the total stockpile of a group across its claimed territory,
+ * members' hands/inventories, and clan storage array.
+ */
+export function getGroupStockpile(group, entities) {
+  if (!group) return { totalCount: 0, items: {}, breakdown: { ground: 0, members: 0, storage: 0 } };
+
+  const items = {};
+  let groundCount = 0;
+  let memberCount = 0;
+  let storageCount = 0;
+
+  function addItem(rawName, category) {
+    if (!rawName) return;
+    let name = rawName;
+    if (typeof rawName === "object") {
+      name = rawName.name || rawName.resourceType || rawName.type || "Item";
+    }
+    name = String(name).trim();
+    if (name.toLowerCase() === "wood" || name.toLowerCase() === "madeira") name = "Madeira (Wood)";
+    else if (name.toLowerCase() === "stone" || name.toLowerCase() === "pedra") name = "Pedra (Stone)";
+    else if (name.toLowerCase() === "fruit" || name.toLowerCase() === "fruto") name = "Fruto (Fruit)";
+    else if (name.toLowerCase() === "seed" || name.toLowerCase() === "semente") name = "Semente (Seed)";
+    else if (name.toLowerCase() === "meat" || name.toLowerCase() === "carne") name = "Carne (Meat)";
+    else if (name.toLowerCase() === "feces" || name.toLowerCase() === "fezes") name = "Fezes (Fertilizer)";
+
+    items[name] = (items[name] || 0) + 1;
+    if (category === "ground") groundCount++;
+    else if (category === "members") memberCount++;
+    else if (category === "storage") storageCount++;
+  }
+
+  // 1. Clan Storage Array
+  if (Array.isArray(group.storage)) {
+    for (const it of group.storage) {
+      addItem(it, "storage");
+    }
+  }
+
+  // 2. Members' Held Items & Inventories
+  const livingMemberIds = new Set(group.members || []);
+  if (entities && Array.isArray(entities)) {
+    for (const ent of entities) {
+      if (ent.destroyed) continue;
+
+      if (livingMemberIds.has(ent.id)) {
+        // Check arms/hands
+        for (const [k, p] of Object.entries(ent.properties || {})) {
+          if (k.startsWith("arm") && p && p.heldItem) {
+            const it = p.heldItem;
+            addItem(it.name || it.resourceType || it.type || "Item", "members");
+          }
+        }
+        // Check inventory arrays/bags if any
+        if (Array.isArray(ent.properties?.inventory)) {
+          for (const it of ent.properties.inventory) {
+            addItem(it, "members");
+          }
+        }
+      }
+
+      // 3. Ground Items in Claimed Zones
+      const isGroundItem = !ent.properties.life && (
+        ent.properties.resourceType ||
+        ent.properties.edible ||
+        ent.properties.germination ||
+        ent.properties.fertilizer ||
+        ent.properties.species === "item" ||
+        ent.properties.species === "resource" ||
+        ent.properties.name?.includes("Madeira") ||
+        ent.properties.name?.includes("Pedra") ||
+        ent.properties.name?.includes("Fruto") ||
+        ent.properties.name?.includes("Semente")
+      );
+
+      if (isGroundItem && Array.isArray(group.claimedZones)) {
+        const zx = Math.floor(ent.x / 8);
+        const zy = Math.floor(ent.y / 8);
+        const inZone = group.claimedZones.includes(`${zx}_${zy}`) || group.claimedZones.includes(`${zx},${zy}`);
+        if (inZone) {
+          addItem(ent.properties.name || ent.properties.resourceType || "Objeto", "ground");
+        }
+      }
+    }
+  }
+
+  const totalCount = groundCount + memberCount + storageCount;
+  return {
+    totalCount,
+    items,
+    breakdown: { ground: groundCount, members: memberCount, storage: storageCount }
+  };
 }
 
 export function tryJoinGroup(candidate, group, entities) {
@@ -959,19 +1183,79 @@ export function gossipBetweenCreatures(speaker, listener, world, entities) {
     }
   }
 
-  // 3. Share Significant Long-Term Memories
-  if (spkBrain.longTermMemory.length > 0 && Math.random() < 0.25) {
+  // 3. Share Significant Long-Term Memories (Rich Descriptive Gossip)
+  if (spkBrain.longTermMemory.length > 0 && Math.random() < 0.35) {
     const mem = spkBrain.longTermMemory[Math.floor(Math.random() * spkBrain.longTermMemory.length)];
+    const gossipDesc = mem.desc || mem.description || `acontecimento de ${mem.type}`;
     lisBrain.addShortTerm({
       type: "GOSSIP",
-      desc: `Ouviu de ${speaker.properties.name}: "${mem.desc}"`,
+      desc: `Ouviu de ${speaker.properties.name}: "${gossipDesc}"`,
       location: { x: speaker.x, y: speaker.y }
+    });
+
+    recordWorldEvent({
+      type: "DIALOGUE",
+      primaryEntityId: speaker.id,
+      secondaryEntityId: listener.id,
+      location: { x: speaker.x, y: speaker.y },
+      description: `${speaker.properties.name} conversou com ${listener.properties.name}: "Você soube que ${gossipDesc}?"`,
+      tick: currentTick,
+      timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
     });
   }
 }
 
 /**
- * Crafter Trait: Uses Wood and Stone to craft melee weapons and tools
+ * Hand Inventory Management (Strict: 1 item per arm)
+ */
+export function getFreeArm(ent) {
+  if (ent.properties.arm_right && !ent.properties.arm_right.heldItem) return ent.properties.arm_right;
+  if (ent.properties.arm_left && !ent.properties.arm_left.heldItem) return ent.properties.arm_left;
+  return null;
+}
+
+export function isCarryingItem(ent, resourceType = null) {
+  const checkArm = (arm) => arm?.heldItem && (!resourceType || arm.heldItem.resourceType === resourceType);
+  return checkArm(ent.properties.arm_left) || checkArm(ent.properties.arm_right);
+}
+
+export function dropHeldItem(ent, entities, world) {
+  for (const [k, p] of Object.entries(ent.properties)) {
+    if (k.startsWith("arm") && p && p.heldItem && p.heldItem.resourceType) {
+      const it = p.heldItem;
+      p.heldItem = null;
+      let spawned = null;
+      if (it.resourceType === "stone") spawned = createStoneItem(ent.x, ent.y);
+      else if (it.resourceType === "wood") spawned = createWoodItem(ent.x, ent.y);
+      else if (it.resourceType === "seed") spawned = createSeedEntity(ent.x, ent.y, "large", it.seedSpecies || "oak");
+      else if (it.resourceType === "fruit") spawned = createFruit(ent.x, ent.y, "large", "oak");
+      if (spawned && entities) entities.push(spawned);
+      return it;
+    }
+  }
+  return null;
+}
+
+/**
+ * Stone Wall Entity (Defensive Fortification)
+ */
+export function createStoneWallEntity(x, y, groupName = null) {
+  return createEntity(
+    {
+      name: groupName ? `Muralha (${groupName})` : "Muralha de Pedra",
+      species: "structure",
+      render: { skin: "Wall_NESW.png", color: 0xffdcdce6, backcolor: 0xff282832 },
+      structure: { condition: 800, maxCondition: 800, defense: 50 },
+      blocking: true,
+      stoneCost: 1
+    },
+    x,
+    y
+  );
+}
+
+/**
+ * Crafter Trait: Uses Wood and Stone to craft melee weapons, tools, and arms clan members
  */
 export function createCrafterProp() {
   return {
@@ -979,82 +1263,118 @@ export function createCrafterProp() {
     craftTimer: 0,
     effect(ent, dt, world, entities) {
       this.craftTimer = (this.craftTimer || 0) + dt;
-      if (this.craftTimer < 4.0) return;
+      if (this.craftTimer < 3.0) return;
       this.craftTimer = 0;
 
       if (!entities) return;
 
-      // Check for available wood or stone at current tile or inventory
-      const nearbyResources = entities.filter(e => !e.destroyed && (e.properties.resourceType === "wood" || e.properties.resourceType === "stone") && Math.abs(e.x - ent.x) <= 1 && Math.abs(e.y - ent.y) <= 1);
-      if (nearbyResources.length >= 2) {
-        const r1 = nearbyResources[0];
-        const r2 = nearbyResources[1];
-        r1.destroyed = true;
-        r2.destroyed = true;
+      // Check for available wood or stone within 2 tiles
+      const nearbyResources = entities.filter(e => !e.destroyed && (e.properties.resourceType === "wood" || e.properties.resourceType === "stone") && Math.abs(e.x - ent.x) <= 2 && Math.abs(e.y - ent.y) <= 2);
+      if (nearbyResources.length >= 1) {
+        const res = nearbyResources[0];
+        res.destroyed = true;
 
-        // Craft weapon
-        const weaponName = (r1.properties.resourceType === "stone" || r2.properties.resourceType === "stone") ? "Lança de Pedra Pontiaguda" : "Clava de Madeira Maciça";
-        const dmg = (weaponName.includes("Lança")) ? 45 : 35;
-        const def = (weaponName.includes("Lança")) ? 10 : 6;
+        const isStone = res.properties.resourceType === "stone";
+        const weaponName = isStone ? "Lança de Pedra Pontiaguda" : "Clava de Madeira Maciça";
+        const dmg = isStone ? 48 : 34;
+        const def = isStone ? 12 : 8;
 
-        // Equip to first empty or weaker arm
+        // Equip to crafter or pass to an ally in the group
         let equipped = false;
-        for (const [k, p] of Object.entries(ent.properties)) {
-          if (k.startsWith("arm") && p && (!p.heldItem || (p.heldItem.damage || 0) < dmg)) {
-            p.heldItem = { name: weaponName, damage: dmg, defense: def };
-            equipped = true;
-            break;
+        if (ent.properties.group) {
+          for (const mid of ent.properties.group.members) {
+            const ally = entities.find(e => e.id === mid && !e.destroyed);
+            if (ally && (!ally.properties.arm_left?.heldItem || !ally.properties.arm_right?.heldItem)) {
+              if (ally.properties.arm_right && !ally.properties.arm_right.heldItem) {
+                ally.properties.arm_right.heldItem = { name: weaponName, damage: dmg, defense: def };
+                equipped = true;
+              } else if (ally.properties.arm_left && !ally.properties.arm_left.heldItem) {
+                ally.properties.arm_left.heldItem = { name: weaponName, damage: dmg, defense: def };
+                equipped = true;
+              }
+              if (equipped) {
+                recordWorldEvent({
+                  type: "RELATION",
+                  primaryEntityId: ent.id,
+                  secondaryEntityId: ally.id,
+                  location: { x: ent.x, y: ent.y },
+                  description: `${ent.properties.name} forjou uma ${weaponName} e armou seu companheiro ${ally.properties.name}!`,
+                  tick: currentTick,
+                  timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
+                });
+                break;
+              }
+            }
           }
         }
 
-        recordWorldEvent({
-          type: "SPROUT",
-          primaryEntityId: ent.id,
-          secondaryEntityId: 0,
-          location: { x: ent.x, y: ent.y },
-          description: `${ent.properties.name} forjou uma ${weaponName}!`,
-          tick: currentTick
-        });
+        if (!equipped) {
+          if (ent.properties.arm_right && (!ent.properties.arm_right.heldItem || (ent.properties.arm_right.heldItem.damage || 0) < dmg)) {
+            ent.properties.arm_right.heldItem = { name: weaponName, damage: dmg, defense: def };
+          }
+        }
       }
     }
   };
 }
 
 /**
- * Miner Trait: Mines rocks and stone from mountains/stone tiles and hauls to group zone
+ * Miner Trait: Mines rocks and stone from mountains/stone tiles (1 stone per hand) and hauls to group zone
  */
 export function createMinerProp() {
   return {
     role: "miner",
     mineTimer: 0,
-    carryingStone: false,
     effect(ent, dt, world, entities) {
       if (!ent.properties.group || !world || !entities) return;
 
-      this.mineTimer = (this.mineTimer || 0) + dt;
-      const toolBoost = (ent.properties.arm_left?.heldItem?.damage || ent.properties.arm_right?.heldItem?.damage || 15) / 20;
-      const interval = Math.max(1.5, 4.0 / toolBoost);
+      const group = ent.properties.group;
+      const zx = Math.floor(ent.x / 8);
+      const zy = Math.floor(ent.y / 8);
+      const inClaimedZone = group.claimedZones?.includes(`${zx}_${zy}`) || group.claimedZones?.includes(`${zx},${zy}`);
 
-      if (this.mineTimer >= interval) {
-        this.mineTimer = 0;
+      const freeArm = getFreeArm(ent);
+      const isCarryingStone = isCarryingItem(ent, "stone");
+
+      // 1. If carrying stone and inside claimed territory: deposit into stockpile!
+      if (isCarryingStone && inClaimedZone) {
+        dropHeldItem(ent, entities, world);
+        if (!group.storage) group.storage = [];
+        group.storage.push("stone");
+
+        recordWorldEvent({
+          type: "RELATION",
+          primaryEntityId: ent.id,
+          location: { x: ent.x, y: ent.y },
+          description: `${ent.properties.name} entregou um bloco de pedra ao estoque do clã '${group.name}'!`,
+          tick: currentTick,
+          timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
+        });
+        return;
+      }
+
+      // 2. If free arm is available, mine from mountain (1) or stone (4) tiles
+      if (freeArm && !isCarryingStone) {
+        this.mineTimer = (this.mineTimer || 0) + dt;
         const currentTile = world.getTile(ent.x, ent.y);
 
-        if ((currentTile === 4 || currentTile === 1) && !this.carryingStone) {
-          // Mine a piece of stone
-          this.carryingStone = true;
-          recordWorldEvent({
-            type: "FEED",
-            primaryEntityId: ent.id,
-            secondaryEntityId: 0,
-            location: { x: ent.x, y: ent.y },
-            description: `${ent.properties.name} extraiu uma rocha maciça!`,
-            tick: currentTick
-          });
-        } else if (this.carryingStone) {
-          // Drop stone in group claimed zone
-          const stone = createStoneItem(ent.x, ent.y);
-          entities.push(stone);
-          this.carryingStone = false;
+        if (currentTile === 4 || currentTile === 1) {
+          const toolBoost = (ent.properties.arm_left?.heldItem?.damage || ent.properties.arm_right?.heldItem?.damage || 15) / 20;
+          const interval = Math.max(1.2, 3.0 / toolBoost);
+
+          if (this.mineTimer >= interval) {
+            this.mineTimer = 0;
+            freeArm.heldItem = { name: "Bloco de Pedra", resourceType: "stone", weight: 1 };
+
+            recordWorldEvent({
+              type: "FEED",
+              primaryEntityId: ent.id,
+              location: { x: ent.x, y: ent.y },
+              description: `${ent.properties.name} golpeou a montanha e extraiu 1 bloco de pedra com sua picareta!`,
+              tick: currentTick,
+              timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
+            });
+          }
         }
       }
     }
@@ -1062,7 +1382,7 @@ export function createMinerProp() {
 }
 
 /**
- * Builder Trait: Encloses claimed zone with perimeter fortifications or barricades
+ * Builder Trait: Takes stone from territory and erects perimeter stone fortifications
  */
 export function createBuilderProp() {
   return {
@@ -1072,20 +1392,128 @@ export function createBuilderProp() {
       if (!ent.properties.group || !world || !entities) return;
 
       this.buildTimer = (this.buildTimer || 0) + dt;
-      if (this.buildTimer < 6.0) return;
+      if (this.buildTimer < 2.0) return;
       this.buildTimer = 0;
 
-      // Erect barricades on perimeter of group claimed zone using wood if available
-      const nearbyWood = entities.find(e => !e.destroyed && e.properties.resourceType === "wood" && Math.abs(e.x - ent.x) <= 2 && Math.abs(e.y - ent.y) <= 2);
-      if (nearbyWood && Math.random() < 0.3) {
-        nearbyWood.destroyed = true;
-        recordWorldEvent({
-          type: "SPROUT",
-          primaryEntityId: ent.id,
-          location: { x: ent.x, y: ent.y },
-          description: `${ent.properties.name} ergueu uma paliçada defensiva para o clã '${ent.properties.group.name}'!`,
-          tick: currentTick
-        });
+      const group = ent.properties.group;
+      const zx = Math.floor(ent.x / 8);
+      const zy = Math.floor(ent.y / 8);
+      const inClaimedZone = group.claimedZones?.includes(`${zx}_${zy}`) || group.claimedZones?.includes(`${zx},${zy}`);
+
+      const freeArm = getFreeArm(ent);
+      const isCarryingStone = isCarryingItem(ent, "stone");
+
+      // 1. If carrying stone and arrived on an unfilled perimeter tile: Build stone wall!
+      if (isCarryingStone && inClaimedZone) {
+        const isPerimeter = (ent.x % 8 === 0 || ent.x % 8 === 7 || ent.y % 8 === 0 || ent.y % 8 === 7);
+        const wallAlreadyThere = entities.some(e => !e.destroyed && e.properties.structure && e.x === ent.x && e.y === ent.y);
+
+        if (isPerimeter && !wallAlreadyThere) {
+          for (const [k, p] of Object.entries(ent.properties)) {
+            if (k.startsWith("arm") && p && p.heldItem?.resourceType === "stone") {
+              p.heldItem = null;
+              break;
+            }
+          }
+
+          const wall = createStoneWallEntity(ent.x, ent.y, group.name);
+          entities.push(wall);
+
+          recordWorldEvent({
+            type: "SPROUT",
+            primaryEntityId: ent.id,
+            location: { x: ent.x, y: ent.y },
+            description: `${ent.properties.name} ergueu uma Muralha de Pedra fortificando a fronteira do clã '${group.name}'!`,
+            tick: currentTick,
+            timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
+          });
+          return;
+        }
+      }
+
+      // 2. If free arm is available, pick up 1 stone block from territory stockpile/ground
+      if (freeArm && !isCarryingStone && inClaimedZone) {
+        const groundStone = entities.find(e => !e.destroyed && e.properties.resourceType === "stone" && Math.abs(e.x - ent.x) <= 2 && Math.abs(e.y - ent.y) <= 2);
+        if (groundStone) {
+          groundStone.destroyed = true;
+          freeArm.heldItem = { name: "Bloco de Pedra", resourceType: "stone", weight: 1 };
+        }
+      }
+    }
+  };
+}
+
+/**
+ * Farmer Trait: Forages for seeds, plants crops/trees in territory, and tends agriculture
+ */
+export function createFarmerProp() {
+  return {
+    role: "farmer",
+    farmTimer: 0,
+    effect(ent, dt, world, entities) {
+      if (!ent.properties.group || !world || !entities) return;
+
+      this.farmTimer = (this.farmTimer || 0) + dt;
+      if (this.farmTimer < 2.0) return;
+      this.farmTimer = 0;
+
+      const group = ent.properties.group;
+      const zx = Math.floor(ent.x / 8);
+      const zy = Math.floor(ent.y / 8);
+      const inClaimedZone = group.claimedZones?.includes(`${zx}_${zy}`) || group.claimedZones?.includes(`${zx},${zy}`);
+
+      const freeArm = getFreeArm(ent);
+      const isCarryingSeed = isCarryingItem(ent, "seed");
+
+      // 1. If carrying a seed inside claimed territory on fertile soil: Plant it!
+      if (isCarryingSeed && inClaimedZone) {
+        const tile = world.getTile(ent.x, ent.y);
+        const hasPlantHere = entities.some(e => !e.destroyed && (e.properties.photosynthesis || e.properties.deep_root || e.properties.surface_root) && e.x === ent.x && e.y === ent.y);
+
+        if (!hasPlantHere && (tile === 0 || tile === 3)) {
+          const seedItem = dropHeldItem(ent, entities, world);
+          const species = seedItem?.seedSpecies || (tile === 3 ? "cactus" : "oak");
+
+          let plantedTree = null;
+          if (species === "cactus") plantedTree = createCactus(ent.x, ent.y);
+          else if (species === "willow") plantedTree = createWillowTree(ent.x, ent.y);
+          else plantedTree = createOakTree(ent.x, ent.y);
+
+          entities.push(plantedTree);
+
+          recordWorldEvent({
+            type: "SPROUT",
+            primaryEntityId: ent.id,
+            secondaryEntityId: plantedTree.id,
+            location: { x: ent.x, y: ent.y },
+            description: `${ent.properties.name} preparou a terra e cultivou uma ${plantedTree.properties.name} para o clã '${group.name}'!`,
+            tick: currentTick,
+            timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
+          });
+          return;
+        }
+      }
+
+      // 2. If free arm is available, pick up loose seed from the ground
+      if (freeArm && !isCarryingSeed) {
+        const looseSeed = entities.find(e => !e.destroyed && (e.properties.germination || e.properties.name?.includes("Semente") || e.properties.name?.includes("Seed")) && e.x === ent.x && e.y === ent.y);
+        if (looseSeed) {
+          looseSeed.destroyed = true;
+          freeArm.heldItem = {
+            name: looseSeed.properties.name || "Semente Fértil",
+            resourceType: "seed",
+            seedSpecies: looseSeed.properties.germination?.species || "oak",
+            weight: 1
+          };
+          recordWorldEvent({
+            type: "FEED",
+            primaryEntityId: ent.id,
+            location: { x: ent.x, y: ent.y },
+            description: `${ent.properties.name} coletou uma semente fértil para a lavoura do clã!`,
+            tick: currentTick,
+            timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
+          });
+        }
       }
     }
   };
@@ -1175,30 +1603,37 @@ export function createCombatProp(attackInterval = 1.2, aggroRange = 3) {
     effect(ent, dt, world, entities) {
       if (!ent.properties.brain || !ent.properties.life || ent.properties.life.energy <= 100) return;
 
+      // Mystic Grace prevents combat while active!
+      if (ent.properties.mystic_grace?.active) return;
+
       this.attackTimer = (this.attackTimer || 0) + dt;
       if (this.attackTimer < this.attackInterval) return;
 
       const energyRatio = ent.properties.life.energy / ent.properties.life.max;
       const isDesperateHunger = energyRatio <= 0.25;
 
-      // Find nearby target within attack range
-      let target = null;
+      // Find nearby combat target within attack range
+      let combatTarget = null;
       for (const other of entities) {
         if (other !== ent && !other.destroyed && other.properties.life) {
+          if (other.properties.mystic_grace?.active) continue;
+
           const dist = Math.abs(other.x - ent.x) + Math.abs(other.y - ent.y);
           if (dist === 1) {
             const affinity = ent.properties.brain.affinities?.[other.id] !== undefined ? ent.properties.brain.affinities[other.id] : 0;
             const isHostile = affinity < -20 || (ent.properties.brain.personality?.aggression || 0) > 0.4 || isDesperateHunger || ent.properties.violent;
 
             if (isHostile) {
-              target = other;
+              combatTarget = other;
               break;
             }
           }
         }
       }
 
-      if (!target) return;
+      if (!combatTarget) return;
+      this.attackTimer = 0;
+      const target = combatTarget;
       // Free hands: if holding a non-weapon resource/food, drop to ground and remember location
       for (const [k, prop] of Object.entries(ent.properties)) {
         if (k.startsWith("arm") && prop && prop.heldItem && !prop.heldItem.damage && Math.random() < 0.75) {
@@ -1411,6 +1846,15 @@ export function createCombatProp(attackInterval = 1.2, aggroRange = 3) {
       const targetName = target.properties.name || `Entidade #${target.id}`;
       const attackDesc = `${attackerName} atingiu ${hitPartName} de ${targetName} com ${usedLimbName} na posição [X: ${ent.x}, Y: ${ent.y}]!`;
 
+      // Track last attacker on victim for murder / kill causality determination
+      target._lastAttacker = {
+        id: ent.id,
+        name: attackerName,
+        species: ent.properties.species || "desconhecida",
+        tick: currentTick,
+        time: Date.now()
+      };
+
       recordWorldEvent({
         type: "ATTACK",
         primaryEntityId: ent.id,
@@ -1496,7 +1940,20 @@ export function createLocomotionProp() {
     effect(ent, dt, world, entities) {
       if (!ent.properties.brain) return;
 
-      const isFlying = ent.properties.wings?.flying === true;
+      const isFlying = !!ent.properties.flying || ent.properties.wings?.flying === true;
+      const isAquatic = !!ent.properties.aquatic;
+      const isTerrestrial = !!ent.properties.terrestrial || (!isAquatic && !isFlying);
+
+      // Continuous ambient hydration: whenever on or adjacent to water, drink to max capacity
+      if (ent.properties.bladder && world) {
+        const offsets = [{ dx: 0, dy: 0 }, { dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 }];
+        for (const off of offsets) {
+          if (world.getTile(ent.x + off.dx, ent.y + off.dy) === 2) {
+            ent.properties.bladder.water = ent.properties.bladder.maxWater;
+            break;
+          }
+        }
+      }
 
       let totalLegPower = 0;
       let legCount = 0;
@@ -1507,10 +1964,10 @@ export function createLocomotionProp() {
         }
       }
 
-      if (!isFlying && (legCount === 0 || totalLegPower <= 0.05)) return; // Paralyzed
+      if (!isFlying && !isAquatic && (legCount === 0 || totalLegPower <= 0.05)) return; // Paralyzed walker
 
-      const speedFactor = isFlying ? 2.5 : (totalLegPower / Math.max(1, legCount));
-      const moveInterval = Math.max(0.18, 0.9 / speedFactor);
+      const speedFactor = isFlying ? 2.5 : (isAquatic && legCount === 0 ? 1.8 : (totalLegPower / Math.max(1, legCount)));
+      const moveInterval = Math.max(0.18, 0.9 / Math.max(0.1, speedFactor));
 
       this.stepTimer = (this.stepTimer || 0) + dt;
       if (this.stepTimer < moveInterval) return;
@@ -1518,7 +1975,7 @@ export function createLocomotionProp() {
 
       const energyRatio = ent.properties.life ? (ent.properties.life.energy / ent.properties.life.max) : 1.0;
       const waterRatio = ent.properties.bladder ? (ent.properties.bladder.water / ent.properties.bladder.maxWater) : 1.0;
-      const viewRange = ent.properties.eye_left?.viewRange || ent.properties.eye_right?.viewRange || 9;
+      const viewRange = ent.properties.eye_left?.viewRange || ent.properties.eye_right?.viewRange || 10;
 
       let chosenDx = 0;
       let chosenDy = 0;
@@ -1546,7 +2003,6 @@ export function createLocomotionProp() {
         }
 
         if (nearestHostile) {
-          // Flee in exact opposite direction
           chosenDx = -Math.sign(nearestHostile.x - ent.x);
           chosenDy = -Math.sign(nearestHostile.y - ent.y);
           hasIntention = true;
@@ -1554,23 +2010,20 @@ export function createLocomotionProp() {
       }
 
       // -----------------------------------------------------------------------
-      // Priority 1: Thirst (Water <= 50%) -> Seek water to drink
+      // Priority 1: Urgent Thirst (Water <= 70%) -> Drink from adjacent water or seek water
       // -----------------------------------------------------------------------
-      if (!hasIntention && waterRatio <= 0.50 && world) {
-        const cardinalOffsets = [{ dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 }];
-        let drank = false;
-        for (const off of cardinalOffsets) {
+      if (!hasIntention && waterRatio <= 0.70 && world) {
+        let adjacentWater = false;
+        for (const off of [{ dx: 0, dy: 0 }, { dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 }]) {
           if (world.getTile(ent.x + off.dx, ent.y + off.dy) === 2) {
-            if (ent.properties.bladder) {
-              ent.properties.bladder.water = Math.min(ent.properties.bladder.maxWater, ent.properties.bladder.water + 600);
-            }
-            drank = true;
+            adjacentWater = true;
+            if (ent.properties.bladder) ent.properties.bladder.water = ent.properties.bladder.maxWater;
             break;
           }
         }
 
-        if (!drank) {
-          const waterTarget = findNearestWaterTile(world, ent.x, ent.y, viewRange);
+        if (!adjacentWater) {
+          const waterTarget = findNearestWaterTile(world, ent.x, ent.y, 40);
           if (waterTarget) {
             chosenDx = Math.sign(waterTarget.x - ent.x);
             chosenDy = Math.sign(waterTarget.y - ent.y);
@@ -1580,21 +2033,19 @@ export function createLocomotionProp() {
       }
 
       // -----------------------------------------------------------------------
-      // Priority 2: Hunger (Energy <= 50% or Empty Stomach) -> Seek Food in view OR from Object Memory
+      // Priority 2: Hunger (Energy <= 60% or Empty Stomach) -> Seek Food in radius 35
       // -----------------------------------------------------------------------
-      if (!hasIntention && (energyRatio <= 0.50 || (ent.properties.stomach?.items.length === 0))) {
+      if (!hasIntention && (energyRatio <= 0.60 || (ent.properties.stomach?.items.length === 0))) {
         let bestFood = null;
         let highestFoodScore = -Infinity;
 
-        // 1. Scan visible food in perception range
         for (const item of entities) {
           if (!item.destroyed && item.properties.edible) {
             const dist = Math.abs(item.x - ent.x) + Math.abs(item.y - ent.y);
-            if (dist <= viewRange) {
-              let score = 100 - dist * 5;
+            if (dist <= 35) {
+              let score = 100 - dist * 3;
               const ed = item.properties.edible;
 
-              // Factor in dietary preferences
               const prefs = ent.properties.brain?.preferences;
               if (prefs) {
                 if (prefs.likes.some(l => (l.type === "part" && ed.partKey?.includes(l.value)) || (l.type === "species" && ed.sourceSpecies === l.value))) {
@@ -1613,26 +2064,6 @@ export function createLocomotionProp() {
           }
         }
 
-        // 2. If no food in immediate view, navigate to memorized food in Object Memory!
-        if (!bestFood && ent.properties.brain?.objectMemory?.length > 0) {
-          for (let i = ent.properties.brain.objectMemory.length - 1; i >= 0; i--) {
-            const memObj = ent.properties.brain.objectMemory[i];
-            const dist = Math.abs(memObj.x - ent.x) + Math.abs(memObj.y - ent.y);
-
-            // If we arrived at the memorized spot and the item is gone, forget it!
-            if (dist === 0) {
-              const stillThere = entities.some(e => !e.destroyed && e.id === memObj.entityId);
-              if (!stillThere) {
-                ent.properties.brain.objectMemory.splice(i, 1);
-                continue;
-              }
-            }
-
-            bestFood = { x: memObj.x, y: memObj.y };
-            break;
-          }
-        }
-
         if (bestFood) {
           chosenDx = Math.sign(bestFood.x - ent.x);
           chosenDy = Math.sign(bestFood.y - ent.y);
@@ -1641,16 +2072,16 @@ export function createLocomotionProp() {
       }
 
       // -----------------------------------------------------------------------
-      // Priority 3: Desperate Hunger (Energy <= 25%) -> Hunt other creatures!
+      // Priority 3: Desperate Hunger (Energy <= 30%) -> Hunt other creatures!
       // -----------------------------------------------------------------------
-      if (!hasIntention && energyRatio <= 0.25) {
+      if (!hasIntention && energyRatio <= 0.30) {
         let bestPrey = null;
         let highestPreyScore = -Infinity;
 
         for (const prey of entities) {
           if (prey !== ent && !prey.destroyed && prey.properties.life) {
             const dist = Math.abs(prey.x - ent.x) + Math.abs(prey.y - ent.y);
-            if (dist <= viewRange) {
+            if (dist <= viewRange + 6) {
               const preyAffinity = ent.properties.brain?.affinities?.[prey.id] !== undefined ? ent.properties.brain.affinities[prey.id] : 0;
               const preyEnergy = prey.properties.life.energy;
               const preyDefense = (prey.properties.arm_left?.heldItem?.defense || 0) + (prey.properties.arm_right?.heldItem?.defense || 0);
@@ -1672,7 +2103,202 @@ export function createLocomotionProp() {
       }
 
       // -----------------------------------------------------------------------
-      // Priority 4: Social Cohesion & Group Territory
+      // Priority 4: Specialized Profession Expeditions (Miner, Builder, Crafter, Farmer)
+      // -----------------------------------------------------------------------
+      if (!hasIntention && ent.properties.group && entities && energyRatio > 0.35) {
+        const group = ent.properties.group;
+        const firstZone = group.claimedZones?.[0] || "32_32";
+        const parts = firstZone.includes("_") ? firstZone.split("_") : firstZone.split(",");
+        const baseZx = parseInt(parts[0], 10) || 32;
+        const baseZy = parseInt(parts[1], 10) || 32;
+        const homeBaseX = baseZx * 8 + 4;
+        const homeBaseY = baseZy * 8 + 4;
+
+        // A. Miner: Out-of-zone mining expedition or return haul
+        if (ent.properties.miner) {
+          const isCarryingStone = isCarryingItem(ent, "stone");
+          if (isCarryingStone) {
+            // Carry stone back to clan territory
+            chosenDx = Math.sign(homeBaseX - ent.x);
+            chosenDy = Math.sign(homeBaseY - ent.y);
+            hasIntention = true;
+          } else {
+            // Seek stone/mountain tiles outside or loose stone items
+            let targetStone = null;
+            let minDist = 9999;
+
+            if (world) {
+              for (let r = 1; r <= 40; r += 2) {
+                for (let dy = -r; dy <= r; dy += 2) {
+                  for (let dx = -r; dx <= r; dx += 2) {
+                    const tx = ent.x + dx;
+                    const ty = ent.y + dy;
+                    if (tx >= 0 && tx < (world.width || 512) && ty >= 0 && ty < (world.height || 512)) {
+                      const t = world.getTile(tx, ty);
+                      if (t === 4 || t === 1) { // Stone or Mountain
+                        const dist = Math.abs(dx) + Math.abs(dy);
+                        if (dist < minDist) {
+                          minDist = dist;
+                          targetStone = { x: tx, y: ty };
+                        }
+                      }
+                    }
+                  }
+                  if (targetStone && minDist <= r + 2) break;
+                }
+                if (targetStone) break;
+              }
+            }
+
+            if (targetStone) {
+              chosenDx = Math.sign(targetStone.x - ent.x);
+              chosenDy = Math.sign(targetStone.y - ent.y);
+              hasIntention = true;
+            }
+          }
+        }
+
+        // B. Builder: Grab stone from territory and build perimeter wall
+        else if (ent.properties.builder) {
+          const isCarryingStone = isCarryingItem(ent, "stone");
+          if (isCarryingStone) {
+            let targetPerimeter = null;
+            let minPerimDist = 9999;
+
+            for (const zk of group.claimedZones || []) {
+              const zp = zk.includes("_") ? zk.split("_") : zk.split(",");
+              const zx = parseInt(zp[0], 10);
+              const zy = parseInt(zp[1], 10);
+              for (let ox = 0; ox < 8; ox++) {
+                for (let oy = 0; oy < 8; oy++) {
+                  if (ox === 0 || ox === 7 || oy === 0 || oy === 7) {
+                    const px = zx * 8 + ox;
+                    const py = zy * 8 + oy;
+                    const hasWall = entities.some(e => !e.destroyed && e.properties.structure && e.x === px && e.y === py);
+                    if (!hasWall) {
+                      const dist = Math.abs(px - ent.x) + Math.abs(py - ent.y);
+                      if (dist < minPerimDist) {
+                        minPerimDist = dist;
+                        targetPerimeter = { x: px, y: py };
+                      }
+                    }
+                  }
+                }
+              }
+            }
+
+            if (targetPerimeter) {
+              chosenDx = Math.sign(targetPerimeter.x - ent.x);
+              chosenDy = Math.sign(targetPerimeter.y - ent.y);
+              hasIntention = true;
+            }
+          } else {
+            const mat = entities.find(e => !e.destroyed && (e.properties.resourceType === "stone" || e.properties.resourceType === "wood") && Math.abs(e.x - homeBaseX) <= 12 && Math.abs(e.y - homeBaseY) <= 12);
+            if (mat) {
+              chosenDx = Math.sign(mat.x - ent.x);
+              chosenDy = Math.sign(mat.y - ent.y);
+              hasIntention = true;
+            }
+          }
+        }
+
+        // C. Farmer: Forage for seeds and plant inside claimed territory
+        else if (ent.properties.farmer) {
+          const isCarryingSeed = isCarryingItem(ent, "seed");
+          if (isCarryingSeed) {
+            let targetPlot = null;
+            let minPlotDist = 9999;
+
+            for (const zk of group.claimedZones || []) {
+              const zp = zk.includes("_") ? zk.split("_") : zk.split(",");
+              const zx = parseInt(zp[0], 10);
+              const zy = parseInt(zp[1], 10);
+              for (let ox = 1; ox < 7; ox++) {
+                for (let oy = 1; oy < 7; oy++) {
+                  const px = zx * 8 + ox;
+                  const py = zy * 8 + oy;
+                  const t = world ? world.getTile(px, py) : 0;
+                  if (t === 0 || t === 3) {
+                    const hasCrop = entities.some(e => !e.destroyed && (e.properties.photosynthesis || e.properties.deep_root || e.properties.surface_root) && e.x === px && e.y === py);
+                    if (!hasCrop) {
+                      const dist = Math.abs(px - ent.x) + Math.abs(py - ent.y);
+                      if (dist < minPlotDist) {
+                        minPlotDist = dist;
+                        targetPlot = { x: px, y: py };
+                      }
+                    }
+                  }
+                }
+              }
+            }
+
+            if (targetPlot) {
+              chosenDx = Math.sign(targetPlot.x - ent.x);
+              chosenDy = Math.sign(targetPlot.y - ent.y);
+              hasIntention = true;
+            } else {
+              chosenDx = Math.sign(homeBaseX - ent.x);
+              chosenDy = Math.sign(homeBaseY - ent.y);
+              hasIntention = true;
+            }
+          } else {
+            let cropCount = 0;
+            for (const zk of group.claimedZones || []) {
+              const zp = zk.includes("_") ? zk.split("_") : zk.split(",");
+              const zx = parseInt(zp[0], 10);
+              const zy = parseInt(zp[1], 10);
+              for (const e of entities) {
+                if (!e.destroyed && (e.properties.photosynthesis || e.properties.deep_root || e.properties.surface_root)) {
+                  if (Math.floor(e.x / 8) === zx && Math.floor(e.y / 8) === zy) cropCount++;
+                }
+              }
+            }
+
+            if (cropCount < 8) {
+              let targetSeed = null;
+              let minSeedDist = 9999;
+              for (const item of entities) {
+                if (!item.destroyed && (item.properties.germination || item.properties.name?.includes("Semente") || item.properties.name?.includes("Seed"))) {
+                  const dist = Math.abs(item.x - ent.x) + Math.abs(item.y - ent.y);
+                  if (dist < minSeedDist && dist <= 40) {
+                    minSeedDist = dist;
+                    targetSeed = { x: item.x, y: item.y };
+                  }
+                }
+              }
+
+              if (targetSeed) {
+                chosenDx = Math.sign(targetSeed.x - ent.x);
+                chosenDy = Math.sign(targetSeed.y - ent.y);
+                hasIntention = true;
+              }
+            }
+          }
+        }
+
+        // D. Crafter: Forage for wood/stone resources
+        else if (ent.properties.crafter) {
+          let targetRes = null;
+          let minResDist = 9999;
+          for (const item of entities) {
+            if (!item.destroyed && (item.properties.resourceType === "wood" || item.properties.resourceType === "stone")) {
+              const dist = Math.abs(item.x - ent.x) + Math.abs(item.y - ent.y);
+              if (dist < minResDist && dist <= 30) {
+                minResDist = dist;
+                targetRes = { x: item.x, y: item.y };
+              }
+            }
+          }
+          if (targetRes) {
+            chosenDx = Math.sign(targetRes.x - ent.x);
+            chosenDy = Math.sign(targetRes.y - ent.y);
+            hasIntention = true;
+          }
+        }
+      }
+
+      // -----------------------------------------------------------------------
+      // Priority 5: Social Cohesion & Group Territory
       // -----------------------------------------------------------------------
       if (!hasIntention && ent.properties.group && entities) {
         const group = ent.properties.group;
@@ -1681,7 +2307,7 @@ export function createLocomotionProp() {
         const leader = entities.find(e => e.id === group.leaderId && !e.destroyed);
         if (leader && leader !== ent) {
           const distToLeader = Math.abs(leader.x - ent.x) + Math.abs(leader.y - ent.y);
-          if (distToLeader > 4 && distToLeader <= 16) {
+          if (distToLeader > 5 && distToLeader <= 18) {
             chosenDx = Math.sign(leader.x - ent.x);
             chosenDy = Math.sign(leader.y - ent.y);
             hasIntention = true;
@@ -1716,26 +2342,97 @@ export function createLocomotionProp() {
           { dx: 1, dy: 0 },
           { dx: 0, dy: 0 }
         ];
-        const chosen = dirs[Math.floor(Math.random() * dirs.length)];
-        chosenDx = chosen.dx;
-        chosenDy = chosen.dy;
+        // Terrestrial creatures prefer land when wandering
+        if (isTerrestrial && !isAquatic && world) {
+          const landDirs = dirs.filter(d => {
+            const t = world.getTile(ent.x + d.dx, ent.y + d.dy);
+            return t !== 2 && t !== 5;
+          });
+          const pool = landDirs.length > 0 ? landDirs : dirs;
+          const chosen = pool[Math.floor(Math.random() * pool.length)];
+          chosenDx = chosen.dx;
+          chosenDy = chosen.dy;
+        } else {
+          const chosen = dirs[Math.floor(Math.random() * dirs.length)];
+          chosenDx = chosen.dx;
+          chosenDy = chosen.dy;
+        }
       }
 
-      // Execute Movement
-      const nextX = ent.x + chosenDx;
-      const nextY = ent.y + chosenDy;
+      // Execute Movement with Anti-Stuck & Water Traversal
       const mapW = (world && world.width) ? world.width : 512;
       const mapH = (world && world.height) ? world.height : 512;
 
-      if (world && nextX >= 0 && nextX < mapW && nextY >= 0 && nextY < mapH) {
-        const tile = world.getTile(nextX, nextY);
-        // Land creatures cannot walk into water tiles (2) or void (5) unless swimming or flying
-        const canTraverse = (isFlying || ent.properties.gills || tile !== 2) && tile !== 5;
+      let moved = false;
+      const candidateMoves = [
+        { dx: chosenDx, dy: chosenDy },
+        { dx: chosenDx, dy: 0 },
+        { dx: 0, dy: chosenDy }
+      ];
 
-        if (canTraverse) {
-          ent.x = nextX;
-          ent.y = nextY;
+      for (const m of candidateMoves) {
+        if (m.dx === 0 && m.dy === 0) continue;
+        const tx = ent.x + m.dx;
+        const ty = ent.y + m.dy;
+
+        if (world && tx >= 0 && tx < mapW && ty >= 0 && ty < mapH) {
+          const targetTile = world.getTile(tx, ty);
+          if (targetTile !== 5) {
+            let canTraverse = false;
+            if (isFlying) {
+              canTraverse = true;
+            } else if (targetTile === 2) {
+              // Water tile: aquatic, flying, OR terrestrial with heavy speed penalty
+              canTraverse = true;
+              if (!isAquatic) {
+                this.stepTimer = -moveInterval * 2.5; // heavy penalty for terrestrial wading
+              }
+            } else {
+              // Land tile (0, 1, 3, 4)
+              canTraverse = true;
+              if (isAquatic && !isTerrestrial) {
+                this.stepTimer = -moveInterval * 3.0; // penalty for aquatic on land
+              }
+            }
+
+            if (canTraverse) {
+              ent.x = tx;
+              ent.y = ty;
+              moved = true;
+              break;
+            }
+          }
         }
+      }
+
+      // Anti-Stuck Watchdog: If creature failed to move despite an intention, break lock
+      if (!ent._locoTracker) ent._locoTracker = { lastX: ent.x, lastY: ent.y, stuckTicks: 0 };
+      if (!moved && hasIntention) {
+        ent._locoTracker.stuckTicks++;
+        if (ent._locoTracker.stuckTicks >= 2) {
+          ent._locoTracker.stuckTicks = 0;
+          const randomDirs = [
+            { dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 },
+            { dx: 1, dy: 1 }, { dx: -1, dy: -1 }, { dx: 1, dy: -1 }, { dx: -1, dy: 1 }
+          ].sort(() => Math.random() - 0.5);
+
+          for (const rd of randomDirs) {
+            const rx = ent.x + rd.dx;
+            const ry = ent.y + rd.dy;
+            if (world && rx >= 0 && rx < mapW && ry >= 0 && ry < mapH) {
+              const rt = world.getTile(rx, ry);
+              if (rt !== 5 && (!isTerrestrial || isAquatic || rt !== 2)) {
+                ent.x = rx;
+                ent.y = ry;
+                break;
+              }
+            }
+          }
+        }
+      } else {
+        ent._locoTracker.lastX = ent.x;
+        ent._locoTracker.lastY = ent.y;
+        ent._locoTracker.stuckTicks = 0;
       }
 
       // -----------------------------------------------------------------------
@@ -1769,14 +2466,69 @@ export function createLocomotionProp() {
                 name: other.properties.name || "Alimento",
                 nutrition: finalNutrition,
                 foodType: ed.foodType || "fruit",
-                totalTurns: ed.digestDuration || 30,
-                remainingTurns: ed.digestDuration || 30,
+                totalTurns: ed.digestDuration || 45,
+                remainingTurns: ed.digestDuration || 45,
                 seed: ed.seed?.type === "small" ? ed.seed : null
               });
 
               // Forget from memory
               if (ent.properties.brain?.forgetObject) {
                 ent.properties.brain.forgetObject(other.id);
+              }
+
+              // Special: Feces Consumption Dynamics
+              if (ed.foodType === "feces") {
+                const isScato = !!ent.properties.scatological;
+                if (isScato) {
+                  if (ent.properties.brain) ent.properties.brain.mood = Math.min(100, (ent.properties.brain.mood || 0) + 35);
+                } else {
+                  if (ent.properties.brain) ent.properties.brain.mood = Math.max(-100, (ent.properties.brain.mood || 0) - 50);
+                  if (Math.random() < 0.04) {
+                    ent.properties.scatological = createScatologicalProp();
+                    recordWorldEvent({
+                      type: "SPROUT",
+                      primaryEntityId: ent.id,
+                      location: { x: ent.x, y: ent.y },
+                      description: `${ent.properties.name} comeu fezes em desespero e adquiriu a bizarra preferência Escatológica!`,
+                      tick: currentTick,
+                      timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
+                    });
+                  }
+                }
+
+                // Spectators reaction to eating feces
+                for (const spec of entities) {
+                  if (spec !== ent && !spec.destroyed && spec.properties.brain) {
+                    const dist = Math.abs(spec.x - ent.x) + Math.abs(spec.y - ent.y);
+                    const view = spec.properties.eye_left?.viewRange || spec.properties.eye_right?.viewRange || 8;
+                    if (dist <= view) {
+                      if (!spec.properties.brain.affinities) spec.properties.brain.affinities = {};
+                      if (spec.properties.scatological) {
+                        spec.properties.brain.affinities[ent.id] = Math.min(100, (spec.properties.brain.affinities[ent.id] || 0) + 40);
+                        recordWorldEvent({
+                          type: "RELATION",
+                          primaryEntityId: spec.id,
+                          secondaryEntityId: ent.id,
+                          location: { x: spec.x, y: spec.y },
+                          description: `${spec.properties.name} observou com sincera admiração ${ent.properties.name} saboreando excrementos!`,
+                          tick: currentTick,
+                          timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
+                        });
+                      } else {
+                        spec.properties.brain.affinities[ent.id] = Math.max(-100, (spec.properties.brain.affinities[ent.id] || 0) - 50);
+                        recordWorldEvent({
+                          type: "RELATION",
+                          primaryEntityId: spec.id,
+                          secondaryEntityId: ent.id,
+                          location: { x: spec.x, y: spec.y },
+                          description: `${spec.properties.name} presenciou com profunda repugnância ${ent.properties.name} comendo fezes!`,
+                          tick: currentTick,
+                          timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
+                        });
+                      }
+                    }
+                  }
+                }
               }
 
               // Build detailed feed provenance message
@@ -1811,8 +2563,8 @@ export function createLocomotionProp() {
           }
         }
 
-        // Social Gifting: If mood is happy/joyful, give item/food to a friend nearby
-        if (ent.properties.brain?.mood === "happy" && Math.random() < 0.08) {
+        // Social Gifting: If mood is positive (>= 25), give item/food to a friend nearby
+        if (ent.properties.brain?.mood >= 25 && Math.random() < 0.08) {
           for (const [k, p] of Object.entries(ent.properties)) {
             if (k.startsWith("arm") && p && p.heldItem) {
               const friend = entities.find(e => e !== ent && !e.destroyed && e.properties.brain && Math.abs(e.x - ent.x) <= 2 && Math.abs(e.y - ent.y) <= 2 && (ent.properties.brain.affinities[e.id] || 0) >= 40);
@@ -1822,7 +2574,7 @@ export function createLocomotionProp() {
                     fp.heldItem = p.heldItem;
                     p.heldItem = null;
                     friend.properties.brain.affinities[ent.id] = Math.min(100, (friend.properties.brain.affinities[ent.id] || 0) + 25);
-                    friend.properties.brain.mood = "happy";
+                    friend.properties.brain.mood = Math.min(100, (friend.properties.brain.mood || 0) + 20);
 
                     recordWorldEvent({
                       type: "FEED",
@@ -2143,7 +2895,7 @@ export function createKnight(x, y, gender = "male") {
       species: "human",
       render: { skin: "Human_Knight_M.png", color: 0xffdcdce6, backcolor: 0xff1e283c },
       life: createLifeProp(6000, 6000),
-      lungs: createLungsProp(),
+      terrestrial: createTerrestrialProp(),
       mouth: createMouthProp(32, 32),
       communication: createCommunicationProp(2.0),
       brain: createBrainProp(16, { bravery: 0.9, curiosity: 0.5, aggression: 0.4 }, 1.2),
@@ -2176,7 +2928,7 @@ export function createArcher(x, y, gender = "female") {
       species: "human",
       render: { skin: "Human_Archer_F.png", color: 0xffa0e678, backcolor: 0xff1e3214 },
       life: createLifeProp(5000, 5000),
-      lungs: createLungsProp(),
+      terrestrial: createTerrestrialProp(),
       mouth: createMouthProp(32, 32),
       communication: createCommunicationProp(2.0),
       brain: createBrainProp(16, { bravery: 0.6, curiosity: 0.8, aggression: 0.3 }, 1.1),
@@ -2208,7 +2960,7 @@ export function createCat(x, y, infected = false) {
       species: "cat",
       render: { skin: "Creature_Cat_U.png", color: 0xfff0b464, backcolor: 0xff321e0f },
       life: createLifeProp(3500, 3500),
-      lungs: createLungsProp(),
+      terrestrial: createTerrestrialProp(),
       mouth: createMouthProp(30, 30),
       communication: createCommunicationProp(3.0),
       brain: createBrainProp(12, { bravery: 0.4, curiosity: 0.9, aggression: 0.3 }, 1.0),
@@ -2245,7 +2997,7 @@ export function createWolf(x, y) {
       species: "wolf",
       render: { skin: "Creature_Wolf_U.png", color: 0xffc8c8dc, backcolor: 0xff28283c },
       life: createLifeProp(4500, 4500),
-      lungs: createLungsProp(),
+      terrestrial: createTerrestrialProp(),
       mouth: createMouthProp(42, 42),
       communication: createCommunicationProp(2.5),
       brain: createBrainProp(14, { bravery: 0.8, curiosity: 0.7, aggression: 0.7 }, 1.1),
@@ -2276,7 +3028,8 @@ export function createBear(x, y) {
       species: "bear",
       render: { skin: "Creature_Bear_U.png", color: 0xff965a28, backcolor: 0xff32190a },
       life: createLifeProp(12000, 12000),
-      lungs: createLungsProp(),
+      terrestrial: createTerrestrialProp(),
+      aquatic: createAquaticProp(),
       mouth: createMouthProp(42, 42),
       communication: createCommunicationProp(3.0),
       brain: createBrainProp(16, { bravery: 0.9, curiosity: 0.6, aggression: 0.6 }, 1.3),
@@ -2307,7 +3060,7 @@ export function createGoblin(x, y) {
       species: "goblin",
       render: { skin: "Creature_Goblin_U.png", color: 0xff78d250, backcolor: 0xff283c14 },
       life: createLifeProp(3200, 3200),
-      lungs: createLungsProp(),
+      terrestrial: createTerrestrialProp(),
       mouth: createMouthProp(28, 28),
       communication: createCommunicationProp(2.0),
       brain: createBrainProp(12, { bravery: 0.3, curiosity: 0.9, aggression: 0.6 }, 0.9),
@@ -2340,7 +3093,8 @@ export function createBat(x, y) {
       species: "bat",
       render: { skin: "Creature_Bat_U.png", color: 0xffb496dc, backcolor: 0xff281e3c },
       life: createLifeProp(2000, 2000),
-      lungs: createLungsProp(),
+      flying: createFlyingProp(2.2),
+      terrestrial: createTerrestrialProp(),
       mouth: createMouthProp(20, 20),
       communication: createCommunicationProp(2.5),
       wings: createWingsProp(1.0, 100, 100, 15.0),
@@ -2368,7 +3122,7 @@ export function createSeaSerpent(x, y) {
       species: "serpent",
       render: { skin: "Creature_Snake_U.png", color: 0xff32c8d2, backcolor: 0xff0a2832 },
       life: createLifeProp(8000, 8000),
-      gills: createGillsProp(),
+      aquatic: createAquaticProp(),
       mouth: createMouthProp(60, 60),
       communication: createCommunicationProp(3.5),
       brain: createBrainProp(14, { bravery: 0.7, curiosity: 0.6, aggression: 0.7 }, 1.2),
@@ -2396,7 +3150,8 @@ export function createDragon(x, y) {
       species: "dragon",
       render: { skin: "Creature_Dragon_U.png", color: 0xffff4646, backcolor: 0xff3c0f0f },
       life: createLifeProp(30000, 30000),
-      lungs: createLungsProp(),
+      flying: createFlyingProp(2.5),
+      terrestrial: createTerrestrialProp(),
       mouth: createMouthProp(80, 80),
       communication: createCommunicationProp(2.0),
       brain: createBrainProp(24, { bravery: 1.0, curiosity: 0.4, aggression: 0.9 }, 1.8),
@@ -2423,55 +3178,66 @@ export function createDragon(x, y) {
 }
 
 /**
- * Seed Germination (Low chance for seeds or feces to sprout into a tree/plant)
+ * Seed Germination (Super-fertilized by feces or natural germination into trees/crops)
  */
-export function createSeedGerminationProp(species = "oak", checkInterval = 6.0, sproutChance = 0.012) {
+export function createSeedGerminationProp(species = "oak", checkInterval = 4.0, sproutChance = 0.025) {
   return {
     timer: 0,
     species,
     checkInterval,
     sproutChance,
     effect(ent, dt, world, entities) {
+      if (ent.destroyed || !world || !entities) return;
+
+      // 1. Super-fertilization check: If 2 or more feces are on the exact same tile
+      const coLocatedFeces = entities.filter(e => !e.destroyed && e.id !== ent.id && (e.properties.fertilizer || e.properties.resourceType === "feces") && e.x === ent.x && e.y === ent.y);
+      let instantSprout = false;
+      if (coLocatedFeces.length >= 2) {
+        instantSprout = true;
+        coLocatedFeces[0].destroyed = true;
+        coLocatedFeces[1].destroyed = true;
+      }
+
       this.timer = (this.timer || 0) + dt;
-      if (this.timer >= this.checkInterval) {
+      if (this.timer >= this.checkInterval || instantSprout) {
         this.timer = 0;
 
-        if (world) {
-          const tile = world.getTile(ent.x, ent.y);
-          const isSuitable =
-            (this.species === "cactus" && tile === 3) ||
-            (this.species === "lichen" && (tile === 4 || tile === 1)) ||
-            (this.species === "pine" && (tile === 0 || tile === 4 || tile === 1)) ||
-            (tile === 0);
+        const tile = world.getTile(ent.x, ent.y);
+        const isSuitable =
+          (this.species === "cactus" && (tile === 3 || tile === 0)) ||
+          (this.species === "lichen" && (tile === 4 || tile === 1)) ||
+          (this.species === "pine" && (tile === 0 || tile === 4 || tile === 1)) ||
+          (tile === 0 || tile === 3);
 
-          if (isSuitable && Math.random() < this.sproutChance) {
-            let newPlant = null;
-            if (this.species === "willow") {
-              newPlant = createWillowTree(ent.x, ent.y);
-            } else if (this.species === "pine") {
-              newPlant = createPineTree(ent.x, ent.y);
-            } else if (this.species === "cactus") {
-              newPlant = createCactus(ent.x, ent.y);
-            } else if (this.species === "lichen") {
-              newPlant = createAlpineShrub(ent.x, ent.y);
-            } else {
-              newPlant = createOakTree(ent.x, ent.y);
-            }
+        if (instantSprout || (isSuitable && Math.random() < this.sproutChance)) {
+          let newPlant = null;
+          if (this.species === "willow") {
+            newPlant = createWillowTree(ent.x, ent.y);
+          } else if (this.species === "pine") {
+            newPlant = createPineTree(ent.x, ent.y);
+          } else if (this.species === "cactus") {
+            newPlant = createCactus(ent.x, ent.y);
+          } else if (this.species === "lichen") {
+            newPlant = createAlpineShrub(ent.x, ent.y);
+          } else {
+            newPlant = createOakTree(ent.x, ent.y);
+          }
 
-            ent.destroyed = true;
-            if (entities && newPlant) {
-              entities.push(newPlant);
-              recordWorldEvent({
-                type: "SPROUT",
-                primaryEntityId: newPlant.id,
-                secondaryEntityId: ent.id,
-                location: { x: ent.x, y: ent.y },
-                description: `Uma semente germinou gerando ${newPlant.properties.name}!`,
-                tick: currentTick,
-                timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
-                metadata: { species: this.species }
-              });
-            }
+          ent.destroyed = true;
+          if (entities && newPlant) {
+            entities.push(newPlant);
+            recordWorldEvent({
+              type: "SPROUT",
+              primaryEntityId: newPlant.id,
+              secondaryEntityId: ent.id,
+              location: { x: ent.x, y: ent.y },
+              description: instantSprout
+                ? `Uma semente em [X: ${ent.x}, Y: ${ent.y}] foi superfertilizada por adubo orgânico e brotou instantaneamente gerando ${newPlant.properties.name}!`
+                : `Uma semente germinou gerando ${newPlant.properties.name}!`,
+              tick: currentTick,
+              timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
+              metadata: { species: this.species, superFertilized: instantSprout }
+            });
           }
         }
       }
@@ -2509,7 +3275,7 @@ export function createScorpion(x, y) {
       species: "scorpion",
       render: { skin: "Creature_Spider_U.png", color: 0xffe6b432, backcolor: 0xff3c2805 },
       life: createLifeProp(3800, 3800),
-      lungs: createLungsProp(),
+      terrestrial: createTerrestrialProp(),
       communication: createCommunicationProp(4.0),
       brain: createBrainProp(12, { bravery: 0.7, curiosity: 0.6, aggression: 0.8 }, 1.0),
       stomach: createStomachProp(2, { meat: 1.4, organ: 1.2, plant: 0.1 }),
@@ -2537,7 +3303,7 @@ export function createLizard(x, y) {
       species: "lizard",
       render: { skin: "Creature_Snake_U.png", color: 0xffd2c850, backcolor: 0xff32280a },
       life: createLifeProp(2400, 2400),
-      lungs: createLungsProp(),
+      terrestrial: createTerrestrialProp(),
       mouth: createMouthProp(24, 24),
       communication: createCommunicationProp(3.5),
       brain: createBrainProp(10, { bravery: 0.3, curiosity: 0.8, aggression: 0.2 }, 0.9),
@@ -2582,7 +3348,7 @@ export function createMountainGoat(x, y) {
       species: "goat",
       render: { skin: "Creature_Bear_U.png", color: 0xffe6e6dc, backcolor: 0xff3c3c3c },
       life: createLifeProp(5200, 5200),
-      lungs: createLungsProp(),
+      terrestrial: createTerrestrialProp(),
       mouth: createMouthProp(32, 32),
       communication: createCommunicationProp(2.5),
       miner: createMinerProp(),
@@ -2753,12 +3519,14 @@ export function createSeedEntity(x, y, seedType = "large", species = "oak") {
 export function createPoopEntity(x, y, seed = null) {
   const poop = createEntity(
     {
-      name: seed ? `Fezes com Semente Pequena (${seed.species})` : "Fezes / Excremento",
+      name: seed ? `Fezes com Semente (${seed.species})` : "Fezes / Excremento",
+      resourceType: "feces",
       render: { skin: "Item_Nugget.png", color: 0xff643c14, backcolor: 0x00000000 },
       fertilizer: { quality: 1.0 },
+      edible: { nutrition: 900, foodType: "feces", digestDuration: 40 },
       lifespan: {
         current: 0,
-        max: 1800,
+        max: 2400,
         effect(p) {
           this.current++;
           if (this.current >= this.max) p.destroyed = true;
@@ -2774,4 +3542,167 @@ export function createPoopEntity(x, y, seed = null) {
   }
 
   return poop;
+}
+
+// ---------------------------------------------------------------------------
+// 6. Founding Human Archetypes (Miner, Builder, Crafter, Pregnant Matriarch)
+// ---------------------------------------------------------------------------
+
+export function createHumanMiner(x, y, name = "Aldor, o Minerador") {
+  return createEntity(
+    {
+      name,
+      species: "human",
+      render: { skin: "Human_Guard_U.png", color: 0xffdcdce6, backcolor: 0xff1e283c },
+      life: createLifeProp(7000, 7000),
+      terrestrial: createTerrestrialProp(),
+      mouth: createMouthProp(32, 32),
+      communication: createCommunicationProp(1.5),
+      brain: createBrainProp(18, { bravery: 0.8, curiosity: 0.6, aggression: 0.2 }, 1.2),
+      stomach: createStomachProp(4, { meat: 1.0, plant: 0.9, fruit: 1.0, organ: 0.8, bone: 0.1 }),
+      bladder: createBladderProp(3500, 3500),
+      kidney: createKidneyProp(0.75),
+      body_regen: createBodyRegenerationProp(1.0, 4, 10),
+      combat: createCombatProp(1.2, 3),
+      miner: createMinerProp(),
+      arm_left: createArmProp("left", 1.0, 100, 100, { name: "Picareta de Ferro", damage: 28, isTool: true }),
+      arm_right: createArmProp("right", 1.0, 100, 100),
+      leg_left: createLegProp("left", 1.0, 100, 100),
+      leg_right: createLegProp("right", 1.0, 100, 100),
+      eye_left: createEyeProp("left", 9),
+      eye_right: createEyeProp("right", 9),
+      genitalia: createGenitaliaProp("penis", false),
+      locomotion: createLocomotionProp(),
+      torso: { condition: 100, maxCondition: 100, nutrition: 2500, foodType: "meat" }
+    },
+    x,
+    y
+  );
+}
+
+export function createHumanBuilder(x, y, name = "Brom, o Construtor") {
+  return createEntity(
+    {
+      name,
+      species: "human",
+      render: { skin: "Human_Normal_M.png", color: 0xfff0c878, backcolor: 0xff3c2814 },
+      life: createLifeProp(6500, 6500),
+      terrestrial: createTerrestrialProp(),
+      mouth: createMouthProp(32, 32),
+      communication: createCommunicationProp(1.5),
+      brain: createBrainProp(18, { bravery: 0.7, curiosity: 0.7, aggression: 0.2 }, 1.1),
+      stomach: createStomachProp(4, { meat: 1.0, plant: 0.9, fruit: 1.0, organ: 0.8, bone: 0.1 }),
+      bladder: createBladderProp(3500, 3500),
+      kidney: createKidneyProp(0.75),
+      body_regen: createBodyRegenerationProp(1.0, 4, 10),
+      combat: createCombatProp(1.1, 3),
+      builder: createBuilderProp(),
+      arm_left: createArmProp("left", 1.0, 100, 100, { name: "Martelo de Carpintaria", damage: 22, isTool: true }),
+      arm_right: createArmProp("right", 1.0, 100, 100),
+      leg_left: createLegProp("left", 1.0, 100, 100),
+      leg_right: createLegProp("right", 1.0, 100, 100),
+      eye_left: createEyeProp("left", 9),
+      eye_right: createEyeProp("right", 9),
+      genitalia: createGenitaliaProp("penis", false),
+      locomotion: createLocomotionProp(),
+      torso: { condition: 100, maxCondition: 100, nutrition: 2500, foodType: "meat" }
+    },
+    x,
+    y
+  );
+}
+
+export function createHumanCrafter(x, y, name = "Cedric, o Artesão") {
+  return createEntity(
+    {
+      name,
+      species: "human",
+      render: { skin: "Human_Normal_M.png", color: 0xffa0b4e6, backcolor: 0xff1e2846 },
+      life: createLifeProp(6000, 6000),
+      terrestrial: createTerrestrialProp(),
+      mouth: createMouthProp(32, 32),
+      communication: createCommunicationProp(1.5),
+      brain: createBrainProp(20, { bravery: 0.6, curiosity: 0.9, aggression: 0.1 }, 1.3),
+      stomach: createStomachProp(4, { meat: 1.0, plant: 0.9, fruit: 1.0, organ: 0.8, bone: 0.1 }),
+      bladder: createBladderProp(3500, 3500),
+      kidney: createKidneyProp(0.75),
+      body_regen: createBodyRegenerationProp(1.0, 4, 10),
+      combat: createCombatProp(1.0, 2),
+      crafter: createCrafterProp(),
+      arm_left: createArmProp("left", 1.0, 100, 100, { name: "Faca de Entalhe", damage: 18, isTool: true }),
+      arm_right: createArmProp("right", 1.0, 100, 100),
+      leg_left: createLegProp("left", 1.0, 100, 100),
+      leg_right: createLegProp("right", 1.0, 100, 100),
+      eye_left: createEyeProp("left", 9),
+      eye_right: createEyeProp("right", 9),
+      genitalia: createGenitaliaProp("penis", false),
+      locomotion: createLocomotionProp(),
+      torso: { condition: 100, maxCondition: 100, nutrition: 2500, foodType: "meat" }
+    },
+    x,
+    y
+  );
+}
+
+export function createHumanFarmer(x, y, name = "Farid, o Fazendeiro") {
+  return createEntity(
+    {
+      name,
+      species: "human",
+      render: { skin: "Human_Normal_M.png", color: 0xff82c878, backcolor: 0xff143c1e },
+      life: createLifeProp(6500, 6500),
+      terrestrial: createTerrestrialProp(),
+      mouth: createMouthProp(32, 32),
+      communication: createCommunicationProp(1.5),
+      brain: createBrainProp(18, { bravery: 0.6, curiosity: 0.8, aggression: 0.1 }, 1.2),
+      stomach: createStomachProp(4, { meat: 1.0, plant: 1.2, fruit: 1.3, organ: 0.8, bone: 0.1 }),
+      bladder: createBladderProp(3500, 3500),
+      kidney: createKidneyProp(0.75),
+      body_regen: createBodyRegenerationProp(1.0, 4, 10),
+      combat: createCombatProp(1.0, 2),
+      farmer: createFarmerProp(),
+      arm_left: createArmProp("left", 1.0, 100, 100, { name: "Enxada de Cultivo", damage: 18, isTool: true, toolType: "hoe" }),
+      arm_right: createArmProp("right", 1.0, 100, 100),
+      leg_left: createLegProp("left", 1.0, 100, 100),
+      leg_right: createLegProp("right", 1.0, 100, 100),
+      eye_left: createEyeProp("left", 9),
+      eye_right: createEyeProp("right", 9),
+      genitalia: createGenitaliaProp("penis", false),
+      locomotion: createLocomotionProp(),
+      torso: { condition: 100, maxCondition: 100, nutrition: 2500, foodType: "meat" }
+    },
+    x,
+    y
+  );
+}
+
+export function createHumanMatriarch(x, y, name = "Elena, a Matriarca") {
+  return createEntity(
+    {
+      name,
+      species: "human",
+      render: { skin: "Human_Normal_F.png", color: 0xffffb4c8, backcolor: 0xff461e28 },
+      life: createLifeProp(6500, 6500),
+      terrestrial: createTerrestrialProp(),
+      mouth: createMouthProp(32, 32),
+      communication: createCommunicationProp(1.8),
+      brain: createBrainProp(20, { bravery: 0.7, curiosity: 0.8, aggression: 0.1 }, 1.4),
+      stomach: createStomachProp(4, { meat: 1.0, plant: 1.0, fruit: 1.0, organ: 0.9, bone: 0.1 }),
+      bladder: createBladderProp(3500, 3500),
+      kidney: createKidneyProp(0.75),
+      body_regen: createBodyRegenerationProp(1.2, 4, 10),
+      combat: createCombatProp(1.0, 2),
+      arm_left: createArmProp("left", 1.0, 100, 100),
+      arm_right: createArmProp("right", 1.0, 100, 100),
+      leg_left: createLegProp("left", 1.0, 100, 100),
+      leg_right: createLegProp("right", 1.0, 100, 100),
+      eye_left: createEyeProp("left", 9),
+      eye_right: createEyeProp("right", 9),
+      genitalia: createGenitaliaProp("vagina", true), // Start pregnant!
+      locomotion: createLocomotionProp(),
+      torso: { condition: 100, maxCondition: 100, nutrition: 2500, foodType: "meat" }
+    },
+    x,
+    y
+  );
 }

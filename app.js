@@ -24,8 +24,9 @@ import {
 } from "./js/event_log.js";
 import {
   createLifeProp,
-  createLungsProp,
-  createGillsProp,
+  createTerrestrialProp,
+  createAquaticProp,
+  createFlyingProp,
   createStomachProp,
   createBladderProp,
   createKidneyProp,
@@ -72,7 +73,18 @@ import {
   createWaterLily,
   createSeaweed,
   createFruit,
-  createSeedEntity
+  createSeedEntity,
+  createHumanMiner,
+  createHumanBuilder,
+  createHumanCrafter,
+  createHumanFarmer,
+  createHumanMatriarch,
+  createStoneWallEntity,
+  createFarmerProp,
+  createMysticGraceProp,
+  createScatologicalProp,
+  getMoodLabel,
+  getGroupStockpile
 } from "./js/properties.js";
 
 // ---------------------------------------------------------------------------
@@ -267,10 +279,10 @@ let shader = null;
 let world = null;
 let entities = [];
 
-// Simulation State
+// Simulation Speed & Time State
 let isPaused = false;
-let currentTps = 60;
-let simAccumulator = 0;
+let simSpeed = 1.0; // 0.5x, 1x, 2x, 4x, 8x, 16x
+const SPEED_TIERS = [0.5, 1.0, 2.0, 4.0, 8.0, 16.0];
 let currentPreset = 0;
 let lastSelectedId = -1;
 
@@ -279,11 +291,44 @@ let lastTime = 0;
 let fpsFrames = 0;
 let currentFps = 60;
 let lastFpsUpdate = performance.now();
+let tpsCounter = 0;
+let measuredTps = 60;
+let lastTpsUpdate = performance.now();
 
 // Active In-Game Screen Mode ("MAP", "INSPECT", "ENTITIES", "GROUPS", "LOGS", "SPAWNER")
 let currentMode = "MAP";
 let modalScroll = 0;
 let inspectingLogEvent = null;
+let inspectingGroup = null; // Currently inspected clan for full dossier/stockpile view
+let visualizedGroupId = null; // ID of clan whose claimed territory is being highlighted on map
+let isFollowMode = false; // Camera automatically follows and locks onto selected creature
+let isCreatureVisionMode = false; // "See through creature's eyes" perception FOV & Fog of War
+
+function toggleFollowMode() {
+  isFollowMode = !isFollowMode;
+}
+
+function toggleCreatureVisionMode() {
+  isCreatureVisionMode = !isCreatureVisionMode;
+}
+
+function parseZoneCoords(zoneStr) {
+  if (!zoneStr) return null;
+  const parts = zoneStr.includes("_") ? zoneStr.split("_") : zoneStr.split(",");
+  const zx = parseInt(parts[0], 10);
+  const zy = parseInt(parts[1], 10);
+  if (isNaN(zx) || isNaN(zy)) return null;
+  return {
+    zx,
+    zy,
+    minX: zx * 8,
+    minY: zy * 8,
+    maxX: zx * 8 + 7,
+    maxY: zy * 8 + 7,
+    centerX: zx * 8 + 4,
+    centerY: zy * 8 + 4
+  };
+}
 
 // Registry Filters & Selection
 let entityFilter = "ALL";
@@ -354,15 +399,17 @@ function getCanvasCoords(clientX, clientY) {
 // World Initialization
 // ---------------------------------------------------------------------------
 
-function spawnRandomGlobal(count, factoryFn, conditionFn) {
+function spawnRandomGlobal(count, factoryFn, conditionFn = null) {
   let spawned = 0;
-  let attempts = 0;
-  while (spawned < count && attempts < count * 25) {
-    attempts++;
+  for (let attempt = 0; attempt < count * 8 && spawned < count; attempt++) {
     const rx = Math.floor(Math.random() * 508) + 2;
     const ry = Math.floor(Math.random() * 508) + 2;
     if (!conditionFn || conditionFn(rx, ry)) {
-      entities.push(factoryFn(rx, ry));
+      const e = factoryFn(rx, ry);
+      if (e.properties.life) {
+        e.properties.mystic_grace = createMysticGraceProp(180);
+      }
+      entities.push(e);
       spawned++;
     }
   }
@@ -371,7 +418,12 @@ function spawnRandomGlobal(count, factoryFn, conditionFn) {
 function resetWorld(presetId = 0) {
   if (!shader) return;
   currentPreset = presetId;
-  shader.exports.wasm_init(presetId);
+  const seed = Math.floor(Math.random() * 1000000) + 1;
+  if (shader.exports.wasm_init_with_seed) {
+    shader.exports.wasm_init_with_seed(presetId, seed);
+  } else {
+    shader.exports.wasm_init(presetId);
+  }
 
   resetEngineTicks();
   resetWorldEvents();
@@ -412,13 +464,71 @@ function resetWorld(presetId = 0) {
   spawnRandomGlobal(18, (x, y) => createArcher(x, y, Math.random() < 0.5 ? "male" : "female"), (x, y) => world.getTile(x, y) === 0);
   spawnRandomGlobal(22, createGoblin, (x, y) => world.getTile(x, y) === 0 || world.getTile(x, y) === 4);
 
-  // Focus on first living entity
-  const firstLiving = entities.find(e => e.properties && e.properties.life);
-  if (firstLiving) {
-    lastSelectedId = firstLiving.id;
-    shader.exports.wasm_select_entity(firstLiving.id);
-    shader.exports.wasm_set_camera(firstLiving.x, firstLiving.y, 1.5);
+  // 1. Determine spawn position for Camera and Founding Clan
+  let startX = 256;
+  let startY = 256;
+  for (let r = 0; r < 100; r++) {
+    let found = false;
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        if (world.isWalkable(256 + dx, 256 + dy)) {
+          startX = 256 + dx;
+          startY = 256 + dy;
+          found = true;
+          break;
+        }
+      }
+      if (found) break;
+    }
+    if (found) break;
   }
+
+  // 2. Founding Human Clan: Miner, Builder, Crafter, Farmer and Pregnant Matriarch
+  const miner = createHumanMiner(startX, startY, "Aldor, o Minerador");
+  const builder = createHumanBuilder(startX + 1, startY, "Brom, o Construtor");
+  const crafter = createHumanCrafter(startX, startY + 1, "Cedric, o Artesão");
+  const farmer = createHumanFarmer(startX - 1, startY, "Farid, o Fazendeiro");
+  const matriarch = createHumanMatriarch(startX + 1, startY + 1, "Elena, a Matriarca");
+
+  const zx = Math.floor(startX / 8);
+  const zy = Math.floor(startY / 8);
+  const zone1 = `${zx},${zy}`;
+  const zone2 = `${zx + 1},${zy}`;
+
+  const foundingClan = createGroup("Clã dos Pioneiros", miner, [zx, zy], [zone1, zone2]);
+  foundingClan.storage = ["stone", "stone", "stone", "stone", "wood", "wood", "wood", "wood"];
+  miner.properties.group = foundingClan;
+  builder.properties.group = foundingClan;
+  crafter.properties.group = foundingClan;
+  farmer.properties.group = foundingClan;
+  matriarch.properties.group = foundingClan;
+
+  foundingClan.members = [miner.id, builder.id, crafter.id, farmer.id, matriarch.id];
+
+  // Mutual high initial affinity (+85) and initial mystic grace
+  const clanMembers = [miner, builder, crafter, farmer, matriarch];
+  for (const m1 of clanMembers) {
+    m1.properties.mystic_grace = createMysticGraceProp(180);
+    if (m1.properties.brain) {
+      if (!m1.properties.brain.affinities) m1.properties.brain.affinities = {};
+      for (const m2 of clanMembers) {
+        if (m1 !== m2) m1.properties.brain.affinities[m2.id] = 85;
+      }
+    }
+  }
+
+  entities.push(miner, builder, crafter, farmer, matriarch);
+
+  // Initial clan resources placed right in territory center
+  for (let i = 0; i < 4; i++) {
+    entities.push(createWoodItem(startX + (i % 2), startY + Math.floor(i / 2)));
+    entities.push(createStoneItem(startX - 1 + (i % 2), startY + Math.floor(i / 2)));
+  }
+
+  // Position camera and selection right on the founding clan!
+  lastSelectedId = miner.id;
+  shader.exports.wasm_select_entity(miner.id);
+  shader.exports.wasm_set_camera(startX, startY, 2.0);
 }
 
 function spawnEntityAtCamera(factoryFn) {
@@ -587,6 +697,10 @@ window.addEventListener("keydown", (e) => {
         cycleNextLivingEntity();
       }
     }
+  } else if (e.code === "KeyF") {
+    toggleFollowMode();
+  } else if (e.code === "KeyV") {
+    toggleCreatureVisionMode();
   } else if (e.code === "Tab") {
     e.preventDefault();
     cycleNextLivingEntity();
@@ -608,13 +722,18 @@ window.addEventListener("keydown", (e) => {
     modalScroll = 0;
   } else if (e.code === "Escape") {
     if (inspectingLogEvent) inspectingLogEvent = null;
+    else if (inspectingGroup) inspectingGroup = null;
     else currentMode = "MAP";
-  } else if (e.code === "Equal" || e.code === "NumpadAdd") {
-    currentTps = Math.min(360, currentTps + 10);
-    if (shader) shader.exports.wasm_set_tps(currentTps);
-  } else if (e.code === "Minus" || e.code === "NumpadSubtract") {
-    currentTps = Math.max(1, currentTps - 10);
-    if (shader) shader.exports.wasm_set_tps(currentTps);
+  } else if (e.code === "Equal" || e.code === "NumpadAdd" || e.code === "BracketRight") {
+    const idx = SPEED_TIERS.indexOf(simSpeed);
+    if (idx !== -1 && idx < SPEED_TIERS.length - 1) simSpeed = SPEED_TIERS[idx + 1];
+    else simSpeed = Math.min(32, simSpeed * 2);
+    if (shader) shader.exports.wasm_set_tps(Math.round(60 * simSpeed));
+  } else if (e.code === "Minus" || e.code === "NumpadSubtract" || e.code === "BracketLeft") {
+    const idx = SPEED_TIERS.indexOf(simSpeed);
+    if (idx > 0) simSpeed = SPEED_TIERS[idx - 1];
+    else simSpeed = Math.max(0.25, simSpeed / 2);
+    if (shader) shader.exports.wasm_set_tps(Math.round(60 * simSpeed));
   } else if (e.code === "Digit1") spawnEntityAtCamera(createKnight);
   else if (e.code === "Digit2") spawnEntityAtCamera(createArcher);
   else if (e.code === "Digit3") spawnEntityAtCamera(createWolf);
@@ -722,18 +841,42 @@ function renderTopHudBar() {
   // Title
   drawText8x8("BRUTOPOLIS", 12, 12, "#f8b800", 1);
 
-  // Time & Ambient Stats
+  // Time & Sun Stats
   const timeStr = `D${String(clock.day).padStart(2,"0")} ${String(clock.hour).padStart(2,"0")}:${String(clock.minute).padStart(2,"0")}`;
   drawText8x8(timeStr, 125, 12, "#ffffff", 1);
 
-  drawText8x8(`SUN:${Math.round(clock.globalLight * 100)}%`, 255, 12, "#3cbcfc", 1);
-  drawText8x8(`HEAT:${Math.round(clock.globalHeat * 100)}%`, 340, 12, "#f83800", 1);
+  drawText8x8(`SUN:${Math.round(clock.globalLight * 100)}%`, 245, 12, "#3cbcfc", 1);
 
   const presetNames = ["ARCHIPELAGO", "CONTINENT", "HIGHLANDS"];
-  drawText8x8(presetNames[currentPreset] || "WORLD", 435, 12, "#58d854", 1);
+  drawText8x8(presetNames[currentPreset] || "WORLD", 345, 12, "#58d854", 1);
 
-  drawText8x8(`${currentFps}FPS`, 565, 12, "#bcbcbc", 1);
-  drawText8x8(`${currentTps}TPS`, 635, 12, "#bcbcbc", 1);
+  drawText8x8(`${currentFps}FPS`, 460, 12, "#bcbcbc", 1);
+
+  // Speed Controls on HUD
+  drawNESButton(525, 4, 18, 24, "-", false, false);
+  registerClickableRegion(525, 4, 18, 24, () => {
+    const idx = SPEED_TIERS.indexOf(simSpeed);
+    if (idx > 0) simSpeed = SPEED_TIERS[idx - 1];
+    else simSpeed = Math.max(0.25, simSpeed / 2);
+    if (shader) shader.exports.wasm_set_tps(Math.round(60 * simSpeed));
+  });
+
+  const speedStr = `${simSpeed}X (${Math.round(60 * simSpeed)}TPS)`;
+  drawText8x8(speedStr, 549, 12, "#f8b800", 1);
+  registerClickableRegion(549, 4, speedStr.length * 8 + 8, 24, () => {
+    const idx = SPEED_TIERS.indexOf(simSpeed);
+    simSpeed = SPEED_TIERS[(idx + 1) % SPEED_TIERS.length];
+    if (shader) shader.exports.wasm_set_tps(Math.round(60 * simSpeed));
+  });
+
+  const plusX = 557 + speedStr.length * 8;
+  drawNESButton(plusX, 4, 18, 24, "+", false, false);
+  registerClickableRegion(plusX, 4, 18, 24, () => {
+    const idx = SPEED_TIERS.indexOf(simSpeed);
+    if (idx !== -1 && idx < SPEED_TIERS.length - 1) simSpeed = SPEED_TIERS[idx + 1];
+    else simSpeed = Math.min(32, simSpeed * 2);
+    if (shader) shader.exports.wasm_set_tps(Math.round(60 * simSpeed));
+  });
 
   // Pause / Run Button
   const pauseTxt = isPaused ? "PAUSE" : "RUN";
@@ -750,6 +893,8 @@ function renderBottomToolbar() {
     { label: "GROUPS", mode: "GROUPS" },
     { label: "LOGS", mode: "LOGS" },
     { label: "SPAWN", mode: "SPAWNER" },
+    { label: isFollowMode ? "FOLLOW*" : "FOLLOW", action: toggleFollowMode },
+    { label: isCreatureVisionMode ? "VISION*" : "VISION", action: toggleCreatureVisionMode },
     { label: "NEXT", action: cycleNextLivingEntity },
     { label: "CENTER", action: centerCamera },
     { label: "RESET", action: () => resetWorld((currentPreset + 1) % 3) }
@@ -849,7 +994,14 @@ function renderDossierModal() {
   const statusTxt = props.life ? (props.life.energy > 0 ? "STATUS: LIVE" : "STATUS: DEAD") : "STATUS: ITEM";
   const statusCol = props.life ? (props.life.energy > 0 ? "#58d854" : "#f83800") : "#f8b800";
   drawText8x8(statusTxt, mx + 20, my + 66, statusCol, 1);
-  drawText8x8(`PROPERTIES: ${Object.keys(props).length}`, mx + 250, my + 66, "#bcbcbc", 1);
+  drawText8x8(`PROPERTIES: ${Object.keys(props).length}`, mx + 230, my + 66, "#bcbcbc", 1);
+
+  const domains = [];
+  if (props.terrestrial) domains.push("TERRESTRE");
+  if (props.aquatic) domains.push("AQUATICO");
+  if (props.flying) domains.push("VOADOR");
+  const domainStr = domains.length > 0 ? domains.join(" + ") : "ESTÁTICO";
+  drawText8x8(`DOMÍNIO: ${domainStr}`, mx + 440, my + 66, "#58d854", 1);
 
   // Vital Gauges
   let gaugeY = my + 94;
@@ -866,6 +1018,13 @@ function renderDossierModal() {
 
   if (props.bladder) {
     drawNESProgressBar(mx + 10, gaugeY, mw - 20, 18, props.bladder.water, props.bladder.maxWater, "WATER BLADDER", "#0078f8");
+    gaugeY += 22;
+  }
+
+  if (props.brain && typeof props.brain.mood === "number") {
+    const moodVal = props.brain.mood;
+    const moodCol = moodVal >= 25 ? "#58d854" : moodVal >= -20 ? "#3cbcfc" : "#f83800";
+    drawNESProgressBar(mx + 10, gaugeY, mw - 20, 18, moodVal + 100, 200, `HUMOR: ${getMoodLabel(moodVal).toUpperCase()}`, moodCol);
     gaugeY += 22;
   }
 
@@ -1052,10 +1211,20 @@ function renderGroupsModal() {
   drawNESBox(mx, my, mw, mh);
 
   drawNESButton(mx + mw - 32, my + 6, 26, 24, "X", false, true);
-  registerClickableRegion(mx + mw - 32, my + 6, 26, 24, () => { currentMode = "MAP"; });
+  registerClickableRegion(mx + mw - 32, my + 6, 26, 24, () => {
+    if (inspectingGroup) inspectingGroup = null;
+    else currentMode = "MAP";
+  });
+
+  // If viewing full Clan Dossier / Stockpile Detail
+  if (inspectingGroup) {
+    renderGroupDetailView(mx, my, mw, mh, inspectingGroup);
+    ctx.restore();
+    return;
+  }
 
   const groups = getAllGroups();
-  drawText8x8(`CLANS & FACTIONS (${groups.length})`, mx + 16, my + 14, "#f8b800", 1);
+  drawText8x8(`CLANS & FACTIONS (${groups.length}) - CLICK DETAILS TO INSPECT`, mx + 16, my + 14, "#f8b800", 1);
 
   if (groups.length === 0) {
     drawText8x8("NO FACTIONS FOUNDED YET.", mx + 20, my + 50, "#ffffff", 1);
@@ -1066,22 +1235,64 @@ function renderGroupsModal() {
   const cardW = mw - 24;
   let cardY = my + 44;
 
-  for (let i = modalScroll; i < Math.min(groups.length, modalScroll + 4); i++) {
+  for (let i = modalScroll; i < Math.min(groups.length, modalScroll + 3); i++) {
     const g = groups[i];
     const livingMembers = g.members.filter(mid => entities.some(e => e.id === mid && !e.destroyed)).length;
     const leaderEnt = entities.find(e => e.id === g.members[0] && !e.destroyed);
+    const stockpile = getGroupStockpile(g, entities);
 
-    drawNESBox(mx + 12, cardY, cardW, 76);
+    drawNESBox(mx + 12, cardY, cardW, 102);
 
-    drawText8x8(`* ${(g.name || "CLAN").toUpperCase()}`, mx + 24, cardY + 16, "#f8b800", 1);
-    drawText8x8(`${livingMembers}/${g.members.length} ALIVE`, mx + cardW - 130, cardY + 16, "#58d854", 1);
+    drawText8x8(`* ${(g.name || "CLAN").toUpperCase()}`, mx + 24, cardY + 14, "#f8b800", 1);
+    drawText8x8(`${livingMembers}/${g.members.length} ALIVE`, mx + cardW - 325, cardY + 14, "#58d854", 1);
 
-    drawText8x8(`LEADER: ${leaderEnt ? leaderEnt.properties.name.toUpperCase() : `MEMBER #${g.members[0]}`}`, mx + 24, cardY + 36, "#ffffff", 1);
-    drawText8x8(`TERRITORY: ${g.claimedZones?.join(", ") || "NONE"}`, mx + 24, cardY + 54, "#bcbcbc", 1);
+    drawText8x8(`LEADER: ${leaderEnt ? leaderEnt.properties.name.toUpperCase() : `MEMBER #${g.members[0]}`}`, mx + 24, cardY + 32, "#ffffff", 1);
+    drawText8x8(`TERRITORY: ${g.claimedZones?.join(", ") || "NONE"} (${(g.claimedZones?.length || 0) * 64} TILES)`, mx + 24, cardY + 48, "#bcbcbc", 1);
 
-    // Focus Button
-    drawNESButton(mx + cardW - 85, cardY + 38, 75, 24, "FOCUS", false, false);
-    registerClickableRegion(mx + cardW - 85, cardY + 38, 75, 24, () => {
+    // Stockpile Summary
+    const stockEntries = Object.entries(stockpile.items);
+    let stockStr = "VAZIO (EMPTY)";
+    if (stockEntries.length > 0) {
+      stockStr = stockEntries.map(([name, count]) => `${name}: x${count}`).join(" | ");
+    }
+    const maxStockLen = Math.floor((cardW - 40) / 8);
+    if (stockStr.length > maxStockLen) {
+      stockStr = stockStr.slice(0, maxStockLen - 3) + "...";
+    }
+
+    drawText8x8(`ESTOQUE (${stockpile.totalCount} ITENS): ${stockStr.toUpperCase()}`, mx + 24, cardY + 66, "#ffd700", 1);
+    drawText8x8(`LOCAL: [CHAO: ${stockpile.breakdown.ground} | MEMBROS: ${stockpile.breakdown.members} | RESERVA: ${stockpile.breakdown.storage}]`, mx + 24, cardY + 82, "#3cbcfc", 1);
+
+    // Full Details Button
+    const curG = g;
+    drawNESButton(mx + cardW - 255, cardY + 30, 80, 24, "DETAILS", false, false);
+    registerClickableRegion(mx + cardW - 255, cardY + 30, 80, 24, () => {
+      inspectingGroup = curG;
+    });
+
+    // View Claimed Territory Button
+    const isViewing = visualizedGroupId === g.id;
+    drawNESButton(mx + cardW - 170, cardY + 30, 80, 24, isViewing ? "ZONE*" : "ZONE", isViewing, false);
+    registerClickableRegion(mx + cardW - 170, cardY + 30, 80, 24, () => {
+      visualizedGroupId = g.id;
+      let sumX = 0, sumY = 0, count = 0;
+      for (const zk of g.claimedZones || []) {
+        const coords = parseZoneCoords(zk);
+        if (coords) {
+          sumX += coords.centerX;
+          sumY += coords.centerY;
+          count++;
+        }
+      }
+      if (count > 0 && shader) {
+        shader.exports.wasm_set_camera(sumX / count, sumY / count, 1.5);
+      }
+      currentMode = "MAP";
+    });
+
+    // Focus Leader Button
+    drawNESButton(mx + cardW - 85, cardY + 30, 75, 24, "LEADER", false, false);
+    registerClickableRegion(mx + cardW - 85, cardY + 30, 75, 24, () => {
       if (leaderEnt && shader) {
         lastSelectedId = leaderEnt.id;
         shader.exports.wasm_select_entity(leaderEnt.id);
@@ -1090,8 +1301,199 @@ function renderGroupsModal() {
       }
     });
 
-    cardY += 84;
+    cardY += 108;
   }
+
+  ctx.restore();
+}
+
+/**
+ * Full-screen Clan Dossier: detailed territory, itemized stockpile, and member roster.
+ */
+function renderGroupDetailView(mx, my, mw, mh, g) {
+  const livingMembers = g.members.filter(mid => entities.some(e => e.id === mid && !e.destroyed));
+  const leaderEnt = entities.find(e => e.id === g.members[0] && !e.destroyed);
+  const stockpile = getGroupStockpile(g, entities);
+
+  drawText8x8(`CLAN DOSSIER: ${(g.name || "CLAN").toUpperCase()}`, mx + 16, my + 14, "#f8b800", 1);
+
+  // Top Actions
+  drawNESButton(mx + mw - 250, my + 6, 100, 24, "TERRITORY", false, false);
+  registerClickableRegion(mx + mw - 250, my + 6, 100, 24, () => {
+    visualizedGroupId = g.id;
+    let sumX = 0, sumY = 0, count = 0;
+    for (const zk of g.claimedZones || []) {
+      const coords = parseZoneCoords(zk);
+      if (coords) {
+        sumX += coords.centerX;
+        sumY += coords.centerY;
+        count++;
+      }
+    }
+    if (count > 0 && shader) {
+      shader.exports.wasm_set_camera(sumX / count, sumY / count, 1.5);
+    }
+    currentMode = "MAP";
+  });
+
+  drawNESButton(mx + mw - 145, my + 6, 100, 24, "FOCUS LEADER", false, false);
+  registerClickableRegion(mx + mw - 145, my + 6, 100, 24, () => {
+    if (leaderEnt && shader) {
+      lastSelectedId = leaderEnt.id;
+      shader.exports.wasm_select_entity(leaderEnt.id);
+      shader.exports.wasm_set_camera(leaderEnt.x, leaderEnt.y, shader.exports.wasm_get_camera_zoom());
+      currentMode = "MAP";
+    }
+  });
+
+  // 1. Territory & Base Box
+  const box1Y = my + 38;
+  const box1H = 56;
+  drawNESBox(mx + 12, box1Y, mw - 24, box1H);
+  drawText8x8("TERRITORY & CLAIMED ZONES:", mx + 20, box1Y + 12, "#ffd700", 1);
+  const zoneListStr = (g.claimedZones || []).map(zk => {
+    const c = parseZoneCoords(zk);
+    return c ? `${zk} [X:${c.minX}..${c.maxX}, Y:${c.minY}..${c.maxY}]` : zk;
+  }).join(" | ");
+  drawText8x8(zoneListStr || "NENHUMA ZONA REIVINDICADA", mx + 20, box1Y + 30, "#ffffff", 1);
+
+  // 2. Complete Itemized Stockpile Box
+  const box2Y = box1Y + box1H + 8;
+  const box2H = 110;
+  drawNESBox(mx + 12, box2Y, mw - 24, box2H);
+  drawText8x8(`ESTOQUE TOTAL (${stockpile.totalCount} ITENS DISPONIVEIS):`, mx + 20, box2Y + 12, "#ffd700", 1);
+  drawText8x8(`DISTRIBUICAO: [NO CHAO DO TERRITORIO: ${stockpile.breakdown.ground} | COM MEMBROS: ${stockpile.breakdown.members} | NA RESERVA DO CLA: ${stockpile.breakdown.storage}]`, mx + 20, box2Y + 28, "#3cbcfc", 1);
+
+  const stockEntries = Object.entries(stockpile.items);
+  let stockLinesY = box2Y + 48;
+  if (stockEntries.length === 0) {
+    drawText8x8("NENHUM RECURSO OU ITEM EM ESTOQUE NO MOMENTO.", mx + 20, stockLinesY, "#bcbcbc", 1);
+  } else {
+    const maxCharsPerLine = Math.floor((mw - 60) / 8);
+    const stockFormatted = stockEntries.map(([name, count]) => `• ${name}: ${count} unidades`).join("   ");
+    const wrappedStock = wrapText8x8(stockFormatted.toUpperCase(), maxCharsPerLine);
+    for (const sLine of wrappedStock.slice(0, 3)) {
+      drawText8x8(sLine, mx + 20, stockLinesY, "#58d854", 1);
+      stockLinesY += 16;
+    }
+  }
+
+  // 3. Member Roster & Hand Inventories Box
+  const box3Y = box2Y + box2H + 8;
+  const box3H = (my + mh - 12) - box3Y;
+  drawNESBox(mx + 12, box3Y, mw - 24, box3H);
+  drawText8x8(`ROSTER DE MEMBROS (${livingMembers.length}/${g.members.length} VIVOS):`, mx + 20, box3Y + 12, "#ffd700", 1);
+
+  let rosterY = box3Y + 30;
+  for (let mi = 0; mi < g.members.length; mi++) {
+    if (rosterY + 24 > box3Y + box3H) break;
+    const mid = g.members[mi];
+    const mEnt = entities.find(e => e.id === mid && !e.destroyed);
+
+    const isAlive = !!mEnt;
+    const mName = mEnt ? mEnt.properties.name.toUpperCase() : `MEMBRO #${mid} (MORTO)`;
+    const mRole = mEnt ? (mEnt.properties.role || mEnt.properties.species || "HUMAN").toUpperCase() : "-";
+    const hpStr = mEnt?.properties.life ? `${Math.round(mEnt.properties.life.energy)}HP` : "-";
+
+    // Held items
+    let heldStr = "MAOS: VAZIAS";
+    if (mEnt) {
+      const left = mEnt.properties.arm_left?.heldItem;
+      const right = mEnt.properties.arm_right?.heldItem;
+      const held = [];
+      if (left) held.push(`ESQ:${left.resourceType || left.name || "ITEM"}`);
+      if (right) held.push(`DIR:${right.resourceType || right.name || "ITEM"}`);
+      if (held.length > 0) heldStr = held.join(" | ").toUpperCase();
+    }
+
+    const mText = `• ${mName} [${mRole}] - ${hpStr} | ${heldStr}`;
+    drawText8x8(mText.slice(0, Math.floor((mw - 140) / 8)), mx + 20, rosterY + 4, isAlive ? "#ffffff" : "#9c5050", 1);
+
+    if (mEnt) {
+      const curM = mEnt;
+      drawNESButton(mx + mw - 100, rosterY - 2, 70, 20, "FOCUS", false, false);
+      registerClickableRegion(mx + mw - 100, rosterY - 2, 70, 20, () => {
+        lastSelectedId = curM.id;
+        if (shader) {
+          shader.exports.wasm_select_entity(curM.id);
+          shader.exports.wasm_set_camera(curM.x, curM.y, shader.exports.wasm_get_camera_zoom());
+        }
+        currentMode = "MAP";
+      });
+    }
+
+    rosterY += 24;
+  }
+}
+
+/**
+ * Renders glowing claimed territory overlay on the world map for the selected clan.
+ */
+function renderTerritoryOverlay() {
+  if (currentMode !== "MAP" || !shader || !world || visualizedGroupId === null) return;
+  const groups = getAllGroups();
+  const g = groups.find(grp => grp.id === visualizedGroupId);
+  if (!g) {
+    visualizedGroupId = null;
+    return;
+  }
+
+  const zoom = shader.exports.wasm_get_camera_zoom();
+  const tileSize = 16.0 * zoom;
+  const cx = shader.exports.wasm_get_camera_x();
+  const cy = shader.exports.wasm_get_camera_y();
+  const centerScreenX = CANVAS_WIDTH / 2;
+  const centerScreenY = CANVAS_HEIGHT / 2;
+
+  ctx.save();
+
+  // Draw Claimed Macro-Chunks
+  for (const zk of g.claimedZones || []) {
+    const coords = parseZoneCoords(zk);
+    if (!coords) continue;
+
+    const screenX = centerScreenX + (coords.minX - cx) * tileSize;
+    const screenY = centerScreenY + (coords.minY - cy) * tileSize;
+    const screenW = 8 * tileSize;
+    const screenH = 8 * tileSize;
+
+    // Only draw if on screen
+    if (screenX + screenW < 0 || screenX > CANVAS_WIDTH || screenY + screenH < 0 || screenY > CANVAS_HEIGHT) continue;
+
+    // Translucent Tinted Fill
+    ctx.fillStyle = "rgba(248, 184, 0, 0.18)";
+    ctx.fillRect(screenX, screenY, screenW, screenH);
+
+    // Glowing Border
+    ctx.strokeStyle = "#ffd700";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(screenX, screenY, screenW, screenH);
+
+    // Corner Accents
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(screenX, screenY, 4, 4);
+    ctx.fillRect(screenX + screenW - 4, screenY, 4, 4);
+    ctx.fillRect(screenX, screenY + screenH - 4, 4, 4);
+    ctx.fillRect(screenX + screenW - 4, screenY + screenH - 4, 4, 4);
+
+    // Zone Badge
+    const zoneBadge = `ZONE [${coords.zx},${coords.zy}]`;
+    drawText8x8(zoneBadge, screenX + 4, screenY + 4, "#ffd700", 1);
+  }
+
+  // Floating Territory Banner on Top HUD area
+  const bannerText = `TERRITORY: ${(g.name || "CLAN").toUpperCase()}`;
+  const bannerW = bannerText.length * 8 + 80;
+  const bannerX = Math.floor((CANVAS_WIDTH - bannerW) / 2);
+  const bannerY = 38;
+
+  drawNESBox(bannerX, bannerY, bannerW, 26);
+  drawText8x8(bannerText, bannerX + 8, bannerY + 9, "#ffd700", 1);
+
+  drawNESButton(bannerX + bannerW - 55, bannerY + 3, 50, 20, "HIDE", false, true);
+  registerClickableRegion(bannerX + bannerW - 55, bannerY + 3, 50, 20, () => {
+    visualizedGroupId = null;
+  });
 
   ctx.restore();
 }
@@ -1135,11 +1537,11 @@ function renderLogsModal() {
   drawText8x8(`WORLD LOG (${list.length}) - CLICK EVENT TO INSPECT`, mx + 16, my + 14, "#f8b800", 1);
 
   // Filter Buttons
-  const filters = ["ALL", "ATTACK", "RELATION", "DIALOGUE", "AMPUTATION", "BIRTH", "DEATH", "SPROUT"];
+  const filters = ["ALL", "KILL", "ATTACK", "RELATION", "DIALOGUE", "AMPUTATION", "BIRTH", "DEATH", "SPROUT"];
   let fx = mx + 16;
   for (const f of filters) {
     const isAct = logFilter === f;
-    const fw = f.length * 8 + 14;
+    const fw = f.length * 8 + 12;
     drawNESButton(fx, my + 36, fw, 22, f, isAct, false);
     registerClickableRegion(fx, my + 36, fw, 22, () => {
       logFilter = f;
@@ -1171,7 +1573,7 @@ function renderLogsModal() {
     const ts = ev.timestamp ? `D${ev.timestamp.day} ${String(ev.timestamp.hour).padStart(2,"0")}:${String(ev.timestamp.minute).padStart(2,"0")}` : `T${ev.tick}`;
     drawText8x8(ts, mx + 18, rowY + 2, "#bcbcbc", 1);
 
-    const typeColor = ev.type === "DEATH" ? "#f83800" : ev.type === "ATTACK" ? "#f8b800" : ev.type === "AMPUTATION" ? "#e40058" : ev.type === "RELATION" ? "#d3869b" : ev.type === "DIALOGUE" ? "#3cbcfc" : ev.type === "BIRTH" ? "#f8b800" : ev.type === "SPROUT" ? "#58d854" : "#ffffff";
+    const typeColor = ev.type === "KILL" ? "#ff2040" : ev.type === "DEATH" ? "#9c5050" : ev.type === "ATTACK" ? "#f8b800" : ev.type === "AMPUTATION" ? "#e40058" : ev.type === "RELATION" ? "#d3869b" : ev.type === "DIALOGUE" ? "#3cbcfc" : ev.type === "BIRTH" ? "#f8b800" : ev.type === "SPROUT" ? "#58d854" : "#ffffff";
     drawText8x8(`[${ev.type}]`, mx + 115, rowY + 2, typeColor, 1);
 
     const locStr = ev.location ? `[${ev.location.x},${ev.location.y}] ` : "";
@@ -1191,7 +1593,7 @@ function renderLogsModal() {
 }
 
 function renderLogDetailView(mx, my, mw, mh, ev) {
-  const typeColor = ev.type === "DEATH" ? "#f83800" : ev.type === "ATTACK" ? "#f8b800" : ev.type === "AMPUTATION" ? "#e40058" : ev.type === "RELATION" ? "#d3869b" : ev.type === "DIALOGUE" ? "#3cbcfc" : ev.type === "BIRTH" ? "#f8b800" : ev.type === "SPROUT" ? "#58d854" : "#ffffff";
+  const typeColor = ev.type === "KILL" ? "#ff2040" : ev.type === "DEATH" ? "#9c5050" : ev.type === "ATTACK" ? "#f8b800" : ev.type === "AMPUTATION" ? "#e40058" : ev.type === "RELATION" ? "#d3869b" : ev.type === "DIALOGUE" ? "#3cbcfc" : ev.type === "BIRTH" ? "#f8b800" : ev.type === "SPROUT" ? "#58d854" : "#ffffff";
 
   drawText8x8(`EVENT DETAIL (#${ev.id})`, mx + 16, my + 14, "#f8b800", 1);
 
@@ -1265,6 +1667,7 @@ function renderSpawnerModal() {
   const spawners = [
     { label: "KNIGHT", fn: createKnight },
     { label: "ARCHER", fn: createArcher },
+    { label: "FARMER", fn: createHumanFarmer },
     { label: "WOLF", fn: createWolf },
     { label: "BEAR", fn: createBear },
     { label: "CAT", fn: createCat },
@@ -1279,6 +1682,7 @@ function renderSpawnerModal() {
     { label: "SHRUB", fn: createAlpineShrub },
     { label: "WOOD", fn: createWoodItem },
     { label: "STONE", fn: createStoneItem },
+    { label: "WALL", fn: (x, y) => createStoneWallEntity(x, y) },
     { label: "SEED", fn: (x,y) => createSeedEntity(x,y,"large","oak") },
     { label: "FRUIT", fn: (x,y) => createFruit(x,y,"large","oak") }
   ];
@@ -1342,6 +1746,146 @@ function renderHoverTooltip() {
   ctx.restore();
 }
 
+/**
+ * Renders authentic creature perception vision ("Ver pelos olhos da criatura"):
+ * - Active perception range: 100% full vibrant color
+ * - Explored / Known zones: dimmed dark fog-of-war
+ * - Unexplored / Unknown zones: pitch black
+ */
+function renderCreatureVisionOverlay() {
+  if (currentMode !== "MAP" || !shader || !world || !isCreatureVisionMode || lastSelectedId <= 0) return;
+  const target = getEntityById(lastSelectedId);
+  if (!target || target.destroyed) {
+    isCreatureVisionMode = false;
+    return;
+  }
+
+  const zoom = shader.exports.wasm_get_camera_zoom();
+  const tileSize = 16.0 * zoom;
+  const camX = shader.exports.wasm_get_camera_x();
+  const camY = shader.exports.wasm_get_camera_y();
+  const centerScreenX = CANVAS_WIDTH / 2;
+  const centerScreenY = CANVAS_HEIGHT / 2;
+
+  const viewRange = target.properties.eye_left?.viewRange || target.properties.eye_right?.viewRange || 8;
+  const creatureScreenX = centerScreenX + (target.x - camX) * tileSize + tileSize / 2;
+  const creatureScreenY = centerScreenY + (target.y - camY) * tileSize + tileSize / 2;
+  const visionRadiusPx = (viewRange + 0.6) * tileSize;
+
+  // Build creature's known macro-zone keys (8x8 chunks)
+  const knownZones = new Set();
+  if (target.properties.brain?.geoMemory) {
+    for (const k of Object.keys(target.properties.brain.geoMemory)) {
+      knownZones.add(k);
+    }
+  }
+  if (target.properties.group?.claimedZones) {
+    for (const zk of target.properties.group.claimedZones) {
+      const parts = zk.includes("_") ? zk.split("_") : zk.split(",");
+      knownZones.add(`${parts[0]}_${parts[1]}`);
+    }
+  }
+  // Current zone is always known
+  knownZones.add(`${Math.floor(target.x / 8)}_${Math.floor(target.y / 8)}`);
+
+  const minTx = Math.floor(camX - (centerScreenX / tileSize) - 1);
+  const maxTx = Math.ceil(camX + (centerScreenX / tileSize) + 1);
+  const minTy = Math.floor(camY - (centerScreenY / tileSize) - 1);
+  const maxTy = Math.ceil(camY + (centerScreenY / tileSize) + 1);
+
+  const minZx = Math.floor(minTx / 8);
+  const maxZx = Math.floor(maxTx / 8);
+  const minZy = Math.floor(minTy / 8);
+  const maxZy = Math.floor(maxTy / 8);
+
+  ctx.save();
+
+  // Create clipping region for everything strictly OUTSIDE the creature's perception circle
+  ctx.beginPath();
+  ctx.rect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+  ctx.arc(creatureScreenX, creatureScreenY, visionRadiusPx, 0, Math.PI * 2, true);
+  ctx.closePath();
+  ctx.clip();
+
+  // 1. Draw solid pitch black on unknown zones and dark translucent on known zones (only outside perception radius)
+  for (let zy = minZy; zy <= maxZy; zy++) {
+    for (let zx = minZx; zx <= maxZx; zx++) {
+      const zk = `${zx}_${zy}`;
+      const screenX = centerScreenX + (zx * 8 - camX) * tileSize;
+      const screenY = centerScreenY + (zy * 8 - camY) * tileSize;
+      const screenW = 8 * tileSize;
+      const screenH = 8 * tileSize;
+
+      const isKnown = knownZones.has(zk);
+      if (isKnown) {
+        // Known zone: darker / dimmed (fog-of-war memory)
+        ctx.fillStyle = "rgba(0, 0, 0, 0.70)";
+        ctx.fillRect(screenX, screenY, screenW, screenH);
+      } else {
+        // Unknown zone: completely pitch black
+        ctx.fillStyle = "#000000";
+        ctx.fillRect(screenX, screenY, screenW, screenH);
+      }
+    }
+  }
+
+  ctx.restore();
+
+  // 2. Subtle soft perception perimeter ring
+  ctx.save();
+  ctx.strokeStyle = "rgba(255, 215, 0, 0.7)";
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  ctx.arc(creatureScreenX, creatureScreenY, visionRadiusPx, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Badge on screen
+  const badge = `[VISION: ${(target.properties.name || "CREATURE").toUpperCase()} (RANGE: ${viewRange})]`;
+  drawText8x8(badge, 8, CANVAS_HEIGHT - 48, "#ffd700", 1);
+  ctx.restore();
+}
+
+/**
+ * Compact HUD Box with Summary Info and Quick Toggles for Selected Creature
+ */
+function renderCreatureSummaryBox() {
+  if (currentMode !== "MAP" || lastSelectedId <= 0) return;
+  const ent = getEntityById(lastSelectedId);
+  if (!ent || ent.destroyed) return;
+
+  const bx = 8;
+  const by = 38;
+  const bw = 240;
+  const bh = 82;
+
+  drawNESBox(bx, by, bw, bh);
+
+  const nameStr = (ent.properties.name || `Entity #${ent.id}`).slice(0, 18).toUpperCase();
+  drawText8x8(nameStr, bx + 8, by + 8, "#f8b800", 1);
+
+  const speciesStr = (ent.properties.species || "Creature").toUpperCase();
+  const clanStr = (ent.properties.group?.name || "Solitary").slice(0, 10).toUpperCase();
+  drawText8x8(`${speciesStr} | ${clanStr}`, bx + 8, by + 20, "#3cbcfc", 1);
+
+  if (ent.properties.life) {
+    drawNESProgressBar(bx + 8, by + 32, bw - 16, 12, ent.properties.life.energy, ent.properties.life.max || 100, "HP", "#58d854");
+  }
+
+  // Toggles for Follow & Vision
+  const followTxt = isFollowMode ? "FOLLOW:ON" : "FOLLOW:OFF";
+  drawNESButton(bx + 8, by + 50, 108, 24, followTxt, isFollowMode, false);
+  registerClickableRegion(bx + 8, by + 50, 108, 24, () => {
+    isFollowMode = !isFollowMode;
+  });
+
+  const visionTxt = isCreatureVisionMode ? "VISION:ON" : "VISION:OFF";
+  drawNESButton(bx + 124, by + 50, 108, 24, visionTxt, isCreatureVisionMode, false);
+  registerClickableRegion(bx + 124, by + 50, 108, 24, () => {
+    isCreatureVisionMode = !isCreatureVisionMode;
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Main Animation Frame Loop
 // ---------------------------------------------------------------------------
@@ -1361,23 +1905,31 @@ function frame(time) {
   handleCameraKeys(dt);
   activeUiRegions = [];
 
+  // Automatic Camera Tracking / Follow Mode
+  if (isFollowMode && lastSelectedId > 0 && shader) {
+    const target = getEntityById(lastSelectedId);
+    if (target && !target.destroyed) {
+      const curZoom = shader.exports.wasm_get_camera_zoom();
+      shader.exports.wasm_set_camera(target.x, target.y, curZoom);
+    } else {
+      isFollowMode = false;
+    }
+  }
+
   if (shader && world) {
     // 1. Tick Simulation if not paused
     if (!isPaused) {
-      world.clock.tick(dt);
+      const effectiveDt = Math.min(dt, 0.1) * simSpeed;
+      world.clock.tick(effectiveDt);
+      incrementEngineTick();
+      tickEntities(entities, effectiveDt, world);
+      tpsCounter++;
+    }
 
-      simAccumulator += dt;
-      const stepDt = 1.0 / currentTps;
-      const maxSteps = 15;
-      let steps = 0;
-
-      while (simAccumulator >= stepDt && steps < maxSteps) {
-        simAccumulator -= stepDt;
-        steps++;
-        incrementEngineTick();
-        tickEntities(entities, stepDt, world);
-      }
-      if (steps >= maxSteps) simAccumulator = 0;
+    if (time - lastTpsUpdate >= 1000) {
+      measuredTps = Math.round(tpsCounter * (1000 / Math.max(1, time - lastTpsUpdate)));
+      tpsCounter = 0;
+      lastTpsUpdate = time;
     }
 
     // 2. Sync renderable entities into WASM shared memory
@@ -1389,7 +1941,7 @@ function frame(time) {
       world.clock.hour,
       world.clock.minute,
       world.clock.globalLight,
-      world.clock.globalHeat,
+      0.0,
       entities.length
     );
 
@@ -1411,9 +1963,12 @@ function frame(time) {
     ctx.putImageData(imageData, 0, 0);
 
     // 6. Draw Pure In-Engine Canvas UI Overlay using Renderer's 8x8 Font
+    renderCreatureVisionOverlay();
+    renderTerritoryOverlay();
     renderTopHudBar();
     renderBottomToolbar();
     renderHoverTooltip();
+    renderCreatureSummaryBox();
 
     if (currentMode === "INSPECT") renderDossierModal();
     else if (currentMode === "ENTITIES") renderEntitiesModal();

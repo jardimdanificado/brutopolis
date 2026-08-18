@@ -30,18 +30,20 @@ static int s_target_tps = 60;
 // Initialization & Map Generation
 // ---------------------------------------------------------------------------
 
-__attribute__((export_name("wasm_init")))
-void wasm_init(uint32_t preset_id) {
+__attribute__((export_name("wasm_init_with_seed")))
+void wasm_init_with_seed(uint32_t preset_id, uint32_t seed) {
     renderer_init();
 
-    int cx = 256, cy = 256;
+    MapGenConfig cfg = MAP_PRESET_ARCHIPELAGO;
     if (preset_id == 1) {
-        world_gen_generate(s_map, &MAP_PRESET_CONTINENT, &cx, &cy);
+        cfg = MAP_PRESET_CONTINENT;
     } else if (preset_id == 2) {
-        world_gen_generate(s_map, &MAP_PRESET_HIGHLANDS, &cx, &cy);
-    } else {
-        world_gen_generate(s_map, &MAP_PRESET_ARCHIPELAGO, &cx, &cy);
+        cfg = MAP_PRESET_HIGHLANDS;
     }
+    cfg.seed = seed > 0 ? seed : 1337;
+
+    int cx = 256, cy = 256;
+    world_gen_generate(s_map, &cfg, &cx, &cy);
 
     // Clear render entities & items
     for (int i = 0; i < MAX_RENDER_ENTITIES; i++) s_entities[i].active = 0;
@@ -52,6 +54,11 @@ void wasm_init(uint32_t preset_id) {
     s_zoom = 1.0f;
     s_selected_id = -1;
     s_initialized = true;
+}
+
+__attribute__((export_name("wasm_init")))
+void wasm_init(uint32_t preset_id) {
+    wasm_init_with_seed(preset_id, 0);
 }
 
 // ---------------------------------------------------------------------------

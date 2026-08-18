@@ -236,16 +236,99 @@ export function explodeEntityOnDeath(entity, entitiesArray, world) {
     }
   }
 
-  // Record indexed world event for death with exact position
-  recordWorldEvent({
-    type: "DEATH",
-    primaryEntityId: entity.id,
-    location: { x: ex, y: ey },
-    description: `${entityName} morreu por exaustão de energia vital na posição [X: ${ex}, Y: ${ey}]!`,
-    tick: currentTick,
-    timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
-    metadata: { name: entityName, species }
-  });
+  // Check for severe physical wounds and amputations
+  const severelyDamaged = Object.values(entity.properties).some(
+    p => p && typeof p.condition === "number" && typeof p.maxCondition === "number" && (p.condition / p.maxCondition) <= 0.35
+  );
+  const hasAmputations = Object.keys(entity.properties).some(k => k.startsWith("amputated_"));
+
+  // Check if attacked within the last 600 ticks (~60-120 seconds of simulation)
+  const isRecentAttack = entity._lastAttacker && (currentTick - (entity._lastAttacker.tick || 0)) <= 600;
+
+  if (isRecentAttack) {
+    const killerId = entity._lastAttacker.id;
+    const killerName = entity._lastAttacker.name || `Criatura #${killerId}`;
+    let killDesc = "";
+
+    if (severelyDamaged || hasAmputations) {
+      killDesc = `${killerName} matou ${entityName} em decorrência de ferimentos graves e hemorragia na posição [X: ${ex}, Y: ${ey}]!`;
+    } else {
+      killDesc = `${killerName} assassinou ${entityName} em combate na posição [X: ${ex}, Y: ${ey}]!`;
+    }
+
+    recordWorldEvent({
+      type: "KILL",
+      primaryEntityId: killerId,
+      secondaryEntityId: entity.id,
+      location: { x: ex, y: ey },
+      description: killDesc,
+      tick: currentTick,
+      timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
+      metadata: { killerId, killerName, victimName: entityName, species, reason: severelyDamaged || hasAmputations ? "wounds" : "combat" }
+    });
+
+    // Notify killer's brain long term memory and victim's clan/friends
+    if (entitiesArray) {
+      const killerEnt = entitiesArray.find(e => e.id === killerId && !e.destroyed);
+      const timeStr = world?.clock ? `Dia ${world.clock.day} às ${String(world.clock.hour).padStart(2,"0")}:${String(world.clock.minute).padStart(2,"0")}` : `Tick ${currentTick}`;
+
+      if (killerEnt && killerEnt.properties.brain) {
+        if (!killerEnt.properties.brain.longTermMemory) killerEnt.properties.brain.longTermMemory = [];
+        killerEnt.properties.brain.longTermMemory.push({
+          id: currentTick,
+          tick: currentTick,
+          type: "KILL",
+          killerName,
+          victimName: entityName,
+          location: { x: ex, y: ey },
+          desc: `Assassinei ${entityName} em combate na posição [${ex},${ey}] no ${timeStr}`,
+          emotion: killerEnt.properties.violent ? 50 : -35
+        });
+      }
+
+      // Clan and friends of victim remember the tragedy and set hatred for killer
+      for (const friend of entitiesArray) {
+        if (friend.destroyed || !friend.properties.brain) continue;
+        const isClan = entity.properties.group && friend.properties.group === entity.properties.group;
+        const isFriend = (friend.properties.brain.affinities?.[entity.id] || 0) >= 30;
+
+        if (isClan || isFriend) {
+          if (!friend.properties.brain.affinities) friend.properties.brain.affinities = {};
+          friend.properties.brain.affinities[killerId] = -100;
+
+          if (!friend.properties.brain.longTermMemory) friend.properties.brain.longTermMemory = [];
+          friend.properties.brain.longTermMemory.push({
+            id: currentTick,
+            tick: currentTick,
+            type: "KILL_WITNESS",
+            killerName,
+            victimName: entityName,
+            location: { x: ex, y: ey },
+            desc: `${killerName} assassinou brutalmente ${entityName} em [${ex},${ey}] no ${timeStr}`,
+            emotion: -80
+          });
+        }
+      }
+    }
+  } else {
+    // Natural / Exhaustion / Untended Wound Death
+    let deathDesc = "";
+    if (severelyDamaged || hasAmputations) {
+      deathDesc = `${entityName} sucumbiu e morreu em decorrência de ferimentos graves e hemorragia na posição [X: ${ex}, Y: ${ey}]!`;
+    } else {
+      deathDesc = `${entityName} morreu por exaustão de energia vital e inanição na posição [X: ${ex}, Y: ${ey}]!`;
+    }
+
+    recordWorldEvent({
+      type: "DEATH",
+      primaryEntityId: entity.id,
+      location: { x: ex, y: ey },
+      description: deathDesc,
+      tick: currentTick,
+      timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
+      metadata: { name: entityName, species, reason: severelyDamaged || hasAmputations ? "wounds" : "starvation" }
+    });
+  }
 }
 
 /**
@@ -319,6 +402,37 @@ function getSkinBytes(skinStr) {
   return cached;
 }
 
+export function resolveWallSkin(x, y, wallCoords) {
+  const hasN = wallCoords.has(`${x},${y - 1}`);
+  const hasS = wallCoords.has(`${x},${y + 1}`);
+  const hasE = wallCoords.has(`${x + 1},${y}`);
+  const hasW = wallCoords.has(`${x - 1},${y}`);
+
+  // 4 directions (crossroads)
+  if (hasN && hasE && hasS && hasW) return "Wall_NESW.png";
+
+  // 3 directions (T-junctions)
+  if (hasN && hasE && hasS) return "Wall_NES.png";
+  if (hasN && hasS && hasW) return "Wall_NSW.png";
+  if (hasN && hasE && hasW) return "Wall_NEW.png";
+  if (hasE && hasS && hasW) return "Wall_ESW.png";
+
+  // 2 directions (bends & straights)
+  if (hasN && hasS) return "Wall_NS.png";
+  if (hasE && hasW) return "Wall_EW.png";
+  if (hasN && hasE) return "Wall_NE.png";
+  if (hasN && hasW) return "Wall_NW.png";
+  if (hasE && hasS) return "Wall_ES.png";
+  if (hasS && hasW) return "Wall_SW.png";
+
+  // 1 direction (end-caps)
+  if (hasN || hasS) return "Wall_NS.png";
+  if (hasE || hasW) return "Wall_EW.png";
+
+  // 0 directions (isolated wall)
+  return "Wall_NESW.png";
+}
+
 /**
  * Directly syncs renderable entities into WASM shared memory
  */
@@ -329,6 +443,15 @@ export function syncRenderToWasm(entities, wasmMemory, wasmExports) {
   const memBuf = wasmMemory.buffer;
   const view = new DataView(memBuf);
   const u8 = new Uint8Array(memBuf);
+
+  // Pre-calculate wall coordinates for dynamic autotiling
+  const wallCoords = new Set();
+  for (let i = 0; i < entities.length; i++) {
+    const e = entities[i];
+    if (!e.destroyed && (e.properties?.structure || e.properties?.render?.skin?.startsWith("Wall_") || e.properties?.name?.includes("Muralha") || e.properties?.name?.includes("Wall"))) {
+      wallCoords.add(`${e.x},${e.y}`);
+    }
+  }
 
   const STRUCT_SIZE = 108;
   let renderIdx = 0;
@@ -364,7 +487,12 @@ export function syncRenderToWasm(entities, wasmMemory, wasmExports) {
     view.setInt32(offset + 36, e.emote !== undefined ? e.emote : -1, true);
     view.setInt32(offset + 40, e.combatFlash > 0 ? 1 : 0, true);
 
-    const skinStr = r.skin || "Human_Knight_M.png";
+    let skinStr = r.skin || "Human_Knight_M.png";
+    if (e.properties.structure || skinStr.startsWith("Wall_") || e.properties.name?.includes("Muralha") || e.properties.name?.includes("Wall")) {
+      skinStr = resolveWallSkin(e.x, e.y, wallCoords);
+      r.skin = skinStr;
+    }
+
     const skinBytes = getSkinBytes(skinStr);
     const skinOffset = offset + 44;
     const copyLen = Math.min(63, skinBytes.length);
