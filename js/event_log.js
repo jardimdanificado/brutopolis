@@ -20,6 +20,7 @@ export const OP_SHOVE = 14;
 export const OP_HUMILIATE = 15;
 export const OP_PROPOSAL_ACCEPTED = 16;
 export const OP_PROPOSAL_REJECTED = 17;
+export const OP_LIE = 18;
 
 export const OPCODE_TO_TYPE = {
   [OP_BIRTH]: "BIRTH",
@@ -38,7 +39,8 @@ export const OPCODE_TO_TYPE = {
   [OP_SHOVE]: "ATTACK",
   [OP_HUMILIATE]: "DIALOGUE",
   [OP_PROPOSAL_ACCEPTED]: "RELATION",
-  [OP_PROPOSAL_REJECTED]: "RELATION"
+  [OP_PROPOSAL_REJECTED]: "RELATION",
+  [OP_LIE]: "LIE"
 };
 
 export const TYPE_TO_OPCODE = {
@@ -49,7 +51,8 @@ export const TYPE_TO_OPCODE = {
   "FEED": OP_FEED,
   "SPROUT": OP_SPROUT,
   "RELATION": OP_RELATION,
-  "DIALOGUE": OP_DIALOGUE
+  "DIALOGUE": OP_DIALOGUE,
+  "LIE": OP_LIE
 };
 
 let nextEventId = 1;
@@ -57,6 +60,7 @@ export const allEvents = [];
 export const eventsById = new Map();
 export const eventsByEntity = new Map();
 export const eventsByType = new Map();
+export const eventsByCitedEvent = new Map();
 
 /**
  * Formats a human-readable event description dynamically from its bytecode / opcode payload
@@ -69,6 +73,23 @@ export function formatEventDescription(ev) {
   const locStr = ev.location ? ` [X: ${ev.location.x}, Y: ${ev.location.y}]` : "";
 
   switch (ev.opcode) {
+    case OP_LIE: {
+      if (ev.metadata?.narrative) return `${ev.metadata.narrative}${locStr}`;
+      const lieType = ev.metadata?.lieType;
+      const act = ev.metadata?.actionDesc || "committed a grave deed";
+      if (lieType === "FRAME_JOB") {
+        return `${pName} fabricated a lie framing ${sName} for ${act}!${locStr}`;
+      } else if (lieType === "FABRICATED_MURDER") {
+        return `${pName} falsely accused ${sName} of murder!${locStr}`;
+      } else if (lieType === "FABRICATED_DEATH") {
+        return `${pName} spread a false rumor claiming that ${sName} had died!${locStr}`;
+      } else if (lieType === "FABRICATED_BIRTH") {
+        return `${pName} spread a rumor that a secret child was born to ${sName}!${locStr}`;
+      } else if (lieType === "FABRICATED_ATTACK") {
+        return `${pName} falsely claimed that ${sName} attacked them in secret!${locStr}`;
+      }
+      return `${pName} told a fabricated lie about ${sName}!${locStr}`;
+    }
     case OP_HUG:
       return ev.metadata?.rejected
         ? `${pName} attempted to hug ${sName}, but was pushed away and rejected!${locStr}`
@@ -105,6 +126,10 @@ export function formatEventDescription(ev) {
       const hitPart = ev.metadata?.hitPartName ? ` hitting ${ev.metadata.hitPartName}` : "";
       return `${pName} attacked ${sName}${countStr}${hitPart}${dmgStr}!${locStr}`;
     }
+    case OP_DIALOGUE: {
+      if (ev.metadata?.text) return `${ev.metadata.text}${locStr}`;
+      return `${pName} conversed with ${sName}.${locStr}`;
+    }
     default:
       return ev.metadata?.text || `${pName} participated in ${ev.type} event.${locStr}`;
   }
@@ -119,6 +144,21 @@ export function resetWorldEvents() {
   eventsById.clear();
   eventsByEntity.clear();
   eventsByType.clear();
+  eventsByCitedEvent.clear();
+}
+
+/**
+ * Retrieves all events that cite, discuss, or stem from a specific event ID
+ */
+export function getCitationsForEvent(eventId, limit = 50) {
+  if (!eventId) return [];
+  const ids = eventsByCitedEvent.get(eventId) || [];
+  const res = [];
+  for (let i = ids.length - 1; i >= 0 && res.length < limit; i--) {
+    const ev = eventsById.get(ids[i]);
+    if (ev) res.push(ev);
+  }
+  return res;
 }
 
 /**
@@ -212,6 +252,15 @@ export function recordWorldEvent({
     eventsByType.set(resolvedType, []);
   }
   eventsByType.get(resolvedType).push(event.id);
+
+  // 4. Index by Cited / Referenced Event ID
+  const citedId = metadata?.referencedEventId || metadata?.gossipedEventId || metadata?.realEventId || metadata?.citedEventId;
+  if (citedId !== null && citedId !== undefined) {
+    if (!eventsByCitedEvent.has(citedId)) {
+      eventsByCitedEvent.set(citedId, []);
+    }
+    eventsByCitedEvent.get(citedId).push(event.id);
+  }
 
   return event;
 }

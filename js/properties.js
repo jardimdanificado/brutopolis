@@ -1,6 +1,8 @@
 import { createEntity, getEntityById, currentTick } from "./engine.js";
 import {
   recordWorldEvent,
+  allEvents,
+  getEventById,
   OP_BIRTH,
   OP_DEATH,
   OP_ATTACK,
@@ -17,7 +19,8 @@ import {
   OP_SHOVE,
   OP_HUMILIATE,
   OP_PROPOSAL_ACCEPTED,
-  OP_PROPOSAL_REJECTED
+  OP_PROPOSAL_REJECTED,
+  OP_LIE
 } from "./event_log.js";
 import { vocabulario } from "./vocabulario.js";
 
@@ -301,6 +304,17 @@ export function applyRandomSexualOrientation(ent) {
   const orient = rollRandomSexualOrientation();
   if (orient === "bisexual") ent.properties.bisexual = createBisexualProp();
   else if (orient === "homosexual") ent.properties.homosexual = createHomosexualProp();
+}
+
+/**
+ * Liar Trait (Dishonesty, Deception & Fabricated Rumors)
+ */
+export function createLiarProp(dishonesty = 0.85) {
+  return {
+    dishonesty,
+    lieCount: 0,
+    liesSpread: []
+  };
 }
 
 /**
@@ -1939,27 +1953,236 @@ export function gossipBetweenCreatures(speaker, listener, world, entities) {
     }
   }
 
-  // 4. Share Significant Long-Term Memories (Rich Descriptive Gossip)
-  if (spkBrain.longTermMemory.length > 0 && Math.random() < 0.35) {
-    const mem = spkBrain.longTermMemory[Math.floor(Math.random() * spkBrain.longTermMemory.length)];
-    const gossipDesc = mem.desc || mem.description || `${mem.type} event`;
-    lisBrain.addShortTerm({
-      type: "GOSSIP",
-      desc: `Heard from ${speaker.properties.name}: "${gossipDesc}"`,
-      location: { x: speaker.x, y: speaker.y }
-    });
+  // 4. Deception, Lies, and Truthful Memory Sharing
+  const isLiar = !!speaker.properties.liar;
+  const lieChance = isLiar ? 0.50 : 0.015;
+  const wantsToLie = Math.random() < lieChance;
 
-    recordWorldEvent({
-      opcode: OP_DIALOGUE,
+  if (wantsToLie) {
+    if (!speaker.properties.liar) {
+      speaker.properties.liar = createLiarProp(0.85);
+    }
+    createAndTransmitLie(speaker, listener, world, entities);
+  } else if (spkBrain.longTermMemory.length > 0 && Math.random() < 0.40) {
+    transmitTruthfulGossip(speaker, listener, world, entities);
+  }
+
+  // 5. Bystander / Eavesdropping Perception (Nearby witnesses observe interaction)
+  if (entities) {
+    for (const witness of entities) {
+      if (witness === speaker || witness === listener || witness.destroyed || !witness.properties?.brain) continue;
+      const wdist = Math.abs(witness.x - speaker.x) + Math.abs(witness.y - speaker.y);
+      if (wdist <= 3 && Math.random() < 0.35) {
+        witness.properties.brain.addShortTerm({
+          type: "OBSERVED_DIALOGUE",
+          desc: `Saw ${speaker.properties.name} and ${listener.properties.name} exchanging whispers`,
+          location: { x: speaker.x, y: speaker.y }
+        });
+      }
+    }
+  }
+}
+
+export function createAndTransmitLie(speaker, listener, world, entities) {
+  const spkBrain = speaker.properties.brain;
+  const lisBrain = listener.properties.brain;
+  if (!spkBrain || !lisBrain) return;
+
+  if (!speaker.properties.liar) {
+    speaker.properties.liar = createLiarProp(0.85);
+  }
+
+  // Check if speaker already knows a lie in memory to re-spread
+  const knownLieMem = spkBrain.longTermMemory.find(m => m && m.isLie && m.lieEventId) ||
+                      spkBrain.shortTermMemory.find(m => m && m.isLie && m.lieEventId);
+
+  let lieEvent = null;
+  let accusedTarget = null;
+  let narrative = "";
+  let realEventId = null;
+  let lieType = "FRAME_JOB";
+
+  if (knownLieMem && Math.random() < 0.45) {
+    const existingEv = getEventById(knownLieMem.lieEventId);
+    if (existingEv) {
+      lieEvent = existingEv;
+      realEventId = existingEv.metadata?.realEventId || null;
+      lieType = existingEv.metadata?.lieType || "RUMOR";
+      accusedTarget = existingEv.secondaryEntityId ? entities?.find(e => e.id === existingEv.secondaryEntityId) : null;
+      narrative = `${speaker.properties.name} repeated the rumor to ${listener.properties.name}: "${existingEv.description}"`;
+    }
+  }
+
+  if (!lieEvent) {
+    const candidates = entities ? entities.filter(e => e !== speaker && e !== listener && !e.destroyed && e.properties?.name) : [];
+    accusedTarget = candidates.length > 0 ? candidates[Math.floor(Math.random() * candidates.length)] : null;
+    const targetName = accusedTarget?.properties?.name || "a mystery traveler";
+
+    // Check for a real historical event to twist / frame
+    const recentRealEvents = allEvents.slice(-40).filter(e => e.opcode === OP_ATTACK || e.opcode === OP_DEATH || e.opcode === OP_AMPUTATION || e.opcode === OP_INSULT);
+    const realEv = recentRealEvents.length > 0 ? recentRealEvents[Math.floor(Math.random() * recentRealEvents.length)] : null;
+
+    if (realEv && Math.random() < 0.55) {
+      // Mode A: Frame Job (Twist real event)
+      lieType = "FRAME_JOB";
+      realEventId = realEv.id;
+      narrative = `${speaker.properties.name} falsely accused ${targetName} of being the culprit in event #${realEv.id} (${realEv.description})!`;
+    } else {
+      // Mode B: Pure Fabrication
+      const rollType = Math.random();
+      if (rollType < 0.28) {
+        lieType = "FABRICATED_MURDER";
+        narrative = `${speaker.properties.name} falsely claimed that ${targetName} murdered an innocent in cold blood!`;
+      } else if (rollType < 0.55) {
+        lieType = "FABRICATED_DEATH";
+        narrative = `${speaker.properties.name} spread a fake rumor that ${targetName} was slain in the wilderness!`;
+      } else if (rollType < 0.78) {
+        lieType = "FABRICATED_BIRTH";
+        narrative = `${speaker.properties.name} gossiped that ${targetName} had a secret illegitimate child!`;
+      } else {
+        lieType = "FABRICATED_ATTACK";
+        narrative = `${speaker.properties.name} claimed that ${targetName} secretly betrayed the clan!`;
+      }
+    }
+
+    lieEvent = recordWorldEvent({
+      opcode: OP_LIE,
       primaryEntityId: speaker.id,
-      secondaryEntityId: listener.id,
+      secondaryEntityId: accusedTarget?.id || null,
       location: { x: speaker.x, y: speaker.y },
-      description: `${speaker.properties.name} spoke with ${listener.properties.name}: "Did you hear that ${gossipDesc}?"`,
       tick: currentTick,
       timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
-      metadata: { primaryName: speaker.properties.name, secondaryName: listener.properties.name, text: `${speaker.properties.name} spoke with ${listener.properties.name}: "Did you hear that ${gossipDesc}?"` }
+      metadata: {
+        primaryName: speaker.properties.name,
+        secondaryName: targetName,
+        lieType,
+        realEventId,
+        citedEventId: realEventId,
+        narrative,
+        believedBy: [],
+        disbelievedBy: []
+      }
     });
   }
+
+  // Calculate Belief vs Skepticism:
+  const lisAffToSpk = lisBrain.affinities[speaker.id] || 0;
+  const lisAffToTarget = accusedTarget ? (lisBrain.affinities[accusedTarget.id] || 0) : 0;
+
+  const baseTrust = 0.50;
+  const trustMod = (lisAffToSpk / 100) * 0.35;
+  let confirmationMod = 0;
+  if (accusedTarget) {
+    if (lisAffToTarget < 0) {
+      confirmationMod = (Math.abs(lisAffToTarget) / 100) * 0.30;
+    } else if (lisAffToTarget > 0) {
+      confirmationMod = -(lisAffToTarget / 100) * 0.40;
+    }
+  }
+
+  const beliefProb = Math.max(0.08, Math.min(0.92, baseTrust + trustMod + confirmationMod));
+  const didBelieve = Math.random() < beliefProb;
+
+  if (didBelieve) {
+    // Believed!
+    lisBrain.addShortTerm({
+      type: "RUMOR",
+      isLie: true,
+      lieEventId: lieEvent.id,
+      desc: `Believed rumor from ${speaker.properties.name}: "${narrative}"`,
+      location: { x: speaker.x, y: speaker.y }
+    });
+    if (Math.random() < 0.35) {
+      lisBrain.addLongTerm({
+        type: "RUMOR",
+        isLie: true,
+        lieEventId: lieEvent.id,
+        desc: `Recalls rumor from ${speaker.properties.name}: "${narrative}"`
+      });
+    }
+
+    if (accusedTarget) {
+      lisBrain.affinities[accusedTarget.id] = Math.max(-100, lisAffToTarget - 25);
+    }
+    lisBrain.affinities[speaker.id] = Math.min(100, lisAffToSpk + 4);
+    spkBrain.mood = Math.min(100, spkBrain.mood + 10);
+    if (speaker.properties.liar) speaker.properties.liar.lieCount = (speaker.properties.liar.lieCount || 0) + 1;
+
+    speaker.emote = 9; // Smug
+    listener.emote = 10; // Shocked/Upset
+
+    if (lieEvent.metadata && Array.isArray(lieEvent.metadata.believedBy)) {
+      if (!lieEvent.metadata.believedBy.includes(listener.id)) lieEvent.metadata.believedBy.push(listener.id);
+    }
+  } else {
+    // Disbelieved (Caught in a lie!)
+    lisBrain.addShortTerm({
+      type: "DISHONESTY",
+      desc: `Caught ${speaker.properties.name} telling a false rumor about ${accusedTarget?.properties?.name || 'someone'}`,
+      location: { x: speaker.x, y: speaker.y }
+    });
+    lisBrain.addLongTerm({
+      type: "DISHONESTY",
+      desc: `Knows ${speaker.properties.name} is a dishonest liar who spreads rumors`
+    });
+
+    lisBrain.affinities[speaker.id] = Math.max(-100, lisAffToSpk - 30);
+    lisBrain.mood = Math.max(-100, lisBrain.mood - 15);
+    spkBrain.mood = Math.max(-100, spkBrain.mood - 20);
+
+    speaker.emote = 5; // Sad/Caught
+    listener.emote = 0; // Angry
+
+    if (lieEvent.metadata && Array.isArray(lieEvent.metadata.disbelievedBy)) {
+      if (!lieEvent.metadata.disbelievedBy.includes(listener.id)) lieEvent.metadata.disbelievedBy.push(listener.id);
+    }
+  }
+}
+
+export function transmitTruthfulGossip(speaker, listener, world, entities) {
+  const spkBrain = speaker.properties.brain;
+  const lisBrain = listener.properties.brain;
+  if (!spkBrain || !lisBrain) return;
+
+  if (spkBrain.longTermMemory.length === 0) return;
+  const mem = spkBrain.longTermMemory[Math.floor(Math.random() * spkBrain.longTermMemory.length)];
+  const gossipDesc = mem.desc || mem.description || `${mem.type} event`;
+
+  // Third-party affinity influence
+  if (mem.targetId) {
+    const curTargetAff = lisBrain.affinities[mem.targetId] || 0;
+    if (mem.type === "ATTACK" || mem.type === "AMPUTATION" || mem.type === "INSULT" || mem.type === "TRAUMA") {
+      lisBrain.affinities[mem.targetId] = Math.max(-100, curTargetAff - 15);
+    } else if (mem.type === "BOND" || mem.type === "MATING" || mem.type === "BIRTH" || mem.type === "PRAISE") {
+      lisBrain.affinities[mem.targetId] = Math.min(100, curTargetAff + 12);
+    }
+  }
+
+  lisBrain.addShortTerm({
+    type: "GOSSIP",
+    desc: `Heard from ${speaker.properties.name}: "${gossipDesc}"`,
+    location: { x: speaker.x, y: speaker.y }
+  });
+
+  const citedEventId = mem.eventId || mem.lieEventId || null;
+
+  recordWorldEvent({
+    opcode: OP_DIALOGUE,
+    primaryEntityId: speaker.id,
+    secondaryEntityId: listener.id,
+    location: { x: speaker.x, y: speaker.y },
+    description: `${speaker.properties.name} spoke with ${listener.properties.name}: "Did you hear that ${gossipDesc}?"`,
+    tick: currentTick,
+    timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
+    metadata: {
+      primaryName: speaker.properties.name,
+      secondaryName: listener.properties.name,
+      text: `${speaker.properties.name} spoke with ${listener.properties.name}: "Did you hear that ${gossipDesc}?"`,
+      gossipedEventId: citedEventId,
+      referencedEventId: citedEventId,
+      citedEventId: citedEventId
+    }
+  });
 }
 
 /**

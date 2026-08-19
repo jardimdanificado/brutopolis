@@ -21,6 +21,8 @@ import {
   getEventsForEntity,
   getEventsForGroup,
   getRecentWorldEvents,
+  getEventById,
+  getCitationsForEvent,
   allEvents
 } from "./js/event_log.js";
 import {
@@ -1861,21 +1863,27 @@ function renderGroupsModal() {
   }
 
   const cardW = mw - 24;
-  let cardY = my + 44;
+  const cardH = 88;
+  const cardGap = 6;
+  let cardY = my + 38;
 
-  for (let i = modalScroll; i < Math.min(groups.length, modalScroll + 3); i++) {
+  const visibleClanCount = 4;
+  const maxScroll = Math.max(0, groups.length - visibleClanCount);
+  modalScroll = Math.max(0, Math.min(maxScroll, modalScroll));
+
+  for (let i = modalScroll; i < Math.min(groups.length, modalScroll + visibleClanCount); i++) {
     const g = groups[i];
     const livingMembers = g.members.filter(mid => entities.some(e => e.id === mid && !e.destroyed)).length;
     const leaderEnt = entities.find(e => e.id === g.members[0] && !e.destroyed);
     const stockpile = getGroupStockpile(g, entities);
 
-    drawNESBox(mx + 12, cardY, cardW, 102);
+    drawNESBox(mx + 12, cardY, cardW, cardH);
 
-    drawText8x8(`* ${(g.name || "CLAN").toUpperCase()}`, mx + 24, cardY + 14, "#f8b800", 1);
-    drawText8x8(`${livingMembers}/${g.members.length} ALIVE`, mx + cardW - 325, cardY + 14, "#58d854", 1);
+    drawText8x8(`* ${(g.name || "CLAN").toUpperCase()}`, mx + 24, cardY + 10, "#f8b800", 1);
+    drawText8x8(`${livingMembers}/${g.members.length} ALIVE`, mx + cardW - 325, cardY + 10, "#58d854", 1);
 
-    drawText8x8(`LEADER: ${leaderEnt ? leaderEnt.properties.name.toUpperCase() : `MEMBER #${g.members[0]}`}`, mx + 24, cardY + 32, "#ffffff", 1);
-    drawText8x8(`TERRITORY: ${g.claimedZones?.join(", ") || "NONE"} (${(g.claimedZones?.length || 0) * 64} TILES)`, mx + 24, cardY + 48, "#bcbcbc", 1);
+    drawText8x8(`LEADER: ${leaderEnt ? leaderEnt.properties.name.toUpperCase() : `MEMBER #${g.members[0]}`}`, mx + 24, cardY + 26, "#ffffff", 1);
+    drawText8x8(`TERRITORY: ${g.claimedZones?.join(", ") || "NONE"} (${(g.claimedZones?.length || 0) * 64} TILES)`, mx + 24, cardY + 40, "#bcbcbc", 1);
 
     // Stockpile Summary
     const stockEntries = Object.entries(stockpile.items);
@@ -1888,13 +1896,13 @@ function renderGroupsModal() {
       stockStr = stockStr.slice(0, maxStockLen - 3) + "...";
     }
 
-    drawText8x8(`STOCKPILE (${stockpile.totalCount} ITEMS): ${stockStr.toUpperCase()}`, mx + 24, cardY + 66, "#ffd700", 1);
-    drawText8x8(`LOCATION: [GROUND: ${stockpile.breakdown.ground} | MEMBERS: ${stockpile.breakdown.members} | STORAGE: ${stockpile.breakdown.storage}]`, mx + 24, cardY + 82, "#3cbcfc", 1);
+    drawText8x8(`STOCKPILE (${stockpile.totalCount} ITEMS): ${stockStr.toUpperCase()}`, mx + 24, cardY + 54, "#ffd700", 1);
+    drawText8x8(`LOCATION: [GROUND: ${stockpile.breakdown.ground} | MEMBERS: ${stockpile.breakdown.members} | STORAGE: ${stockpile.breakdown.storage}]`, mx + 24, cardY + 68, "#3cbcfc", 1);
 
     // Full Details Button
     const curG = g;
-    drawNESButton(mx + cardW - 255, cardY + 30, 80, 24, "DETAILS", false, false);
-    registerClickableRegion(mx + cardW - 255, cardY + 30, 80, 24, () => {
+    drawNESButton(mx + cardW - 255, cardY + 24, 80, 22, "DETAILS", false, false);
+    registerClickableRegion(mx + cardW - 255, cardY + 24, 80, 22, () => {
       inspectingGroup = curG;
       groupDetailTab = "OVERVIEW";
       modalScroll = 0;
@@ -1902,8 +1910,8 @@ function renderGroupsModal() {
 
     // View Claimed Territory Button
     const isViewing = visualizedGroupId === g.id;
-    drawNESButton(mx + cardW - 170, cardY + 30, 80, 24, isViewing ? "ZONE*" : "ZONE", isViewing, false);
-    registerClickableRegion(mx + cardW - 170, cardY + 30, 80, 24, () => {
+    drawNESButton(mx + cardW - 170, cardY + 24, 80, 22, isViewing ? "ZONE*" : "ZONE", isViewing, false);
+    registerClickableRegion(mx + cardW - 170, cardY + 24, 80, 22, () => {
       visualizedGroupId = g.id;
       let sumX = 0, sumY = 0, count = 0;
       for (const zk of g.claimedZones || []) {
@@ -1921,8 +1929,8 @@ function renderGroupsModal() {
     });
 
     // Focus Leader Button
-    drawNESButton(mx + cardW - 85, cardY + 30, 75, 24, "LEADER", false, false);
-    registerClickableRegion(mx + cardW - 85, cardY + 30, 75, 24, () => {
+    drawNESButton(mx + cardW - 85, cardY + 24, 75, 22, "LEADER", false, false);
+    registerClickableRegion(mx + cardW - 85, cardY + 24, 75, 22, () => {
       if (leaderEnt && shader) {
         lastSelectedId = leaderEnt.id;
         shader.exports.wasm_select_entity(leaderEnt.id);
@@ -1931,7 +1939,7 @@ function renderGroupsModal() {
       }
     });
 
-    cardY += 108;
+    cardY += cardH + cardGap;
   }
 
   ctx.restore();
@@ -2315,9 +2323,14 @@ function renderLogsModal() {
 }
 
 function renderLogDetailView(mx, my, mw, mh, ev) {
-  const typeColor = ev.type === "KILL" ? "#ff2040" : ev.type === "DEATH" ? "#9c5050" : ev.type === "ATTACK" ? "#f8b800" : ev.type === "AMPUTATION" ? "#e40058" : ev.type === "RELATION" ? "#d3869b" : ev.type === "DIALOGUE" ? "#3cbcfc" : ev.type === "BIRTH" ? "#f8b800" : ev.type === "SPROUT" ? "#58d854" : "#ffffff";
+  const typeColor = ev.type === "KILL" ? "#ff2040" : ev.type === "DEATH" ? "#9c5050" : ev.type === "ATTACK" ? "#f8b800" : ev.type === "AMPUTATION" ? "#e40058" : ev.type === "RELATION" ? "#d3869b" : ev.type === "DIALOGUE" ? "#3cbcfc" : ev.type === "BIRTH" ? "#f8b800" : ev.type === "LIE" ? "#fa5078" : ev.type === "SPROUT" ? "#58d854" : "#ffffff";
 
   drawText8x8(`EVENT DETAIL (#${ev.id})`, mx + 16, my + 14, "#f8b800", 1);
+
+  const isLie = ev.opcode === 18 || ev.type === "LIE" || !!ev.metadata?.isLie;
+  if (isLie) {
+    drawText8x8("[FABRICATED LIE 🤥]", mx + 240, my + 14, "#fa5078", 1);
+  }
 
   // Detail Container Box
   drawNESBox(mx + 14, my + 38, mw - 28, mh - 50);
@@ -2335,37 +2348,85 @@ function renderLogDetailView(mx, my, mw, mh, ev) {
   if (ev.primaryEntityId !== null && ev.primaryEntityId !== undefined) {
     const pEnt = entityRegistry.get(ev.primaryEntityId);
     const pName = (pEnt?.properties?.name || `Entity #${ev.primaryEntityId}`).slice(0, 16);
-    drawNESButton(entButtonX, my + 114, 210, 22, `ACTOR: ${pName.toUpperCase()}`, false, false);
-    registerClickableRegion(entButtonX, my + 114, 210, 22, () => {
+    drawNESButton(entButtonX, my + 114, 200, 22, `ACTOR: ${pName.toUpperCase()}`, false, false);
+    registerClickableRegion(entButtonX, my + 114, 200, 22, () => {
       lastSelectedId = ev.primaryEntityId;
       currentMode = "INSPECT";
       inspectingLogEvent = null;
     });
-    entButtonX += 220;
+    entButtonX += 210;
   }
 
   if (ev.secondaryEntityId !== null && ev.secondaryEntityId !== undefined) {
     const sEnt = entityRegistry.get(ev.secondaryEntityId);
     const sName = (sEnt?.properties?.name || `Entity #${ev.secondaryEntityId}`).slice(0, 16);
-    drawNESButton(entButtonX, my + 114, 210, 22, `TARGET: ${sName.toUpperCase()}`, false, false);
-    registerClickableRegion(entButtonX, my + 114, 210, 22, () => {
+    drawNESButton(entButtonX, my + 114, 200, 22, `TARGET: ${sName.toUpperCase()}`, false, false);
+    registerClickableRegion(entButtonX, my + 114, 200, 22, () => {
       lastSelectedId = ev.secondaryEntityId;
       currentMode = "INSPECT";
       inspectingLogEvent = null;
     });
+    entButtonX += 210;
   }
 
+  // Linked / Cited Event Button
+  const citedId = ev.metadata?.referencedEventId || ev.metadata?.gossipedEventId || ev.metadata?.realEventId || ev.metadata?.citedEventId;
+  if (citedId) {
+    const citedEv = getEventById(citedId);
+    const citedLabel = isLie ? `ORIGINAL TRUTH #${citedId}` : `GOSSIP TOPIC #${citedId}`;
+    drawNESButton(entButtonX, my + 114, 210, 22, citedLabel, false, false);
+    registerClickableRegion(entButtonX, my + 114, 210, 22, () => {
+      if (citedEv) {
+        inspectingLogEvent = citedEv;
+      }
+    });
+  }
+
+  // Citations / Chronicles List
+  const citations = getCitationsForEvent(ev.id, 4);
+  const hasCitations = citations.length > 0;
+  const narrativeBoxH = hasCitations ? mh - 310 : mh - 230;
+
   // Full Unwrapped Narrative Box
-  drawNESBox(mx + 30, my + 145, mw - 60, mh - 230);
-  drawText8x8("FULL NARRATIVE LOG:", mx + 42, my + 160, "#f8b800", 1);
+  drawNESBox(mx + 30, my + 145, mw - 60, narrativeBoxH);
+  drawText8x8("FULL NARRATIVE LOG:", mx + 42, my + 158, "#f8b800", 1);
 
   const maxCharsPerLine = Math.floor((mw - 84) / 8);
   const wrappedLines = wrapText8x8((ev.description || "NO DESCRIPTION RECORDED.").toUpperCase(), maxCharsPerLine);
-  let narrativeY = my + 182;
+  let narrativeY = my + 176;
 
   for (const wline of wrappedLines) {
+    if (narrativeY > my + 145 + narrativeBoxH - 16) break;
     drawText8x8(wline, mx + 42, narrativeY, "#ffffff", 1);
-    narrativeY += 16;
+    narrativeY += 14;
+  }
+
+  // Citations Box
+  if (hasCitations) {
+    const citeBoxY = my + 145 + narrativeBoxH + 10;
+    const citeBoxH = 72;
+    drawNESBox(mx + 30, citeBoxY, mw - 60, citeBoxH);
+    drawText8x8(`CITATIONS & CHRONICLES (${citations.length}):`, mx + 42, citeBoxY + 8, "#f8b800", 1);
+
+    let curCiteY = citeBoxY + 24;
+    for (let i = 0; i < citations.length; i++) {
+      const cev = citations[i];
+      const ts = cev.timestamp ? `D${cev.timestamp.day} ${String(cev.timestamp.hour).padStart(2,"0")}:${String(cev.timestamp.minute).padStart(2,"0")}` : `T${cev.tick}`;
+      const cTypeCol = cev.type === "LIE" ? "#fa5078" : cev.type === "KILL" ? "#ff2040" : cev.type === "DIALOGUE" ? "#3cbcfc" : "#f8b800";
+      drawText8x8(`${ts} [${cev.type}]`, mx + 42, curCiteY + 4, cTypeCol, 1);
+
+      const cdesc = (cev.description || "Event").slice(0, 44).toUpperCase();
+      drawText8x8(cdesc, mx + 175, curCiteY + 4, "#bcbcbc", 1);
+
+      const curCev = cev;
+      drawNESButton(mx + mw - 140, curCiteY, 90, 18, "INSPECT", false, false);
+      registerClickableRegion(mx + mw - 140, curCiteY, 90, 18, () => {
+        inspectingLogEvent = curCev;
+      });
+
+      curCiteY += 22;
+      if (curCiteY > citeBoxY + citeBoxH - 18) break;
+    }
   }
 
   // Action Buttons inside Detail view

@@ -631,8 +631,10 @@ function renderInspectorScreen() {
     if (myEvents.length > 0) {
       lines.push(`\x1b[1;33m📜 EVENT LOG FOR THIS CREATURE (${myEvents.length} events):\x1b[0m`);
       for (const ev of myEvents) {
-        const typeColor = ev.type === "DEATH" ? "\x1b[31m" : ev.type === "ATTACK" ? "\x1b[33m" : ev.type === "AMPUTATION" ? "\x1b[35m" : "\x1b[32m";
-        lines.push(`  ${typeColor}• [${ev.type}]\x1b[0m \x1b[90m[Day ${ev.timestamp.day} ${String(ev.timestamp.hour).padStart(2, "0")}:${String(ev.timestamp.minute).padStart(2, "0")}]\x1b[0m ${ev.description}`);
+        const isLie = ev.type === "LIE" || ev.opcode === 18;
+        const typeColor = ev.type === "DEATH" ? "\x1b[31m" : isLie ? "\x1b[1;35m" : ev.type === "ATTACK" ? "\x1b[33m" : ev.type === "AMPUTATION" ? "\x1b[35m" : "\x1b[32m";
+        const tag = isLie ? "[LIE 🤥]" : `[${ev.type}]`;
+        lines.push(`  ${typeColor}• ${tag}\x1b[0m \x1b[90m[Day ${ev.timestamp.day} ${String(ev.timestamp.hour).padStart(2, "0")}:${String(ev.timestamp.minute).padStart(2, "0")}]\x1b[0m ${ev.description}`);
       }
       lines.push(``);
     }
