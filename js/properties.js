@@ -20,7 +20,15 @@ import {
   OP_HUMILIATE,
   OP_PROPOSAL_ACCEPTED,
   OP_PROPOSAL_REJECTED,
-  OP_LIE
+  OP_LIE,
+  OP_MINE,
+  OP_CHOP,
+  OP_BUILD,
+  OP_PICKUP,
+  OP_DROP,
+  OP_CRAFT,
+  OP_PLANT,
+  OP_HARVEST
 } from "./event_log.js";
 import { vocabulario } from "./vocabulario.js";
 
@@ -232,6 +240,9 @@ export function createMonogamyProp(partnerId = null, autoOrientation = true) {
         if (!ent.properties.homosexual && !ent.properties.bisexual) {
           applyRandomSexualOrientation(ent);
         }
+        if (!ent.properties.skeptic && !ent.properties.gullible) {
+          applyRandomPersonalityPerks(ent);
+        }
         this.autoOrientation = false;
       }
       if (this.proposalCooldown > 0) {
@@ -308,13 +319,43 @@ export function applyRandomSexualOrientation(ent) {
 
 /**
  * Liar Trait (Dishonesty, Deception & Fabricated Rumors)
+ * type: "manipulator" (deliberately deceives) | "believer" (misinformed victim spreading heard lie)
  */
-export function createLiarProp(dishonesty = 0.85) {
+export function createLiarProp(type = "manipulator", dishonesty = 0.85, originalLiarId = null) {
   return {
+    type,
     dishonesty,
     lieCount: 0,
+    originalLiarId,
     liesSpread: []
   };
+}
+
+/**
+ * Skeptic Perk (High resistance to lies and unverified rumors)
+ */
+export function createSkepticProp(doubtBonus = 0.35) {
+  return {
+    type: "skeptic",
+    doubtBonus
+  };
+}
+
+/**
+ * Gullible Perk (High susceptibility to lies and manipulative gossip)
+ */
+export function createGullibleProp(trustBonus = 0.35) {
+  return {
+    type: "gullible",
+    trustBonus
+  };
+}
+
+export function applyRandomPersonalityPerks(ent) {
+  if (!ent || !ent.properties) return;
+  const r = Math.random();
+  if (r < 0.12) ent.properties.skeptic = createSkepticProp();
+  else if (r < 0.24) ent.properties.gullible = createGullibleProp();
 }
 
 /**
@@ -347,7 +388,7 @@ export function createBodyRegenerationProp(rate = 1.0, maxRegenPerTick = 4, ener
 }
 
 /**
- * Stomach with Internal Capacity, Diet Efficiencies, and Excretion
+ * Stomach with Internal Capacity, Diet Efficiencies, Excretion, and Fat Reserves
  */
 export function createStomachProp(capacity = 4, diet = { meat: 1.0, plant: 0.8, fruit: 1.2, organ: 1.1, bone: 0.3 }) {
   return {
@@ -357,7 +398,29 @@ export function createStomachProp(capacity = 4, diet = { meat: 1.0, plant: 0.8, 
     waste: 0,
     wasteThreshold: 4500, // Requires digesting multiple meals before producing feces
     pendingSeeds: [],
+    fatUnits: 0,
+    maxFatUnits: 6,
+    fatSurplus: 0,
     effect(ent, dt, world, entities) {
+      if (ent.properties.life) {
+        // Emergency Fat Reserve Burning:
+        // When energy is critically low (<= 20% max), try to burn 1 fat unit to replenish 50% max energy immediately.
+        // Each unit has a 25% failure chance to mobilize in time.
+        if (ent.properties.life.energy <= ent.properties.life.max * 0.20 && (this.fatUnits || 0) > 0) {
+          const failureChance = 0.25;
+          if (Math.random() >= failureChance) {
+            this.fatUnits--;
+            const restored = ent.properties.life.max * 0.50;
+            ent.properties.life.energy = Math.min(ent.properties.life.max, ent.properties.life.energy + restored);
+            ent.properties.brain?.addShortTerm({
+              type: "FAT_BURN",
+              desc: "Burned body fat reserve to replenish emergency vitality during starvation!",
+              location: { x: ent.x, y: ent.y }
+            });
+          }
+        }
+      }
+
       if (!this.items || this.items.length === 0) return;
 
       for (let i = this.items.length - 1; i >= 0; i--) {
@@ -366,9 +429,21 @@ export function createStomachProp(capacity = 4, diet = { meat: 1.0, plant: 0.8, 
         const energyExtracted = (item.nutrition / item.totalTurns) * efficiency;
 
         if (ent.properties.life) {
+          const maxEnergy = ent.properties.life.max;
+          const curEnergy = ent.properties.life.energy;
+
+          // If creature eats while having plenty of energy (>= 85% max), surplus nutrition creates fat units!
+          if (curEnergy >= maxEnergy * 0.85) {
+            this.fatSurplus = (this.fatSurplus || 0) + energyExtracted * dt;
+            if (this.fatSurplus >= 1500 && (this.fatUnits || 0) < (this.maxFatUnits || 6)) {
+              this.fatSurplus -= 1500;
+              this.fatUnits = (this.fatUnits || 0) + 1;
+            }
+          }
+
           ent.properties.life.energy = Math.min(
-            ent.properties.life.max,
-            ent.properties.life.energy + energyExtracted * dt
+            maxEnergy,
+            curEnergy + energyExtracted * dt
           );
         }
 
@@ -1106,6 +1181,7 @@ export function createGenitaliaProp(type = "penis", isPregnant = false) {
           if (ent.properties.monogamy || father?.properties?.monogamy || babySpecies === "human") {
             baby.properties.monogamy = createMonogamyProp();
             applyRandomSexualOrientation(baby);
+            applyRandomPersonalityPerks(baby);
           }
 
           // Give newborn gentle starter milk/nutrition
@@ -1727,13 +1803,13 @@ export function gossipBetweenCreatures(speaker, listener, world, entities) {
 
   // 2. Physical & Emotional Social Interactions (when adjacent: dist <= 1)
   if (dist <= 1) {
-    // A. Kiss (Beijar)
+    // A. Kiss (Beijar) - gradual bonding
     if (spkAffToLis >= 50 && (spkMono?.partnerId === listener.id || Math.random() < 0.35)) {
       if (lisAffToSpk >= 45 || lisMono?.partnerId === speaker.id) {
-        spkBrain.affinities[listener.id] = Math.min(100, spkAffToLis + 15);
-        lisBrain.affinities[speaker.id] = Math.min(100, lisAffToSpk + 15);
-        spkBrain.mood = Math.min(100, spkBrain.mood + 20);
-        lisBrain.mood = Math.min(100, lisBrain.mood + 20);
+        spkBrain.affinities[listener.id] = Math.min(100, spkAffToLis + 4);
+        lisBrain.affinities[speaker.id] = Math.min(100, lisAffToSpk + 4);
+        spkBrain.mood = Math.min(100, spkBrain.mood + 15);
+        lisBrain.mood = Math.min(100, lisBrain.mood + 15);
         speaker.emote = 12; // Heart
         listener.emote = 12; // Heart
 
@@ -1748,8 +1824,8 @@ export function gossipBetweenCreatures(speaker, listener, world, entities) {
         });
         return;
       } else {
-        spkBrain.affinities[listener.id] = Math.max(-100, spkAffToLis - 8);
-        spkBrain.mood = Math.max(-100, spkBrain.mood - 15);
+        spkBrain.affinities[listener.id] = Math.max(-100, spkAffToLis - 3);
+        spkBrain.mood = Math.max(-100, spkBrain.mood - 8);
         speaker.emote = 5; // Sad
         listener.emote = 10; // Upset
 
@@ -1766,13 +1842,13 @@ export function gossipBetweenCreatures(speaker, listener, world, entities) {
       }
     }
 
-    // B. Hug (Abraçar)
+    // B. Hug (Abraçar) - gradual bonding
     if (spkAffToLis >= 25 && Math.random() < 0.40) {
       if (lisAffToSpk >= 15 && lisBrain.mood > -25) {
-        spkBrain.affinities[listener.id] = Math.min(100, spkAffToLis + 8);
-        lisBrain.affinities[speaker.id] = Math.min(100, lisAffToSpk + 8);
-        spkBrain.mood = Math.min(100, spkBrain.mood + 12);
-        lisBrain.mood = Math.min(100, lisBrain.mood + 12);
+        spkBrain.affinities[listener.id] = Math.min(100, spkAffToLis + 2.5);
+        lisBrain.affinities[speaker.id] = Math.min(100, lisAffToSpk + 2.5);
+        spkBrain.mood = Math.min(100, spkBrain.mood + 8);
+        lisBrain.mood = Math.min(100, lisBrain.mood + 8);
         speaker.emote = 2; // Happy
         listener.emote = 2; // Happy
 
@@ -1787,8 +1863,8 @@ export function gossipBetweenCreatures(speaker, listener, world, entities) {
         });
         return;
       } else {
-        spkBrain.affinities[listener.id] = Math.max(-100, spkAffToLis - 5);
-        spkBrain.mood = Math.max(-100, spkBrain.mood - 10);
+        spkBrain.affinities[listener.id] = Math.max(-100, spkAffToLis - 2);
+        spkBrain.mood = Math.max(-100, spkBrain.mood - 5);
         speaker.emote = 10; // Upset
         listener.emote = 0; // Angry
 
@@ -1808,10 +1884,10 @@ export function gossipBetweenCreatures(speaker, listener, world, entities) {
     // C. Praise (Elogiar)
     if (spkAffToLis >= 10 && Math.random() < 0.35) {
       if (lisAffToSpk > -15) {
-        spkBrain.affinities[listener.id] = Math.min(100, spkAffToLis + 5);
-        lisBrain.affinities[speaker.id] = Math.min(100, lisAffToSpk + 6);
-        spkBrain.mood = Math.min(100, spkBrain.mood + 8);
-        lisBrain.mood = Math.min(100, lisBrain.mood + 10);
+        spkBrain.affinities[listener.id] = Math.min(100, spkAffToLis + 1.5);
+        lisBrain.affinities[speaker.id] = Math.min(100, lisAffToSpk + 2.0);
+        spkBrain.mood = Math.min(100, spkBrain.mood + 5);
+        lisBrain.mood = Math.min(100, lisBrain.mood + 6);
         speaker.emote = 2; // Happy
         listener.emote = 9; // Smug
 
@@ -1830,8 +1906,8 @@ export function gossipBetweenCreatures(speaker, listener, world, entities) {
 
     // D. Spit (Cuspir) - requires mouth and deep contempt
     if (spkAffToLis <= -40 && speaker.properties.mouth && Math.random() < 0.35) {
-      lisBrain.affinities[speaker.id] = Math.max(-100, lisAffToSpk - 20);
-      lisBrain.mood = Math.max(-100, lisBrain.mood - 25);
+      lisBrain.affinities[speaker.id] = Math.max(-100, lisAffToSpk - 6);
+      lisBrain.mood = Math.max(-100, lisBrain.mood - 12);
       speaker.emote = 0; // Angry
       listener.emote = 10; // Upset
 
@@ -1865,8 +1941,8 @@ export function gossipBetweenCreatures(speaker, listener, world, entities) {
         }
       }
 
-      lisBrain.affinities[speaker.id] = Math.max(-100, lisAffToSpk - 15);
-      lisBrain.mood = Math.max(-100, lisBrain.mood - 20);
+      lisBrain.affinities[speaker.id] = Math.max(-100, lisAffToSpk - 4);
+      lisBrain.mood = Math.max(-100, lisBrain.mood - 10);
       speaker.emote = 0; // Angry
       listener.emote = 3; // Hurt
 
@@ -1884,8 +1960,8 @@ export function gossipBetweenCreatures(speaker, listener, world, entities) {
 
     // F. Humiliate / Mock (Humilhar)
     if (spkAffToLis <= -30 && (spkBrain.bravery || 0.5) >= (lisBrain.bravery || 0.5) && Math.random() < 0.30) {
-      lisBrain.mood = Math.max(-100, lisBrain.mood - 35);
-      lisBrain.affinities[speaker.id] = Math.max(-100, lisAffToSpk - 18);
+      lisBrain.mood = Math.max(-100, lisBrain.mood - 15);
+      lisBrain.affinities[speaker.id] = Math.max(-100, lisAffToSpk - 5);
       lisBrain.addLongTerm({ type: "TRAUMA", desc: `Was publicly mocked and humiliated by ${speaker.properties.name}` });
       speaker.emote = 9; // Smug
       listener.emote = 5; // Sad
@@ -1904,8 +1980,8 @@ export function gossipBetweenCreatures(speaker, listener, world, entities) {
 
     // G. Insult (Xingar)
     if (spkAffToLis <= -15 || spkBrain.mood < -30) {
-      lisBrain.affinities[speaker.id] = Math.max(-100, lisAffToSpk - 10);
-      lisBrain.mood = Math.max(-100, lisBrain.mood - 12);
+      lisBrain.affinities[speaker.id] = Math.max(-100, lisAffToSpk - 2.5);
+      lisBrain.mood = Math.max(-100, lisBrain.mood - 6);
       speaker.emote = 0; // Angry
       listener.emote = 10; // Upset
 
@@ -1922,10 +1998,10 @@ export function gossipBetweenCreatures(speaker, listener, world, entities) {
     }
   }
 
-  // Same clan mutual affinity boost (+4 on friendly interaction)
+  // Same clan mutual affinity boost (+1.0 per positive interaction)
   if (speaker.properties.group && listener.properties.group && speaker.properties.group === listener.properties.group) {
-    spkBrain.affinities[listener.id] = Math.min(100, (spkBrain.affinities[listener.id] || 0) + 4);
-    lisBrain.affinities[speaker.id] = Math.min(100, (lisBrain.affinities[speaker.id] || 0) + 4);
+    spkBrain.affinities[listener.id] = Math.min(100, (spkBrain.affinities[listener.id] || 0) + 1.0);
+    lisBrain.affinities[speaker.id] = Math.min(100, (lisBrain.affinities[speaker.id] || 0) + 1.0);
   }
 
   // 3. Group Formation: If both have mutual affinity >= 60 and neither has a group
@@ -1955,12 +2031,13 @@ export function gossipBetweenCreatures(speaker, listener, world, entities) {
 
   // 4. Deception, Lies, and Truthful Memory Sharing
   const isLiar = !!speaker.properties.liar;
-  const lieChance = isLiar ? 0.50 : 0.015;
+  const lieChance = isLiar ? (speaker.properties.liar.type === "manipulator" ? 0.50 : 0.35) : 0.015;
   const wantsToLie = Math.random() < lieChance;
 
   if (wantsToLie) {
-    if (!speaker.properties.liar) {
-      speaker.properties.liar = createLiarProp(0.85);
+    // Only a small chance (20%) of permanently becoming a career liar upon first lie
+    if (!speaker.properties.liar && Math.random() < 0.20) {
+      speaker.properties.liar = createLiarProp("manipulator", 0.85);
     }
     createAndTransmitLie(speaker, listener, world, entities);
   } else if (spkBrain.longTermMemory.length > 0 && Math.random() < 0.40) {
@@ -1988,10 +2065,6 @@ export function createAndTransmitLie(speaker, listener, world, entities) {
   const lisBrain = listener.properties.brain;
   if (!spkBrain || !lisBrain) return;
 
-  if (!speaker.properties.liar) {
-    speaker.properties.liar = createLiarProp(0.85);
-  }
-
   // Check if speaker already knows a lie in memory to re-spread
   const knownLieMem = spkBrain.longTermMemory.find(m => m && m.isLie && m.lieEventId) ||
                       spkBrain.shortTermMemory.find(m => m && m.isLie && m.lieEventId);
@@ -2001,8 +2074,9 @@ export function createAndTransmitLie(speaker, listener, world, entities) {
   let narrative = "";
   let realEventId = null;
   let lieType = "FRAME_JOB";
+  let originalLiarId = speaker.properties.liar?.originalLiarId || (knownLieMem ? knownLieMem.originalLiarId : null);
 
-  if (knownLieMem && Math.random() < 0.45) {
+  if (knownLieMem && Math.random() < 0.50) {
     const existingEv = getEventById(knownLieMem.lieEventId);
     if (existingEv) {
       lieEvent = existingEv;
@@ -2010,6 +2084,7 @@ export function createAndTransmitLie(speaker, listener, world, entities) {
       lieType = existingEv.metadata?.lieType || "RUMOR";
       accusedTarget = existingEv.secondaryEntityId ? entities?.find(e => e.id === existingEv.secondaryEntityId) : null;
       narrative = `${speaker.properties.name} repeated the rumor to ${listener.properties.name}: "${existingEv.description}"`;
+      if (!originalLiarId) originalLiarId = existingEv.primaryEntityId;
     }
   }
 
@@ -2065,22 +2140,107 @@ export function createAndTransmitLie(speaker, listener, world, entities) {
     });
   }
 
+  // Check if someone present knows the true version of this event (Witness / Truth Knower)
+  let truthKnower = null;
+  if (realEventId && entities) {
+    for (const ent of entities) {
+      if (ent.destroyed || !ent.properties?.brain) continue;
+      const distToConversation = Math.abs(ent.x - speaker.x) + Math.abs(ent.y - speaker.y);
+      if (distToConversation <= 3) {
+        const knowsTruth = ent.properties.brain.longTermMemory.some(m => m.eventId === realEventId) ||
+                           ent.properties.brain.shortTermMemory.some(m => m.eventId === realEventId);
+        if (knowsTruth && ent !== speaker) {
+          truthKnower = ent;
+          break;
+        }
+      }
+    }
+  }
+
+  // If a truth-knower is present, they immediately lose affinity with the speaker and may confront them!
+  if (truthKnower) {
+    truthKnower.properties.brain.affinities[speaker.id] = Math.max(-100, (truthKnower.properties.brain.affinities[speaker.id] || 0) - 8);
+    const willConfront = Math.random() < 0.70;
+
+    if (willConfront) {
+      const realEvObj = getEventById(realEventId);
+      const truthDesc = realEvObj ? realEvObj.description : "the true facts of the event";
+
+      // If speaker was just a believer, they realize they were tricked by the original liar!
+      if (speaker.properties.liar?.type === "believer" || (knownLieMem && originalLiarId && originalLiarId !== speaker.id)) {
+        const victimLiarId = originalLiarId || speaker.properties.liar?.originalLiarId;
+        if (victimLiarId) {
+          spkBrain.affinities[victimLiarId] = Math.max(-100, (spkBrain.affinities[victimLiarId] || 0) - 35);
+          spkBrain.mood = Math.max(-100, spkBrain.mood - 20);
+          const origLiarEnt = entities?.find(e => e.id === victimLiarId);
+          const origName = origLiarEnt?.properties?.name || `Entity #${victimLiarId}`;
+          spkBrain.addLongTerm({
+            type: "BETRAYAL",
+            desc: `Realized ${origName} maliciously deceived me with a fake lie about ${accusedTarget?.properties?.name || 'an innocent'}!`
+          });
+        }
+        if (speaker.properties.liar?.type === "believer") speaker.properties.liar = null;
+        speaker.emote = 10; // Shocked/Upset
+      } else {
+        // Speaker was a deliberate manipulator caught red-handed!
+        spkBrain.affinities[truthKnower.id] = Math.max(-100, (spkBrain.affinities[truthKnower.id] || 0) - 15);
+        spkBrain.mood = Math.max(-100, spkBrain.mood - 15);
+        speaker.emote = 5; // Caught
+      }
+
+      truthKnower.emote = 0; // Angry
+
+      recordWorldEvent({
+        opcode: OP_DIALOGUE,
+        primaryEntityId: truthKnower.id,
+        secondaryEntityId: speaker.id,
+        location: { x: speaker.x, y: speaker.y },
+        description: `${truthKnower.properties.name} publicly confronted ${speaker.properties.name}, correcting their false rumor with the truth: "${truthDesc}"!`,
+        tick: currentTick,
+        timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
+        metadata: {
+          primaryName: truthKnower.properties.name,
+          secondaryName: speaker.properties.name,
+          referencedEventId: realEventId,
+          citedEventId: realEventId,
+          text: `${truthKnower.properties.name} publicly confronted ${speaker.properties.name} with the truth!`
+        }
+      });
+
+      // Listener decides whether to believe the truthKnower or speaker
+      const lisAffToKnower = lisBrain.affinities[truthKnower.id] || 0;
+      const lisAffToSpeaker = lisBrain.affinities[speaker.id] || 0;
+      if (lisAffToKnower >= lisAffToSpeaker - 10) {
+        // Listener accepts the truth correction!
+        lisBrain.affinities[speaker.id] = Math.max(-100, lisAffToSpeaker - 10);
+        lisBrain.affinities[truthKnower.id] = Math.min(100, lisAffToKnower + 3);
+        listener.emote = 9;
+        return;
+      }
+    }
+  }
+
   // Calculate Belief vs Skepticism:
   const lisAffToSpk = lisBrain.affinities[speaker.id] || 0;
   const lisAffToTarget = accusedTarget ? (lisBrain.affinities[accusedTarget.id] || 0) : 0;
 
   const baseTrust = 0.50;
-  const trustMod = (lisAffToSpk / 100) * 0.35;
+  const trustMod = (lisAffToSpk / 100) * 0.25;
   let confirmationMod = 0;
   if (accusedTarget) {
     if (lisAffToTarget < 0) {
-      confirmationMod = (Math.abs(lisAffToTarget) / 100) * 0.30;
+      confirmationMod = (Math.abs(lisAffToTarget) / 100) * 0.20; // confirmation bias against enemy
     } else if (lisAffToTarget > 0) {
-      confirmationMod = -(lisAffToTarget / 100) * 0.40;
+      confirmationMod = -(lisAffToTarget / 100) * 0.30; // skepticism protecting friend
     }
   }
 
-  const beliefProb = Math.max(0.08, Math.min(0.92, baseTrust + trustMod + confirmationMod));
+  // Perks modifier: Skeptic reduces belief, Gullible increases belief
+  let perkMod = 0;
+  if (listener.properties.skeptic) perkMod -= 0.35;
+  if (listener.properties.gullible) perkMod += 0.35;
+
+  const beliefProb = Math.max(0.05, Math.min(0.95, baseTrust + trustMod + confirmationMod + perkMod));
   const didBelieve = Math.random() < beliefProb;
 
   if (didBelieve) {
@@ -2089,6 +2249,7 @@ export function createAndTransmitLie(speaker, listener, world, entities) {
       type: "RUMOR",
       isLie: true,
       lieEventId: lieEvent.id,
+      originalLiarId: speaker.id,
       desc: `Believed rumor from ${speaker.properties.name}: "${narrative}"`,
       location: { x: speaker.x, y: speaker.y }
     });
@@ -2097,15 +2258,16 @@ export function createAndTransmitLie(speaker, listener, world, entities) {
         type: "RUMOR",
         isLie: true,
         lieEventId: lieEvent.id,
+        originalLiarId: speaker.id,
         desc: `Recalls rumor from ${speaker.properties.name}: "${narrative}"`
       });
     }
 
     if (accusedTarget) {
-      lisBrain.affinities[accusedTarget.id] = Math.max(-100, lisAffToTarget - 25);
+      lisBrain.affinities[accusedTarget.id] = Math.max(-100, lisAffToTarget - 12);
     }
-    lisBrain.affinities[speaker.id] = Math.min(100, lisAffToSpk + 4);
-    spkBrain.mood = Math.min(100, spkBrain.mood + 10);
+    lisBrain.affinities[speaker.id] = Math.min(100, lisAffToSpk + 2);
+    spkBrain.mood = Math.min(100, spkBrain.mood + 6);
     if (speaker.properties.liar) speaker.properties.liar.lieCount = (speaker.properties.liar.lieCount || 0) + 1;
 
     speaker.emote = 9; // Smug
@@ -2123,12 +2285,12 @@ export function createAndTransmitLie(speaker, listener, world, entities) {
     });
     lisBrain.addLongTerm({
       type: "DISHONESTY",
-      desc: `Knows ${speaker.properties.name} is a dishonest liar who spreads rumors`
+      desc: `Knows ${speaker.properties.name} is a dishonest person who spreads rumors`
     });
 
-    lisBrain.affinities[speaker.id] = Math.max(-100, lisAffToSpk - 30);
-    lisBrain.mood = Math.max(-100, lisBrain.mood - 15);
-    spkBrain.mood = Math.max(-100, spkBrain.mood - 20);
+    lisBrain.affinities[speaker.id] = Math.max(-100, lisAffToSpk - 15);
+    lisBrain.mood = Math.max(-100, lisBrain.mood - 8);
+    spkBrain.mood = Math.max(-100, spkBrain.mood - 10);
 
     speaker.emote = 5; // Sad/Caught
     listener.emote = 0; // Angry
@@ -2146,6 +2308,13 @@ export function transmitTruthfulGossip(speaker, listener, world, entities) {
 
   if (spkBrain.longTermMemory.length === 0) return;
   const mem = spkBrain.longTermMemory[Math.floor(Math.random() * spkBrain.longTermMemory.length)];
+
+  // If the memory happens to be a believed lie, the believer shares it genuinely as truth!
+  if (mem.isLie) {
+    createAndTransmitLie(speaker, listener, world, entities);
+    return;
+  }
+
   const gossipDesc = mem.desc || mem.description || `${mem.type} event`;
 
   // Third-party affinity influence
@@ -2472,12 +2641,14 @@ export function createGroupMemberProp() {
                       entities.push(wall);
 
                       recordWorldEvent({
-                        type: "SPROUT",
+                        opcode: OP_BUILD,
+                        type: "BUILD",
                         primaryEntityId: ent.id,
                         location: { x: px, y: py },
-                        description: `${ent.properties.name} erected a defensive Wall fortifying '${group.name}'!`,
+                        description: `${ent.properties.name} constructed a defensive Stone Wall fortifying '${group.name}'!`,
                         tick: currentTick,
-                        timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
+                        timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
+                        metadata: { structureName: "Defensive Stone Wall", clan: group.name }
                       });
                       return;
                     }
@@ -2498,6 +2669,17 @@ export function createGroupMemberProp() {
               entities.push(spawned);
               if (!group.storage) group.storage = [];
               group.storage.push(resType);
+
+              recordWorldEvent({
+                opcode: OP_DROP,
+                type: "DROP",
+                primaryEntityId: ent.id,
+                location: { x: ent.x, y: ent.y },
+                description: `${ent.properties.name} stored 1 ${resType} in the '${group.name}' stockpile.`,
+                tick: currentTick,
+                timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
+                metadata: { itemName: resType, clan: group.name }
+              });
               break;
             }
           }
@@ -2544,13 +2726,15 @@ export function createGroupMemberProp() {
           entities.push(plantedTree);
 
           recordWorldEvent({
-            type: "SPROUT",
+            opcode: OP_PLANT,
+            type: "PLANT",
             primaryEntityId: ent.id,
             secondaryEntityId: plantedTree.id,
             location: { x: targetX, y: targetY },
-            description: `${ent.properties.name} planted and cultivated a ${plantedTree.properties.name} for '${group.name}'!`,
+            description: `${ent.properties.name} planted a ${plantedTree.properties.name} for '${group.name}'!`,
             tick: currentTick,
-            timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
+            timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
+            metadata: { seedSpecies, cropName: plantedTree.properties.name }
           });
           return;
         }
@@ -2572,12 +2756,14 @@ export function createGroupMemberProp() {
       if (isCarryingFeces && !inClaimedZone) {
         dropHeldItem(ent, entities, world);
         recordWorldEvent({
-          type: "FEED",
+          opcode: OP_DROP,
+          type: "DROP",
           primaryEntityId: ent.id,
           location: { x: ent.x, y: ent.y },
           description: `${ent.properties.name} swept feces outside the borders of '${group.name}'!`,
           tick: currentTick,
-          timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
+          timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
+          metadata: { itemName: "feces" }
         });
       }
 
@@ -2624,13 +2810,15 @@ export function createGroupMemberProp() {
             }
 
             recordWorldEvent({
-              type: "RELATION",
+              opcode: OP_CRAFT,
+              type: "CRAFT",
               primaryEntityId: ent.id,
               secondaryEntityId: targetEnt.id,
               location: { x: ent.x, y: ent.y },
               description: `${ent.properties.name} crafted a ${weaponName} for ${targetEnt === ent ? "themselves" : targetEnt.properties.name}!`,
               tick: currentTick,
-              timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
+              timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
+              metadata: { craftedItem: weaponName }
             });
             return;
           }
@@ -2653,12 +2841,14 @@ export function createGroupMemberProp() {
           this.actionTimer = 0;
           freeArm.heldItem = { name: "Stone Block", resourceType: "stone", weight: 1 };
           recordWorldEvent({
-            type: "FEED",
+            opcode: OP_MINE,
+            type: "MINE",
             primaryEntityId: ent.id,
             location: { x: ent.x, y: ent.y },
-            description: `${ent.properties.name} quarried 1 stone block from the mountain rock!`,
+            description: `${ent.properties.name} quarried stone from the mountain rock!`,
             tick: currentTick,
-            timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
+            timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
+            metadata: { resource: "stone" }
           });
           return;
         }

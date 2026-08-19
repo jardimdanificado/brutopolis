@@ -26,6 +26,7 @@ import {
   getEventsForEntity,
   getEventsForGroup,
   getRecentWorldEvents,
+  exportWorldChronicleJSON,
   allEvents
 } from "./js/event_log.js";
 import {
@@ -571,11 +572,24 @@ function renderInspectorScreen() {
     lines.push(`  Father:      ${fatherStr}  │  Mother:    ${motherStr}`);
     lines.push(`  Partner:     ${partnerStr}  │  Children:  \x1b[1;33m${childCount}\x1b[0m registered offspring`);
     lines.push(`  Orientation: \x1b[1;35m${orientStr}\x1b[0m`);
+
+    const perks = [];
+    if (props.skeptic) perks.push("\x1b[1;36mSKEPTIC 🧐\x1b[0m");
+    if (props.gullible) perks.push("\x1b[1;35mGULLIBLE 🥺\x1b[0m");
+    if (props.liar) perks.push(props.liar.type === "believer" ? "\x1b[1;33mBELIEVER 🤥\x1b[0m" : "\x1b[1;31mLIAR 🤥\x1b[0m");
+    if (perks.length > 0) {
+      lines.push(`  Perks:       ${perks.join(" │ ")}`);
+    }
     lines.push(``);
 
     // Vital Gauges
     if (props.life) {
       lines.push(`  \x1b[1;32m⚡ Vital Energy:\x1b[0m      ${Math.round(props.life.energy)} / ${props.life.max} cal (${Math.round((props.life.energy / props.life.max) * 100)}%)`);
+    }
+    if (props.stomach) {
+      const fatUnits = props.stomach.fatUnits || 0;
+      const maxFat = props.stomach.maxFatUnits || 6;
+      lines.push(`  \x1b[1;33m🧈 Body Fat Reserves:\x1b[0m ${fatUnits} / ${maxFat} units (Emergency 50% HP restoration)`);
     }
     const condProp = Object.values(props).find(p => p && typeof p.condition === "number" && typeof p.maxCondition === "number");
     if (condProp) {
@@ -1577,6 +1591,16 @@ function handleTerminalInput(key) {
     appMode = "LOGS";
     logSelectedIdx = 0;
     renderWorldLogScreen();
+    return;
+  }
+
+  // 'x' or 'X' -> Export World Chronicle JSON to disk
+  if (key === "x" || key === "X") {
+    const chronicle = exportWorldChronicleJSON(world, entities, currentTick, entityRegistry);
+    const day = world?.clock?.day || 0;
+    const hour = world?.clock?.hour || 0;
+    const filename = `brutopolis_chronicle_day${day}_hour${hour}_tick${currentTick}.json`;
+    fs.writeFileSync(path.resolve(process.cwd(), filename), JSON.stringify(chronicle, null, 2), "utf8");
     return;
   }
 

@@ -236,6 +236,30 @@ export function explodeEntityOnDeath(entity, entitiesArray, world) {
     }
   }
 
+  // Drop remaining body fat reserve units as animal fat items
+  const fatUnits = entity.properties.stomach?.fatUnits || 0;
+  for (let f = 0; f < fatUnits; f++) {
+    const fatItem = createEntity(
+      {
+        name: `Animal Fat / Blubber of ${entityName}`,
+        render: { skin: "Item_Nugget.png", color: 0xfff0e6aa, backcolor: 0x00000000 },
+        edible: {
+          nutrition: 750,
+          foodType: "meat",
+          digestDuration: 30,
+          sourceEntityId: entity.id,
+          sourceName: entityName,
+          sourceSpecies: species,
+          partKey: "fat_unit"
+        },
+        lifespan: { age: 0, maxAge: 1800.0 }
+      },
+      ex + (Math.floor(Math.random() * 3) - 1),
+      ey + (Math.floor(Math.random() * 3) - 1)
+    );
+    if (entitiesArray) entitiesArray.push(fatItem);
+  }
+
   // Check for severe physical wounds and amputations
   const severelyDamaged = Object.values(entity.properties).some(
     p => p && typeof p.condition === "number" && typeof p.maxCondition === "number" && (p.condition / p.maxCondition) <= 0.35

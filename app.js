@@ -23,6 +23,8 @@ import {
   getRecentWorldEvents,
   getEventById,
   getCitationsForEvent,
+  exportWorldChronicleJSON,
+  downloadChronicleJSON,
   allEvents
 } from "./js/event_log.js";
 import {
@@ -1228,6 +1230,12 @@ function renderTopHudBar() {
     if (shader) shader.exports.wasm_set_tps(Math.round(60 * simSpeed));
   });
 
+  // Export Chronicle Button
+  drawNESButton(CANVAS_WIDTH - 242, 4, 76, 24, "EXPORT", false, false);
+  registerClickableRegion(CANVAS_WIDTH - 242, 4, 76, 24, () => {
+    downloadChronicleJSON(world, entities, currentTick, entityRegistry);
+  });
+
   // Reset Button
   drawNESButton(CANVAS_WIDTH - 162, 4, 76, 24, "RESET", false, false);
   registerClickableRegion(CANVAS_WIDTH - 162, 4, 76, 24, () => resetWorld((currentPreset + 1) % 3));
@@ -1404,6 +1412,15 @@ function renderDossierModal() {
     const orientCol = props.homosexual ? "#ff60a0" : props.bisexual ? "#d3869b" : "#3cbcfc";
     drawText8x8(`ORIENTATION: ${orientStr}`, mx + 450, lineageY + 8, orientCol, 1);
 
+    // Perks & Traits
+    const perks = [];
+    if (props.skeptic) perks.push("SKEPTIC 🧐");
+    if (props.gullible) perks.push("GULLIBLE 🥺");
+    if (props.liar) perks.push(props.liar.type === "believer" ? "BELIEVER 🤥" : "LIAR 🤥");
+    if (perks.length > 0) {
+      drawText8x8(`PERKS: [${perks.join(" | ")}]`, mx + 20, lineageY + 8, "#ffd700", 1);
+    }
+
     // Father
     const fatherId = props.fatherId !== undefined ? props.fatherId : props.life?.fatherId;
     if (fatherId !== null && fatherId !== undefined) {
@@ -1453,6 +1470,13 @@ function renderDossierModal() {
     let gaugeY = lineageY + 56;
     if (props.life) {
       drawNESProgressBar(mx + 10, gaugeY, mw - 20, 16, props.life.energy, props.life.max || 100, "HP ENERGY", "#58d854");
+      gaugeY += 20;
+    }
+
+    if (props.stomach) {
+      const fatUnits = props.stomach.fatUnits || 0;
+      const maxFat = props.stomach.maxFatUnits || 6;
+      drawNESProgressBar(mx + 10, gaugeY, mw - 20, 16, fatUnits, maxFat, `BODY FAT RESERVES: ${fatUnits}/${maxFat} UNITS (50% HP BACKUP)`, "#e4c858");
       gaugeY += 20;
     }
 
@@ -2266,8 +2290,14 @@ function renderLogsModal() {
   const list = getFilteredLogs();
   drawText8x8(`WORLD LOG (${list.length}) - CLICK EVENT TO INSPECT`, mx + 16, my + 14, "#f8b800", 1);
 
+  // Export Button in Logs Header
+  drawNESButton(mx + mw - 170, my + 8, 155, 22, "EXPORT CHRONICLE", false, false);
+  registerClickableRegion(mx + mw - 170, my + 8, 155, 22, () => {
+    downloadChronicleJSON(world, entities, currentTick, entityRegistry);
+  });
+
   // Filter Buttons
-  const filters = ["ALL", "KILL", "ATTACK", "RELATION", "DIALOGUE", "AMPUTATION", "BIRTH", "DEATH", "SPROUT"];
+  const filters = ["ALL", "KILL", "ATTACK", "RELATION", "DIALOGUE", "AMPUTATION", "BIRTH", "DEATH", "SPROUT", "MINE", "BUILD"];
   let fx = mx + 16;
   for (const f of filters) {
     const isAct = logFilter === f;
@@ -2696,6 +2726,76 @@ function renderCreatureSummaryBox() {
   });
 }
 
+/**
+ * Bottom-Right Quadrant HUD Panel: Real-time specific Event Log for Selected Creature (No Coordinates)
+ */
+function renderCreatureEventLogPanel() {
+  if (currentMode !== "MAP" || lastSelectedId <= 0 || inspectingLogEvent) return;
+  const ent = getEntityById(lastSelectedId);
+  if (!ent || ent.destroyed) return;
+
+  const px = CANVAS_WIDTH - 386;
+  const py = CANVAS_HEIGHT - 176;
+  const pw = 378;
+  const ph = 140;
+
+  drawNESBox(px, py, pw, ph);
+  // Absorb clicks so they don't click through to map
+  registerClickableRegion(px, py, pw, ph, () => {});
+
+  const nameStr = (ent.properties.name || `Entity #${ent.id}`).toUpperCase().slice(0, 16);
+  drawText8x8(`* CHRONICLE: ${nameStr}`, px + 8, py + 8, "#ffd700", 1);
+
+  // Full Log Button
+  drawNESButton(px + pw - 88, py + 4, 80, 18, "FULL LOG", false, false);
+  registerClickableRegion(px + pw - 88, py + 4, 80, 18, () => {
+    inspectingFromCreature = "MAP";
+    currentMode = "INSPECT";
+    dossierTab = "CHRONICLE";
+  });
+
+  const creatureEvents = getEventsForEntity(ent.id, 5);
+  if (creatureEvents.length === 0) {
+    drawText8x8("NO HISTORICAL EVENTS RECORDED YET.", px + 10, py + 36, "#888888", 1);
+    return;
+  }
+
+  let rowY = py + 26;
+  for (let i = 0; i < creatureEvents.length; i++) {
+    const ev = creatureEvents[i];
+    const isHover = mouseX >= px + 6 && mouseX <= px + pw - 6 && mouseY >= rowY - 2 && mouseY <= rowY + 18;
+    if (isHover) {
+      ctx.fillStyle = "#202034";
+      ctx.fillRect(px + 6, rowY - 2, pw - 12, 20);
+    }
+
+    const isLie = ev.opcode === 18 || ev.type === "LIE";
+    const typeCol = isLie ? "#fa5078" : ev.type === "DEATH" ? "#f83800" : ev.type === "ATTACK" ? "#f8b800" : ev.type === "AMPUTATION" ? "#d3869b" : ev.type === "BIRTH" ? "#58d854" : ev.type === "RELATION" ? "#f878f8" : "#3cbcfc";
+    const typeBadge = isLie ? "[LIE]" : `[${ev.type.slice(0, 4)}]`;
+
+    // Strip location string coordinates (e.g. [X: 12, Y: 34] or [12,34]) as player is following creature
+    const cleanDesc = (ev.description || "")
+      .replace(/\s*\[X:\s*-?\d+,\s*Y:\s*-?\d+\]/gi, "")
+      .replace(/\s*\[-?\d+,\s*-?\d+\]/gi, "")
+      .trim()
+      .toUpperCase();
+
+    const maxChars = Math.floor((pw - 62) / 8);
+    const shortDesc = cleanDesc.length > maxChars ? cleanDesc.slice(0, maxChars - 3) + "..." : cleanDesc;
+
+    drawText8x8(typeBadge, px + 8, rowY + 2, typeCol, 1);
+    drawText8x8(shortDesc, px + 54, rowY + 2, "#ffffff", 1);
+
+    const curEv = ev;
+    registerClickableRegion(px + 6, rowY - 2, pw - 12, 20, () => {
+      inspectingLogEvent = curEv;
+      inspectingFromCreature = "MAP";
+    });
+
+    rowY += 22;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Main Animation Frame Loop
 // ---------------------------------------------------------------------------
@@ -2779,8 +2879,15 @@ function frame(time) {
     renderBottomToolbar();
     renderHoverTooltip();
     renderCreatureSummaryBox();
+    renderCreatureEventLogPanel();
 
-    if (currentMode === "INSPECT") renderDossierModal();
+    if (inspectingLogEvent) {
+      const mx = 30;
+      const my = 30;
+      const mw = CANVAS_WIDTH - 60;
+      const mh = CANVAS_HEIGHT - 60;
+      renderLogDetailView(mx, my, mw, mh, inspectingLogEvent);
+    } else if (currentMode === "INSPECT") renderDossierModal();
     else if (currentMode === "ENTITIES") renderEntitiesModal();
     else if (currentMode === "GROUPS") renderGroupsModal();
     else if (currentMode === "LOGS") renderLogsModal();

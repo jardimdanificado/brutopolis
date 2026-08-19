@@ -21,6 +21,14 @@ export const OP_HUMILIATE = 15;
 export const OP_PROPOSAL_ACCEPTED = 16;
 export const OP_PROPOSAL_REJECTED = 17;
 export const OP_LIE = 18;
+export const OP_MINE = 19;
+export const OP_CHOP = 20;
+export const OP_BUILD = 21;
+export const OP_PICKUP = 22;
+export const OP_DROP = 23;
+export const OP_CRAFT = 24;
+export const OP_PLANT = 25;
+export const OP_HARVEST = 26;
 
 export const OPCODE_TO_TYPE = {
   [OP_BIRTH]: "BIRTH",
@@ -40,7 +48,15 @@ export const OPCODE_TO_TYPE = {
   [OP_HUMILIATE]: "DIALOGUE",
   [OP_PROPOSAL_ACCEPTED]: "RELATION",
   [OP_PROPOSAL_REJECTED]: "RELATION",
-  [OP_LIE]: "LIE"
+  [OP_LIE]: "LIE",
+  [OP_MINE]: "MINE",
+  [OP_CHOP]: "CHOP",
+  [OP_BUILD]: "BUILD",
+  [OP_PICKUP]: "PICKUP",
+  [OP_DROP]: "DROP",
+  [OP_CRAFT]: "CRAFT",
+  [OP_PLANT]: "PLANT",
+  [OP_HARVEST]: "HARVEST"
 };
 
 export const TYPE_TO_OPCODE = {
@@ -52,7 +68,15 @@ export const TYPE_TO_OPCODE = {
   "SPROUT": OP_SPROUT,
   "RELATION": OP_RELATION,
   "DIALOGUE": OP_DIALOGUE,
-  "LIE": OP_LIE
+  "LIE": OP_LIE,
+  "MINE": OP_MINE,
+  "CHOP": OP_CHOP,
+  "BUILD": OP_BUILD,
+  "PICKUP": OP_PICKUP,
+  "DROP": OP_DROP,
+  "CRAFT": OP_CRAFT,
+  "PLANT": OP_PLANT,
+  "HARVEST": OP_HARVEST
 };
 
 let nextEventId = 1;
@@ -126,6 +150,22 @@ export function formatEventDescription(ev) {
       const hitPart = ev.metadata?.hitPartName ? ` hitting ${ev.metadata.hitPartName}` : "";
       return `${pName} attacked ${sName}${countStr}${hitPart}${dmgStr}!${locStr}`;
     }
+    case OP_MINE:
+      return `${pName} mined stone from a rocky boulder!${locStr}`;
+    case OP_CHOP:
+      return `${pName} felled a tree and harvested timber!${locStr}`;
+    case OP_BUILD:
+      return `${pName} constructed a ${ev.metadata?.structureName || "Stone Wall"} fortification!${locStr}`;
+    case OP_PICKUP:
+      return `${pName} picked up ${ev.metadata?.itemName || "an item"} from the ground.${locStr}`;
+    case OP_DROP:
+      return `${pName} hauled and placed ${ev.metadata?.itemName || "an item"} down.${locStr}`;
+    case OP_CRAFT:
+      return `${pName} crafted ${ev.metadata?.craftedItem || "a new tool/item"}!${locStr}`;
+    case OP_PLANT:
+      return `${pName} planted a ${ev.metadata?.seedSpecies || "flora"} seed in fertile soil.${locStr}`;
+    case OP_HARVEST:
+      return `${pName} harvested fresh ${ev.metadata?.cropName || "fruit"} from the wild.${locStr}`;
     case OP_DIALOGUE: {
       if (ev.metadata?.text) return `${ev.metadata.text}${locStr}`;
       return `${pName} conversed with ${sName}.${locStr}`;
@@ -350,5 +390,152 @@ export function getEventsForGroup(group, limit = 50) {
 export function getRecentWorldEvents(limit = 25) {
   const start = Math.max(0, allEvents.length - limit);
   return allEvents.slice(start).reverse();
+}
+
+/**
+ * Compiles and exports the complete world chronicle archive into a structured JSON object
+ */
+export function exportWorldChronicleJSON(world, entities, currentTick = 0, entityRegistry = null) {
+  // 1. Gather all groups/factions
+  const groupMap = new Map();
+  const allEnts = new Map();
+
+  // Populate from active entities array
+  if (entities && Array.isArray(entities)) {
+    for (const e of entities) {
+      if (!e) continue;
+      allEnts.set(e.id, e);
+      if (e.properties?.group) {
+        groupMap.set(e.properties.group.id, e.properties.group);
+      }
+    }
+  }
+
+  // Populate from entity registry (includes deceased/historical creatures)
+  if (entityRegistry && typeof entityRegistry.values === "function") {
+    for (const e of entityRegistry.values()) {
+      if (!e) continue;
+      if (!allEnts.has(e.id)) allEnts.set(e.id, e);
+      if (e.properties?.group) {
+        groupMap.set(e.properties.group.id, e.properties.group);
+      }
+    }
+  }
+
+  // 2. Format groups cleanly
+  const groupsList = Array.from(groupMap.values()).map(g => ({
+    id: g.id,
+    name: g.name,
+    leaderId: g.members && g.members.length > 0 ? g.members[0] : null,
+    members: g.members || [],
+    claimedZones: g.claimedZones || [],
+    stockpile: g.stockpile || {}
+  }));
+
+  // 3. Serialize all entities with intact relationships
+  const entitiesList = Array.from(allEnts.values()).map(ent => {
+    const props = ent.properties || {};
+    const hasLife = !!props.life;
+    const isAlive = !ent.destroyed && hasLife && props.life.energy > 0;
+
+    const gender = props.gender || (props.vagina ? "female" : props.penis ? "male" : null);
+    const orientation = props.homosexual ? "homosexual" : props.bisexual ? "bisexual" : "heterosexual";
+    const perks = [];
+    if (props.skeptic) perks.push("skeptic");
+    if (props.gullible) perks.push("gullible");
+    if (props.liar) perks.push(props.liar.type || "liar");
+
+    const fatherId = props.fatherId !== undefined ? props.fatherId : props.life?.fatherId ?? null;
+    const motherId = props.motherId !== undefined ? props.motherId : props.life?.motherId ?? null;
+    const partnerId = props.monogamy?.partnerId ?? null;
+    const childrenIds = props.life?.childrenIds || [];
+
+    const affinities = props.brain?.affinities
+      ? Object.fromEntries(Object.entries(props.brain.affinities).map(([k, v]) => [k, Math.round(v)]))
+      : {};
+
+    return {
+      id: ent.id,
+      name: props.name || `Entity #${ent.id}`,
+      species: props.species || "creature",
+      x: ent.x,
+      y: ent.y,
+      isAlive,
+      hasLife,
+      gender,
+      orientation,
+      perks,
+      fatherId,
+      motherId,
+      partnerId,
+      childrenIds,
+      groupId: props.group?.id ?? null,
+      groupName: props.group?.name ?? null,
+      affinities,
+      fatUnits: props.stomach?.fatUnits || 0,
+      energy: props.life ? Math.round(props.life.energy) : null,
+      maxEnergy: props.life?.max || null,
+      mood: props.brain && typeof props.brain.mood === "number" ? Math.round(props.brain.mood) : null,
+      heldItem: props.arm_right?.heldItem?.resourceType || props.arm_left?.heldItem?.resourceType || null
+    };
+  });
+
+  // 4. Serialize all events
+  const eventsList = allEvents.map(ev => ({
+    id: ev.id,
+    opcode: ev.opcode,
+    type: ev.type,
+    count: ev.count || 1,
+    tick: ev.tick,
+    timestamp: ev.timestamp || { day: 0, hour: 0, minute: 0 },
+    primaryEntityId: ev.primaryEntityId,
+    secondaryEntityId: ev.secondaryEntityId,
+    location: ev.location ? { x: ev.location.x, y: ev.location.y } : null,
+    description: ev.description,
+    metadata: ev.metadata || {}
+  }));
+
+  return {
+    version: "1.0",
+    format: "brutopolis_chronicle",
+    generatedAt: new Date().toISOString(),
+    world: {
+      width: world?.width || 512,
+      height: world?.height || 512,
+      clock: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute, totalSeconds: world.clock.totalSeconds } : null,
+      tick: currentTick
+    },
+    stats: {
+      totalTicks: currentTick,
+      totalEvents: eventsList.length,
+      totalEntities: entitiesList.length,
+      totalGroups: groupsList.length
+    },
+    groups: groupsList,
+    entities: entitiesList,
+    events: eventsList
+  };
+}
+
+/**
+ * Triggers browser download of the chronicle JSON file
+ */
+export function downloadChronicleJSON(world, entities, currentTick = 0, entityRegistry = null) {
+  const chronicle = exportWorldChronicleJSON(world, entities, currentTick, entityRegistry);
+  const jsonStr = JSON.stringify(chronicle, null, 2);
+  const blob = new Blob([jsonStr], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const day = world?.clock?.day || 0;
+  const hour = world?.clock?.hour || 0;
+  const filename = `brutopolis_chronicle_day${day}_hour${hour}_tick${currentTick}.json`;
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  return filename;
 }
 
