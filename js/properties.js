@@ -1,5 +1,24 @@
 import { createEntity, getEntityById, currentTick } from "./engine.js";
-import { recordWorldEvent } from "./event_log.js";
+import {
+  recordWorldEvent,
+  OP_BIRTH,
+  OP_DEATH,
+  OP_ATTACK,
+  OP_AMPUTATION,
+  OP_FEED,
+  OP_SPROUT,
+  OP_RELATION,
+  OP_DIALOGUE,
+  OP_HUG,
+  OP_KISS,
+  OP_PRAISE,
+  OP_INSULT,
+  OP_SPIT,
+  OP_SHOVE,
+  OP_HUMILIATE,
+  OP_PROPOSAL_ACCEPTED,
+  OP_PROPOSAL_REJECTED
+} from "./event_log.js";
 import { vocabulario } from "./vocabulario.js";
 
 // ---------------------------------------------------------------------------
@@ -177,15 +196,37 @@ export function createFlyingProp(speedBonus = 2.0) {
 }
 
 /**
- * Life / Basal Metabolic Energy (Extended Duration & Slower Decay)
+ * Life / Basal Metabolic Energy, Age & Biological Lineage
  */
-export function createLifeProp(energy = 8000, max = 8000, basalRate = 0.05) {
+export function createLifeProp(energy = 8000, max = 8000, basalRate = 0.05, initialAge = 1440.0, fatherId = null, motherId = null) {
   return {
     energy,
     max,
     basalRate,
+    age: initialAge,
+    fatherId,
+    motherId,
+    childrenIds: [],
     effect(ent, dt) {
-      this.energy = Math.max(0, this.energy - dt * this.basalRate);
+      this.age = (this.age || 0) + (dt !== undefined ? dt : 1.0);
+      this.energy = Math.max(0, this.energy - (dt !== undefined ? dt : 1.0) * this.basalRate);
+    }
+  };
+}
+
+/**
+ * Monogamy & Romantic Pair Bonding Property
+ */
+export function createMonogamyProp(partnerId = null) {
+  return {
+    partnerId,
+    proposalCooldown: 0,
+    bondTick: null,
+    fidelity: 100,
+    effect(ent, dt) {
+      if (this.proposalCooldown > 0) {
+        this.proposalCooldown = Math.max(0, this.proposalCooldown - (dt !== undefined ? dt : 1.0));
+      }
     }
   };
 }
@@ -743,40 +784,64 @@ export function getMotherSurname(mother) {
   return newSurname;
 }
 
-export function generateBabyName(mother, entities = []) {
+export function generateBabyName(mother, father = null, babyGender = "male", entities = []) {
   const motherSurname = getMotherSurname(mother);
   let firstName = "";
   let isTribute = false;
   let tributeTargetName = null;
+  let isFilho = false;
+  let isFilha = false;
 
-  // Check if mother has high affinity (>= 60) with someone
-  const affinities = mother.properties?.brain?.affinities || {};
-  let bestPartner = null;
-  let highestAff = 59;
-
-  if (entities) {
-    for (const other of entities) {
-      if (other !== mother && !other.destroyed && other.properties?.name) {
-        const aff = affinities[other.id] || 0;
-        if (aff > highestAff) {
-          highestAff = aff;
-          bestPartner = other;
-        }
-      }
+  // 1. Check special filho / filha inheritance (chance ~12%)
+  if (babyGender === "male" && father && Math.random() < 0.12) {
+    const fatherRaw = (father.properties.name || "Pai").replace(/,\s*the\s+\w+/i, "").replace(/\s+filho\b/i, "").replace(/\s+Jr\.?/i, "").trim();
+    const fatherFirstName = fatherRaw.split(/\s+/)[0];
+    const surname = father.properties.surname || motherSurname;
+    if (fatherFirstName && fatherFirstName.length >= 2) {
+      firstName = `${fatherFirstName} filho`;
+      isFilho = true;
+      tributeTargetName = father.properties.name;
+    }
+  } else if (babyGender === "female" && Math.random() < 0.12) {
+    const motherRaw = (mother.properties.name || "Mae").replace(/,\s*the\s+\w+/i, "").replace(/\s+filha\b/i, "").replace(/\s+Jr\.?/i, "").trim();
+    const motherFirstName = motherRaw.split(/\s+/)[0];
+    const surname = motherSurname;
+    if (motherFirstName && motherFirstName.length >= 2) {
+      firstName = `${motherFirstName} filha`;
+      isFilha = true;
+      tributeTargetName = mother.properties.name;
     }
   }
 
-  // 35% chance to tribute high-affinity friend/partner if available
-  if (bestPartner && Math.random() < 0.35) {
-    const friendRaw = (bestPartner.properties.name || "Friend")
-      .replace(/,\s*the\s+\w+/i, "")
-      .replace(/\s+Jr\.?/i, "")
-      .trim();
-    const friendFirstName = friendRaw.split(/\s+/)[0];
-    if (friendFirstName && friendFirstName.length >= 2) {
-      firstName = `${friendFirstName} Jr.`;
-      isTribute = true;
-      tributeTargetName = bestPartner.properties.name;
+  // 2. Tribute high-affinity friend/partner if available (and not filho/filha)
+  if (!firstName) {
+    const affinities = mother.properties?.brain?.affinities || {};
+    let bestPartner = null;
+    let highestAff = 59;
+
+    if (entities) {
+      for (const other of entities) {
+        if (other !== mother && !other.destroyed && other.properties?.name) {
+          const aff = affinities[other.id] || 0;
+          if (aff > highestAff) {
+            highestAff = aff;
+            bestPartner = other;
+          }
+        }
+      }
+    }
+
+    if (bestPartner && Math.random() < 0.35) {
+      const friendRaw = (bestPartner.properties.name || "Friend")
+        .replace(/,\s*the\s+\w+/i, "")
+        .replace(/\s+Jr\.?/i, "")
+        .trim();
+      const friendFirstName = friendRaw.split(/\s+/)[0];
+      if (friendFirstName && friendFirstName.length >= 2) {
+        firstName = `${friendFirstName} Jr.`;
+        isTribute = true;
+        tributeTargetName = bestPartner.properties.name;
+      }
     }
   }
 
@@ -791,7 +856,7 @@ export function generateBabyName(mother, entities = []) {
   while ((usedBabyNames.has(finalName) || (entities && entities.some(e => !e.destroyed && e.properties?.name === finalName))) && attempts < 25) {
     attempts++;
     const extraWord = getRandomVocabWord();
-    if (isTribute) {
+    if (isFilho || isFilha || isTribute) {
       finalName = `${firstName} ${extraWord} ${motherSurname}`.trim();
     } else {
       try {
@@ -804,7 +869,14 @@ export function generateBabyName(mother, entities = []) {
   }
 
   usedBabyNames.add(finalName);
-  return { name: finalName, isTribute, tributeTo: tributeTargetName, surname: motherSurname };
+  return {
+    name: finalName,
+    isTribute: isTribute || isFilho || isFilha,
+    isFilho,
+    isFilha,
+    tributeTo: tributeTargetName,
+    surname: motherSurname
+  };
 }
 
 const usedGlobalNames = new Set();
@@ -891,6 +963,7 @@ export function createGenitaliaProp(type = "penis", isPregnant = false) {
     maxCondition: 100,
     pregnantTimer: isPregnant ? 15.0 : 0,
     isPregnant: !!isPregnant,
+    fatherId: null,
     matingCooldown: 0,
     nutrition: 300,
     foodType: "organ",
@@ -904,15 +977,16 @@ export function createGenitaliaProp(type = "penis", isPregnant = false) {
       // Pregnancy gestation and childbirth
       if (this.isPregnant) {
         this.pregnantTimer = (this.pregnantTimer || 0) + dt;
-        if (this.pregnantTimer >= 70.0 && entities) { // Gestation takes 70s (> 1 in-game hour)
+        if (this.pregnantTimer >= 70.0 && entities) {
           this.isPregnant = false;
           this.pregnantTimer = 0;
-          this.matingCooldown = 300.0; // Long postpartum recovery cooldown (300s = 5 game hours)
+          this.matingCooldown = 300.0;
 
+          const father = this.fatherId ? getEntityById(this.fatherId) : null;
           const babySpecies = ent.properties.species || "human";
           const babyGender = Math.random() < 0.5 ? "female" : "male";
 
-          const nameInfo = generateBabyName(ent, entities);
+          const nameInfo = generateBabyName(ent, father, babyGender, entities);
           const babyName = nameInfo.name;
 
           const baby = createEntity(
@@ -920,7 +994,7 @@ export function createGenitaliaProp(type = "penis", isPregnant = false) {
               name: babyName,
               species: babySpecies,
               render: { ...ent.properties.render },
-              life: createLifeProp(Math.round(ent.properties.life.max * 0.85), Math.round(ent.properties.life.max * 0.85)),
+              life: createLifeProp(Math.round(ent.properties.life.max * 0.85), Math.round(ent.properties.life.max * 0.85), 0.05, 0, father?.id || null, ent.id),
               brain: createBrainProp(16, { bravery: 0.6, curiosity: 0.9, aggression: 0.1 }, 1.0),
               stomach: createStomachProp(3, { meat: 1.0, plant: 1.0, fruit: 1.0, organ: 1.0, bone: 0.1 }),
               bladder: createBladderProp(2500, 2500),
@@ -934,7 +1008,20 @@ export function createGenitaliaProp(type = "penis", isPregnant = false) {
             ent.y + (Math.floor(Math.random() * 3) - 1)
           );
 
-          // Give newborn gentle starter milk/nutrition so it never starves
+          // Register child in parents' lineage
+          if (!ent.properties.life.childrenIds) ent.properties.life.childrenIds = [];
+          ent.properties.life.childrenIds.push(baby.id);
+          if (father?.properties?.life) {
+            if (!father.properties.life.childrenIds) father.properties.life.childrenIds = [];
+            father.properties.life.childrenIds.push(baby.id);
+          }
+
+          // Inherit monogamy property if parents are monogamous or humanoid
+          if (ent.properties.monogamy || father?.properties?.monogamy || babySpecies === "human") {
+            baby.properties.monogamy = createMonogamyProp();
+          }
+
+          // Give newborn gentle starter milk/nutrition
           baby.properties.stomach.items.push({
             name: "Mother's Milk",
             nutrition: 3500,
@@ -955,7 +1042,7 @@ export function createGenitaliaProp(type = "penis", isPregnant = false) {
           baby.properties.eye_left = createEyeProp("left", 8);
           baby.properties.eye_right = createEyeProp("right", 8);
 
-          // Physical Limbs: Legs / Paws / Arms
+          // Physical Limbs
           const hasPaws = Object.keys(ent.properties).some(k => k.startsWith("paw"));
           if (hasPaws) {
             baby.properties.paw_front_left = createPawProp("front_left", 0.8, 60, 60, 3, 3, 12);
@@ -963,7 +1050,6 @@ export function createGenitaliaProp(type = "penis", isPregnant = false) {
             baby.properties.paw_back_left = createPawProp("back_left", 0.8, 60, 60, 3, 3, 12);
             baby.properties.paw_back_right = createPawProp("back_right", 0.8, 60, 60, 3, 3, 12);
           } else {
-            // Humanoid Biped
             baby.properties.arm_left = createArmProp("left", 0.9, 80, 80);
             baby.properties.arm_right = createArmProp("right", 0.9, 80, 80);
             baby.properties.leg_left = createLegProp("left", 0.9, 80, 80);
@@ -976,8 +1062,21 @@ export function createGenitaliaProp(type = "penis", isPregnant = false) {
 
           baby.properties.genitalia = createGenitaliaProp(babyGender === "female" ? "vagina" : "penis", false);
 
-          // Inherit clan group: ensure children are NEVER born outside the group
-          let targetClan = ent.properties.group;
+          // Faction assignment rule:
+          // Filho -> Father's faction
+          // Filha -> Mother's faction
+          // Else: 95% Mother's faction, 5% Father's faction
+          let targetClan = null;
+          if (nameInfo.isFilho) {
+            targetClan = father?.properties?.group || ent.properties.group;
+          } else if (nameInfo.isFilha) {
+            targetClan = ent.properties.group || father?.properties?.group;
+          } else {
+            targetClan = (Math.random() < 0.95)
+              ? (ent.properties.group || father?.properties?.group)
+              : (father?.properties?.group || ent.properties.group);
+          }
+
           if (!targetClan && entities) {
             for (const nearby of entities) {
               if (nearby !== ent && !nearby.destroyed && nearby.properties.group && nearby.properties.species === babySpecies) {
@@ -1001,16 +1100,21 @@ export function createGenitaliaProp(type = "penis", isPregnant = false) {
             }
           }
 
-          // Immediate high mother-child bond (+95)
+          // Immediate family bonds
           if (ent.properties.brain) {
             if (!ent.properties.brain.affinities) ent.properties.brain.affinities = {};
             ent.properties.brain.affinities[baby.id] = 95;
-            ent.properties.brain.mood = 90;
+            ent.properties.brain.mood = Math.min(100, ent.properties.brain.mood + 30);
+          }
+          if (father?.properties?.brain) {
+            if (!father.properties.brain.affinities) father.properties.brain.affinities = {};
+            father.properties.brain.affinities[baby.id] = 95;
+            father.properties.brain.mood = Math.min(100, father.properties.brain.mood + 25);
           }
           if (baby.properties.brain) {
             baby.properties.brain.affinities[ent.id] = 95;
+            if (father) baby.properties.brain.affinities[father.id] = 95;
             baby.properties.brain.mood = 80;
-            // Also establish high affinity with other clan members
             if (targetClan) {
               for (const mid of targetClan.members) {
                 if (mid !== baby.id) baby.properties.brain.affinities[mid] = 75;
@@ -1020,25 +1124,26 @@ export function createGenitaliaProp(type = "penis", isPregnant = false) {
 
           entities.push(baby);
 
-          let tributeNotice = "";
-          if (nameInfo.isTribute && nameInfo.tributeTo) {
-            tributeNotice = ` (named in honor of ${nameInfo.tributeTo})`;
-          }
-
           recordWorldEvent({
-            type: "BIRTH",
+            opcode: OP_BIRTH,
             primaryEntityId: ent.id,
             secondaryEntityId: baby.id,
             location: { x: baby.x, y: baby.y },
-            description: `${ent.properties.name} gave birth to a healthy newborn: ${baby.properties.name}${tributeNotice}!`,
+            description: `${ent.properties.name} gave birth to a healthy newborn: ${baby.properties.name}!`,
             tick: currentTick,
-            timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
+            timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
+            metadata: {
+              primaryName: ent.properties.name,
+              secondaryName: baby.properties.name,
+              fatherId: father?.id || null,
+              fatherName: father?.properties.name || null
+            }
           });
         }
         return;
       }
 
-      // Mating attempt (female / vagina seeking male / penis of same species with mutual affinity >= 15 or same clan)
+      // Mating attempt (female seeking male)
       if ((this.type === "vagina" || this.type === "female") && this.matingCooldown <= 0 && !this.isPregnant && ent.properties.life.energy > ent.properties.life.max * 0.60) {
         if (entities && Math.random() < 0.08) {
           for (const mate of entities) {
@@ -1046,23 +1151,43 @@ export function createGenitaliaProp(type = "penis", isPregnant = false) {
               if (mate.properties.species === ent.properties.species && (mate.properties.genitalia.matingCooldown || 0) <= 0) {
                 const dist = Math.abs(mate.x - ent.x) + Math.abs(mate.y - ent.y);
                 if (dist <= 1) {
-                  const isSameClan = ent.properties.group && mate.properties.group && ent.properties.group === mate.properties.group;
                   const aff = ent.properties.brain?.affinities?.[mate.id] || 0;
                   const mateAff = mate.properties.brain?.affinities?.[ent.id] || 0;
-                  if (isSameClan || (aff >= 15 && mateAff >= 15)) {
+                  const isMonogamous = !!ent.properties.monogamy;
+
+                  let canMate = false;
+                  if (isMonogamous) {
+                    // Monogamy requires matching partnerId and high affinity (>= 80)
+                    const isPartner = ent.properties.monogamy.partnerId === mate.id;
+                    if (isPartner && aff >= 80 && mateAff >= 80) {
+                      canMate = true;
+                    }
+                  } else {
+                    const isSameClan = ent.properties.group && mate.properties.group && ent.properties.group === mate.properties.group;
+                    if (isSameClan || (aff >= 15 && mateAff >= 15)) {
+                      canMate = true;
+                    }
+                  }
+
+                  if (canMate) {
                     this.isPregnant = true;
                     this.pregnantTimer = 0;
+                    this.fatherId = mate.id;
                     this.matingCooldown = 300.0;
                     mate.properties.genitalia.matingCooldown = 180.0;
 
                     recordWorldEvent({
-                      type: "RELATION",
+                      opcode: OP_RELATION,
                       primaryEntityId: ent.id,
                       secondaryEntityId: mate.id,
                       location: { x: ent.x, y: ent.y },
                       description: `${ent.properties.name} and ${mate.properties.name} mated, continuing their lineage!`,
                       tick: currentTick,
-                      timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
+                      timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
+                      metadata: {
+                        primaryName: ent.properties.name,
+                        secondaryName: mate.properties.name
+                      }
                     });
                     break;
                   }
@@ -1390,7 +1515,264 @@ export function gossipBetweenCreatures(speaker, listener, world, entities) {
   if (!spkBrain || !lisBrain) return;
 
   const spkAffToLis = spkBrain.affinities[listener.id] || 0;
-  const lisAffToSpk = lisBrain.affinities[listener.id] !== undefined ? lisBrain.affinities[speaker.id] : 0;
+  const lisAffToSpk = lisBrain.affinities[speaker.id] !== undefined ? lisBrain.affinities[speaker.id] : 0;
+  const dist = Math.abs(speaker.x - listener.x) + Math.abs(speaker.y - listener.y);
+
+  // 1. Romantic Courtship & Couple Proposal (Namoro / Casamento)
+  const spkMono = speaker.properties.monogamy;
+  const lisMono = listener.properties.monogamy;
+  if (spkMono && lisMono && !spkMono.partnerId && !lisMono.partnerId && dist <= 2) {
+    if (spkAffToLis >= 65 && spkMono.proposalCooldown <= 0) {
+      // Propose partnership!
+      // Acceptance probability depends on listener's affinity:
+      const acceptProb = Math.max(0.0, Math.min(1.0, (lisAffToSpk - 30) / 40));
+      if (Math.random() < acceptProb && lisAffToSpk >= 40) {
+        // ACCEPTED!
+        spkMono.partnerId = listener.id;
+        lisMono.partnerId = speaker.id;
+        spkBrain.affinities[listener.id] = 95;
+        lisBrain.affinities[speaker.id] = 95;
+        spkBrain.mood = Math.min(100, spkBrain.mood + 50);
+        lisBrain.mood = Math.min(100, lisBrain.mood + 50);
+
+        speaker.emote = 1; // Excited
+        listener.emote = 12; // Heart
+
+        spkBrain.addLongTerm({ type: "BOND", desc: `Formed a romantic couple bond with ${listener.properties.name}` });
+        lisBrain.addLongTerm({ type: "BOND", desc: `Formed a romantic couple bond with ${speaker.properties.name}` });
+
+        recordWorldEvent({
+          opcode: OP_PROPOSAL_ACCEPTED,
+          primaryEntityId: speaker.id,
+          secondaryEntityId: listener.id,
+          location: { x: speaker.x, y: speaker.y },
+          tick: currentTick,
+          timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
+          metadata: { primaryName: speaker.properties.name, secondaryName: listener.properties.name }
+        });
+        return;
+      } else {
+        // REJECTED (Heartbreak!)
+        spkMono.proposalCooldown = 300.0;
+        spkBrain.mood = Math.max(-100, spkBrain.mood - 50);
+        spkBrain.affinities[listener.id] = Math.max(-100, spkAffToLis - 35);
+        lisBrain.affinities[speaker.id] = Math.max(-100, lisAffToSpk - 20);
+
+        speaker.emote = 5; // Sad
+        listener.emote = 10; // Upset
+
+        spkBrain.addLongTerm({ type: "HEARTBREAK", desc: `Was painfully rejected when proposing to ${listener.properties.name}` });
+
+        recordWorldEvent({
+          opcode: OP_PROPOSAL_REJECTED,
+          primaryEntityId: speaker.id,
+          secondaryEntityId: listener.id,
+          location: { x: speaker.x, y: speaker.y },
+          tick: currentTick,
+          timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
+          metadata: { primaryName: speaker.properties.name, secondaryName: listener.properties.name }
+        });
+        return;
+      }
+    }
+  }
+
+  // 2. Physical & Emotional Social Interactions (when adjacent: dist <= 1)
+  if (dist <= 1) {
+    // A. Kiss (Beijar)
+    if (spkAffToLis >= 50 && (spkMono?.partnerId === listener.id || Math.random() < 0.35)) {
+      if (lisAffToSpk >= 45 || lisMono?.partnerId === speaker.id) {
+        spkBrain.affinities[listener.id] = Math.min(100, spkAffToLis + 15);
+        lisBrain.affinities[speaker.id] = Math.min(100, lisAffToSpk + 15);
+        spkBrain.mood = Math.min(100, spkBrain.mood + 20);
+        lisBrain.mood = Math.min(100, lisBrain.mood + 20);
+        speaker.emote = 12; // Heart
+        listener.emote = 12; // Heart
+
+        recordWorldEvent({
+          opcode: OP_KISS,
+          primaryEntityId: speaker.id,
+          secondaryEntityId: listener.id,
+          location: { x: speaker.x, y: speaker.y },
+          tick: currentTick,
+          timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
+          metadata: { primaryName: speaker.properties.name, secondaryName: listener.properties.name, rejected: false }
+        });
+        return;
+      } else {
+        spkBrain.affinities[listener.id] = Math.max(-100, spkAffToLis - 8);
+        spkBrain.mood = Math.max(-100, spkBrain.mood - 15);
+        speaker.emote = 5; // Sad
+        listener.emote = 10; // Upset
+
+        recordWorldEvent({
+          opcode: OP_KISS,
+          primaryEntityId: speaker.id,
+          secondaryEntityId: listener.id,
+          location: { x: speaker.x, y: speaker.y },
+          tick: currentTick,
+          timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
+          metadata: { primaryName: speaker.properties.name, secondaryName: listener.properties.name, rejected: true }
+        });
+        return;
+      }
+    }
+
+    // B. Hug (Abraçar)
+    if (spkAffToLis >= 25 && Math.random() < 0.40) {
+      if (lisAffToSpk >= 15 && lisBrain.mood > -25) {
+        spkBrain.affinities[listener.id] = Math.min(100, spkAffToLis + 8);
+        lisBrain.affinities[speaker.id] = Math.min(100, lisAffToSpk + 8);
+        spkBrain.mood = Math.min(100, spkBrain.mood + 12);
+        lisBrain.mood = Math.min(100, lisBrain.mood + 12);
+        speaker.emote = 2; // Happy
+        listener.emote = 2; // Happy
+
+        recordWorldEvent({
+          opcode: OP_HUG,
+          primaryEntityId: speaker.id,
+          secondaryEntityId: listener.id,
+          location: { x: speaker.x, y: speaker.y },
+          tick: currentTick,
+          timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
+          metadata: { primaryName: speaker.properties.name, secondaryName: listener.properties.name, rejected: false }
+        });
+        return;
+      } else {
+        spkBrain.affinities[listener.id] = Math.max(-100, spkAffToLis - 5);
+        spkBrain.mood = Math.max(-100, spkBrain.mood - 10);
+        speaker.emote = 10; // Upset
+        listener.emote = 0; // Angry
+
+        recordWorldEvent({
+          opcode: OP_HUG,
+          primaryEntityId: speaker.id,
+          secondaryEntityId: listener.id,
+          location: { x: speaker.x, y: speaker.y },
+          tick: currentTick,
+          timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
+          metadata: { primaryName: speaker.properties.name, secondaryName: listener.properties.name, rejected: true }
+        });
+        return;
+      }
+    }
+
+    // C. Praise (Elogiar)
+    if (spkAffToLis >= 10 && Math.random() < 0.35) {
+      if (lisAffToSpk > -15) {
+        spkBrain.affinities[listener.id] = Math.min(100, spkAffToLis + 5);
+        lisBrain.affinities[speaker.id] = Math.min(100, lisAffToSpk + 6);
+        spkBrain.mood = Math.min(100, spkBrain.mood + 8);
+        lisBrain.mood = Math.min(100, lisBrain.mood + 10);
+        speaker.emote = 2; // Happy
+        listener.emote = 9; // Smug
+
+        recordWorldEvent({
+          opcode: OP_PRAISE,
+          primaryEntityId: speaker.id,
+          secondaryEntityId: listener.id,
+          location: { x: speaker.x, y: speaker.y },
+          tick: currentTick,
+          timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
+          metadata: { primaryName: speaker.properties.name, secondaryName: listener.properties.name, rejected: false }
+        });
+        return;
+      }
+    }
+
+    // D. Spit (Cuspir) - requires mouth and deep contempt
+    if (spkAffToLis <= -40 && speaker.properties.mouth && Math.random() < 0.35) {
+      lisBrain.affinities[speaker.id] = Math.max(-100, lisAffToSpk - 20);
+      lisBrain.mood = Math.max(-100, lisBrain.mood - 25);
+      speaker.emote = 0; // Angry
+      listener.emote = 10; // Upset
+
+      recordWorldEvent({
+        opcode: OP_SPIT,
+        primaryEntityId: speaker.id,
+        secondaryEntityId: listener.id,
+        location: { x: speaker.x, y: speaker.y },
+        tick: currentTick,
+        timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
+        metadata: { primaryName: speaker.properties.name, secondaryName: listener.properties.name }
+      });
+      return;
+    }
+
+    // E. Shove / Push (Empurrar) - physically displaces target 1 tile
+    if (spkAffToLis <= -25 && Math.random() < 0.35) {
+      const pdx = Math.sign(listener.x - speaker.x) || (Math.random() < 0.5 ? 1 : -1);
+      const pdy = Math.sign(listener.y - speaker.y);
+      const targetX = listener.x + pdx;
+      const targetY = listener.y + pdy;
+
+      const mapW = (world && world.width) ? world.width : 512;
+      const mapH = (world && world.height) ? world.height : 512;
+      if (world && targetX >= 0 && targetX < mapW && targetY >= 0 && targetY < mapH) {
+        const t = world.getTile(targetX, targetY);
+        const isWall = entities.some(e => !e.destroyed && e.properties.structure && e.x === targetX && e.y === targetY);
+        if (t !== 5 && !isWall) {
+          listener.x = targetX;
+          listener.y = targetY;
+        }
+      }
+
+      lisBrain.affinities[speaker.id] = Math.max(-100, lisAffToSpk - 15);
+      lisBrain.mood = Math.max(-100, lisBrain.mood - 20);
+      speaker.emote = 0; // Angry
+      listener.emote = 3; // Hurt
+
+      recordWorldEvent({
+        opcode: OP_SHOVE,
+        primaryEntityId: speaker.id,
+        secondaryEntityId: listener.id,
+        location: { x: speaker.x, y: speaker.y },
+        tick: currentTick,
+        timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
+        metadata: { primaryName: speaker.properties.name, secondaryName: listener.properties.name }
+      });
+      return;
+    }
+
+    // F. Humiliate / Mock (Humilhar)
+    if (spkAffToLis <= -30 && (spkBrain.bravery || 0.5) >= (lisBrain.bravery || 0.5) && Math.random() < 0.30) {
+      lisBrain.mood = Math.max(-100, lisBrain.mood - 35);
+      lisBrain.affinities[speaker.id] = Math.max(-100, lisAffToSpk - 18);
+      lisBrain.addLongTerm({ type: "TRAUMA", desc: `Was publicly mocked and humiliated by ${speaker.properties.name}` });
+      speaker.emote = 9; // Smug
+      listener.emote = 5; // Sad
+
+      recordWorldEvent({
+        opcode: OP_HUMILIATE,
+        primaryEntityId: speaker.id,
+        secondaryEntityId: listener.id,
+        location: { x: speaker.x, y: speaker.y },
+        tick: currentTick,
+        timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
+        metadata: { primaryName: speaker.properties.name, secondaryName: listener.properties.name }
+      });
+      return;
+    }
+
+    // G. Insult (Xingar)
+    if (spkAffToLis <= -15 || spkBrain.mood < -30) {
+      lisBrain.affinities[speaker.id] = Math.max(-100, lisAffToSpk - 10);
+      lisBrain.mood = Math.max(-100, lisBrain.mood - 12);
+      speaker.emote = 0; // Angry
+      listener.emote = 10; // Upset
+
+      recordWorldEvent({
+        opcode: OP_INSULT,
+        primaryEntityId: speaker.id,
+        secondaryEntityId: listener.id,
+        location: { x: speaker.x, y: speaker.y },
+        tick: currentTick,
+        timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
+        metadata: { primaryName: speaker.properties.name, secondaryName: listener.properties.name }
+      });
+      return;
+    }
+  }
 
   // Same clan mutual affinity boost (+4 on friendly interaction)
   if (speaker.properties.group && listener.properties.group && speaker.properties.group === listener.properties.group) {
@@ -1398,7 +1780,7 @@ export function gossipBetweenCreatures(speaker, listener, world, entities) {
     lisBrain.affinities[speaker.id] = Math.min(100, (lisBrain.affinities[speaker.id] || 0) + 4);
   }
 
-  // 1. Group Formation: If both have mutual affinity >= 60 and neither has a group
+  // 3. Group Formation: If both have mutual affinity >= 60 and neither has a group
   if (spkAffToLis >= 60 && lisAffToSpk >= 60) {
     if (!speaker.properties.group && !listener.properties.group) {
       const newGrp = createGroup(`Clan of ${speaker.properties.name}`, speaker);
@@ -1407,12 +1789,14 @@ export function gossipBetweenCreatures(speaker, listener, world, entities) {
       listener.properties.group = newGrp;
 
       recordWorldEvent({
-        type: "BIRTH",
+        opcode: OP_RELATION,
         primaryEntityId: speaker.id,
         secondaryEntityId: listener.id,
         location: { x: speaker.x, y: speaker.y },
         description: `${speaker.properties.name} and ${listener.properties.name} founded the faction '${newGrp.name}'!`,
-        tick: currentTick
+        tick: currentTick,
+        timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
+        metadata: { primaryName: speaker.properties.name, secondaryName: listener.properties.name }
       });
     } else if (speaker.properties.group && !listener.properties.group) {
       tryJoinGroup(listener, speaker.properties.group, entities);
@@ -1421,29 +1805,7 @@ export function gossipBetweenCreatures(speaker, listener, world, entities) {
     }
   }
 
-  // 2. Gossip about a third entity (C)
-  const known = Object.keys(spkBrain.affinities);
-  if (known.length > 1) {
-    const thirdId = parseInt(known[Math.floor(Math.random() * known.length)], 10);
-    if (thirdId !== speaker.id && thirdId !== listener.id) {
-      const spkOpinion = spkBrain.affinities[thirdId] || 0;
-      const lisOpinion = lisBrain.affinities[thirdId] !== undefined ? lisBrain.affinities[thirdId] : 0;
-
-      // Listener is receptive if they like the speaker
-      if (lisAffToSpk > 20) {
-        if (spkOpinion < -30 && lisOpinion > 50) {
-          // Listener defends close friend! Rebuffs speaker for talking bad about their friend!
-          lisBrain.affinities[speaker.id] = Math.max(-100, (lisBrain.affinities[speaker.id] || 0) - 12);
-        } else {
-          // Speaker influences listener's opinion of third entity
-          const influence = (spkOpinion - lisOpinion) * 0.18;
-          lisBrain.affinities[thirdId] = Math.max(-100, Math.min(100, lisOpinion + influence));
-        }
-      }
-    }
-  }
-
-  // 3. Share Significant Long-Term Memories (Rich Descriptive Gossip)
+  // 4. Share Significant Long-Term Memories (Rich Descriptive Gossip)
   if (spkBrain.longTermMemory.length > 0 && Math.random() < 0.35) {
     const mem = spkBrain.longTermMemory[Math.floor(Math.random() * spkBrain.longTermMemory.length)];
     const gossipDesc = mem.desc || mem.description || `${mem.type} event`;
@@ -1454,13 +1816,14 @@ export function gossipBetweenCreatures(speaker, listener, world, entities) {
     });
 
     recordWorldEvent({
-      type: "DIALOGUE",
+      opcode: OP_DIALOGUE,
       primaryEntityId: speaker.id,
       secondaryEntityId: listener.id,
       location: { x: speaker.x, y: speaker.y },
       description: `${speaker.properties.name} spoke with ${listener.properties.name}: "Did you hear that ${gossipDesc}?"`,
       tick: currentTick,
-      timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
+      timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
+      metadata: { primaryName: speaker.properties.name, secondaryName: listener.properties.name, text: `${speaker.properties.name} spoke with ${listener.properties.name}: "Did you hear that ${gossipDesc}?"` }
     });
   }
 }
@@ -2967,6 +3330,21 @@ export function createLocomotionProp() {
       }
 
       // -----------------------------------------------------------------------
+      // Priority 7.5: Romantic Partner Tethering (Couples roam together in pairs)
+      // -----------------------------------------------------------------------
+      if (!hasIntention && ent.properties.monogamy?.partnerId && entities && energyRatio > 0.35 && waterRatio > 0.35) {
+        const partner = entities.find(e => e.id === ent.properties.monogamy.partnerId && !e.destroyed);
+        if (partner) {
+          const pdist = Math.abs(partner.x - ent.x) + Math.abs(partner.y - ent.y);
+          if (pdist > 2 && pdist <= 24) {
+            chosenDx = Math.sign(partner.x - ent.x);
+            chosenDy = Math.sign(partner.y - ent.y);
+            hasIntention = true;
+          }
+        }
+      }
+
+      // -----------------------------------------------------------------------
       // Priority 8: Wandering & Exploration (Territorial or Random)
       // -----------------------------------------------------------------------
       if (!hasIntention) {
@@ -3626,6 +4004,7 @@ export function createKnight(x, y, gender = "male") {
       species: "human",
       render: { skin: "Human_Knight_M.png", color: 0xffdcdce6, backcolor: 0xff1e283c },
       life: createLifeProp(6000, 6000),
+      monogamy: createMonogamyProp(),
       terrestrial: createTerrestrialProp(),
       mouth: createMouthProp(32, 32),
       communication: createCommunicationProp(2.0),
@@ -3661,6 +4040,7 @@ export function createArcher(x, y, gender = "female") {
       species: "human",
       render: { skin: "Human_Archer_F.png", color: 0xffa0e678, backcolor: 0xff1e3214 },
       life: createLifeProp(5000, 5000),
+      monogamy: createMonogamyProp(),
       terrestrial: createTerrestrialProp(),
       mouth: createMouthProp(32, 32),
       communication: createCommunicationProp(2.0),
@@ -4312,6 +4692,7 @@ export function createHumanMiner(x, y, name = null) {
       species: "human",
       render: { skin: "Human_Guard_U.png", color: 0xffdcdce6, backcolor: 0xff1e283c },
       life: createLifeProp(7000, 7000),
+      monogamy: createMonogamyProp(),
       terrestrial: createTerrestrialProp(),
       mouth: createMouthProp(32, 32),
       communication: createCommunicationProp(1.5),
@@ -4347,6 +4728,7 @@ export function createHumanBuilder(x, y, name = null) {
       species: "human",
       render: { skin: "Human_Normal_M.png", color: 0xfff0c878, backcolor: 0xff3c2814 },
       life: createLifeProp(6500, 6500),
+      monogamy: createMonogamyProp(),
       terrestrial: createTerrestrialProp(),
       mouth: createMouthProp(32, 32),
       communication: createCommunicationProp(1.5),
@@ -4382,6 +4764,7 @@ export function createHumanCrafter(x, y, name = null) {
       species: "human",
       render: { skin: "Human_Normal_M.png", color: 0xffa0b4e6, backcolor: 0xff1e2846 },
       life: createLifeProp(6000, 6000),
+      monogamy: createMonogamyProp(),
       terrestrial: createTerrestrialProp(),
       mouth: createMouthProp(32, 32),
       communication: createCommunicationProp(1.5),
@@ -4417,6 +4800,7 @@ export function createHumanFarmer(x, y, name = null) {
       species: "human",
       render: { skin: "Human_Normal_M.png", color: 0xff82c878, backcolor: 0xff143c1e },
       life: createLifeProp(6500, 6500),
+      monogamy: createMonogamyProp(),
       terrestrial: createTerrestrialProp(),
       mouth: createMouthProp(32, 32),
       communication: createCommunicationProp(1.5),
@@ -4452,6 +4836,7 @@ export function createHumanMatriarch(x, y, name = null) {
       species: "human",
       render: { skin: "Human_Normal_F.png", color: 0xffffb4c8, backcolor: 0xff461e28 },
       life: createLifeProp(6500, 6500),
+      monogamy: createMonogamyProp(),
       terrestrial: createTerrestrialProp(),
       mouth: createMouthProp(32, 32),
       communication: createCommunicationProp(1.8),
@@ -4487,6 +4872,7 @@ export function createHumanHunter(x, y, name = null) {
       species: "human",
       render: { skin: "Human_Guard_U.png", color: 0xffc87850, backcolor: 0xff3c140a },
       life: createLifeProp(7500, 7500),
+      monogamy: createMonogamyProp(),
       terrestrial: createTerrestrialProp(),
       mouth: createMouthProp(32, 32),
       communication: createCommunicationProp(1.6),
@@ -4522,6 +4908,7 @@ export function createHumanExplorer(x, y, name = null) {
       species: "human",
       render: { skin: "Human_Normal_F.png", color: 0xff78dce6, backcolor: 0xff0a323c },
       life: createLifeProp(6800, 6800),
+      monogamy: createMonogamyProp(),
       terrestrial: createTerrestrialProp(),
       mouth: createMouthProp(32, 32),
       communication: createCommunicationProp(2.2),

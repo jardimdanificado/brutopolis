@@ -436,7 +436,7 @@ export function resolveWallSkin(x, y, wallCoords) {
 /**
  * Directly syncs renderable entities into WASM shared memory
  */
-export function syncRenderToWasm(entities, wasmMemory, wasmExports) {
+export function syncRenderToWasm(entities, wasmMemory, wasmExports, perceptionEntityId = null) {
   const entitiesPtr = wasmExports.wasm_get_entities_ptr();
   const maxEntities = wasmExports.wasm_get_max_entities();
 
@@ -452,6 +452,10 @@ export function syncRenderToWasm(entities, wasmMemory, wasmExports) {
       wallCoords.add(`${e.x},${e.y}`);
     }
   }
+
+  const perceiver = perceptionEntityId ? entities.find(e => e.id === perceptionEntityId && !e.destroyed) : null;
+  const perceiverBrain = perceiver?.properties?.brain;
+  const perceiverPartnerId = perceiver?.properties?.monogamy?.partnerId;
 
   const STRUCT_SIZE = 108;
   let renderIdx = 0;
@@ -484,7 +488,23 @@ export function syncRenderToWasm(entities, wasmMemory, wasmExports) {
       view.setFloat32(offset + 32, 0, true);
     }
 
-    view.setInt32(offset + 36, e.emote !== undefined ? e.emote : -1, true);
+    // Determine emote sprite: perception affinity or native active emote
+    let finalEmote = e.emote !== undefined ? e.emote : -1;
+    if (perceiver && e.id !== perceiver.id && e.properties?.life) {
+      if (perceiverPartnerId && e.id === perceiverPartnerId) {
+        finalEmote = 12; // Other_Heart.png
+      } else if (perceiverBrain?.affinities && perceiverBrain.affinities[e.id] !== undefined) {
+        const aff = perceiverBrain.affinities[e.id];
+        if (aff >= 80) finalEmote = 12; // Heart
+        else if (aff >= 50) finalEmote = 2; // Emote_Happy.png
+        else if (aff >= 15) finalEmote = 1; // Emote_Excited.png
+        else if (aff <= -50) finalEmote = 13; // Item_Skull.png
+        else if (aff <= -15) finalEmote = 0; // Emote_Angry.png
+        else finalEmote = 6; // Emote_Serious.png
+      }
+    }
+
+    view.setInt32(offset + 36, finalEmote, true);
     view.setInt32(offset + 40, e.combatFlash > 0 ? 1 : 0, true);
 
     let skinStr = r.skin || "Human_Knight_M.png";

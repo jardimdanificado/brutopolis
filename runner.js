@@ -550,6 +550,26 @@ function renderInspectorScreen() {
     lines.push(`\x1b[1;37m╚════════════════════════════════════════════════════════════════════════════════════════════════╝\x1b[0m`);
     lines.push(``);
 
+    // Family & Lineage Box
+    const fatherId = props.fatherId !== undefined ? props.fatherId : props.life?.fatherId;
+    const father = fatherId ? entityRegistry.get(fatherId) : null;
+    const fatherStr = father ? `\x1b[1;36m${father.properties?.name || '#' + fatherId}\x1b[0m` : `\x1b[90mDeus ex machina\x1b[0m`;
+
+    const motherId = props.motherId !== undefined ? props.motherId : props.life?.motherId;
+    const mother = motherId ? entityRegistry.get(motherId) : null;
+    const motherStr = mother ? `\x1b[1;35m${mother.properties?.name || '#' + motherId}\x1b[0m` : `\x1b[90mDeus ex machina\x1b[0m`;
+
+    const partnerId = props.monogamy?.partnerId;
+    const partner = partnerId ? entityRegistry.get(partnerId) : null;
+    const partnerStr = partner ? `\x1b[1;31m${partner.properties?.name || '#' + partnerId} ❤️\x1b[0m` : `\x1b[90mSingle\x1b[0m`;
+
+    const childCount = (props.life?.childrenIds || []).length;
+
+    lines.push(`\x1b[1;37m👪 FAMILY & LINEAGE:\x1b[0m`);
+    lines.push(`  Father:  ${fatherStr}  │  Mother:  ${motherStr}`);
+    lines.push(`  Partner: ${partnerStr}  │  Children: \x1b[1;33m${childCount}\x1b[0m registered offspring`);
+    lines.push(``);
+
     // Vital Gauges
     if (props.life) {
       lines.push(`  \x1b[1;32m⚡ Vital Energy:\x1b[0m      ${Math.round(props.life.energy)} / ${props.life.max} cal (${Math.round((props.life.energy / props.life.max) * 100)}%)`);
@@ -565,6 +585,22 @@ function renderInspectorScreen() {
       const moodLabel = getMoodLabel(props.brain.mood);
       const moodColor = props.brain.mood >= 25 ? "\x1b[1;32m" : props.brain.mood >= -20 ? "\x1b[1;36m" : "\x1b[1;31m";
       lines.push(`  \x1b[1;35m🎭 Mood / State:\x1b[0m    ${moodColor}${moodLabel}\x1b[0m`);
+    }
+
+    // Known Affinities Summary
+    const affEntries = Object.entries(props.brain?.affinities || {});
+    if (affEntries.length > 0) {
+      lines.push(``);
+      lines.push(`\x1b[1;35m💞 KNOWN CREATURE AFFINITIES (${affEntries.length}):\x1b[0m`);
+      for (const [oIdStr, val] of affEntries.slice(0, 8)) {
+        const oId = parseInt(oIdStr, 10);
+        const other = entityRegistry.get(oId);
+        const oName = (other?.properties?.name || `Entity #${oId}`).slice(0, 20);
+        const isPartner = partnerId === oId;
+        const tag = isPartner ? "❤️ LOVER" : val >= 50 ? "💚 FRIEND" : val <= -20 ? "💀 ENEMY" : "😐 NEUTRAL";
+        const valCol = val >= 20 ? "\x1b[32m" : val <= -20 ? "\x1b[31m" : "\x1b[37m";
+        lines.push(`  • ${oName.padEnd(22)} ${tag.padEnd(12)} Aff: ${valCol}${Math.round(val)}\x1b[0m`);
+      }
     }
 
     // Amputations

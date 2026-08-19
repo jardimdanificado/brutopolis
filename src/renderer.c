@@ -638,7 +638,7 @@ Image load_image(const char* filename) {
 
 // Cached common tiles & emotes
 static Image img_tiles[NUM_TILES];
-static Image img_emotes[12];
+static Image img_emotes[14];
 
 void renderer_init(void) {
     img_tiles[FLOOR] = load_image("Feature_Stone_A.png");
@@ -657,6 +657,8 @@ void renderer_init(void) {
     img_emotes[9] = load_image("Emote_Smug.png");
     img_emotes[10] = load_image("Emote_Upset.png");
     img_emotes[11] = load_image("Emote_Yarr.png");
+    img_emotes[12] = load_image("Other_Heart.png");
+    img_emotes[13] = load_image("Item_Skull.png");
 }
 
 // ---------------------------------------------------------------------------
@@ -1019,7 +1021,7 @@ void render_frame(uint8_t* framebuffer, int width, int height, float time, float
 
             // Emote bubble
             Image emote_img = (Image){0};
-            if (e->emote >= 0 && e->emote < 12) {
+            if (e->emote >= 0 && e->emote < 14) {
                 emote_img = img_emotes[e->emote];
             } else if (e->motor == 5) emote_img = img_emotes[0]; // Attack -> Angry
             else if (e->motor == 4) emote_img = img_emotes[8]; // Sleep -> Sleeping
@@ -1028,7 +1030,8 @@ void render_frame(uint8_t* framebuffer, int width, int height, float time, float
 
             if (emote_img.pixels && tile_size >= 12) {
                 int emote_size = tile_size / 2;
-                draw_sprite_tinted(framebuffer, width, height, emote_img, sx + tile_size - emote_size, sy - emote_size, emote_size, emote_size, rgb(255, 240, 100), rgb(40, 30, 0), 1.0f, false);
+                uint32_t tint_fg = (e->emote == 12) ? rgb(255, 60, 120) : (e->emote == 13) ? rgb(255, 40, 40) : rgb(255, 240, 100);
+                draw_sprite_tinted(framebuffer, width, height, emote_img, sx + tile_size - emote_size, sy - emote_size, emote_size, emote_size, tint_fg, rgb(30, 20, 0), 1.0f, false);
             }
 
             // Selection Reticle
