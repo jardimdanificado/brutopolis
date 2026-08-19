@@ -217,18 +217,90 @@ export function createLifeProp(energy = 8000, max = 8000, basalRate = 0.05, init
 /**
  * Monogamy & Romantic Pair Bonding Property
  */
-export function createMonogamyProp(partnerId = null) {
+export function createMonogamyProp(partnerId = null, autoOrientation = true) {
   return {
     partnerId,
     proposalCooldown: 0,
     bondTick: null,
     fidelity: 100,
+    autoOrientation,
     effect(ent, dt) {
+      if (this.autoOrientation) {
+        if (!ent.properties.homosexual && !ent.properties.bisexual) {
+          applyRandomSexualOrientation(ent);
+        }
+        this.autoOrientation = false;
+      }
       if (this.proposalCooldown > 0) {
         this.proposalCooldown = Math.max(0, this.proposalCooldown - (dt !== undefined ? dt : 1.0));
       }
     }
   };
+}
+
+/**
+ * Homosexuality & Bisexuality Orientation Traits for Monogamous Relations
+ */
+export function createHomosexualProp() {
+  return {
+    type: "homosexual",
+    orientation: "homosexual"
+  };
+}
+
+export function createBisexualProp() {
+  return {
+    type: "bisexual",
+    orientation: "bisexual"
+  };
+}
+
+export function getCreatureGender(ent) {
+  if (!ent || !ent.properties) return "unknown";
+  const genType = ent.properties.genitalia?.type;
+  if (genType === "vagina" || genType === "female") return "female";
+  if (genType === "penis" || genType === "male") return "male";
+  if (ent.properties.render?.skin?.includes("_F.png")) return "female";
+  if (ent.properties.render?.skin?.includes("_M.png")) return "male";
+  return "unknown";
+}
+
+export function isSexuallyCompatible(proposer, recipient) {
+  const pGender = getCreatureGender(proposer);
+  const rGender = getCreatureGender(recipient);
+  if (pGender === "unknown" || rGender === "unknown") return true;
+
+  const isSameGender = (pGender === rGender);
+
+  // Proposer check
+  const pIsHomo = !!proposer.properties?.homosexual;
+  const pIsBi = !!proposer.properties?.bisexual;
+
+  if (pIsHomo && !isSameGender) return false;
+  if (!pIsHomo && !pIsBi && isSameGender) return false; // Default heterosexual
+
+  // Recipient check
+  const rIsHomo = !!recipient.properties?.homosexual;
+  const rIsBi = !!recipient.properties?.bisexual;
+
+  if (rIsHomo && !isSameGender) return false;
+  if (!rIsHomo && !rIsBi && isSameGender) return false; // Default heterosexual
+
+  return true;
+}
+
+export function rollRandomSexualOrientation() {
+  const r = Math.random();
+  if (r < 0.08) return "bisexual";
+  if (r < 0.15) return "homosexual";
+  return "heterosexual";
+}
+
+export function applyRandomSexualOrientation(ent) {
+  if (!ent || !ent.properties) return;
+  const orient = rollRandomSexualOrientation();
+  if (orient === "bisexual") ent.properties.bisexual = createBisexualProp();
+  else if (orient === "homosexual") ent.properties.homosexual = createHomosexualProp();
 }
 
 /**
@@ -1019,6 +1091,7 @@ export function createGenitaliaProp(type = "penis", isPregnant = false) {
           // Inherit monogamy property if parents are monogamous or humanoid
           if (ent.properties.monogamy || father?.properties?.monogamy || babySpecies === "human") {
             baby.properties.monogamy = createMonogamyProp();
+            applyRandomSexualOrientation(baby);
           }
 
           // Give newborn gentle starter milk/nutrition
@@ -1143,57 +1216,117 @@ export function createGenitaliaProp(type = "penis", isPregnant = false) {
         return;
       }
 
-      // Mating attempt (female seeking male)
-      if ((this.type === "vagina" || this.type === "female") && this.matingCooldown <= 0 && !this.isPregnant && ent.properties.life.energy > ent.properties.life.max * 0.60) {
-        if (entities && Math.random() < 0.08) {
-          for (const mate of entities) {
-            if (mate !== ent && !mate.destroyed && mate.properties.genitalia && (mate.properties.genitalia.type === "penis" || mate.properties.genitalia.type === "male")) {
-              if (mate.properties.species === ent.properties.species && (mate.properties.genitalia.matingCooldown || 0) <= 0) {
-                const dist = Math.abs(mate.x - ent.x) + Math.abs(mate.y - ent.y);
-                if (dist <= 1) {
-                  const aff = ent.properties.brain?.affinities?.[mate.id] || 0;
-                  const mateAff = mate.properties.brain?.affinities?.[ent.id] || 0;
-                  const isMonogamous = !!ent.properties.monogamy;
+      // Mating & Intimate Sexual Relations
+      if (this.matingCooldown <= 0 && ent.properties.life.energy > ent.properties.life.max * 0.50 && entities && Math.random() < 0.10) {
+        const isMonogamous = !!ent.properties.monogamy;
+        const partnerId = ent.properties.monogamy?.partnerId;
 
-                  let canMate = false;
-                  if (isMonogamous) {
-                    // Monogamy requires matching partnerId and high affinity (>= 80)
-                    const isPartner = ent.properties.monogamy.partnerId === mate.id;
-                    if (isPartner && aff >= 80 && mateAff >= 80) {
-                      canMate = true;
-                    }
-                  } else {
-                    const isSameClan = ent.properties.group && mate.properties.group && ent.properties.group === mate.properties.group;
-                    if (isSameClan || (aff >= 15 && mateAff >= 15)) {
-                      canMate = true;
-                    }
-                  }
+        for (const mate of entities) {
+          if (mate === ent || mate.destroyed || !mate.properties?.life) continue;
 
-                  if (canMate) {
-                    this.isPregnant = true;
-                    this.pregnantTimer = 0;
-                    this.fatherId = mate.id;
-                    this.matingCooldown = 300.0;
-                    mate.properties.genitalia.matingCooldown = 180.0;
+          const dist = Math.abs(mate.x - ent.x) + Math.abs(mate.y - ent.y);
+          if (dist > 1) continue;
 
-                    recordWorldEvent({
-                      opcode: OP_RELATION,
-                      primaryEntityId: ent.id,
-                      secondaryEntityId: mate.id,
-                      location: { x: ent.x, y: ent.y },
-                      description: `${ent.properties.name} and ${mate.properties.name} mated, continuing their lineage!`,
-                      tick: currentTick,
-                      timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
-                      metadata: {
-                        primaryName: ent.properties.name,
-                        secondaryName: mate.properties.name
-                      }
-                    });
-                    break;
-                  }
-                }
+          const aff = ent.properties.brain?.affinities?.[mate.id] || 0;
+          const mateAff = mate.properties.brain?.affinities?.[ent.id] || 0;
+          const mateCooldown = mate.properties.genitalia?.matingCooldown || 0;
+          if (mateCooldown > 0) continue;
+
+          let canMate = false;
+          let causesPregnancy = false;
+
+          if (isMonogamous) {
+            // Monogamous creatures ONLY mate with their bonded partner with very high mutual affinity (>= 80)
+            if (partnerId === mate.id && aff >= 80 && mateAff >= 80) {
+              canMate = true;
+              const isFemale = (this.type === "vagina" || this.type === "female");
+              const isMateMale = (mate.properties.genitalia?.type === "penis" || mate.properties.genitalia?.type === "male");
+              if (isFemale && isMateMale && !this.isPregnant) {
+                causesPregnancy = true;
               }
             }
+          } else {
+            // Non-monogamous creatures mate opportunistically (female seeking male of same species)
+            const isFemale = (this.type === "vagina" || this.type === "female");
+            const isMateMale = (mate.properties.genitalia?.type === "penis" || mate.properties.genitalia?.type === "male");
+            if (isFemale && isMateMale && mate.properties.species === ent.properties.species && !this.isPregnant) {
+              const isSameClan = ent.properties.group && mate.properties.group && ent.properties.group === mate.properties.group;
+              if (isSameClan || (aff >= 15 && mateAff >= 15)) {
+                canMate = true;
+                causesPregnancy = true;
+              }
+            }
+          }
+
+          if (canMate) {
+            // 1. Biological Pregnancy
+            if (causesPregnancy) {
+              this.isPregnant = true;
+              this.pregnantTimer = 0;
+              this.fatherId = mate.id;
+            }
+
+            // 2. Cooldowns
+            this.matingCooldown = 300.0;
+            if (mate.properties.genitalia) {
+              mate.properties.genitalia.matingCooldown = 180.0;
+            }
+
+            // 3. Happiness / Mood Boost
+            if (ent.properties.brain) {
+              ent.properties.brain.mood = Math.min(100, (ent.properties.brain.mood || 0) + 40);
+              if (!ent.properties.brain.affinities) ent.properties.brain.affinities = {};
+              ent.properties.brain.affinities[mate.id] = Math.min(100, aff + 10);
+            }
+            if (mate.properties.brain) {
+              mate.properties.brain.mood = Math.min(100, (mate.properties.brain.mood || 0) + 40);
+              if (!mate.properties.brain.affinities) mate.properties.brain.affinities = {};
+              mate.properties.brain.affinities[ent.id] = Math.min(100, mateAff + 10);
+            }
+
+            // 4. Emotes (Love Heart)
+            ent.emote = 12;
+            mate.emote = 12;
+
+            // 5. Cherished Memories
+            ent.properties.brain?.addShortTerm({
+              type: "MATING",
+              desc: `Shared intimate passion and mating joy with ${mate.properties.name}`,
+              location: { x: ent.x, y: ent.y }
+            });
+            mate.properties.brain?.addShortTerm({
+              type: "MATING",
+              desc: `Shared intimate passion and mating joy with ${ent.properties.name}`,
+              location: { x: mate.x, y: mate.y }
+            });
+
+            if (Math.random() < 0.50) {
+              ent.properties.brain?.addLongTerm({
+                type: "CHERISHED_MOMENT",
+                desc: `Cherished a night of deep love and passion with ${mate.properties.name}`
+              });
+              mate.properties.brain?.addLongTerm({
+                type: "CHERISHED_MOMENT",
+                desc: `Cherished a night of deep love and passion with ${ent.properties.name}`
+              });
+            }
+
+            // 6. World Event Log
+            recordWorldEvent({
+              opcode: OP_RELATION,
+              primaryEntityId: ent.id,
+              secondaryEntityId: mate.id,
+              location: { x: ent.x, y: ent.y },
+              description: `${ent.properties.name} and ${mate.properties.name} mated intimately with profound joy and passion!`,
+              tick: currentTick,
+              timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
+              metadata: {
+                primaryName: ent.properties.name,
+                secondaryName: mate.properties.name
+              }
+            });
+
+            break;
           }
         }
       }
@@ -1522,7 +1655,8 @@ export function gossipBetweenCreatures(speaker, listener, world, entities) {
   const spkMono = speaker.properties.monogamy;
   const lisMono = listener.properties.monogamy;
   if (spkMono && lisMono && !spkMono.partnerId && !lisMono.partnerId && dist <= 2) {
-    if (spkAffToLis >= 65 && spkMono.proposalCooldown <= 0) {
+    const isCompatible = isSexuallyCompatible(speaker, listener);
+    if (isCompatible && spkAffToLis >= 65 && spkMono.proposalCooldown <= 0) {
       // Propose partnership!
       // Acceptance probability depends on listener's affinity:
       const acceptProb = Math.max(0.0, Math.min(1.0, (lisAffToSpk - 30) / 40));

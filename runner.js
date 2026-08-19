@@ -565,9 +565,12 @@ function renderInspectorScreen() {
 
     const childCount = (props.life?.childrenIds || []).length;
 
+    const orientStr = props.homosexual ? "Homosexual 🏳️‍🌈" : props.bisexual ? "Bisexual 💜" : "Heterosexual";
+
     lines.push(`\x1b[1;37m👪 FAMILY & LINEAGE:\x1b[0m`);
-    lines.push(`  Father:  ${fatherStr}  │  Mother:  ${motherStr}`);
-    lines.push(`  Partner: ${partnerStr}  │  Children: \x1b[1;33m${childCount}\x1b[0m registered offspring`);
+    lines.push(`  Father:      ${fatherStr}  │  Mother:    ${motherStr}`);
+    lines.push(`  Partner:     ${partnerStr}  │  Children:  \x1b[1;33m${childCount}\x1b[0m registered offspring`);
+    lines.push(`  Orientation: \x1b[1;35m${orientStr}\x1b[0m`);
     lines.push(``);
 
     // Vital Gauges

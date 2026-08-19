@@ -1394,10 +1394,13 @@ function renderDossierModal() {
     const domainStr = domains.length > 0 ? domains.join("+") : "STATIC";
     drawText8x8(`DOMAIN: ${domainStr}`, mx + 440, my + 88, "#58d854", 1);
 
-    // 2. Family & Lineage Box
     const lineageY = my + 114;
     drawNESBox(mx + 10, lineageY, mw - 20, 52);
     drawText8x8("FAMILY & LINEAGE:", mx + 20, lineageY + 8, "#f8b800", 1);
+
+    const orientStr = props.homosexual ? "HOMOSEXUAL" : props.bisexual ? "BISEXUAL" : "HETEROSEXUAL";
+    const orientCol = props.homosexual ? "#ff60a0" : props.bisexual ? "#d3869b" : "#3cbcfc";
+    drawText8x8(`ORIENTATION: ${orientStr}`, mx + 450, lineageY + 8, orientCol, 1);
 
     // Father
     const fatherId = props.fatherId !== undefined ? props.fatherId : props.life?.fatherId;
