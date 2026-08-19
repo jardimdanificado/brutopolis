@@ -24,6 +24,7 @@ import {
 import {
   resetWorldEvents,
   getEventsForEntity,
+  getEventsForGroup,
   getRecentWorldEvents,
   allEvents
 } from "./js/event_log.js";
@@ -826,6 +827,20 @@ function renderGroupDetailScreen(g) {
 
     const lineCol = isAlive ? "\x1b[1;37m" : "\x1b[90m";
     out += `   ${lineCol}• ${mName.padEnd(24)}\x1b[0m \x1b[36m[${mRole}]\x1b[0m \x1b[32m(${hpStr})\x1b[0m \x1b[90m│\x1b[0m \x1b[33mCarrying: ${heldStr}\x1b[0m\x1b[K\n`;
+  }
+
+  // 4. Chronological Clan & Member Event History
+  const groupEvents = getEventsForGroup(g, 30);
+  out += `\n \x1b[1;38;5;208m─── 📜 CLAN & PARTICIPANTS EVENT LOG (${groupEvents.length} RECORDED) ───\x1b[0m\x1b[K\n`;
+  if (groupEvents.length === 0) {
+    out += ` \x1b[90m  No specific historical events recorded for this clan yet.\x1b[0m\x1b[K\n`;
+  } else {
+    const displayEvents = groupEvents.slice(-6).reverse();
+    for (const ev of displayEvents) {
+      const typeColor = ev.type === "DEATH" ? "\x1b[31m" : ev.type === "ATTACK" ? "\x1b[33m" : ev.type === "AMPUTATION" ? "\x1b[35m" : ev.type === "BIRTH" ? "\x1b[1;32m" : ev.type === "RELATION" ? "\x1b[1;35m" : "\x1b[36m";
+      const timeStr = `[Day ${ev.timestamp.day} ${String(ev.timestamp.hour).padStart(2,"0")}:${String(ev.timestamp.minute).padStart(2,"0")}]`;
+      out += `   ${typeColor}• [${ev.type}]\x1b[0m \x1b[90m${timeStr}\x1b[0m ${ev.description}\x1b[K\n`;
+    }
   }
 
   out += `\n`;

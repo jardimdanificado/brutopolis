@@ -19,6 +19,7 @@ import {
 import {
   resetWorldEvents,
   getEventsForEntity,
+  getEventsForGroup,
   getRecentWorldEvents,
   allEvents
 } from "./js/event_log.js";
@@ -302,6 +303,7 @@ let currentMode = "MAP";
 let modalScroll = 0;
 let inspectingLogEvent = null;
 let inspectingGroup = null; // Currently inspected clan for full dossier/stockpile view
+let groupDetailTab = "OVERVIEW"; // Active tab in clan dossier: "OVERVIEW" or "HISTORY"
 let visualizedGroupId = null; // ID of clan whose claimed territory is being highlighted on map
 let isFollowMode = false; // Camera automatically follows and locks onto selected creature
 let isCreatureVisionMode = false; // "See through creature's eyes" perception FOV & Fog of War
@@ -1241,9 +1243,17 @@ function renderGroupsModal() {
 
   drawNESButton(mx + mw - 32, my + 6, 26, 24, "X", false, true);
   registerClickableRegion(mx + mw - 32, my + 6, 26, 24, () => {
-    if (inspectingGroup) inspectingGroup = null;
+    if (inspectingLogEvent) inspectingLogEvent = null;
+    else if (inspectingGroup) inspectingGroup = null;
     else currentMode = "MAP";
   });
+
+  // If viewing a specific event detail from clan history:
+  if (inspectingLogEvent) {
+    renderLogDetailView(mx, my, mw, mh, inspectingLogEvent);
+    ctx.restore();
+    return;
+  }
 
   // If viewing full Clan Dossier / Stockpile Detail
   if (inspectingGroup) {
@@ -1297,6 +1307,8 @@ function renderGroupsModal() {
     drawNESButton(mx + cardW - 255, cardY + 30, 80, 24, "DETAILS", false, false);
     registerClickableRegion(mx + cardW - 255, cardY + 30, 80, 24, () => {
       inspectingGroup = curG;
+      groupDetailTab = "OVERVIEW";
+      modalScroll = 0;
     });
 
     // View Claimed Territory Button
@@ -1337,18 +1349,36 @@ function renderGroupsModal() {
 }
 
 /**
- * Full-screen Clan Dossier: detailed territory, itemized stockpile, and member roster.
+ * Full-screen Clan Dossier: detailed territory, itemized stockpile, member roster, and complete history.
  */
 function renderGroupDetailView(mx, my, mw, mh, g) {
   const livingMembers = g.members.filter(mid => entities.some(e => e.id === mid && !e.destroyed));
-  const leaderEnt = entities.find(e => e.id === g.members[0] && !e.destroyed);
+  const leaderEnt = entities.find(e => e.id === (g.leaderId || g.members[0]) && !e.destroyed);
   const stockpile = getGroupStockpile(g, entities);
+  const groupEvents = getEventsForGroup(g, 100);
 
   drawText8x8(`CLAN DOSSIER: ${(g.name || "CLAN").toUpperCase()}`, mx + 16, my + 14, "#f8b800", 1);
 
-  // Top Actions
-  drawNESButton(mx + mw - 250, my + 6, 100, 24, "TERRITORY", false, false);
-  registerClickableRegion(mx + mw - 250, my + 6, 100, 24, () => {
+  // Top Tabs
+  const isOverview = groupDetailTab === "OVERVIEW";
+  drawNESButton(mx + 16, my + 32, 100, 24, "OVERVIEW", isOverview, false);
+  registerClickableRegion(mx + 16, my + 32, 100, 24, () => {
+    groupDetailTab = "OVERVIEW";
+    modalScroll = 0;
+  });
+
+  const isHistory = groupDetailTab === "HISTORY";
+  const histTabLabel = `HISTORY (${groupEvents.length})`;
+  const histTabWidth = histTabLabel.length * 8 + 20;
+  drawNESButton(mx + 122, my + 32, histTabWidth, 24, histTabLabel, isHistory, false);
+  registerClickableRegion(mx + 122, my + 32, histTabWidth, 24, () => {
+    groupDetailTab = "HISTORY";
+    modalScroll = 0;
+  });
+
+  // Top Action Buttons
+  drawNESButton(mx + mw - 230, my + 32, 100, 24, "TERRITORY", false, false);
+  registerClickableRegion(mx + mw - 230, my + 32, 100, 24, () => {
     visualizedGroupId = g.id;
     let sumX = 0, sumY = 0, count = 0;
     for (const zk of g.claimedZones || []) {
@@ -1365,8 +1395,8 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
     currentMode = "MAP";
   });
 
-  drawNESButton(mx + mw - 145, my + 6, 100, 24, "FOCUS LEADER", false, false);
-  registerClickableRegion(mx + mw - 145, my + 6, 100, 24, () => {
+  drawNESButton(mx + mw - 124, my + 32, 110, 24, "FOCUS LEADER", false, false);
+  registerClickableRegion(mx + mw - 124, my + 32, 110, 24, () => {
     if (leaderEnt && shader) {
       lastSelectedId = leaderEnt.id;
       shader.exports.wasm_select_entity(leaderEnt.id);
@@ -1375,83 +1405,157 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
     }
   });
 
-  // 1. Territory & Base Box
-  const box1Y = my + 38;
-  const box1H = 56;
-  drawNESBox(mx + 12, box1Y, mw - 24, box1H);
-  drawText8x8("TERRITORY & CLAIMED ZONES:", mx + 20, box1Y + 12, "#ffd700", 1);
-  const zoneListStr = (g.claimedZones || []).map(zk => {
-    const c = parseZoneCoords(zk);
-    return c ? `${zk} [X:${c.minX}..${c.maxX}, Y:${c.minY}..${c.maxY}]` : zk;
-  }).join(" | ");
-  drawText8x8(zoneListStr || "NO CLAIMED ZONES", mx + 20, box1Y + 30, "#ffffff", 1);
+  // -------------------------------------------------------------------------
+  // TAB 1: OVERVIEW (Territory, Stockpile, Member Roster)
+  // -------------------------------------------------------------------------
+  if (isOverview) {
+    // 1. Territory & Base Box
+    const box1Y = my + 62;
+    const box1H = 50;
+    drawNESBox(mx + 12, box1Y, mw - 24, box1H);
+    drawText8x8("TERRITORY & CLAIMED ZONES:", mx + 20, box1Y + 10, "#ffd700", 1);
+    const zoneListStr = (g.claimedZones || []).map(zk => {
+      const c = parseZoneCoords(zk);
+      return c ? `${zk} [X:${c.minX}..${c.maxX}, Y:${c.minY}..${c.maxY}]` : zk;
+    }).join(" | ");
+    drawText8x8(zoneListStr || "NO CLAIMED ZONES", mx + 20, box1Y + 28, "#ffffff", 1);
 
-  // 2. Complete Itemized Stockpile Box
-  const box2Y = box1Y + box1H + 8;
-  const box2H = 110;
-  drawNESBox(mx + 12, box2Y, mw - 24, box2H);
-  drawText8x8(`TOTAL STOCKPILE (${stockpile.totalCount} ITEMS AVAILABLE):`, mx + 20, box2Y + 12, "#ffd700", 1);
-  drawText8x8(`BREAKDOWN: [ON TERRITORY GROUND: ${stockpile.breakdown.ground} | WITH MEMBERS: ${stockpile.breakdown.members} | IN CLAN STORAGE: ${stockpile.breakdown.storage}]`, mx + 20, box2Y + 28, "#3cbcfc", 1);
+    // 2. Complete Itemized Stockpile Box
+    const box2Y = box1Y + box1H + 6;
+    const box2H = 96;
+    drawNESBox(mx + 12, box2Y, mw - 24, box2H);
+    drawText8x8(`TOTAL STOCKPILE (${stockpile.totalCount} ITEMS AVAILABLE):`, mx + 20, box2Y + 10, "#ffd700", 1);
+    drawText8x8(`BREAKDOWN: [ON TERRITORY GROUND: ${stockpile.breakdown.ground} | WITH MEMBERS: ${stockpile.breakdown.members} | IN CLAN STORAGE: ${stockpile.breakdown.storage}]`, mx + 20, box2Y + 26, "#3cbcfc", 1);
 
-  const stockEntries = Object.entries(stockpile.items);
-  let stockLinesY = box2Y + 48;
-  if (stockEntries.length === 0) {
-    drawText8x8("NO RESOURCES OR ITEMS IN STOCKPILE CURRENTLY.", mx + 20, stockLinesY, "#bcbcbc", 1);
-  } else {
-    const maxCharsPerLine = Math.floor((mw - 60) / 8);
-    const stockFormatted = stockEntries.map(([name, count]) => `• ${name}: ${count} units`).join("   ");
-    const wrappedStock = wrapText8x8(stockFormatted.toUpperCase(), maxCharsPerLine);
-    for (const sLine of wrappedStock.slice(0, 3)) {
-      drawText8x8(sLine, mx + 20, stockLinesY, "#58d854", 1);
-      stockLinesY += 16;
+    const stockEntries = Object.entries(stockpile.items);
+    let stockLinesY = box2Y + 44;
+    if (stockEntries.length === 0) {
+      drawText8x8("NO RESOURCES OR ITEMS IN STOCKPILE CURRENTLY.", mx + 20, stockLinesY, "#bcbcbc", 1);
+    } else {
+      const maxCharsPerLine = Math.floor((mw - 60) / 8);
+      const stockFormatted = stockEntries.map(([name, count]) => `• ${name}: ${count} units`).join("   ");
+      const wrappedStock = wrapText8x8(stockFormatted.toUpperCase(), maxCharsPerLine);
+      for (const sLine of wrappedStock.slice(0, 3)) {
+        drawText8x8(sLine, mx + 20, stockLinesY, "#58d854", 1);
+        stockLinesY += 16;
+      }
+    }
+
+    // 3. Member Roster & Hand Inventories Box
+    const box3Y = box2Y + box2H + 6;
+    const box3H = (my + mh - 12) - box3Y;
+    drawNESBox(mx + 12, box3Y, mw - 24, box3H);
+    drawText8x8(`MEMBER ROSTER (${livingMembers.length}/${g.members.length} ALIVE):`, mx + 20, box3Y + 10, "#ffd700", 1);
+
+    let rosterY = box3Y + 28;
+    for (let mi = 0; mi < g.members.length; mi++) {
+      if (rosterY + 22 > box3Y + box3H) break;
+      const mid = g.members[mi];
+      const mEnt = entities.find(e => e.id === mid && !e.destroyed);
+
+      const isAlive = !!mEnt;
+      const isLeader = (mEnt && mEnt.id === g.leaderId);
+      const leaderBadge = isLeader ? " [LEADER]" : "";
+      const mName = mEnt ? `${mEnt.properties.name.toUpperCase()}${leaderBadge}` : `MEMBER #${mid} (DEAD)`;
+      const mRole = mEnt ? (mEnt.properties.role || mEnt.properties.species || "HUMAN").toUpperCase() : "-";
+      const hpStr = mEnt?.properties.life ? `${Math.round(mEnt.properties.life.energy)}HP` : "-";
+
+      // Held items
+      let heldStr = "HANDS: EMPTY";
+      if (mEnt) {
+        const left = mEnt.properties.arm_left?.heldItem;
+        const right = mEnt.properties.arm_right?.heldItem;
+        const held = [];
+        if (left) held.push(`L:${left.resourceType || left.name || "ITEM"}`);
+        if (right) held.push(`R:${right.resourceType || right.name || "ITEM"}`);
+        if (held.length > 0) heldStr = held.join(" | ").toUpperCase();
+      }
+
+      const mText = `• ${mName} [${mRole}] - ${hpStr} | ${heldStr}`;
+      drawText8x8(mText.slice(0, Math.floor((mw - 140) / 8)), mx + 20, rosterY + 4, isAlive ? "#ffffff" : "#9c5050", 1);
+
+      if (mEnt) {
+        const curM = mEnt;
+        drawNESButton(mx + mw - 100, rosterY - 2, 70, 20, "FOCUS", false, false);
+        registerClickableRegion(mx + mw - 100, rosterY - 2, 70, 20, () => {
+          lastSelectedId = curM.id;
+          if (shader) {
+            shader.exports.wasm_select_entity(curM.id);
+            shader.exports.wasm_set_camera(curM.x, curM.y, shader.exports.wasm_get_camera_zoom());
+          }
+          currentMode = "MAP";
+        });
+      }
+
+      rosterY += 22;
     }
   }
 
-  // 3. Member Roster & Hand Inventories Box
-  const box3Y = box2Y + box2H + 8;
-  const box3H = (my + mh - 12) - box3Y;
-  drawNESBox(mx + 12, box3Y, mw - 24, box3H);
-  drawText8x8(`MEMBER ROSTER (${livingMembers.length}/${g.members.length} ALIVE):`, mx + 20, box3Y + 12, "#ffd700", 1);
+  // -------------------------------------------------------------------------
+  // TAB 2: HISTORY (Chronological Clan & Member Event Log)
+  // -------------------------------------------------------------------------
+  else if (isHistory) {
+    const histBoxY = my + 62;
+    const histBoxH = (my + mh - 12) - histBoxY;
+    drawNESBox(mx + 12, histBoxY, mw - 24, histBoxH);
 
-  let rosterY = box3Y + 30;
-  for (let mi = 0; mi < g.members.length; mi++) {
-    if (rosterY + 24 > box3Y + box3H) break;
-    const mid = g.members[mi];
-    const mEnt = entities.find(e => e.id === mid && !e.destroyed);
+    drawText8x8("CHRONOLOGICAL CLAN EVENT HISTORY & PARTICIPANTS LOG:", mx + 20, histBoxY + 12, "#ffd700", 1);
+    drawText8x8(`TRACKING ALL RECORDED EVENTS FOR ${(g.name || "CLAN").toUpperCase()} AND ALL ITS PARTICIPANTS`, mx + 20, histBoxY + 28, "#3cbcfc", 1);
 
-    const isAlive = !!mEnt;
-    const mName = mEnt ? mEnt.properties.name.toUpperCase() : `MEMBER #${mid} (DEAD)`;
-    const mRole = mEnt ? (mEnt.properties.role || mEnt.properties.species || "HUMAN").toUpperCase() : "-";
-    const hpStr = mEnt?.properties.life ? `${Math.round(mEnt.properties.life.energy)}HP` : "-";
+    if (groupEvents.length === 0) {
+      drawText8x8("NO HISTORICAL EVENTS RECORDED FOR THIS CLAN YET.", mx + 20, histBoxY + 54, "#bcbcbc", 1);
+    } else {
+      const eventsReversed = groupEvents.slice().reverse();
+      const rowHeight = 26;
+      const visibleCount = Math.floor((histBoxH - 52) / rowHeight);
+      const maxScroll = Math.max(0, eventsReversed.length - visibleCount);
+      modalScroll = Math.max(0, Math.min(maxScroll, modalScroll));
 
-    // Held items
-    let heldStr = "HANDS: EMPTY";
-    if (mEnt) {
-      const left = mEnt.properties.arm_left?.heldItem;
-      const right = mEnt.properties.arm_right?.heldItem;
-      const held = [];
-      if (left) held.push(`L:${left.resourceType || left.name || "ITEM"}`);
-      if (right) held.push(`R:${right.resourceType || right.name || "ITEM"}`);
-      if (held.length > 0) heldStr = held.join(" | ").toUpperCase();
-    }
-
-    const mText = `• ${mName} [${mRole}] - ${hpStr} | ${heldStr}`;
-    drawText8x8(mText.slice(0, Math.floor((mw - 140) / 8)), mx + 20, rosterY + 4, isAlive ? "#ffffff" : "#9c5050", 1);
-
-    if (mEnt) {
-      const curM = mEnt;
-      drawNESButton(mx + mw - 100, rosterY - 2, 70, 20, "FOCUS", false, false);
-      registerClickableRegion(mx + mw - 100, rosterY - 2, 70, 20, () => {
-        lastSelectedId = curM.id;
-        if (shader) {
-          shader.exports.wasm_select_entity(curM.id);
-          shader.exports.wasm_set_camera(curM.x, curM.y, shader.exports.wasm_get_camera_zoom());
+      let logY = histBoxY + 48;
+      for (let i = modalScroll; i < Math.min(eventsReversed.length, modalScroll + visibleCount); i++) {
+        const ev = eventsReversed[i];
+        const isHover = mouseX >= mx + 16 && mouseX <= mx + mw - 170 && mouseY >= logY - 2 && mouseY <= logY + 22;
+        if (isHover) {
+          ctx.fillStyle = "#181828";
+          ctx.fillRect(mx + 16, logY - 2, mw - 186, 24);
         }
-        currentMode = "MAP";
-      });
-    }
 
-    rosterY += 24;
+        const typeCol = ev.type === "DEATH" ? "#f83800" : ev.type === "ATTACK" ? "#f8b800" : ev.type === "AMPUTATION" ? "#d3869b" : ev.type === "BIRTH" ? "#58d854" : ev.type === "RELATION" ? "#f878f8" : "#3cbcfc";
+        const timeStr = `[D${ev.timestamp.day} ${String(ev.timestamp.hour).padStart(2,"0")}:${String(ev.timestamp.minute).padStart(2,"0")}]`;
+
+        // Type badge & time
+        drawText8x8(`[${ev.type}]`, mx + 20, logY + 4, typeCol, 1);
+        drawText8x8(timeStr, mx + 110, logY + 4, "#bcbcbc", 1);
+
+        // Description text
+        const maxDescChars = Math.floor((mw - 360) / 8);
+        const descShort = ev.description.length > maxDescChars ? ev.description.slice(0, maxDescChars - 3) + "..." : ev.description;
+        drawText8x8(descShort, mx + 210, logY + 4, "#ffffff", 1);
+
+        const curEv = ev;
+        // Click row to inspect
+        registerClickableRegion(mx + 16, logY - 2, mw - 186, 24, () => {
+          inspectingLogEvent = curEv;
+        });
+
+        // Inspect Button
+        drawNESButton(mx + mw - 160, logY - 1, 72, 20, "INSPECT", false, false);
+        registerClickableRegion(mx + mw - 160, logY - 1, 72, 20, () => {
+          inspectingLogEvent = curEv;
+        });
+
+        // Locate Button
+        drawNESButton(mx + mw - 80, logY - 1, 60, 20, "MAP", false, false);
+        registerClickableRegion(mx + mw - 80, logY - 1, 60, 20, () => {
+          if (shader && curEv.location) {
+            shader.exports.wasm_set_camera(curEv.location.x, curEv.location.y, 2.0);
+          }
+          currentMode = "MAP";
+        });
+
+        logY += rowHeight;
+      }
+    }
   }
 }
 
@@ -1528,7 +1632,7 @@ function renderTerritoryOverlay() {
 }
 
 // ---------------------------------------------------------------------------
-// 5. In-Engine Modal 4: World Event Log Explorer & Detail Window ([L])
+// 5. In-Engine Modal 4: World Event Log Explorer Screen ([L])
 // ---------------------------------------------------------------------------
 
 function getFilteredLogs() {
@@ -1538,9 +1642,9 @@ function getFilteredLogs() {
 }
 
 function renderLogsModal() {
-  const mx = 30;
+  const mx = 40;
   const my = 40;
-  const mw = CANVAS_WIDTH - 60;
+  const mw = CANVAS_WIDTH - 80;
   const mh = CANVAS_HEIGHT - 86;
 
   ctx.save();
@@ -1666,7 +1770,8 @@ function renderLogDetailView(mx, my, mw, mh, ev) {
     });
   }
 
-  drawNESButton(mx + mw - 190, my + mh - 70, 160, 30, "BACK TO LOGS", false, false);
+  const backLabel = (currentMode === "GROUPS" || inspectingGroup) ? "BACK TO CLAN" : "BACK TO LOGS";
+  drawNESButton(mx + mw - 190, my + mh - 70, 160, 30, backLabel, false, false);
   registerClickableRegion(mx + mw - 190, my + mh - 70, 160, 30, () => {
     inspectingLogEvent = null;
   });

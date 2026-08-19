@@ -44,6 +44,22 @@ export function generateRandomDietaryPreferences() {
   return { likes, dislikes };
 }
 
+/**
+ * Lifespan & Decay for items, food, severed parts, and excrement
+ */
+export function createLifespanProp(maxSeconds = 120.0) {
+  return {
+    age: 0,
+    maxAge: maxSeconds,
+    effect(ent, dt) {
+      this.age += (dt !== undefined ? dt : 1.0);
+      if (this.age >= this.maxAge) {
+        ent.destroyed = true;
+      }
+    }
+  };
+}
+
 // ---------------------------------------------------------------------------
 // 1. Respiration & Vital Organs
 // ---------------------------------------------------------------------------
@@ -888,10 +904,10 @@ export function createGenitaliaProp(type = "penis", isPregnant = false) {
       // Pregnancy gestation and childbirth
       if (this.isPregnant) {
         this.pregnantTimer = (this.pregnantTimer || 0) + dt;
-        if (this.pregnantTimer >= 25.0 && entities) { // Childbirth after 25s
+        if (this.pregnantTimer >= 70.0 && entities) { // Gestation takes 70s (> 1 in-game hour)
           this.isPregnant = false;
           this.pregnantTimer = 0;
-          this.matingCooldown = 50.0; // Postpartum recovery cooldown
+          this.matingCooldown = 300.0; // Long postpartum recovery cooldown (300s = 5 game hours)
 
           const babySpecies = ent.properties.species || "human";
           const babyGender = Math.random() < 0.5 ? "female" : "male";
@@ -960,12 +976,28 @@ export function createGenitaliaProp(type = "penis", isPregnant = false) {
 
           baby.properties.genitalia = createGenitaliaProp(babyGender === "female" ? "vagina" : "penis", false);
 
-          // Inherit mother's group and group member capability
-          if (ent.properties.group) {
-            baby.properties.group = ent.properties.group;
+          // Inherit clan group: ensure children are NEVER born outside the group
+          let targetClan = ent.properties.group;
+          if (!targetClan && entities) {
+            for (const nearby of entities) {
+              if (nearby !== ent && !nearby.destroyed && nearby.properties.group && nearby.properties.species === babySpecies) {
+                const ndist = Math.abs(nearby.x - ent.x) + Math.abs(nearby.y - ent.y);
+                if (ndist <= 24) {
+                  targetClan = nearby.properties.group;
+                  ent.properties.group = targetClan;
+                  ent.properties.group_member = createGroupMemberProp();
+                  if (!targetClan.members.includes(ent.id)) targetClan.members.push(ent.id);
+                  break;
+                }
+              }
+            }
+          }
+
+          if (targetClan) {
+            baby.properties.group = targetClan;
             baby.properties.group_member = createGroupMemberProp();
-            if (!ent.properties.group.members.includes(baby.id)) {
-              ent.properties.group.members.push(baby.id);
+            if (!targetClan.members.includes(baby.id)) {
+              targetClan.members.push(baby.id);
             }
           }
 
@@ -979,8 +1011,8 @@ export function createGenitaliaProp(type = "penis", isPregnant = false) {
             baby.properties.brain.affinities[ent.id] = 95;
             baby.properties.brain.mood = 80;
             // Also establish high affinity with other clan members
-            if (ent.properties.group) {
-              for (const mid of ent.properties.group.members) {
+            if (targetClan) {
+              for (const mid of targetClan.members) {
                 if (mid !== baby.id) baby.properties.brain.affinities[mid] = 75;
               }
             }
@@ -1007,8 +1039,8 @@ export function createGenitaliaProp(type = "penis", isPregnant = false) {
       }
 
       // Mating attempt (female / vagina seeking male / penis of same species with mutual affinity >= 15 or same clan)
-      if ((this.type === "vagina" || this.type === "female") && this.matingCooldown <= 0 && !this.isPregnant && ent.properties.life.energy > ent.properties.life.max * 0.40) {
-        if (entities && Math.random() < 0.35) {
+      if ((this.type === "vagina" || this.type === "female") && this.matingCooldown <= 0 && !this.isPregnant && ent.properties.life.energy > ent.properties.life.max * 0.60) {
+        if (entities && Math.random() < 0.08) {
           for (const mate of entities) {
             if (mate !== ent && !mate.destroyed && mate.properties.genitalia && (mate.properties.genitalia.type === "penis" || mate.properties.genitalia.type === "male")) {
               if (mate.properties.species === ent.properties.species && (mate.properties.genitalia.matingCooldown || 0) <= 0) {
@@ -1020,8 +1052,8 @@ export function createGenitaliaProp(type = "penis", isPregnant = false) {
                   if (isSameClan || (aff >= 15 && mateAff >= 15)) {
                     this.isPregnant = true;
                     this.pregnantTimer = 0;
-                    this.matingCooldown = 60.0;
-                    mate.properties.genitalia.matingCooldown = 40.0;
+                    this.matingCooldown = 300.0;
+                    mate.properties.genitalia.matingCooldown = 180.0;
 
                     recordWorldEvent({
                       type: "RELATION",
@@ -1457,6 +1489,20 @@ export function dropHeldItem(ent, entities, world) {
       else if (it.resourceType === "wood") spawned = createWoodItem(ent.x, ent.y);
       else if (it.resourceType === "seed") spawned = createSeedEntity(ent.x, ent.y, "large", it.seedSpecies || "oak");
       else if (it.resourceType === "fruit") spawned = createFruit(ent.x, ent.y, "large", "oak");
+      else if (it.resourceType === "feces") spawned = createPoopEntity(ent.x, ent.y);
+      else if (it.resourceType === "meat") {
+        spawned = createEntity(
+          {
+            name: "Game Meat",
+            resourceType: "meat",
+            render: { skin: "Item_Steak.png", color: 0xffdc5050, backcolor: 0x00000000 },
+            edible: { nutrition: 2000, foodType: "meat", digestDuration: 60 },
+            lifespan: createLifespanProp(1800.0)
+          },
+          ent.x,
+          ent.y
+        );
+      }
       if (spawned && entities) entities.push(spawned);
       return it;
     }
@@ -1482,10 +1528,28 @@ export function createStoneWallEntity(x, y, groupName = null) {
   );
 }
 
+export function isTileInClaimedZones(x, y, claimedZones) {
+  if (!claimedZones || !Array.isArray(claimedZones)) return false;
+  const zx = Math.floor(x / 8);
+  const zy = Math.floor(y / 8);
+  return claimedZones.includes(`${zx}_${zy}`) || claimedZones.includes(`${zx},${zy}`);
+}
+
+export function isPerimeterEdge(zx, zy, ox, oy, claimedZones) {
+  if (!claimedZones || !Array.isArray(claimedZones)) return false;
+  
+  if (oy === 0 && !isTileInClaimedZones(zx * 8, (zy - 1) * 8, claimedZones)) return true;
+  if (oy === 7 && !isTileInClaimedZones(zx * 8, (zy + 1) * 8, claimedZones)) return true;
+  if (ox === 0 && !isTileInClaimedZones((zx - 1) * 8, zy * 8, claimedZones)) return true;
+  if (ox === 7 && !isTileInClaimedZones((zx + 1) * 8, zy * 8, claimedZones)) return true;
+
+  return false;
+}
+
 /**
  * Fluid Group Member Property:
- * Dynamically performs building, mining, crafting, farming, foraging, hunting, and hauling
- * based on current needs, opportunities, and held items without rigid role restrictions.
+ * Dynamically performs building, mining, crafting, farming, foraging, hunting, hauling,
+ * cleaning territory, defending during war, and expanding clan borders without rigid roles.
  */
 export function createGroupMemberProp() {
   return {
@@ -1498,10 +1562,11 @@ export function createGroupMemberProp() {
       const isCarryingMat = isCarryingItem(ent, "stone") || isCarryingItem(ent, "wood");
       const isCarryingSeed = isCarryingItem(ent, "seed");
       const isCarryingMeat = isCarryingItem(ent, "meat");
+      const isCarryingFeces = isCarryingItem(ent, "feces");
 
       const zx = Math.floor(ent.x / 8);
       const zy = Math.floor(ent.y / 8);
-      const inClaimedZone = group.claimedZones?.includes(`${zx}_${zy}`) || group.claimedZones?.includes(`${zx},${zy}`);
+      const inClaimedZone = isTileInClaimedZones(ent.x, ent.y, group.claimedZones);
 
       const firstZone = group.claimedZones?.[0] || "32_32";
       const parts = firstZone.includes("_") ? firstZone.split("_") : firstZone.split(",");
@@ -1514,7 +1579,115 @@ export function createGroupMemberProp() {
       this.actionTimer = (this.actionTimer || 0) + dt;
 
       // ---------------------------------------------------------------------
-      // 0. CLAN COMMUNAL NOURISHMENT (Eat from group storage if hungry)
+      // 0. CLAN DOMAIN EXPANSION & WAR RESOLUTION EVALUATION
+      // ---------------------------------------------------------------------
+      const livingMems = (group.members || []).map(id => entities.find(e => e.id === id && !e.destroyed && e.properties.life)).filter(Boolean);
+      group.maxMembersEver = Math.max(group.maxMembersEver || 0, livingMems.length);
+      
+      // Auto-claim 1 new zone for every 4 living/peak members (zones are NEVER lost!)
+      const targetZoneCount = Math.max(2, Math.floor((group.maxMembersEver || 0) / 4) + 1);
+      if (group.claimedZones.length < targetZoneCount) {
+        let newZone = null;
+        for (const zk of group.claimedZones) {
+          const zp = zk.includes("_") ? zk.split("_") : zk.split(",");
+          const cx = parseInt(zp[0], 10);
+          const cy = parseInt(zp[1], 10);
+          for (const cand of [`${cx + 1}_${cy}`, `${cx - 1}_${cy}`, `${cx}_${cy + 1}`, `${cx}_${cy - 1}`]) {
+            if (!group.claimedZones.includes(cand)) {
+              newZone = cand;
+              break;
+            }
+          }
+          if (newZone) break;
+        }
+
+        if (newZone) {
+          group.claimedZones.push(newZone);
+          const nzParts = newZone.split("_");
+          recordWorldEvent({
+            type: "SPROUT",
+            primaryEntityId: ent.id,
+            location: { x: parseInt(nzParts[0], 10) * 8 + 4, y: parseInt(nzParts[1], 10) * 8 + 4 },
+            description: `'${group.name}' expanded its territorial domain and claimed Zone [${nzParts[0]}, ${nzParts[1]}] (Population: ${livingMems.length})!`,
+            tick: currentTick,
+            timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
+          });
+        }
+      }
+
+      // Check for Contested Territory with other Clans -> Declare War!
+      if (!group.wars) group.wars = [];
+      for (const otherEnt of entities) {
+        if (otherEnt !== ent && !otherEnt.destroyed && otherEnt.properties.group && otherEnt.properties.group !== group) {
+          const otherGroup = otherEnt.properties.group;
+          if (!otherGroup.wars) otherGroup.wars = [];
+
+          const hasContestedZone = group.claimedZones.some(zk => otherGroup.claimedZones.includes(zk));
+          if (hasContestedZone && !group.wars.includes(otherGroup.id)) {
+            group.wars.push(otherGroup.id);
+            otherGroup.wars.push(group.id);
+
+            group.warInitialPop = Math.max(group.warInitialPop || 0, livingMems.length);
+            const otherLiving = (otherGroup.members || []).map(id => entities.find(e => e.id === id && !e.destroyed && e.properties.life)).filter(Boolean);
+            otherGroup.warInitialPop = Math.max(otherGroup.warInitialPop || 0, otherLiving.length);
+
+            recordWorldEvent({
+              type: "ATTACK",
+              primaryEntityId: ent.id,
+              secondaryEntityId: otherEnt.id,
+              location: { x: ent.x, y: ent.y },
+              description: `WAR DECLARED! '${group.name}' and '${otherGroup.name}' clashed over contested territory and entered an all-out war!`,
+              tick: currentTick,
+              timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
+            });
+          }
+        }
+      }
+
+      // Evaluate Active Wars: Victory when enemy Leader is dead AND > 50% casualties
+      for (let i = group.wars.length - 1; i >= 0; i--) {
+        const enemyGrpId = group.wars[i];
+        let enemyGroup = null;
+        for (const e of entities) {
+          if (e.properties.group?.id === enemyGrpId) {
+            enemyGroup = e.properties.group;
+            break;
+          }
+        }
+
+        if (enemyGroup) {
+          const enemyLiving = (enemyGroup.members || []).map(id => entities.find(e => e.id === id && !e.destroyed && e.properties.life)).filter(Boolean);
+          const enemyLeaderDead = !enemyGroup.leaderId || !enemyLiving.some(e => e.id === enemyGroup.leaderId);
+          const enemy50PercentCasualties = enemyLiving.length <= Math.floor((enemyGroup.warInitialPop || 4) / 2);
+
+          if (enemyLeaderDead && enemy50PercentCasualties) {
+            // Decisive Victory: Annex all territory from the defeated clan
+            group.claimedZones = [...new Set([...group.claimedZones, ...enemyGroup.claimedZones])];
+            group.wars.splice(i, 1);
+            enemyGroup.wars = (enemyGroup.wars || []).filter(id => id !== group.id);
+
+            // Defeated clan disbands permanently and remaining members scatter
+            for (const surv of enemyLiving) {
+              delete surv.properties.group;
+              delete surv.properties.group_member;
+            }
+
+            recordWorldEvent({
+              type: "KILL",
+              primaryEntityId: ent.id,
+              location: { x: ent.x, y: ent.y },
+              description: `DECISIVE WAR VICTORY! '${group.name}' crushed '${enemyGroup.name}'! The enemy leader fell and their forces were cut in half. The defeated clan dissolved and '${group.name}' annexed all their territory!`,
+              tick: currentTick,
+              timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
+            });
+          }
+        } else {
+          group.wars.splice(i, 1);
+        }
+      }
+
+      // ---------------------------------------------------------------------
+      // 1. CLAN COMMUNAL NOURISHMENT (Eat from group storage if hungry)
       // ---------------------------------------------------------------------
       const energyRatio = ent.properties.life ? (ent.properties.life.energy / ent.properties.life.max) : 1.0;
       if (energyRatio <= 0.65 && ent.properties.stomach && ent.properties.stomach.items.length < ent.properties.stomach.capacity) {
@@ -1542,7 +1715,7 @@ export function createGroupMemberProp() {
       }
 
       // ---------------------------------------------------------------------
-      // 1. ACTIVE ACTIONS WITH HELD ITEMS
+      // 2. ACTIVE ACTIONS WITH HELD ITEMS
       // ---------------------------------------------------------------------
 
       // A. Building Fortifications (if holding Stone or Wood)
@@ -1553,7 +1726,7 @@ export function createGroupMemberProp() {
           const pzy = parseInt(zp[1], 10);
           for (let ox = 0; ox < 8; ox++) {
             for (let oy = 0; oy < 8; oy++) {
-              if (ox === 0 || ox === 7 || oy === 0 || oy === 7) {
+              if (isPerimeterEdge(pzx, pzy, ox, oy, group.claimedZones)) {
                 const isGateway = (oy === 0 && (ox === 3 || ox === 4)) ||
                                   (oy === 7 && (ox === 3 || ox === 4)) ||
                                   (ox === 0 && (oy === 3 || oy === 4)) ||
@@ -1568,7 +1741,6 @@ export function createGroupMemberProp() {
                   if (!wallAlreadyThere) {
                     if (this.actionTimer >= 0.5) {
                       this.actionTimer = 0;
-                      // Consume stone or wood from hand
                       for (const [k, p] of Object.entries(ent.properties)) {
                         if (k.startsWith("arm") && p && (p.heldItem?.resourceType === "stone" || p.heldItem?.resourceType === "wood")) {
                           p.heldItem = null;
@@ -1676,11 +1848,32 @@ export function createGroupMemberProp() {
         group.storage.push("meat");
       }
 
+      // D. Dropping Feces Outside Territory (Cleaning Task)
+      if (isCarryingFeces && !inClaimedZone) {
+        dropHeldItem(ent, entities, world);
+        recordWorldEvent({
+          type: "FEED",
+          primaryEntityId: ent.id,
+          location: { x: ent.x, y: ent.y },
+          description: `${ent.properties.name} swept feces outside the borders of '${group.name}'!`,
+          tick: currentTick,
+          timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
+        });
+      }
+
       // ---------------------------------------------------------------------
-      // 2. OPPORTUNITY ACTIONS WITH FREE HANDS
+      // 3. OPPORTUNITY ACTIONS WITH FREE HANDS (Cleaning, Crafting, Mining)
       // ---------------------------------------------------------------------
-      if (freeArm && !isCarryingMat && !isCarryingSeed && !isCarryingMeat) {
-        // A. Crafting weapons/tools from adjacent loose stone or wood
+      if (freeArm && !isCarryingMat && !isCarryingSeed && !isCarryingMeat && !isCarryingFeces) {
+        // A. Faxina: Pick up feces inside claimed zones to discard outside
+        const nearbyFecesInBase = entities.find(e => !e.destroyed && (e.properties.resourceType === "feces" || e.properties.edible?.foodType === "feces") && isTileInClaimedZones(e.x, e.y, group.claimedZones) && Math.abs(e.x - ent.x) <= 1 && Math.abs(e.y - ent.y) <= 1);
+        if (nearbyFecesInBase && energyRatio > 0.40) {
+          nearbyFecesInBase.destroyed = true;
+          freeArm.heldItem = { name: "Excrement / Feces", resourceType: "feces", weight: 1 };
+          return;
+        }
+
+        // B. Crafting weapons/tools from adjacent loose stone or wood
         const nearbyRes = entities.find(e => !e.destroyed && (e.properties.resourceType === "wood" || e.properties.resourceType === "stone") && Math.abs(e.x - ent.x) <= 2 && Math.abs(e.y - ent.y) <= 2);
         if (nearbyRes && this.actionTimer >= 2.0) {
           const isStone = nearbyRes.properties.resourceType === "stone";
@@ -1688,7 +1881,6 @@ export function createGroupMemberProp() {
           const dmg = isStone ? 48 : 34;
           const def = isStone ? 12 : 8;
 
-          // Check if self or an ally needs a weapon
           let targetEnt = null;
           if (!ent.properties.arm_left?.heldItem || (ent.properties.arm_left.heldItem.damage || 0) < dmg) {
             targetEnt = ent;
@@ -1724,7 +1916,7 @@ export function createGroupMemberProp() {
           }
         }
 
-        // B. Mining Stone from adjacent rock/mountain
+        // C. Mining Stone from adjacent rock/mountain
         const currentTile = world.getTile(ent.x, ent.y);
         let adjacentStone = (currentTile === 4 || currentTile === 1);
         if (!adjacentStone) {
@@ -1751,7 +1943,7 @@ export function createGroupMemberProp() {
           return;
         }
 
-        // C. Grabbing building materials from storage if perimeter needs walls
+        // D. Grabbing building materials from storage if perimeter needs walls
         if (inClaimedZone && group.storage && (group.storage.includes("stone") || group.storage.includes("wood"))) {
           let hasUnbuiltWall = false;
           for (const zk of group.claimedZones || []) {
@@ -1760,7 +1952,7 @@ export function createGroupMemberProp() {
             const pzy = parseInt(zp[1], 10);
             for (let ox = 0; ox < 8; ox++) {
               for (let oy = 0; oy < 8; oy++) {
-                if (ox === 0 || ox === 7 || oy === 0 || oy === 7) {
+                if (isPerimeterEdge(pzx, pzy, ox, oy, group.claimedZones)) {
                   const isGateway = (oy === 0 && (ox === 3 || ox === 4)) || (oy === 7 && (ox === 3 || ox === 4)) || (ox === 0 && (oy === 3 || oy === 4)) || (ox === 7 && (oy === 3 || oy === 4));
                   if (isGateway) continue;
                   const px = pzx * 8 + ox;
@@ -1784,7 +1976,7 @@ export function createGroupMemberProp() {
           }
         }
 
-        // D. Grabbing loose seeds nearby
+        // E. Grabbing loose seeds nearby
         const looseSeed = entities.find(e => !e.destroyed && !e.properties.photosynthesis && !e.properties.deep_root && (e.properties.germination || e.properties.resourceType === "seed") && Math.abs(e.x - ent.x) <= 2 && Math.abs(e.y - ent.y) <= 2);
         if (looseSeed) {
           looseSeed.destroyed = true;
@@ -1797,7 +1989,7 @@ export function createGroupMemberProp() {
           return;
         }
 
-        // E. Grabbing loose meat nearby
+        // F. Grabbing loose meat nearby
         const groundMeat = entities.find(e => !e.destroyed && (e.properties.edible?.foodType === "meat" || e.properties.resourceType === "meat") && Math.abs(e.x - ent.x) <= 1 && Math.abs(e.y - ent.y) <= 1);
         if (groundMeat) {
           groundMeat.destroyed = true;
@@ -1923,8 +2115,9 @@ export function createCombatProp(attackInterval = 1.2, aggroRange = 3) {
 
           const dist = Math.abs(other.x - ent.x) + Math.abs(other.y - ent.y);
           if (dist === 1) {
+            const isAtWar = ent.properties.group?.wars && other.properties.group && ent.properties.group.wars.includes(other.properties.group.id);
             const affinity = ent.properties.brain.affinities?.[other.id] !== undefined ? ent.properties.brain.affinities[other.id] : 0;
-            const isHostile = affinity < -20 || (ent.properties.brain.personality?.aggression || 0) > 0.4 || isDesperateHunger || ent.properties.violent;
+            const isHostile = isAtWar || affinity < -20 || (ent.properties.brain.personality?.aggression || 0) > 0.4 || isDesperateHunger || ent.properties.violent;
 
             if (isHostile) {
               combatTarget = other;
@@ -2108,7 +2301,8 @@ export function createCombatProp(attackInterval = 1.2, aggroRange = 3) {
             {
               name: `Limb (${primaryTarget.key}) of ${target.properties.name}`,
               render: { skin: limbSkin, color: limbColor, backcolor: 0x00000000 },
-              edible: { nutrition: 800, foodType: "meat", digestDuration: 25, partKey: primaryTarget.key }
+              edible: { nutrition: 800, foodType: "meat", digestDuration: 25, partKey: primaryTarget.key },
+              lifespan: createLifespanProp(1800.0) // Lasts > 1 in-game day (30 hours)
             },
             target.x + (Math.floor(Math.random() * 3) - 1),
             target.y + (Math.floor(Math.random() * 3) - 1)
@@ -2486,9 +2680,30 @@ export function createLocomotionProp() {
         const isCarryingMat = isCarryingItem(ent, "stone") || isCarryingItem(ent, "wood");
         const isCarryingSeed = isCarryingItem(ent, "seed");
         const isCarryingMeat = isCarryingItem(ent, "meat");
+        const isCarryingFeces = isCarryingItem(ent, "feces");
+
+        // 0. Active War: Intercept and attack enemy clan members within range!
+        if (group.wars && group.wars.length > 0) {
+          let nearestEnemy = null;
+          let minEnemyDist = 9999;
+          for (const other of entities) {
+            if (other !== ent && !other.destroyed && other.properties.life && other.properties.group && group.wars.includes(other.properties.group.id)) {
+              const edist = Math.abs(other.x - ent.x) + Math.abs(other.y - ent.y);
+              if (edist <= viewRange + 12 && edist < minEnemyDist) {
+                minEnemyDist = edist;
+                nearestEnemy = other;
+              }
+            }
+          }
+          if (nearestEnemy) {
+            chosenDx = Math.sign(nearestEnemy.x - ent.x);
+            chosenDy = Math.sign(nearestEnemy.y - ent.y);
+            hasIntention = true;
+          }
+        }
 
         // 1. If carrying building materials (stone or wood): build perimeter walls or stockpile
-        if (isCarryingMat) {
+        if (!hasIntention && isCarryingMat) {
           let targetPerimeter = null;
           let minPerimDist = 9999;
 
@@ -2498,7 +2713,7 @@ export function createLocomotionProp() {
             const zy = parseInt(zp[1], 10);
             for (let ox = 0; ox < 8; ox++) {
               for (let oy = 0; oy < 8; oy++) {
-                if (ox === 0 || ox === 7 || oy === 0 || oy === 7) {
+                if (isPerimeterEdge(zx, zy, ox, oy, group.claimedZones)) {
                   const isGateway = (oy === 0 && (ox === 3 || ox === 4)) ||
                                     (oy === 7 && (ox === 3 || ox === 4)) ||
                                     (ox === 0 && (oy === 3 || oy === 4)) ||
@@ -2539,7 +2754,7 @@ export function createLocomotionProp() {
         }
 
         // 2. If carrying seed: cultivate and plant inside territory with spacing
-        else if (isCarryingSeed) {
+        else if (!hasIntention && isCarryingSeed) {
           let targetPlot = null;
           let minPlotDist = 9999;
 
@@ -2579,14 +2794,23 @@ export function createLocomotionProp() {
         }
 
         // 3. If carrying meat: deliver to base stockpile
-        else if (isCarryingMeat) {
+        else if (!hasIntention && isCarryingMeat) {
           chosenDx = Math.sign(homeBaseX - ent.x);
           chosenDy = Math.sign(homeBaseY - ent.y);
           hasIntention = true;
         }
 
-        // 4. If hands are free: autonomously pick tasks based on clan needs and environment
-        else {
+        // 4. If carrying feces: haul it outside the clan territory borders to dump!
+        else if (!hasIntention && isCarryingFeces) {
+          if (isTileInClaimedZones(ent.x, ent.y, group.claimedZones)) {
+            chosenDx = Math.sign(ent.x - homeBaseX) || 1;
+            chosenDy = Math.sign(ent.y - homeBaseY) || 1;
+            hasIntention = true;
+          }
+        }
+
+        // 5. If hands are free: autonomously pick tasks based on clan needs and environment
+        else if (!hasIntention) {
           // A. If perimeter needs walls and materials are in storage/territory: go get material
           let hasUnbuiltWall = false;
           for (const zk of group.claimedZones || []) {
@@ -2595,7 +2819,7 @@ export function createLocomotionProp() {
             const pzy = parseInt(zp[1], 10);
             for (let ox = 0; ox < 8; ox++) {
               for (let oy = 0; oy < 8; oy++) {
-                if (ox === 0 || ox === 7 || oy === 0 || oy === 7) {
+                if (isPerimeterEdge(pzx, pzy, ox, oy, group.claimedZones)) {
                   const isGateway = (oy === 0 && (ox === 3 || ox === 4)) || (oy === 7 && (ox === 3 || ox === 4)) || (ox === 0 && (oy === 3 || oy === 4)) || (ox === 7 && (oy === 3 || oy === 4));
                   if (isGateway) continue;
                   const px = pzx * 8 + ox;
@@ -2616,62 +2840,70 @@ export function createLocomotionProp() {
             chosenDy = Math.sign(homeBaseY - ent.y);
             hasIntention = true;
           } else {
-            // B. Check loose seeds to farm
-            const nearbySeed = entities.find(e => !e.destroyed && !e.properties.photosynthesis && !e.properties.deep_root && (e.properties.germination || e.properties.resourceType === "seed" || e.properties.name?.includes("Seed") || e.properties.name?.includes("Semente")) && Math.abs(e.x - homeBaseX) <= 24 && Math.abs(e.y - homeBaseY) <= 24);
-            if (nearbySeed) {
-              chosenDx = Math.sign(nearbySeed.x - ent.x);
-              chosenDy = Math.sign(nearbySeed.y - ent.y);
+            // B. Faxina: Check for feces inside territory to clean up
+            const fecesInsideBase = entities.find(e => !e.destroyed && (e.properties.resourceType === "feces" || e.properties.edible?.foodType === "feces") && isTileInClaimedZones(e.x, e.y, group.claimedZones) && Math.abs(e.x - ent.x) <= 20 && Math.abs(e.y - ent.y) <= 20);
+            if (fecesInsideBase && energyRatio > 0.40) {
+              chosenDx = Math.sign(fecesInsideBase.x - ent.x);
+              chosenDy = Math.sign(fecesInsideBase.y - ent.y);
               hasIntention = true;
             } else {
-              // C. Check stone/mountain to mine if clan needs stone
-              const currentTile = world ? world.getTile(ent.x, ent.y) : 0;
-              let adjacentStone = (currentTile === 4 || currentTile === 1);
-              if (!adjacentStone && world) {
-                for (const off of [{dx:1,dy:0}, {dx:-1,dy:0}, {dx:0,dy:1}, {dx:0,dy:-1}]) {
-                  const at = world.getTile(ent.x + off.dx, ent.y + off.dy);
-                  if (at === 4 || at === 1) {
-                    adjacentStone = true;
-                    break;
-                  }
-                }
-              }
-
-              if (adjacentStone) {
-                chosenDx = 0;
-                chosenDy = 0;
+              // C. Check loose seeds to farm
+              const nearbySeed = entities.find(e => !e.destroyed && !e.properties.photosynthesis && !e.properties.deep_root && (e.properties.germination || e.properties.resourceType === "seed" || e.properties.name?.includes("Seed") || e.properties.name?.includes("Semente")) && Math.abs(e.x - homeBaseX) <= 24 && Math.abs(e.y - homeBaseY) <= 24);
+              if (nearbySeed) {
+                chosenDx = Math.sign(nearbySeed.x - ent.x);
+                chosenDy = Math.sign(nearbySeed.y - ent.y);
                 hasIntention = true;
               } else {
-                // Seek nearest stone/mountain tiles in radius
-                let targetStone = null;
-                let minDist = 9999;
+                // D. Check stone/mountain to mine if clan needs stone
+                const currentTile = world ? world.getTile(ent.x, ent.y) : 0;
+                let adjacentStone = (currentTile === 4 || currentTile === 1);
+                if (!adjacentStone && world) {
+                  for (const off of [{dx:1,dy:0}, {dx:-1,dy:0}, {dx:0,dy:1}, {dx:0,dy:-1}]) {
+                    const at = world.getTile(ent.x + off.dx, ent.y + off.dy);
+                    if (at === 4 || at === 1) {
+                      adjacentStone = true;
+                      break;
+                    }
+                  }
+                }
 
-                if (world) {
-                  for (let r = 1; r <= 60; r++) {
-                    for (let dy = -r; dy <= r; dy++) {
-                      for (let dx = -r; dx <= r; dx++) {
-                        if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
-                        const tx = ent.x + dx;
-                        const ty = ent.y + dy;
-                        if (tx >= 0 && tx < (world.width || 512) && ty >= 0 && ty < (world.height || 512)) {
-                          const t = world.getTile(tx, ty);
-                          if (t === 4 || t === 1) {
-                            const dist = Math.abs(dx) + Math.abs(dy);
-                            if (dist < minDist) {
-                              minDist = dist;
-                              targetStone = { x: tx, y: ty };
+                if (adjacentStone) {
+                  chosenDx = 0;
+                  chosenDy = 0;
+                  hasIntention = true;
+                } else {
+                  // Seek nearest stone/mountain tiles in radius
+                  let targetStone = null;
+                  let minDist = 9999;
+
+                  if (world) {
+                    for (let r = 1; r <= 60; r++) {
+                      for (let dy = -r; dy <= r; dy++) {
+                        for (let dx = -r; dx <= r; dx++) {
+                          if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
+                          const tx = ent.x + dx;
+                          const ty = ent.y + dy;
+                          if (tx >= 0 && tx < (world.width || 512) && ty >= 0 && ty < (world.height || 512)) {
+                            const t = world.getTile(tx, ty);
+                            if (t === 4 || t === 1) {
+                              const dist = Math.abs(dx) + Math.abs(dy);
+                              if (dist < minDist) {
+                                minDist = dist;
+                                targetStone = { x: tx, y: ty };
+                              }
                             }
                           }
                         }
                       }
+                      if (targetStone) break;
                     }
-                    if (targetStone) break;
                   }
-                }
 
-                if (targetStone && Math.random() < 0.6) {
-                  chosenDx = Math.sign(targetStone.x - ent.x);
-                  chosenDy = Math.sign(targetStone.y - ent.y);
-                  hasIntention = true;
+                  if (targetStone && Math.random() < 0.6) {
+                    chosenDx = Math.sign(targetStone.x - ent.x);
+                    chosenDy = Math.sign(targetStone.y - ent.y);
+                    hasIntention = true;
+                  }
                 }
               }
             }
@@ -3997,7 +4229,8 @@ export function createFruit(x, y, seedType = "large", species = "oak") {
         sourceName: species === "cactus" ? "Desert Cactus" : (species === "willow" ? "Willow" : (species === "pine" ? "Pine" : "Oak")),
         sourceSpecies: species,
         seed: { type: seedType, species }
-      }
+      },
+      lifespan: createLifespanProp(1800.0) // Lasts > 1 in-game day (30 hours)
     },
     x,
     y
@@ -4037,14 +4270,7 @@ export function createSeedEntity(x, y, seedType = "large", species = "oak") {
       render: { skin: seedSkin, color: seedColor, backcolor: 0x00000000 },
       germination: createSeedGerminationProp(species, 25.0, 0.03),
       edible: { nutrition: 600, foodType: "plant", digestDuration: 20 },
-      lifespan: {
-        current: 0,
-        max: 2400,
-        effect(s) {
-          this.current++;
-          if (this.current >= this.max) s.destroyed = true;
-        }
-      }
+      lifespan: createLifespanProp(1800.0) // Lasts > 1 in-game day (30 hours)
     },
     x,
     y
@@ -4059,14 +4285,7 @@ export function createPoopEntity(x, y, seed = null) {
       render: { skin: "Item_Nugget.png", color: 0xff643c14, backcolor: 0x00000000 },
       fertilizer: { quality: 1.0 },
       edible: { nutrition: 900, foodType: "feces", digestDuration: 40 },
-      lifespan: {
-        current: 0,
-        max: 2400,
-        effect(p) {
-          this.current++;
-          if (this.current >= this.max) p.destroyed = true;
-        }
-      }
+      lifespan: createLifespanProp(90.0) // Reduced lifespan for excrement (1.5 game hours)
     },
     x,
     y
@@ -4249,7 +4468,7 @@ export function createHumanMatriarch(x, y, name = null) {
       leg_right: createLegProp("right", 1.0, 100, 100),
       eye_left: createEyeProp("left", 9),
       eye_right: createEyeProp("right", 9),
-      genitalia: createGenitaliaProp("vagina", true), // Start pregnant!
+      genitalia: createGenitaliaProp("vagina", false),
       locomotion: createLocomotionProp(),
       torso: { condition: 100, maxCondition: 100, nutrition: 2500, foodType: "meat" }
     },

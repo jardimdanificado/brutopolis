@@ -147,9 +147,45 @@ export function getEventsNear(x, y, radius = 8, limit = 30) {
 }
 
 /**
+ * Retrieves all chronological events involving a group/clan and all its participants (past & present)
+ */
+export function getEventsForGroup(group, limit = 50) {
+  if (!group) return [];
+  const memberSet = new Set(group.members || []);
+  const groupId = group.id;
+  const eventIdSet = new Set();
+
+  // 1. Events directly referencing the group ID (e.g. founding, joining, expulsion)
+  if (groupId !== undefined && groupId !== null) {
+    const gEvents = eventsByEntity.get(groupId);
+    if (gEvents) {
+      for (const id of gEvents) eventIdSet.add(id);
+    }
+  }
+
+  // 2. Events involving any member of the group (living or deceased)
+  for (const mid of memberSet) {
+    const mEvents = eventsByEntity.get(mid);
+    if (mEvents) {
+      for (const id of mEvents) eventIdSet.add(id);
+    }
+  }
+
+  // 3. Collect, sort chronologically and limit
+  const matched = Array.from(eventIdSet)
+    .map(id => eventsById.get(id))
+    .filter(Boolean)
+    .sort((a, b) => a.id - b.id);
+
+  const start = Math.max(0, matched.length - limit);
+  return matched.slice(start);
+}
+
+/**
  * Retrieves the most recent world events
  */
 export function getRecentWorldEvents(limit = 25) {
   const start = Math.max(0, allEvents.length - limit);
   return allEvents.slice(start).reverse();
 }
+
