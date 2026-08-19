@@ -436,13 +436,13 @@ function resetWorld(presetId = 0) {
   inspectingLogEvent = null;
 
   // Flora
-  spawnRandomGlobal(35, createOakTree, (x, y) => world.getTile(x, y) === 0);
-  spawnRandomGlobal(25, createWillowTree, (x, y) => world.getTile(x, y) === 0 || world.getTile(x, y) === 3);
-  spawnRandomGlobal(30, createCactus, (x, y) => world.getTile(x, y) === 3);
-  spawnRandomGlobal(25, createAlpineShrub, (x, y) => world.getTile(x, y) === 4 || world.getTile(x, y) === 1);
-  spawnRandomGlobal(20, createPineTree, (x, y) => world.getTile(x, y) === 4 || world.getTile(x, y) === 0);
-  spawnRandomGlobal(40, createWaterLily, (x, y) => world.getTile(x, y) === 2);
-  spawnRandomGlobal(50, createSeaweed, (x, y) => world.getTile(x, y) === 2);
+  spawnRandomGlobal(80, createOakTree, (x, y) => world.getTile(x, y) === 0);
+  spawnRandomGlobal(60, createWillowTree, (x, y) => world.getTile(x, y) === 0 || world.getTile(x, y) === 3);
+  spawnRandomGlobal(65, createCactus, (x, y) => world.getTile(x, y) === 3);
+  spawnRandomGlobal(50, createAlpineShrub, (x, y) => world.getTile(x, y) === 4 || world.getTile(x, y) === 1);
+  spawnRandomGlobal(55, createPineTree, (x, y) => world.getTile(x, y) === 4 || world.getTile(x, y) === 0);
+  spawnRandomGlobal(80, createWaterLily, (x, y) => world.getTile(x, y) === 2);
+  spawnRandomGlobal(100, createSeaweed, (x, y) => world.getTile(x, y) === 2);
 
   // Items & Resources
   spawnRandomGlobal(60, (x, y) => createSeedEntity(x, y, "large", "oak"), (x, y) => world.getTile(x, y) === 0);
@@ -613,6 +613,7 @@ canvas.addEventListener("mousedown", (e) => {
       const reg = activeUiRegions[i];
       if (coords.x >= reg.x && coords.x <= reg.x + reg.w && coords.y >= reg.y && coords.y <= reg.y + reg.h) {
         reg.onClick();
+        isMouseDown = false; // Consume click: do not initiate world drag or map selection
         return;
       }
     }
@@ -660,7 +661,18 @@ window.addEventListener("mouseup", (e) => {
     const totalDist = Math.hypot(e.clientX - dragStartClientX, e.clientY - dragStartClientY);
     if (!isDragging && totalDist <= 5) {
       const coords = getCanvasCoords(e.clientX, e.clientY);
-      if (coords.inside && coords.y > 32 && coords.y < CANVAS_HEIGHT - 36) {
+
+      // Check if mouseup landed on any active UI region before selecting on map
+      let isOverUi = false;
+      for (let i = activeUiRegions.length - 1; i >= 0; i--) {
+        const reg = activeUiRegions[i];
+        if (coords.x >= reg.x && coords.x <= reg.x + reg.w && coords.y >= reg.y && coords.y <= reg.y + reg.h) {
+          isOverUi = true;
+          break;
+        }
+      }
+
+      if (!isOverUi && coords.inside && coords.y > 32 && coords.y < CANVAS_HEIGHT - 36) {
         const foundId = shader.exports.wasm_select_at(coords.x, coords.y, CANVAS_WIDTH, CANVAS_HEIGHT);
         lastSelectedId = foundId;
       }
@@ -854,22 +866,22 @@ function renderTopHudBar() {
   drawNESBox(0, 0, CANVAS_WIDTH, 32);
 
   // Title
-  drawText8x8("BRUTOPOLIS", 12, 12, "#f8b800", 1);
+  drawText8x8("BRUTOPOLIS", 8, 12, "#f8b800", 1);
 
   // Time & Sun Stats
   const timeStr = `D${String(clock.day).padStart(2,"0")} ${String(clock.hour).padStart(2,"0")}:${String(clock.minute).padStart(2,"0")}`;
-  drawText8x8(timeStr, 125, 12, "#ffffff", 1);
+  drawText8x8(timeStr, 100, 12, "#ffffff", 1);
 
-  drawText8x8(`SUN:${Math.round(clock.globalLight * 100)}%`, 245, 12, "#3cbcfc", 1);
+  drawText8x8(`SUN:${Math.round(clock.globalLight * 100)}%`, 188, 12, "#3cbcfc", 1);
 
   const presetNames = ["ARCHIPELAGO", "CONTINENT", "HIGHLANDS"];
-  drawText8x8(presetNames[currentPreset] || "WORLD", 345, 12, "#58d854", 1);
+  drawText8x8(presetNames[currentPreset] || "WORLD", 260, 12, "#58d854", 1);
 
-  drawText8x8(`${currentFps}FPS`, 460, 12, "#bcbcbc", 1);
+  drawText8x8(`${currentFps}FPS`, 355, 12, "#bcbcbc", 1);
 
   // Speed Controls on HUD
-  drawNESButton(525, 4, 18, 24, "-", false, false);
-  registerClickableRegion(525, 4, 18, 24, () => {
+  drawNESButton(412, 4, 18, 24, "-", false, false);
+  registerClickableRegion(412, 4, 18, 24, () => {
     const idx = SPEED_TIERS.indexOf(simSpeed);
     if (idx > 0) simSpeed = SPEED_TIERS[idx - 1];
     else simSpeed = Math.max(0.25, simSpeed / 2);
@@ -877,14 +889,14 @@ function renderTopHudBar() {
   });
 
   const speedStr = `${simSpeed}X (${Math.round(60 * simSpeed)}TPS)`;
-  drawText8x8(speedStr, 549, 12, "#f8b800", 1);
-  registerClickableRegion(549, 4, speedStr.length * 8 + 8, 24, () => {
+  drawText8x8(speedStr, 436, 12, "#f8b800", 1);
+  registerClickableRegion(436, 4, speedStr.length * 8 + 8, 24, () => {
     const idx = SPEED_TIERS.indexOf(simSpeed);
     simSpeed = SPEED_TIERS[(idx + 1) % SPEED_TIERS.length];
     if (shader) shader.exports.wasm_set_tps(Math.round(60 * simSpeed));
   });
 
-  const plusX = 557 + speedStr.length * 8;
+  const plusX = 444 + speedStr.length * 8;
   drawNESButton(plusX, 4, 18, 24, "+", false, false);
   registerClickableRegion(plusX, 4, 18, 24, () => {
     const idx = SPEED_TIERS.indexOf(simSpeed);
@@ -892,6 +904,10 @@ function renderTopHudBar() {
     else simSpeed = Math.min(32, simSpeed * 2);
     if (shader) shader.exports.wasm_set_tps(Math.round(60 * simSpeed));
   });
+
+  // Reset Button
+  drawNESButton(CANVAS_WIDTH - 162, 4, 76, 24, "RESET", false, false);
+  registerClickableRegion(CANVAS_WIDTH - 162, 4, 76, 24, () => resetWorld((currentPreset + 1) % 3));
 
   // Pause / Run Button
   const pauseTxt = isPaused ? "PAUSE" : "RUN";
@@ -908,11 +924,8 @@ function renderBottomToolbar() {
     { label: "GROUPS", mode: "GROUPS" },
     { label: "LOGS", mode: "LOGS" },
     { label: "SPAWN", mode: "SPAWNER" },
-    { label: isFollowMode ? "FOLLOW*" : "FOLLOW", action: toggleFollowMode },
-    { label: isCreatureVisionMode ? "VISION*" : "VISION", action: toggleCreatureVisionMode },
     { label: "NEXT", action: cycleNextLivingEntity },
-    { label: "CENTER", action: centerCamera },
-    { label: "RESET", action: () => resetWorld((currentPreset + 1) % 3) }
+    { label: "CENTER", action: centerCamera }
   ];
 
   let btnX = 8;
@@ -1875,6 +1888,8 @@ function renderCreatureSummaryBox() {
   const bh = 82;
 
   drawNESBox(bx, by, bw, bh);
+  // Absorb clicks on summary box background so world selection is not triggered behind the HUD
+  registerClickableRegion(bx, by, bw, bh, () => {});
 
   const nameStr = (ent.properties.name || `Entity #${ent.id}`).slice(0, 18).toUpperCase();
   drawText8x8(nameStr, bx + 8, by + 8, "#f8b800", 1);

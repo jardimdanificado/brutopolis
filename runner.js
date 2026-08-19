@@ -318,13 +318,13 @@ function resetWorld(presetId = 0) {
   camY = cursorY;
 
   // Biome Flora
-  spawnRandomGlobal(35, createOakTree, (x, y) => world.getTile(x, y) === 0);
-  spawnRandomGlobal(25, createWillowTree, (x, y) => world.getTile(x, y) === 0 || world.getTile(x, y) === 3);
-  spawnRandomGlobal(30, createCactus, (x, y) => world.getTile(x, y) === 3);
-  spawnRandomGlobal(25, createAlpineShrub, (x, y) => world.getTile(x, y) === 4 || world.getTile(x, y) === 1);
-  spawnRandomGlobal(20, createPineTree, (x, y) => world.getTile(x, y) === 4 || world.getTile(x, y) === 0);
-  spawnRandomGlobal(40, createWaterLily, (x, y) => world.getTile(x, y) === 2);
-  spawnRandomGlobal(50, createSeaweed, (x, y) => world.getTile(x, y) === 2);
+  spawnRandomGlobal(80, createOakTree, (x, y) => world.getTile(x, y) === 0);
+  spawnRandomGlobal(60, createWillowTree, (x, y) => world.getTile(x, y) === 0 || world.getTile(x, y) === 3);
+  spawnRandomGlobal(65, createCactus, (x, y) => world.getTile(x, y) === 3);
+  spawnRandomGlobal(50, createAlpineShrub, (x, y) => world.getTile(x, y) === 4 || world.getTile(x, y) === 1);
+  spawnRandomGlobal(55, createPineTree, (x, y) => world.getTile(x, y) === 4 || world.getTile(x, y) === 0);
+  spawnRandomGlobal(80, createWaterLily, (x, y) => world.getTile(x, y) === 2);
+  spawnRandomGlobal(100, createSeaweed, (x, y) => world.getTile(x, y) === 2);
 
   // Resources & Items
   spawnRandomGlobal(60, (x, y) => createSeedEntity(x, y, "large", "oak"), (x, y) => world.getTile(x, y) === 0);
@@ -591,7 +591,7 @@ function renderInspectorScreen() {
       lines.push(`\x1b[1;33m📜 EVENT LOG FOR THIS CREATURE (${myEvents.length} events):\x1b[0m`);
       for (const ev of myEvents) {
         const typeColor = ev.type === "DEATH" ? "\x1b[31m" : ev.type === "ATTACK" ? "\x1b[33m" : ev.type === "AMPUTATION" ? "\x1b[35m" : "\x1b[32m";
-        lines.push(`  ${typeColor}• [${ev.type}]\x1b[0m \x1b[90m[Day ${ev.timestamp.day} ${String(ev.timestamp.hour).padStart(2,"0")}:${String(ev.timestamp.minute).padStart(2,"0")}]\x1b[0m ${ev.description}`);
+        lines.push(`  ${typeColor}• [${ev.type}]\x1b[0m \x1b[90m[Day ${ev.timestamp.day} ${String(ev.timestamp.hour).padStart(2, "0")}:${String(ev.timestamp.minute).padStart(2, "0")}]\x1b[0m ${ev.description}`);
       }
       lines.push(``);
     }
@@ -658,7 +658,7 @@ function renderEntitiesRegistryScreen() {
     const nameStr = (ent.properties.name || "Entity").slice(0, 26).padEnd(27);
     const speciesStr = (ent.properties.species || "-").slice(0, 14).padEnd(15);
     const posStr = `[${ent.x},${ent.y}]`.padEnd(10);
-    
+
     let energyStr = "-";
     if (ent.properties.life) {
       energyStr = `${Math.round(ent.properties.life.energy)}/${ent.properties.life.max}`;
@@ -782,12 +782,12 @@ function renderGroupDetailScreen(g) {
 
   // 1. Clan Overview & Territory
   out += `\n \x1b[1;33m❖ LEADER/FOUNDER:\x1b[0m ${leaderEnt ? leaderEnt.properties.name : `Member #${g.members[0]}`} \x1b[90m│\x1b[0m \x1b[1;32mPopulation:\x1b[0m ${livingMembers.length}/${g.members.length} living members\x1b[K\n`;
-  
+
   const zonesStr = (g.claimedZones || []).map(zk => {
     const parts = zk.includes("_") ? zk.split("_") : zk.split(",");
     const zx = parseInt(parts[0], 10);
     const zy = parseInt(parts[1], 10);
-    return isNaN(zx) ? zk : `Zone [${zx},${zy}] (X:${zx*8}..${zx*8+7}, Y:${zy*8}..${zy*8+7})`;
+    return isNaN(zx) ? zk : `Zone [${zx},${zy}] (X:${zx * 8}..${zx * 8 + 7}, Y:${zy * 8}..${zy * 8 + 7})`;
   }).join(" | ");
   out += ` \x1b[1;33m❖ CLAIMED TERRITORY:\x1b[0m \x1b[36m${zonesStr || "None"}\x1b[0m\x1b[K\n`;
 
@@ -872,8 +872,8 @@ function renderWorldLogScreen() {
       const ev = list[i];
       const isSelected = i === logSelectedIdx;
 
-      const timeStr = `[D${ev.timestamp.day} ${String(ev.timestamp.hour).padStart(2,"0")}:${String(ev.timestamp.minute).padStart(2,"0")}]`.padEnd(12);
-      
+      const timeStr = `[D${ev.timestamp.day} ${String(ev.timestamp.hour).padStart(2, "0")}:${String(ev.timestamp.minute).padStart(2, "0")}]`.padEnd(12);
+
       const typeColor = ev.type === "DEATH" ? "\x1b[1;31m" : ev.type === "ATTACK" ? "\x1b[1;33m" : ev.type === "AMPUTATION" ? "\x1b[1;35m" : ev.type === "SPROUT" ? "\x1b[1;32m" : "\x1b[1;36m";
       const typeStr = (ev.type || "EVENT").padEnd(14);
       const locStr = ev.location ? `[${ev.location.x},${ev.location.y}]`.padEnd(10) : "[--, --]  ";
@@ -1020,10 +1020,10 @@ function renderRoguelikeScreen() {
   const lightStr = `LIGHT ${Math.round(clock.globalLight * 100)}%`;
   const pauseBadge = isPaused ? "\x1b[1;41;37m [PAUSED] \x1b[0m" : "\x1b[1;32m [RUNNING] \x1b[0m";
   const presetNames = ["Archipelago", "Continent", "Highlands"];
-  
-  const headerLeft = ` \x1b[1;38;5;208m❖ BRUTOPOLIS ROGUELIKE\x1b[0m \x1b[90m│\x1b[0m \x1b[1;33m${timeStr}\x1b[0m \x1b[90m│\x1b[0m \x1b[33m${lightStr}\x1b[0m \x1b[90m│\x1b[0m ${pauseBadge}`;
+
+  const headerLeft = ` \x1b[1;38;5;208m❖ BRUTOPOLIS \x1b[0m \x1b[90m│\x1b[0m \x1b[1;33m${timeStr}\x1b[0m \x1b[90m│\x1b[0m \x1b[33m${lightStr}\x1b[0m \x1b[90m│\x1b[0m ${pauseBadge}`;
   const headerRight = `\x1b[36m${presetNames[currentPreset] || "World"}\x1b[0m \x1b[90m│\x1b[0m \x1b[32m${currentFps} FPS\x1b[0m \x1b[90m│\x1b[0m \x1b[1;33m${simSpeed}X (${Math.round(60 * simSpeed)} TPS)\x1b[0m `;
-  
+
   const visLeftLen = stripAnsi(headerLeft).length;
   const visRightLen = stripAnsi(headerRight).length;
   const headerGap = Math.max(1, termCols - visLeftLen - visRightLen);
@@ -1108,7 +1108,7 @@ function renderRoguelikeScreen() {
     const eg = getEntityGlyph(entityUnderCursor);
     let eName = entityUnderCursor.properties.name || `Entity #${entityUnderCursor.id}`;
     const eLife = entityUnderCursor.properties.life ? `(${Math.round(entityUnderCursor.properties.life.energy)} cal)` : "";
-    
+
     const baseLen = stripAnsi(`📍 [X:${cursorX}, Y:${cursorY}] ─ ${tileName} │ ${eg.glyph}  ${eLife}`).length;
     const maxNameLen = Math.max(6, maxInfoLen - baseLen);
     if (eName.length > maxNameLen) {
@@ -1641,7 +1641,7 @@ async function main() {
 
     mem = wash_memory(32 * 1024 * 1024);
     shader = await wash_load(wasmBytes, mem, {
-      env: { console_log: () => {}, get_random: () => Math.random() }
+      env: { console_log: () => { }, get_random: () => Math.random() }
     });
 
     world = new World(mem, shader.exports);
