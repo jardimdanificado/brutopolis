@@ -205,6 +205,11 @@ int wasm_get_sprite_data(const char* name, uint32_t fg, uint32_t bg, uint8_t* ou
     return renderer_get_sprite_data(name, fg, bg, out_pixels_16x16_rgba);
 }
 
+__attribute__((export_name("wasm_get_font_ptr")))
+uint32_t wasm_get_font_ptr(void) {
+    return (uint32_t)renderer_get_font_data();
+}
+
 // ---------------------------------------------------------------------------
 // Wash Compute & Frame Entrypoint
 // ---------------------------------------------------------------------------

@@ -45,6 +45,7 @@ void render_frame(uint8_t* framebuffer, int width, int height, float time, float
                   int pop_count, bool is_paused, int target_tps);
 
 int renderer_get_sprite_data(const char* name, uint32_t fg, uint32_t bg, uint8_t* out_pixels_16x16_rgba);
+const uint8_t* renderer_get_font_data(void);
 
 void draw_text(uint8_t* fb, int fb_w, int fb_h, const char* text, int x, int y, ColorRGBA color, int scale);
 void draw_box(uint8_t* fb, int fb_w, int fb_h, int x, int y, int w, int h, ColorRGBA color);
