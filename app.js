@@ -452,20 +452,6 @@ function resetWorld(presetId = 0) {
   spawnRandomGlobal(50, createWoodItem, (x, y) => world.getTile(x, y) === 0);
   spawnRandomGlobal(50, createStoneItem, (x, y) => world.getTile(x, y) === 4 || world.getTile(x, y) === 1);
 
-  // Fauna
-  spawnRandomGlobal(25, createScorpion, (x, y) => world.getTile(x, y) === 3);
-  spawnRandomGlobal(20, createLizard, (x, y) => world.getTile(x, y) === 3 || world.getTile(x, y) === 0);
-  spawnRandomGlobal(20, createMountainGoat, (x, y) => world.getTile(x, y) === 4 || world.getTile(x, y) === 1);
-  spawnRandomGlobal(20, (x, y) => createCat(x, y, false), (x, y) => world.getTile(x, y) === 0);
-  spawnRandomGlobal(18, createWolf, (x, y) => world.getTile(x, y) === 0 || world.getTile(x, y) === 4);
-  spawnRandomGlobal(10, createBear, (x, y) => world.getTile(x, y) === 0);
-  spawnRandomGlobal(25, createBat, (x, y) => true);
-  spawnRandomGlobal(20, createSeaSerpent, (x, y) => world.getTile(x, y) === 2);
-  spawnRandomGlobal(4, createDragon, (x, y) => world.getTile(x, y) === 1 || world.getTile(x, y) === 4);
-  spawnRandomGlobal(18, (x, y) => createKnight(x, y, Math.random() < 0.5 ? "male" : "female"), (x, y) => world.getTile(x, y) === 0);
-  spawnRandomGlobal(18, (x, y) => createArcher(x, y, Math.random() < 0.5 ? "male" : "female"), (x, y) => world.getTile(x, y) === 0);
-  spawnRandomGlobal(22, createGoblin, (x, y) => world.getTile(x, y) === 0 || world.getTile(x, y) === 4);
-
   // 1. Determine spawn position for Camera and Founding Clan
   let startX = 256;
   let startY = 256;
@@ -485,6 +471,21 @@ function resetWorld(presetId = 0) {
     if (found) break;
   }
 
+  // Fauna (Dangerous predators spawn outside initial settlement buffer)
+  const outsideSettlement = (x, y) => (Math.abs(x - startX) + Math.abs(y - startY)) > 28;
+  spawnRandomGlobal(25, createScorpion, (x, y) => world.getTile(x, y) === 3);
+  spawnRandomGlobal(20, createLizard, (x, y) => world.getTile(x, y) === 3 || world.getTile(x, y) === 0);
+  spawnRandomGlobal(20, createMountainGoat, (x, y) => world.getTile(x, y) === 4 || world.getTile(x, y) === 1);
+  spawnRandomGlobal(20, (x, y) => createCat(x, y, false), (x, y) => world.getTile(x, y) === 0);
+  spawnRandomGlobal(14, createWolf, (x, y) => (world.getTile(x, y) === 0 || world.getTile(x, y) === 4) && outsideSettlement(x, y));
+  spawnRandomGlobal(8, createBear, (x, y) => world.getTile(x, y) === 0 && outsideSettlement(x, y));
+  spawnRandomGlobal(25, createBat, (x, y) => true);
+  spawnRandomGlobal(20, createSeaSerpent, (x, y) => world.getTile(x, y) === 2);
+  spawnRandomGlobal(3, createDragon, (x, y) => (world.getTile(x, y) === 1 || world.getTile(x, y) === 4) && outsideSettlement(x, y));
+  spawnRandomGlobal(18, (x, y) => createKnight(x, y, Math.random() < 0.5 ? "male" : "female"), (x, y) => world.getTile(x, y) === 0 && outsideSettlement(x, y));
+  spawnRandomGlobal(18, (x, y) => createArcher(x, y, Math.random() < 0.5 ? "male" : "female"), (x, y) => world.getTile(x, y) === 0 && outsideSettlement(x, y));
+  spawnRandomGlobal(20, createGoblin, (x, y) => (world.getTile(x, y) === 0 || world.getTile(x, y) === 4) && outsideSettlement(x, y));
+
   // 2. Founding Pioneers Clan: 2 Builders, 1 Farmer, 2 Matriarchs, 2 Explorers, 1 Miner, 2 Hunters
   const miner = createHumanMiner(startX, startY, "Aldor Silveira, the Miner");
   miner.properties.surname = "Silveira";
@@ -497,11 +498,10 @@ function resetWorld(presetId = 0) {
   const matriarch1 = createHumanMatriarch(startX + 1, startY + 1, "Elena Silveira, the Matriarch");
   matriarch1.properties.surname = "Silveira";
   const matriarch2 = createHumanMatriarch(startX - 1, startY + 1, "Maya Vance, the Matriarch");
-  matriarch2.properties.surname = "Vance";
-  const explorer1 = createHumanExplorer(startX, startY + 2, "Lyra Montes, the Explorer");
-  explorer1.properties.surname = "Montes";
-  const explorer2 = createHumanExplorer(startX + 2, startY + 2, "Silas Ramos, the Explorer");
-  explorer2.properties.surname = "Ramos";
+  const crafter1 = createHumanCrafter(startX, startY + 2, "Lyra Montes, the Artisan");
+  crafter1.properties.surname = "Montes";
+  const crafter2 = createHumanCrafter(startX + 2, startY + 2, "Silas Ramos, the Artisan");
+  crafter2.properties.surname = "Ramos";
   const hunter1 = createHumanHunter(startX, startY - 1, "Kael Torres, the Hunter");
   hunter1.properties.surname = "Torres";
   const hunter2 = createHumanHunter(startX + 1, startY - 1, "Rowan Valente, the Huntress");
@@ -513,9 +513,10 @@ function resetWorld(presetId = 0) {
   const zone2 = `${zx + 1},${zy}`;
 
   const foundingClan = createGroup("Pioneers Clan", miner, [zx, zy], [zone1, zone2]);
+  foundingClan.leaderId = miner.id;
   foundingClan.storage = ["stone", "stone", "stone", "stone", "wood", "wood", "wood", "wood", "meat", "meat"];
 
-  const clanMembers = [miner, builder1, builder2, farmer, matriarch1, matriarch2, explorer1, explorer2, hunter1, hunter2];
+  const clanMembers = [miner, builder1, builder2, farmer, matriarch1, matriarch2, crafter1, crafter2, hunter1, hunter2];
 
   for (const m of clanMembers) {
     m.properties.group = foundingClan;
