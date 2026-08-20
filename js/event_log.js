@@ -586,6 +586,170 @@ export function exportWorldChronicleJSON(world, entities, currentTick = 0, entit
 }
 
 /**
+ * Serializes the complete live simulation state for full persistence & seamless resume
+ */
+export function exportWorldSaveJSON(world, entities, currentTick = 0, entityRegistry = null, groups = [], camera = null, seed = 0, preset = 0) {
+  let terrainBase64 = null;
+  if (world && world.map && world.map instanceof Uint8Array) {
+    const bytes = world.map.slice(0, world.width * world.height);
+    let binary = "";
+    for (let i = 0; i < bytes.length; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    terrainBase64 = btoa(binary);
+  }
+
+  // Clone entities properties cleanly (stripping functions)
+  function serializeEntity(ent) {
+    if (!ent) return null;
+    const cleanProps = {};
+    for (const [k, v] of Object.entries(ent.properties || {})) {
+      if (typeof v === "function") continue;
+      try {
+        cleanProps[k] = JSON.parse(JSON.stringify(v, (key, val) => typeof val === "function" ? undefined : val));
+      } catch (e) {
+        // Fallback for circular references
+      }
+    }
+    return {
+      id: ent.id,
+      x: ent.x,
+      y: ent.y,
+      birthTick: ent.birthTick,
+      deathTick: ent.deathTick,
+      destroyed: !!ent.destroyed,
+      renderable: ent.renderable || null,
+      properties: cleanProps
+    };
+  }
+
+  const activeEntities = entities.map(serializeEntity);
+  const registryEntities = [];
+  if (entityRegistry) {
+    for (const [id, ent] of entityRegistry.entries()) {
+      if (!entities.some(e => e.id === id)) {
+        registryEntities.push(serializeEntity(ent));
+      }
+    }
+  }
+
+  // Serialize all events
+  const eventsList = allEvents.map(ev => ({
+    id: ev.id,
+    opcode: ev.opcode,
+    type: ev.type,
+    count: ev.count || 1,
+    tick: ev.tick,
+    timestamp: ev.timestamp || { day: 0, hour: 0, minute: 0 },
+    primaryEntityId: ev.primaryEntityId,
+    secondaryEntityId: ev.secondaryEntityId,
+    location: ev.location ? { x: ev.location.x, y: ev.location.y } : null,
+    description: ev.description,
+    metadata: ev.metadata || {}
+  }));
+
+  return {
+    version: "2.1",
+    format: "brutopolis_full_save",
+    savedAt: new Date().toISOString(),
+    world: {
+      width: world?.width || 512,
+      height: world?.height || 512,
+      preset,
+      seed,
+      clock: world?.clock ? {
+        day: world.clock.day,
+        hour: world.clock.hour,
+        minute: world.clock.minute,
+        globalLight: world.clock.globalLight,
+        totalSeconds: world.clock.totalSeconds
+      } : null,
+      tick: currentTick,
+      terrain: terrainBase64
+    },
+    camera: camera || { x: 256, y: 256, zoom: 1.0 },
+    groups: groups || [],
+    entities: activeEntities,
+    registry: registryEntities,
+    events: eventsList
+  };
+}
+
+/**
+ * Triggers browser download of the full simulation save JSON file
+ */
+export function downloadWorldSaveJSON(world, entities, currentTick = 0, entityRegistry = null, groups = [], camera = null, seed = 0, preset = 0) {
+  const saveObj = exportWorldSaveJSON(world, entities, currentTick, entityRegistry, groups, camera, seed, preset);
+  const jsonStr = JSON.stringify(saveObj);
+  const blob = new Blob([jsonStr], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const day = world?.clock?.day || 0;
+  const hour = world?.clock?.hour || 0;
+  const filename = `brutopolis_save_d${day}_h${hour}_t${currentTick}.json`;
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  return filename;
+}
+
+/**
+ * Restores world events from a save or imported chronicle
+ */
+export function restoreWorldEvents(eventsList = []) {
+  resetWorldEvents();
+  let maxId = 0;
+  for (const raw of eventsList) {
+    if (!raw) continue;
+    const ev = {
+      id: raw.id,
+      opcode: raw.opcode || TYPE_TO_OPCODE[raw.type] || OP_RELATION,
+      count: raw.count || 1,
+      tick: raw.tick || 0,
+      timestamp: raw.timestamp || { day: 0, hour: 0, minute: 0 },
+      type: raw.type || OPCODE_TO_TYPE[raw.opcode] || "EVENT",
+      primaryEntityId: raw.primaryEntityId ?? null,
+      secondaryEntityId: raw.secondaryEntityId ?? null,
+      location: raw.location ? { x: Math.round(raw.location.x), y: Math.round(raw.location.y) } : { x: 0, y: 0 },
+      _rawDescription: raw.description || raw._rawDescription || "",
+      metadata: raw.metadata || {},
+      get description() {
+        return formatEventDescription(this);
+      },
+      set description(val) {
+        this._rawDescription = val;
+      }
+    };
+
+    allEvents.push(ev);
+    eventsById.set(ev.id, ev);
+
+    if (ev.primaryEntityId !== null && ev.primaryEntityId !== undefined) {
+      if (!eventsByEntity.has(ev.primaryEntityId)) eventsByEntity.set(ev.primaryEntityId, []);
+      eventsByEntity.get(ev.primaryEntityId).push(ev.id);
+    }
+    if (ev.secondaryEntityId !== null && ev.secondaryEntityId !== undefined) {
+      if (!eventsByEntity.has(ev.secondaryEntityId)) eventsByEntity.set(ev.secondaryEntityId, []);
+      eventsByEntity.get(ev.secondaryEntityId).push(ev.id);
+    }
+    if (ev.opcode) {
+      if (!eventsByType.has(ev.opcode)) eventsByType.set(ev.opcode, []);
+      eventsByType.get(ev.opcode).push(ev.id);
+    }
+    if (ev.metadata?.citedEventId) {
+      if (!eventsByCitedEvent.has(ev.metadata.citedEventId)) eventsByCitedEvent.set(ev.metadata.citedEventId, []);
+      eventsByCitedEvent.get(ev.metadata.citedEventId).push(ev.id);
+    }
+    if (ev.id > maxId) maxId = ev.id;
+  }
+  nextEventId = maxId + 1;
+}
+
+/**
  * Triggers browser download of the chronicle JSON file
  */
 export function downloadChronicleJSON(world, entities, currentTick = 0, entityRegistry = null) {

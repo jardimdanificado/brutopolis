@@ -25,6 +25,9 @@ import {
   getCitationsForEvent,
   exportWorldChronicleJSON,
   downloadChronicleJSON,
+  exportWorldSaveJSON,
+  downloadWorldSaveJSON,
+  restoreWorldEvents,
   allEvents
 } from "./js/event_log.js";
 import {
@@ -90,6 +93,11 @@ import {
   createFarmerProp,
   createMysticGraceProp,
   createScatologicalProp,
+  createEmbarkParty,
+  rebindEntityMethods,
+  currentZoneSize,
+  getZoneSize,
+  setZoneSize,
   getMoodLabel,
   getGroupStockpile
 } from "./js/properties.js";
@@ -604,8 +612,44 @@ let entities = [];
 
 // Simulation Speed & Time State
 let isPaused = false;
-let simSpeed = 1.0; // 0.5x, 1x, 2x, 4x, 8x, 16x
-const SPEED_TIERS = [0.5, 1.0, 2.0, 4.0, 8.0, 16.0];
+let simSpeed = 1.0; // 0.5x, 1x, 2x, 4x, 8x, 16x, 32x, ??x
+const SPEED_TIERS = [0.5, 1.0, 2.0, 4.0, 8.0, 16.0, 32.0, "??"];
+
+function increaseSimSpeed() {
+  const idx = SPEED_TIERS.indexOf(simSpeed);
+  if (idx !== -1 && idx < SPEED_TIERS.length - 1) {
+    simSpeed = SPEED_TIERS[idx + 1];
+  } else if (idx === -1) {
+    simSpeed = 1.0;
+  }
+  if (shader) {
+    const tps = simSpeed === "??" ? 600 : Math.round(60 * (typeof simSpeed === "number" ? simSpeed : 32));
+    shader.exports.wasm_set_tps(tps);
+  }
+}
+
+function decreaseSimSpeed() {
+  const idx = SPEED_TIERS.indexOf(simSpeed);
+  if (idx > 0) {
+    simSpeed = SPEED_TIERS[idx - 1];
+  } else if (idx === -1) {
+    simSpeed = 1.0;
+  }
+  if (shader) {
+    const tps = simSpeed === "??" ? 600 : Math.round(60 * (typeof simSpeed === "number" ? simSpeed : 0.5));
+    shader.exports.wasm_set_tps(tps);
+  }
+}
+
+function cycleSimSpeed() {
+  const idx = SPEED_TIERS.indexOf(simSpeed);
+  simSpeed = SPEED_TIERS[(idx + 1) % SPEED_TIERS.length];
+  if (shader) {
+    const tps = simSpeed === "??" ? 600 : Math.round(60 * (typeof simSpeed === "number" ? simSpeed : 32));
+    shader.exports.wasm_set_tps(tps);
+  }
+}
+
 let currentPreset = 0;
 let lastSelectedId = -1;
 
@@ -650,6 +694,7 @@ const EDITOR_TILES = [
 ];
 
 const EDITOR_CREATURES = [
+  { label: "EMBARK CLAN", fn: (x, y) => { const res = createEmbarkParty(x, y, world, entities); return res.members[0]; } },
   { label: "KNIGHT", fn: (x, y) => createKnight(x, y) },
   { label: "ARCHER", fn: (x, y) => createArcher(x, y) },
   { label: "FARMER", fn: (x, y) => createHumanFarmer(x, y) },
@@ -734,15 +779,16 @@ function parseZoneCoords(zoneStr) {
   const zx = parseInt(parts[0], 10);
   const zy = parseInt(parts[1], 10);
   if (isNaN(zx) || isNaN(zy)) return null;
+  const sz = getZoneSize();
   return {
     zx,
     zy,
-    minX: zx * 8,
-    minY: zy * 8,
-    maxX: zx * 8 + 7,
-    maxY: zy * 8 + 7,
-    centerX: zx * 8 + 4,
-    centerY: zy * 8 + 4
+    minX: zx * sz,
+    minY: zy * sz,
+    maxX: zx * sz + (sz - 1),
+    maxY: zy * sz + (sz - 1),
+    centerX: zx * sz + Math.floor(sz / 2),
+    centerY: zy * sz + Math.floor(sz / 2)
   };
 }
 
@@ -815,11 +861,19 @@ function getCanvasCoords(clientX, clientY) {
 // World Initialization
 // ---------------------------------------------------------------------------
 
-function spawnRandomGlobal(count, factoryFn, conditionFn = null) {
+function spawnRandomGlobal(count, factoryFn, conditionFn = null, bounds = null) {
   let spawned = 0;
-  for (let attempt = 0; attempt < count * 8 && spawned < count; attempt++) {
-    const rx = Math.floor(Math.random() * 508) + 2;
-    const ry = Math.floor(Math.random() * 508) + 2;
+  const minX = bounds ? bounds.minX : 2;
+  const maxX = bounds ? bounds.maxX : (world?.width || 1024) - 2;
+  const minY = bounds ? bounds.minY : 2;
+  const maxY = bounds ? bounds.maxY : (world?.height || 1024) - 2;
+  const spanX = Math.max(1, maxX - minX);
+  const spanY = Math.max(1, maxY - minY);
+  const maxAttempts = count * 25;
+
+  for (let attempt = 0; attempt < maxAttempts && spawned < count; attempt++) {
+    const rx = minX + Math.floor(Math.random() * spanX);
+    const ry = minY + Math.floor(Math.random() * spanY);
     if (!conditionFn || conditionFn(rx, ry)) {
       const e = factoryFn(rx, ry);
       entities.push(e);
@@ -828,14 +882,26 @@ function spawnRandomGlobal(count, factoryFn, conditionFn = null) {
   }
 }
 
-function resetWorld(presetId = 0) {
+// World Generator & Configurator State
+let genPreset = 0; // 0: ARCHIPELAGO, 1: CONTINENT, 2: HIGHLANDS
+let genWidth = 512; // 64 to 1024
+let genHeight = 512; // 64 to 1024
+let genZoneSize = 8; // 4, 8, 16, 32, 64
+let genSeed = Math.floor(Math.random() * 1000000) + 1;
+let genCreatureDensity = "STANDARD"; // "NONE", "LOW", "STANDARD", "HIGH"
+let genPlantDensity = "NORMAL"; // "SPARSE", "NORMAL", "DENSE"
+let genSpawnPioneers = true;
+
+function generateConfiguredWorld() {
   if (!shader) return;
-  currentPreset = presetId;
-  const seed = Math.floor(Math.random() * 1000000) + 1;
+  currentPreset = genPreset;
+  setZoneSize(genZoneSize);
+  const seed = genSeed || (Math.floor(Math.random() * 1000000) + 1);
+
   if (shader.exports.wasm_init_with_seed) {
-    shader.exports.wasm_init_with_seed(presetId, seed);
+    shader.exports.wasm_init_with_seed(genPreset, seed);
   } else {
-    shader.exports.wasm_init(presetId);
+    shader.exports.wasm_init(genPreset);
   }
 
   resetEngineTicks();
@@ -846,33 +912,63 @@ function resetWorld(presetId = 0) {
   modalScroll = 0;
   inspectingLogEvent = null;
 
-  // Flora
-  spawnRandomGlobal(80, createOakTree, (x, y) => world.getTile(x, y) === 0);
-  spawnRandomGlobal(60, createWillowTree, (x, y) => world.getTile(x, y) === 0 || world.getTile(x, y) === 3);
-  spawnRandomGlobal(65, createCactus, (x, y) => world.getTile(x, y) === 3);
-  spawnRandomGlobal(50, createAlpineShrub, (x, y) => world.getTile(x, y) === 4 || world.getTile(x, y) === 1);
-  spawnRandomGlobal(55, createPineTree, (x, y) => world.getTile(x, y) === 4 || world.getTile(x, y) === 0);
-  spawnRandomGlobal(80, createWaterLily, (x, y) => world.getTile(x, y) === 2);
-  spawnRandomGlobal(100, createSeaweed, (x, y) => world.getTile(x, y) === 2);
+  // Active Playable Box centered within 1024x1024 buffer
+  const minX = Math.floor((1024 - genWidth) / 2);
+  const maxX = minX + genWidth;
+  const minY = Math.floor((1024 - genHeight) / 2);
+  const maxY = minY + genHeight;
+
+  if (genWidth < 1024 || genHeight < 1024) {
+    for (let y = 0; y < 1024; y++) {
+      for (let x = 0; x < 1024; x++) {
+        if (x < minX || x >= maxX || y < minY || y >= maxY) {
+          world.setTile(x, y, 5); // Bedrock / Void border
+        }
+      }
+    }
+  }
+
+  // Area-proportional density scaling
+  const areaRatio = (genWidth * genHeight) / (512 * 512);
+
+  const plantMult = (genPlantDensity === "SPARSE" ? 0.4 : genPlantDensity === "DENSE" ? 2.0 : 1.0) * areaRatio;
+  const creatureMult = (genCreatureDensity === "NONE" ? 0 : genCreatureDensity === "LOW" ? 0.4 : genCreatureDensity === "HIGH" ? 2.0 : 1.0) * areaRatio;
+
+  const inBounds = (x, y) => x >= minX && x < maxX && y >= minY && y < maxY;
+  const spawnBounds = { minX, maxX, minY, maxY };
+
+  // Flora & Trees
+  const floraCount = (base) => Math.max(1, Math.round(base * plantMult));
+  spawnRandomGlobal(floraCount(80), createOakTree, (x, y) => inBounds(x, y) && world.getTile(x, y) === 0, spawnBounds);
+  spawnRandomGlobal(floraCount(60), createWillowTree, (x, y) => inBounds(x, y) && (world.getTile(x, y) === 0 || world.getTile(x, y) === 3), spawnBounds);
+  spawnRandomGlobal(floraCount(65), createCactus, (x, y) => inBounds(x, y) && world.getTile(x, y) === 3, spawnBounds);
+  spawnRandomGlobal(floraCount(50), createAlpineShrub, (x, y) => inBounds(x, y) && (world.getTile(x, y) === 4 || world.getTile(x, y) === 1), spawnBounds);
+  spawnRandomGlobal(floraCount(55), createPineTree, (x, y) => inBounds(x, y) && (world.getTile(x, y) === 4 || world.getTile(x, y) === 0), spawnBounds);
+  spawnRandomGlobal(floraCount(80), createWaterLily, (x, y) => inBounds(x, y) && world.getTile(x, y) === 2, spawnBounds);
+  spawnRandomGlobal(floraCount(100), createSeaweed, (x, y) => inBounds(x, y) && world.getTile(x, y) === 2, spawnBounds);
 
   // Items & Resources
-  spawnRandomGlobal(60, (x, y) => createSeedEntity(x, y, "large", "oak"), (x, y) => world.getTile(x, y) === 0);
-  spawnRandomGlobal(40, (x, y) => createSeedEntity(x, y, "small", "willow"), (x, y) => world.getTile(x, y) === 0 || world.getTile(x, y) === 3);
-  spawnRandomGlobal(30, (x, y) => createFruit(x, y, "large", "cactus"), (x, y) => world.getTile(x, y) === 3);
-  spawnRandomGlobal(40, (x, y) => createFruit(x, y, "large", "oak"), (x, y) => world.isWalkable(x, y));
-  spawnRandomGlobal(50, createWoodItem, (x, y) => world.getTile(x, y) === 0);
-  spawnRandomGlobal(50, createStoneItem, (x, y) => world.getTile(x, y) === 4 || world.getTile(x, y) === 1);
+  spawnRandomGlobal(floraCount(60), (x, y) => createSeedEntity(x, y, "large", "oak"), (x, y) => inBounds(x, y) && world.getTile(x, y) === 0, spawnBounds);
+  spawnRandomGlobal(floraCount(40), (x, y) => createSeedEntity(x, y, "small", "willow"), (x, y) => inBounds(x, y) && (world.getTile(x, y) === 0 || world.getTile(x, y) === 3), spawnBounds);
+  spawnRandomGlobal(floraCount(30), (x, y) => createFruit(x, y, "large", "cactus"), (x, y) => inBounds(x, y) && world.getTile(x, y) === 3, spawnBounds);
+  spawnRandomGlobal(floraCount(40), (x, y) => createFruit(x, y, "large", "oak"), (x, y) => inBounds(x, y) && world.isWalkable(x, y), spawnBounds);
+  spawnRandomGlobal(floraCount(50), createWoodItem, (x, y) => inBounds(x, y) && world.getTile(x, y) === 0, spawnBounds);
+  spawnRandomGlobal(floraCount(50), createStoneItem, (x, y) => inBounds(x, y) && (world.getTile(x, y) === 4 || world.getTile(x, y) === 1), spawnBounds);
 
-  // 1. Determine spawn position for Camera and Founding Clan
-  let startX = 256;
-  let startY = 256;
-  for (let r = 0; r < 100; r++) {
+  // Determine spawn position near center of playable area
+  let centerPlayX = minX + Math.floor(genWidth / 2);
+  let centerPlayY = minY + Math.floor(genHeight / 2);
+  let startX = centerPlayX;
+  let startY = centerPlayY;
+  const maxSearchRadius = Math.floor(Math.min(genWidth, genHeight) / 2) - 2;
+
+  for (let r = 0; r < maxSearchRadius; r++) {
     let found = false;
     for (let dy = -r; dy <= r; dy++) {
       for (let dx = -r; dx <= r; dx++) {
-        if (world.isWalkable(256 + dx, 256 + dy)) {
-          startX = 256 + dx;
-          startY = 256 + dy;
+        if (world.isWalkable(centerPlayX + dx, centerPlayY + dy)) {
+          startX = centerPlayX + dx;
+          startY = centerPlayY + dy;
           found = true;
           break;
         }
@@ -882,79 +978,214 @@ function resetWorld(presetId = 0) {
     if (found) break;
   }
 
-  // Fauna (Dangerous predators spawn outside initial settlement buffer)
-  const outsideSettlement = (x, y) => (Math.abs(x - startX) + Math.abs(y - startY)) > 28;
-  spawnRandomGlobal(25, createScorpion, (x, y) => world.getTile(x, y) === 3);
-  spawnRandomGlobal(20, createLizard, (x, y) => world.getTile(x, y) === 3 || world.getTile(x, y) === 0);
-  spawnRandomGlobal(20, createMountainGoat, (x, y) => world.getTile(x, y) === 4 || world.getTile(x, y) === 1);
-  spawnRandomGlobal(20, (x, y) => createCat(x, y, false), (x, y) => world.getTile(x, y) === 0);
-  spawnRandomGlobal(14, createWolf, (x, y) => (world.getTile(x, y) === 0 || world.getTile(x, y) === 4) && outsideSettlement(x, y));
-  spawnRandomGlobal(8, createBear, (x, y) => world.getTile(x, y) === 0 && outsideSettlement(x, y));
-  spawnRandomGlobal(25, createBat, (x, y) => true);
-  spawnRandomGlobal(20, createSeaSerpent, (x, y) => world.getTile(x, y) === 2);
-  spawnRandomGlobal(3, createDragon, (x, y) => (world.getTile(x, y) === 1 || world.getTile(x, y) === 4) && outsideSettlement(x, y));
-  spawnRandomGlobal(18, (x, y) => createKnight(x, y, Math.random() < 0.5 ? "male" : "female"), (x, y) => world.getTile(x, y) === 0 && outsideSettlement(x, y));
-  spawnRandomGlobal(18, (x, y) => createArcher(x, y, Math.random() < 0.5 ? "male" : "female"), (x, y) => world.getTile(x, y) === 0 && outsideSettlement(x, y));
-  spawnRandomGlobal(20, createGoblin, (x, y) => (world.getTile(x, y) === 0 || world.getTile(x, y) === 4) && outsideSettlement(x, y));
+  // Fauna
+  if (creatureMult > 0) {
+    const mobCount = (base) => Math.max(1, Math.round(base * creatureMult));
+    const outsideSettlement = (x, y) => inBounds(x, y) && (Math.abs(x - startX) + Math.abs(y - startY)) > Math.min(28, Math.floor(genWidth / 8));
 
-  // 2. Founding Pioneers Clan: 2 Builders, 1 Farmer, 2 Matriarchs, 2 Explorers, 1 Miner, 2 Hunters
-  const miner = createHumanMiner(startX, startY, "Aldor Silveira, the Miner");
-  miner.properties.surname = "Silveira";
-  const builder1 = createHumanBuilder(startX + 1, startY, "Brom Rocha, the Builder");
-  builder1.properties.surname = "Rocha";
-  const builder2 = createHumanBuilder(startX + 2, startY, "Torben Barros, the Builder");
-  builder2.properties.surname = "Barros";
-  const farmer = createHumanFarmer(startX - 1, startY, "Farid Prado, the Farmer");
-  farmer.properties.surname = "Prado";
-  const matriarch1 = createHumanMatriarch(startX + 1, startY + 1, "Elena Silveira, the Matriarch");
-  matriarch1.properties.surname = "Silveira";
-  const matriarch2 = createHumanMatriarch(startX - 1, startY + 1, "Maya Vance, the Matriarch");
-  const crafter1 = createHumanCrafter(startX, startY + 2, "Lyra Montes, the Artisan");
-  crafter1.properties.surname = "Montes";
-  const crafter2 = createHumanCrafter(startX + 2, startY + 2, "Silas Ramos, the Artisan");
-  crafter2.properties.surname = "Ramos";
-  const hunter1 = createHumanHunter(startX, startY - 1, "Kael Torres, the Hunter");
-  hunter1.properties.surname = "Torres";
-  const hunter2 = createHumanHunter(startX + 1, startY - 1, "Rowan Valente, the Huntress");
-  hunter2.properties.surname = "Valente";
+    spawnRandomGlobal(mobCount(25), createScorpion, (x, y) => inBounds(x, y) && world.getTile(x, y) === 3, spawnBounds);
+    spawnRandomGlobal(mobCount(20), createLizard, (x, y) => inBounds(x, y) && (world.getTile(x, y) === 3 || world.getTile(x, y) === 0), spawnBounds);
+    spawnRandomGlobal(mobCount(20), createMountainGoat, (x, y) => inBounds(x, y) && (world.getTile(x, y) === 4 || world.getTile(x, y) === 1), spawnBounds);
+    spawnRandomGlobal(mobCount(20), (x, y) => createCat(x, y, false), (x, y) => inBounds(x, y) && world.getTile(x, y) === 0, spawnBounds);
+    spawnRandomGlobal(mobCount(14), createWolf, (x, y) => inBounds(x, y) && (world.getTile(x, y) === 0 || world.getTile(x, y) === 4) && outsideSettlement(x, y), spawnBounds);
+    spawnRandomGlobal(mobCount(8), createBear, (x, y) => inBounds(x, y) && world.getTile(x, y) === 0 && outsideSettlement(x, y), spawnBounds);
+    spawnRandomGlobal(mobCount(25), createBat, (x, y) => inBounds(x, y), spawnBounds);
+    spawnRandomGlobal(mobCount(20), createSeaSerpent, (x, y) => inBounds(x, y) && world.getTile(x, y) === 2, spawnBounds);
+    spawnRandomGlobal(mobCount(3), createDragon, (x, y) => inBounds(x, y) && (world.getTile(x, y) === 1 || world.getTile(x, y) === 4) && outsideSettlement(x, y), spawnBounds);
+    spawnRandomGlobal(mobCount(18), (x, y) => createKnight(x, y, Math.random() < 0.5 ? "male" : "female"), (x, y) => inBounds(x, y) && world.getTile(x, y) === 0 && outsideSettlement(x, y), spawnBounds);
+    spawnRandomGlobal(mobCount(18), (x, y) => createArcher(x, y, Math.random() < 0.5 ? "male" : "female"), (x, y) => inBounds(x, y) && world.getTile(x, y) === 0 && outsideSettlement(x, y), spawnBounds);
+    spawnRandomGlobal(mobCount(20), createGoblin, (x, y) => inBounds(x, y) && (world.getTile(x, y) === 0 || world.getTile(x, y) === 4) && outsideSettlement(x, y), spawnBounds);
+  }
 
-  const zx = Math.floor(startX / 8);
-  const zy = Math.floor(startY / 8);
-  const zone1 = `${zx},${zy}`;
-  const zone2 = `${zx + 1},${zy}`;
-
-  const foundingClan = createGroup("Pioneers Clan", miner, [zx, zy], [zone1, zone2]);
-  foundingClan.leaderId = miner.id;
-  foundingClan.storage = ["stone", "stone", "stone", "stone", "wood", "wood", "wood", "wood", "meat", "meat"];
-
-  const clanMembers = [miner, builder1, builder2, farmer, matriarch1, matriarch2, crafter1, crafter2, hunter1, hunter2];
-
-  for (const m of clanMembers) {
-    m.properties.group = foundingClan;
-    if (m.properties.brain) {
-      if (!m.properties.brain.affinities) m.properties.brain.affinities = {};
-      for (const other of clanMembers) {
-        if (m !== other) m.properties.brain.affinities[other.id] = 35; // Moderate starting affinity
-      }
+  // Founding Pioneers Clan
+  if (genSpawnPioneers) {
+    const res = createEmbarkParty(startX, startY, world, entities);
+    if (res.members.length > 0) {
+      lastSelectedId = res.members[0].id;
+      shader.exports.wasm_select_entity(lastSelectedId);
     }
   }
 
-  foundingClan.members = clanMembers.map(m => m.id);
-  entities.push(...clanMembers);
+  const zoomFactor = genWidth <= 128 ? 3.0 : genWidth <= 256 ? 2.0 : 1.5;
+  shader.exports.wasm_set_camera(startX, startY, zoomFactor);
+  currentMode = "MAP";
+}
 
-  // Initial clan resources placed right in territory center
-  for (let i = 0; i < 6; i++) {
-    entities.push(createWoodItem(startX + (i % 3), startY + Math.floor(i / 3)));
-    entities.push(createStoneItem(startX - 1 + (i % 3), startY + Math.floor(i / 3)));
+function resetWorld(presetId = 0) {
+  genPreset = presetId;
+  genSeed = Math.floor(Math.random() * 1000000) + 1;
+  generateConfiguredWorld();
+}
+
+function saveWorldState() {
+  if (!world || !shader) return;
+  const cx = shader.exports.wasm_get_camera_x();
+  const cy = shader.exports.wasm_get_camera_y();
+  const zoom = shader.exports.wasm_get_camera_zoom();
+  const camera = { x: cx, y: cy, zoom };
+
+  const customWorld = {
+    width: genWidth,
+    height: genHeight,
+    zoneSize: getZoneSize(),
+    map: world.map,
+    clock: world.clock
+  };
+
+  const filename = downloadWorldSaveJSON(customWorld, entities, currentTick, entityRegistry, world.groups || [], camera, genSeed, currentPreset);
+
+  try {
+    const saveObj = exportWorldSaveJSON(customWorld, entities, currentTick, entityRegistry, world.groups || [], camera, genSeed, currentPreset);
+    localStorage.setItem("brutopolis_quicksave", JSON.stringify(saveObj));
+  } catch (e) {
+    console.warn("Could not save to localStorage (storage quota full):", e);
   }
-  for (let i = 0; i < 4; i++) {
-    entities.push(createSeedEntity(startX + 1 + (i % 2), startY + Math.floor(i / 2), "large", "oak"));
+}
+
+function loadWorldState(saveData) {
+  if (!saveData || !world || !shader) {
+    alert("Invalid save file!");
+    return;
   }
 
-  // Position camera and selection right on the founding clan!
-  lastSelectedId = miner.id;
-  shader.exports.wasm_select_entity(miner.id);
-  shader.exports.wasm_set_camera(startX, startY, 2.0);
+  try {
+    // 1. Reset current state
+    entities = [];
+    entityRegistry.clear();
+    lastSelectedId = -1;
+    modalScroll = 0;
+    inspectingLogEvent = null;
+
+    // 2. Restore Terrain
+    if (saveData.world?.terrain) {
+      const binaryStr = atob(saveData.world.terrain);
+      const mapW = world.width || 1024;
+      for (let i = 0; i < binaryStr.length; i++) {
+        const tileVal = binaryStr.charCodeAt(i);
+        const x = i % mapW;
+        const y = Math.floor(i / mapW);
+        world.setTile(x, y, tileVal);
+      }
+    }
+
+    // 3. Restore Zone Size & Dimensions
+    if (saveData.world?.zoneSize) {
+      setZoneSize(saveData.world.zoneSize);
+      genZoneSize = getZoneSize();
+    }
+    if (saveData.world?.width && saveData.world?.height) {
+      genWidth = saveData.world.width;
+      genHeight = saveData.world.height;
+    }
+
+    // 4. Restore Clock & Simulation Tick
+    if (saveData.world?.clock) {
+      world.clock.day = saveData.world.clock.day || 0;
+      world.clock.hour = saveData.world.clock.hour || 0;
+      world.clock.minute = saveData.world.clock.minute || 0;
+      world.clock.globalLight = saveData.world.clock.globalLight !== undefined ? saveData.world.clock.globalLight : 1.0;
+      world.clock.totalSeconds = saveData.world.clock.totalSeconds || 0;
+
+      shader.exports.wasm_set_clock(
+        world.clock.day,
+        world.clock.hour,
+        world.clock.minute,
+        world.clock.globalLight,
+        0.0,
+        saveData.entities?.length || 0
+      );
+    }
+
+    if (saveData.world?.tick !== undefined) {
+      resetEngineTicks();
+      for (let i = 0; i < saveData.world.tick; i++) {
+        incrementEngineTick();
+      }
+    }
+
+    // 5. Restore Groups / Clans
+    world.groups = saveData.groups || [];
+
+    // 6. Restore Entities
+    if (Array.isArray(saveData.entities)) {
+      for (const entData of saveData.entities) {
+        if (!entData) continue;
+        const ent = {
+          id: entData.id,
+          x: entData.x,
+          y: entData.y,
+          birthTick: entData.birthTick,
+          deathTick: entData.deathTick,
+          destroyed: entData.destroyed,
+          renderable: entData.renderable,
+          properties: entData.properties || {}
+        };
+        rebindEntityMethods(ent);
+        entities.push(ent);
+        entityRegistry.set(ent.id, ent);
+      }
+    }
+
+    // 7. Restore Historical Registry (dead ancestors)
+    if (Array.isArray(saveData.registry)) {
+      for (const regData of saveData.registry) {
+        if (!regData || entityRegistry.has(regData.id)) continue;
+        const ent = {
+          id: regData.id,
+          x: regData.x,
+          y: regData.y,
+          birthTick: regData.birthTick,
+          deathTick: regData.deathTick,
+          destroyed: true,
+          renderable: regData.renderable,
+          properties: regData.properties || {}
+        };
+        entityRegistry.set(ent.id, ent);
+      }
+    }
+
+    // 8. Restore Events
+    if (Array.isArray(saveData.events)) {
+      restoreWorldEvents(saveData.events);
+    }
+
+    // 9. Restore Camera
+    if (saveData.camera) {
+      shader.exports.wasm_set_camera(saveData.camera.x || 256, saveData.camera.y || 256, saveData.camera.zoom || 1.0);
+    }
+
+    currentPreset = saveData.world?.preset || 0;
+    genSeed = saveData.world?.seed || 12345;
+    currentMode = "MAP";
+    console.log("✓ Brutopolis world save restored successfully!");
+  } catch (err) {
+    console.error("Failed to load save file:", err);
+    alert("Error loading save file: " + err.message);
+  }
+}
+
+function openSaveFilePicker() {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = ".json,application/json";
+  input.style.display = "none";
+  input.onchange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const parsed = JSON.parse(event.target.result);
+        loadWorldState(parsed);
+      } catch (err) {
+        alert("Failed to parse JSON file: " + err.message);
+      }
+    };
+    reader.readAsText(file);
+  };
+  document.body.appendChild(input);
+  input.click();
+  document.body.removeChild(input);
 }
 
 function spawnEntityAtCamera(factoryFn) {
@@ -1156,7 +1387,8 @@ window.addEventListener("keydown", (e) => {
     e.preventDefault();
     togglePause();
   } else if (e.code === "KeyR") {
-    resetWorld((currentPreset + 1) % 3);
+    currentMode = currentMode === "GENERATOR" ? "MAP" : "GENERATOR";
+    modalScroll = 0;
   } else if (e.code === "KeyC") {
     centerCamera();
   } else if (e.code === "KeyK") {
@@ -1211,15 +1443,9 @@ window.addEventListener("keydown", (e) => {
       currentMode = "MAP";
     }
   } else if (e.code === "Equal" || e.code === "NumpadAdd" || e.code === "BracketRight") {
-    const idx = SPEED_TIERS.indexOf(simSpeed);
-    if (idx !== -1 && idx < SPEED_TIERS.length - 1) simSpeed = SPEED_TIERS[idx + 1];
-    else simSpeed = Math.min(32, simSpeed * 2);
-    if (shader) shader.exports.wasm_set_tps(Math.round(60 * simSpeed));
+    increaseSimSpeed();
   } else if (e.code === "Minus" || e.code === "NumpadSubtract" || e.code === "BracketLeft") {
-    const idx = SPEED_TIERS.indexOf(simSpeed);
-    if (idx > 0) simSpeed = SPEED_TIERS[idx - 1];
-    else simSpeed = Math.max(0.25, simSpeed / 2);
-    if (shader) shader.exports.wasm_set_tps(Math.round(60 * simSpeed));
+    decreaseSimSpeed();
   } else if (e.code === "Digit1") spawnEntityAtCamera(createKnight);
   else if (e.code === "Digit2") spawnEntityAtCamera(createArcher);
   else if (e.code === "Digit3") spawnEntityAtCamera(createWolf);
@@ -1334,50 +1560,30 @@ function renderTopHudBar() {
   drawText8x8(`SUN:${Math.round(clock.globalLight * 100)}%`, 188, 12, "#3cbcfc", 1);
 
   const presetNames = ["ARCHIPELAGO", "CONTINENT", "HIGHLANDS"];
-  drawText8x8(presetNames[currentPreset] || "WORLD", 260, 12, "#58d854", 1);
+  drawText8x8(presetNames[currentPreset] || "WORLD", 264, 12, "#58d854", 1);
 
-  drawText8x8(`${currentFps}FPS`, 355, 12, "#bcbcbc", 1);
+  drawText8x8(`${currentFps}FPS`, 368, 12, "#bcbcbc", 1);
 
-  // Speed Controls on HUD
-  drawNESButton(412, 4, 18, 24, "-", false, false);
-  registerClickableRegion(412, 4, 18, 24, () => {
-    const idx = SPEED_TIERS.indexOf(simSpeed);
-    if (idx > 0) simSpeed = SPEED_TIERS[idx - 1];
-    else simSpeed = Math.max(0.25, simSpeed / 2);
-    if (shader) shader.exports.wasm_set_tps(Math.round(60 * simSpeed));
+  // SAVE Button
+  drawNESButton(CANVAS_WIDTH - 296, 4, 52, 24, "SAVE", false, false);
+  registerClickableRegion(CANVAS_WIDTH - 296, 4, 52, 24, saveWorldState);
+
+  // LOAD Button
+  drawNESButton(CANVAS_WIDTH - 238, 4, 52, 24, "LOAD", false, false);
+  registerClickableRegion(CANVAS_WIDTH - 238, 4, 52, 24, openSaveFilePicker);
+
+  // NEW WORLD Generator Button
+  const isGenAct = currentMode === "GENERATOR";
+  drawNESButton(CANVAS_WIDTH - 180, 4, 94, 24, "NEW WORLD", isGenAct, false);
+  registerClickableRegion(CANVAS_WIDTH - 180, 4, 94, 24, () => {
+    currentMode = currentMode === "GENERATOR" ? "MAP" : "GENERATOR";
+    modalScroll = 0;
   });
-
-  const speedStr = `${simSpeed}X (${Math.round(60 * simSpeed)}TPS)`;
-  drawText8x8(speedStr, 436, 12, "#f8b800", 1);
-  registerClickableRegion(436, 4, speedStr.length * 8 + 8, 24, () => {
-    const idx = SPEED_TIERS.indexOf(simSpeed);
-    simSpeed = SPEED_TIERS[(idx + 1) % SPEED_TIERS.length];
-    if (shader) shader.exports.wasm_set_tps(Math.round(60 * simSpeed));
-  });
-
-  const plusX = 444 + speedStr.length * 8;
-  drawNESButton(plusX, 4, 18, 24, "+", false, false);
-  registerClickableRegion(plusX, 4, 18, 24, () => {
-    const idx = SPEED_TIERS.indexOf(simSpeed);
-    if (idx !== -1 && idx < SPEED_TIERS.length - 1) simSpeed = SPEED_TIERS[idx + 1];
-    else simSpeed = Math.min(32, simSpeed * 2);
-    if (shader) shader.exports.wasm_set_tps(Math.round(60 * simSpeed));
-  });
-
-  // Export Chronicle Button
-  drawNESButton(CANVAS_WIDTH - 242, 4, 76, 24, "EXPORT", false, false);
-  registerClickableRegion(CANVAS_WIDTH - 242, 4, 76, 24, () => {
-    downloadChronicleJSON(world, entities, currentTick, entityRegistry);
-  });
-
-  // Reset Button
-  drawNESButton(CANVAS_WIDTH - 162, 4, 76, 24, "RESET", false, false);
-  registerClickableRegion(CANVAS_WIDTH - 162, 4, 76, 24, () => resetWorld((currentPreset + 1) % 3));
 
   // Pause / Run Button
   const pauseTxt = isPaused ? "PAUSE" : "RUN";
-  drawNESButton(CANVAS_WIDTH - 82, 4, 76, 24, pauseTxt, !isPaused, isPaused);
-  registerClickableRegion(CANVAS_WIDTH - 82, 4, 76, 24, togglePause);
+  drawNESButton(CANVAS_WIDTH - 80, 4, 74, 24, pauseTxt, !isPaused, isPaused);
+  registerClickableRegion(CANVAS_WIDTH - 80, 4, 74, 24, togglePause);
 }
 
 function renderBottomToolbar() {
@@ -1401,9 +1607,7 @@ function renderBottomToolbar() {
           isPainting = false;
         }
       }
-    },
-    { label: "NEXT", action: cycleNextLivingEntity },
-    { label: "CENTER", action: centerCamera }
+    }
   ];
 
   let btnX = 8;
@@ -1427,7 +1631,20 @@ function renderBottomToolbar() {
     btnX += bw + 6;
   }
 
-  // Hover Tile / Target Summary
+  // Simulation Speed / Time Control Interface (Moved to Bottom Toolbar)
+  const timeCtlX = btnX + 16;
+  drawNESButton(timeCtlX, CANVAS_HEIGHT - 30, 20, 24, "-", false, false);
+  registerClickableRegion(timeCtlX, CANVAS_HEIGHT - 30, 20, 24, decreaseSimSpeed);
+
+  const speedStr = simSpeed === "??" ? "??X (MAX)" : `${simSpeed}X (${Math.round(60 * simSpeed)}TPS)`;
+  drawText8x8(speedStr, timeCtlX + 26, CANVAS_HEIGHT - 22, "#f8b800", 1);
+  registerClickableRegion(timeCtlX + 26, CANVAS_HEIGHT - 30, speedStr.length * 8 + 4, 24, cycleSimSpeed);
+
+  const plusX = timeCtlX + 32 + speedStr.length * 8;
+  drawNESButton(plusX, CANVAS_HEIGHT - 30, 20, 24, "+", false, false);
+  registerClickableRegion(plusX, CANVAS_HEIGHT - 30, 20, 24, increaseSimSpeed);
+
+  // Coordinates [X, Y] on bottom right (Tile name removed as requested)
   if (shader && world) {
     const zoom = shader.exports.wasm_get_camera_zoom();
     const tileSize = 16.0 * zoom;
@@ -1436,11 +1653,8 @@ function renderBottomToolbar() {
     const hoverTileX = Math.floor(cx + (mouseX - CANVAS_WIDTH / 2) / tileSize);
     const hoverTileY = Math.floor(cy + (mouseY - CANVAS_HEIGHT / 2) / tileSize);
 
-    const tile = world.getTile(hoverTileX, hoverTileY);
-    const tileName = (world.getTileName(tile) || "VOID").toUpperCase();
-    const hoverInfo = `[${hoverTileX},${hoverTileY}] ${tileName}`;
-
-    drawText8x8(hoverInfo, CANVAS_WIDTH - hoverInfo.length * 8 - 12, CANVAS_HEIGHT - 22, "#f8b800", 1);
+    const coordStr = `[${hoverTileX}, ${hoverTileY}]`;
+    drawText8x8(coordStr, CANVAS_WIDTH - coordStr.length * 8 - 14, CANVAS_HEIGHT - 22, "#58d854", 1);
   }
 }
 
@@ -2354,10 +2568,11 @@ function renderTerritoryOverlay() {
     const coords = parseZoneCoords(zk);
     if (!coords) continue;
 
+    const sz = getZoneSize();
     const screenX = centerScreenX + (coords.minX - cx) * tileSize;
     const screenY = centerScreenY + (coords.minY - cy) * tileSize;
-    const screenW = 8 * tileSize;
-    const screenH = 8 * tileSize;
+    const screenW = sz * tileSize;
+    const screenH = sz * tileSize;
 
     // Only draw if on screen
     if (screenX + screenW < 0 || screenX > CANVAS_WIDTH || screenY + screenH < 0 || screenY > CANVAS_HEIGHT) continue;
@@ -2437,12 +2652,6 @@ function renderLogsModal() {
 
   const list = getFilteredLogs();
   drawText8x8(`WORLD LOG (${list.length}) - CLICK EVENT TO INSPECT`, mx + 16, my + 14, "#f8b800", 1);
-
-  // Export Button in Logs Header
-  drawNESButton(mx + mw - 170, my + 8, 155, 22, "EXPORT CHRONICLE", false, false);
-  registerClickableRegion(mx + mw - 170, my + 8, 155, 22, () => {
-    downloadChronicleJSON(world, entities, currentTick, entityRegistry);
-  });
 
   // Filter Buttons
   const filters = ["ALL", "KILL", "ATTACK", "RELATION", "DIALOGUE", "AMPUTATION", "BIRTH", "DEATH", "SPROUT", "MINE", "BUILD"];
@@ -3017,18 +3226,19 @@ function renderCreatureVisionOverlay() {
       knownZones.add(`${parts[0]}_${parts[1]}`);
     }
   }
+  const sz = getZoneSize();
   // Current zone is always known
-  knownZones.add(`${Math.floor(target.x / 8)}_${Math.floor(target.y / 8)}`);
+  knownZones.add(`${Math.floor(target.x / sz)}_${Math.floor(target.y / sz)}`);
 
   const minTx = Math.floor(camX - (centerScreenX / tileSize) - 1);
   const maxTx = Math.ceil(camX + (centerScreenX / tileSize) + 1);
   const minTy = Math.floor(camY - (centerScreenY / tileSize) - 1);
   const maxTy = Math.ceil(camY + (centerScreenY / tileSize) + 1);
 
-  const minZx = Math.floor(minTx / 8);
-  const maxZx = Math.floor(maxTx / 8);
-  const minZy = Math.floor(minTy / 8);
-  const maxZy = Math.floor(maxTy / 8);
+  const minZx = Math.floor(minTx / sz);
+  const maxZx = Math.floor(maxTx / sz);
+  const minZy = Math.floor(minTy / sz);
+  const maxZy = Math.floor(maxTy / sz);
 
   ctx.save();
 
@@ -3043,10 +3253,10 @@ function renderCreatureVisionOverlay() {
   for (let zy = minZy; zy <= maxZy; zy++) {
     for (let zx = minZx; zx <= maxZx; zx++) {
       const zk = `${zx}_${zy}`;
-      const screenX = centerScreenX + (zx * 8 - camX) * tileSize;
-      const screenY = centerScreenY + (zy * 8 - camY) * tileSize;
-      const screenW = 8 * tileSize;
-      const screenH = 8 * tileSize;
+      const screenX = centerScreenX + (zx * sz - camX) * tileSize;
+      const screenY = centerScreenY + (zy * sz - camY) * tileSize;
+      const screenW = sz * tileSize;
+      const screenH = sz * tileSize;
 
       const isKnown = knownZones.has(zk);
       if (isKnown) {
@@ -3191,6 +3401,189 @@ function renderCreatureEventLogPanel() {
 }
 
 // ---------------------------------------------------------------------------
+// 8. World Generator & Map Configurator Modal
+// ---------------------------------------------------------------------------
+
+function renderGeneratorModal() {
+  const mx = 30;
+  const my = 36;
+  const mw = CANVAS_WIDTH - 60;
+  const mh = CANVAS_HEIGHT - 72;
+
+  ctx.save();
+  ctx.fillStyle = "rgba(0, 0, 0, 0.94)";
+  ctx.fillRect(0, 32, CANVAS_WIDTH, CANVAS_HEIGHT - 68);
+
+  drawNESBox(mx, my, mw, mh);
+
+  // Close Button
+  drawNESButton(mx + mw - 32, my + 6, 26, 24, "X", false, true);
+  registerClickableRegion(mx + mw - 32, my + 6, 26, 24, () => {
+    currentMode = "MAP";
+  });
+
+  drawText8x8("WORLD GENERATOR & CUSTOM CONFIGURATOR", mx + 16, my + 12, "#f8b800", 1);
+
+  let curY = my + 32;
+
+  // 1. World Preset
+  drawText8x8("1. PRESET:", mx + 16, curY, "#3cbcfc", 1);
+  const presets = [
+    { id: 0, label: "ARCHIPELAGO" },
+    { id: 1, label: "CONTINENT" },
+    { id: 2, label: "HIGHLANDS" }
+  ];
+  let px = mx + 16;
+  for (const p of presets) {
+    const isSel = genPreset === p.id;
+    const bw = 114;
+    drawNESButton(px, curY + 10, bw, 22, p.label, isSel, false);
+    const pid = p.id;
+    registerClickableRegion(px, curY + 10, bw, 22, () => {
+      genPreset = pid;
+    });
+    px += bw + 6;
+  }
+
+  curY += 38;
+
+  // 2. Custom Dimensions (Width & Height)
+  drawText8x8(`2. DIMENSIONS: [ ${genWidth} x ${genHeight} ]`, mx + 16, curY, "#3cbcfc", 1);
+  
+  // Quick size presets
+  const quickSizes = [
+    { w: 256, h: 256, label: "256x256" },
+    { w: 512, h: 512, label: "512x512" },
+    { w: 768, h: 768, label: "768x768" },
+    { w: 1024, h: 1024, label: "1024x1024" }
+  ];
+  let qx = mx + 16;
+  for (const qs of quickSizes) {
+    const isSel = genWidth === qs.w && genHeight === qs.h;
+    const bw = 84;
+    drawNESButton(qx, curY + 10, bw, 22, qs.label, isSel, false);
+    const qw = qs.w;
+    const qh = qs.h;
+    registerClickableRegion(qx, curY + 10, bw, 22, () => {
+      genWidth = qw;
+      genHeight = qh;
+    });
+    qx += bw + 6;
+  }
+
+  // Fine Width / Height adjusters
+  let adjX = qx + 8;
+  drawText8x8("W:", adjX, curY + 14, "#ffffff", 1);
+  drawNESButton(adjX + 18, curY + 10, 20, 22, "-", false, false);
+  registerClickableRegion(adjX + 18, curY + 10, 20, 22, () => {
+    genWidth = Math.max(64, genWidth - 64);
+  });
+  drawNESButton(adjX + 42, curY + 10, 20, 22, "+", false, false);
+  registerClickableRegion(adjX + 42, curY + 10, 20, 22, () => {
+    genWidth = Math.min(1024, genWidth + 64);
+  });
+
+  adjX += 74;
+  drawText8x8("H:", adjX, curY + 14, "#ffffff", 1);
+  drawNESButton(adjX + 18, curY + 10, 20, 22, "-", false, false);
+  registerClickableRegion(adjX + 18, curY + 10, 20, 22, () => {
+    genHeight = Math.max(64, genHeight - 64);
+  });
+  drawNESButton(adjX + 42, curY + 10, 20, 22, "+", false, false);
+  registerClickableRegion(adjX + 42, curY + 10, 20, 22, () => {
+    genHeight = Math.min(1024, genHeight + 64);
+  });
+
+  curY += 38;
+
+  // 3. Macro-Chunk / Territory Zone Size
+  drawText8x8(`3. MACRO-ZONE SIZE: [ ${genZoneSize}x${genZoneSize} TILES ]`, mx + 16, curY, "#3cbcfc", 1);
+  const zoneSizes = [
+    { sz: 4, label: "4x4 (MICRO)" },
+    { sz: 8, label: "8x8 (NORMAL)" },
+    { sz: 16, label: "16x16 (LARGE)" },
+    { sz: 32, label: "32x32 (SECTOR)" }
+  ];
+  let zx = mx + 16;
+  for (const zs of zoneSizes) {
+    const isSel = genZoneSize === zs.sz;
+    const bw = 120;
+    drawNESButton(zx, curY + 10, bw, 22, zs.label, isSel, false);
+    const zVal = zs.sz;
+    registerClickableRegion(zx, curY + 10, bw, 22, () => {
+      genZoneSize = zVal;
+      setZoneSize(zVal);
+    });
+    zx += bw + 6;
+  }
+
+  curY += 38;
+
+  // 4. Seed & Randomizer
+  drawText8x8(`4. SEED: [ ${genSeed} ]`, mx + 16, curY, "#3cbcfc", 1);
+  drawNESButton(mx + 16, curY + 10, 160, 22, "RANDOMIZE SEED", false, false);
+  registerClickableRegion(mx + 16, curY + 10, 160, 22, () => {
+    genSeed = Math.floor(Math.random() * 1000000) + 1;
+  });
+
+  curY += 38;
+
+  // 5. Creature Population Density (Proportional)
+  drawText8x8("5. WILD FAUNA (SCALED TO WORLD AREA):", mx + 16, curY, "#3cbcfc", 1);
+  const cPops = ["NONE", "LOW", "STANDARD", "HIGH"];
+  let cx = mx + 16;
+  for (const cp of cPops) {
+    const isSel = genCreatureDensity === cp;
+    const bw = 95;
+    drawNESButton(cx, curY + 10, bw, 22, cp, isSel, false);
+    const cpVal = cp;
+    registerClickableRegion(cx, curY + 10, bw, 22, () => {
+      genCreatureDensity = cpVal;
+    });
+    cx += bw + 6;
+  }
+
+  curY += 38;
+
+  // 6. Flora & Nature Density (Proportional)
+  drawText8x8("6. FLORA & RESOURCES (SCALED TO WORLD AREA):", mx + 16, curY, "#3cbcfc", 1);
+  const pDens = ["SPARSE", "NORMAL", "DENSE"];
+  let plx = mx + 16;
+  for (const pd of pDens) {
+    const isSel = genPlantDensity === pd;
+    const bw = 100;
+    drawNESButton(plx, curY + 10, bw, 22, pd, isSel, false);
+    const pdVal = pd;
+    registerClickableRegion(plx, curY + 10, bw, 22, () => {
+      genPlantDensity = pdVal;
+    });
+    plx += bw + 6;
+  }
+
+  curY += 38;
+
+  // 7. Founding Pioneer Clan
+  drawText8x8("7. FOUNDING COLONISTS:", mx + 16, curY, "#3cbcfc", 1);
+  const pioLabel = genSpawnPioneers ? "[X] SPAWN PIONEER CLAN (7 SETTLERS)" : "[ ] NO PIONEERS (PURE WILDERNESS)";
+  drawNESButton(mx + 16, curY + 10, 340, 22, pioLabel, genSpawnPioneers, false);
+  registerClickableRegion(mx + 16, curY + 10, 340, 22, () => {
+    genSpawnPioneers = !genSpawnPioneers;
+  });
+
+  // Action Button at Bottom: [GENERATE WORLD]
+  const genBtnW = 380;
+  const genBtnX = mx + (mw - genBtnW) / 2;
+  const genBtnY = my + mh - 36;
+  const genBtnLabel = `▶ GENERATE WORLD (${genWidth}x${genHeight} | ZONE ${genZoneSize}x${genZoneSize})`;
+  drawNESButton(genBtnX, genBtnY, genBtnW, 28, genBtnLabel, true, false);
+  registerClickableRegion(genBtnX, genBtnY, genBtnW, 28, () => {
+    generateConfiguredWorld();
+  });
+
+  ctx.restore();
+}
+
+// ---------------------------------------------------------------------------
 // Main Animation Frame Loop
 // ---------------------------------------------------------------------------
 
@@ -3223,11 +3616,35 @@ function frame(time) {
   if (shader && world) {
     // 1. Tick Simulation if not paused
     if (!isPaused) {
-      const effectiveDt = Math.min(dt, 0.1) * simSpeed;
-      world.clock.tick(effectiveDt);
-      incrementEngineTick();
-      tickEntities(entities, effectiveDt, world);
-      tpsCounter++;
+      if (simSpeed === "??") {
+        // Unleashed ??X speed: process as many ticks as possible within frame budget
+        const startPerf = performance.now();
+        const subDt = 0.05;
+        let subTicks = 0;
+        while (subTicks < 150 && (subTicks < 30 || (performance.now() - startPerf) < 14)) {
+          world.clock.tick(subDt);
+          incrementEngineTick();
+          tickEntities(entities, subDt, world);
+          tpsCounter++;
+          subTicks++;
+        }
+      } else if (typeof simSpeed === "number" && simSpeed > 1.0) {
+        const subTicks = Math.round(simSpeed);
+        const subDt = 0.05;
+        for (let s = 0; s < subTicks; s++) {
+          world.clock.tick(subDt);
+          incrementEngineTick();
+          tickEntities(entities, subDt, world);
+          tpsCounter++;
+        }
+      } else {
+        const speedVal = typeof simSpeed === "number" ? simSpeed : 1.0;
+        const effectiveDt = Math.min(dt, 0.1) * speedVal;
+        world.clock.tick(effectiveDt);
+        incrementEngineTick();
+        tickEntities(entities, effectiveDt, world);
+        tpsCounter++;
+      }
     }
 
     if (time - lastTpsUpdate >= 1000) {
@@ -3287,6 +3704,7 @@ function frame(time) {
     else if (currentMode === "ENTITIES") renderEntitiesModal();
     else if (currentMode === "GROUPS") renderGroupsModal();
     else if (currentMode === "LOGS") renderLogsModal();
+    else if (currentMode === "GENERATOR") renderGeneratorModal();
   }
 
   requestAnimationFrame(frame);

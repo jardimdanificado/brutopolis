@@ -2,8 +2,8 @@
 // Brutopolis - World & Environment System
 // =============================================================================
 
-export const MAP_WIDTH = 512;
-export const MAP_HEIGHT = 512;
+export const MAP_WIDTH = 1024;
+export const MAP_HEIGHT = 1024;
 
 export class WorldClock {
   constructor() {

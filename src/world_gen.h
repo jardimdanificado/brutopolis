@@ -4,8 +4,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define MAP_WIDTH 512
-#define MAP_HEIGHT 512
+#define MAP_WIDTH 1024
+#define MAP_HEIGHT 1024
 
 typedef enum {
     FLOOR = 0,       // Fertile Soil / Grassland

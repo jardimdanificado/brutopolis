@@ -32,6 +32,15 @@ import {
 } from "./event_log.js";
 import { vocabulario } from "./vocabulario.js";
 
+// Configurable macro-chunk zone size (tiles per zone side)
+export let currentZoneSize = 8;
+export function getZoneSize() {
+  return currentZoneSize;
+}
+export function setZoneSize(sz) {
+  currentZoneSize = Math.max(2, Math.min(64, parseInt(sz, 10) || 8));
+}
+
 // ---------------------------------------------------------------------------
 // 0. Energy Cost Multipliers Based on Physical Condition & Color Similarity
 // ---------------------------------------------------------------------------
@@ -711,9 +720,9 @@ export function createBrainProp(maxPath = 16, personality = { bravery: 0.7, curi
         ent.properties.life.energy = Math.max(0, ent.properties.life.energy - dt * 5.0 * mult);
       }
 
-      // 1. Geographic Zone Tracking (8x8 Area)
-      const zx = Math.floor(ent.x / 8);
-      const zy = Math.floor(ent.y / 8);
+      // 1. Geographic Zone Tracking
+      const zx = Math.floor(ent.x / currentZoneSize);
+      const zy = Math.floor(ent.y / currentZoneSize);
       const zoneKey = `${zx}_${zy}`;
 
       if (!this.geoMemory[zoneKey]) {
@@ -1597,8 +1606,8 @@ export function createGroup(name, founder, baseZone = null, claimedZones = null)
   let groupColor = 0xffe6a032;
 
   if (typeof founder === "object" && founder !== null) {
-    if (founder.x !== undefined) zx = Math.floor(founder.x / 8);
-    if (founder.y !== undefined) zy = Math.floor(founder.y / 8);
+    if (founder.x !== undefined) zx = Math.floor(founder.x / currentZoneSize);
+    if (founder.y !== undefined) zy = Math.floor(founder.y / currentZoneSize);
     if (founder.properties?.render?.color) groupColor = founder.properties.render.color;
   } else if (baseZone && Array.isArray(baseZone)) {
     zx = baseZone[0] || 32;
@@ -2560,18 +2569,19 @@ export function createStoneWallEntity(x, y, groupName = null) {
 
 export function isTileInClaimedZones(x, y, claimedZones) {
   if (!claimedZones || !Array.isArray(claimedZones)) return false;
-  const zx = Math.floor(x / 8);
-  const zy = Math.floor(y / 8);
+  const zx = Math.floor(x / currentZoneSize);
+  const zy = Math.floor(y / currentZoneSize);
   return claimedZones.includes(`${zx}_${zy}`) || claimedZones.includes(`${zx},${zy}`);
 }
 
 export function isPerimeterEdge(zx, zy, ox, oy, claimedZones) {
   if (!claimedZones || !Array.isArray(claimedZones)) return false;
+  const sz = currentZoneSize;
   
-  if (oy === 0 && !isTileInClaimedZones(zx * 8, (zy - 1) * 8, claimedZones)) return true;
-  if (oy === 7 && !isTileInClaimedZones(zx * 8, (zy + 1) * 8, claimedZones)) return true;
-  if (ox === 0 && !isTileInClaimedZones((zx - 1) * 8, zy * 8, claimedZones)) return true;
-  if (ox === 7 && !isTileInClaimedZones((zx + 1) * 8, zy * 8, claimedZones)) return true;
+  if (oy === 0 && !isTileInClaimedZones(zx * sz, (zy - 1) * sz, claimedZones)) return true;
+  if (oy === (sz - 1) && !isTileInClaimedZones(zx * sz, (zy + 1) * sz, claimedZones)) return true;
+  if (ox === 0 && !isTileInClaimedZones((zx - 1) * sz, zy * sz, claimedZones)) return true;
+  if (ox === (sz - 1) && !isTileInClaimedZones((zx + 1) * sz, zy * sz, claimedZones)) return true;
 
   return false;
 }
@@ -2594,16 +2604,16 @@ export function createGroupMemberProp() {
       const isCarryingMeat = isCarryingItem(ent, "meat");
       const isCarryingFeces = isCarryingItem(ent, "feces");
 
-      const zx = Math.floor(ent.x / 8);
-      const zy = Math.floor(ent.y / 8);
+      const zx = Math.floor(ent.x / currentZoneSize);
+      const zy = Math.floor(ent.y / currentZoneSize);
       const inClaimedZone = isTileInClaimedZones(ent.x, ent.y, group.claimedZones);
 
       const firstZone = group.claimedZones?.[0] || "32_32";
       const parts = firstZone.includes("_") ? firstZone.split("_") : firstZone.split(",");
       const baseZx = parseInt(parts[0], 10) || 32;
       const baseZy = parseInt(parts[1], 10) || 32;
-      const homeBaseX = baseZx * 8 + 4;
-      const homeBaseY = baseZy * 8 + 4;
+      const homeBaseX = baseZx * currentZoneSize + Math.floor(currentZoneSize / 2);
+      const homeBaseY = baseZy * currentZoneSize + Math.floor(currentZoneSize / 2);
       const distToBase = Math.abs(ent.x - homeBaseX) + Math.abs(ent.y - homeBaseY);
 
       this.actionTimer = (this.actionTimer || 0) + dt;
@@ -5720,4 +5730,178 @@ export function createHumanExplorer(x, y, name = null) {
     x,
     y
   );
+}
+
+/**
+ * Spawns an Embark Party of 7 intelligent settlers belonging to a newly formed Clan,
+ * equipped with starter supplies, mutual clan affinity, and claims.
+ */
+export function createEmbarkParty(centerX, centerY, world, entities) {
+  const CLAN_ADJECTIVES = ["Obsidian", "Iron", "Golden", "Sunfire", "Silver", "Shadow", "Emerald", "Frostpeak", "Stormborn", "Crimson", "Wildwood", "Deeprock"];
+  const CLAN_NOUNS = ["Vanguard", "Settlers", "Enclave", "Tribe", "Brotherhood", "Legion", "Pioneers", "Guild", "Syndicate", "Fellowship", "Haven", "Clan"];
+  const clanName = `The ${CLAN_ADJECTIVES[Math.floor(Math.random() * CLAN_ADJECTIVES.length)]} ${CLAN_NOUNS[Math.floor(Math.random() * CLAN_NOUNS.length)]}`;
+
+  // 7 Intelligent settler professions
+  const professions = [
+    { title: "Builder", fn: createHumanBuilder },
+    { title: "Miner", fn: createHumanMiner },
+    { title: "Farmer", fn: createHumanFarmer },
+    { title: "Crafter", fn: createHumanCrafter },
+    { title: "Hunter", fn: createHumanHunter },
+    { title: "Matriarch", fn: createHumanMatriarch },
+    { title: "Knight", fn: (x, y) => createKnight(x, y, Math.random() < 0.5 ? "male" : "female") }
+  ];
+
+  const SURNAMES = ["Vance", "Silveira", "Rocha", "Barros", "Prado", "Montes", "Ramos", "Torres", "Valente", "Thorne", "Alba", "Fletcher"];
+  const surname = SURNAMES[Math.floor(Math.random() * SURNAMES.length)];
+
+  const members = [];
+  const offsets = [
+    { dx: 0, dy: 0 },
+    { dx: 1, dy: 0 },
+    { dx: -1, dy: 0 },
+    { dx: 0, dy: 1 },
+    { dx: 0, dy: -1 },
+    { dx: 1, dy: 1 },
+    { dx: -1, dy: 1 }
+  ];
+
+  for (let i = 0; i < professions.length; i++) {
+    const off = offsets[i] || { dx: 0, dy: 0 };
+    let px = centerX + off.dx;
+    let py = centerY + off.dy;
+    if (world && !world.isWalkable(px, py)) {
+      px = centerX;
+      py = centerY;
+    }
+    const prof = professions[i];
+    const ent = prof.fn(px, py);
+    ent.properties.surname = surname;
+    members.push(ent);
+    if (entities && !entities.includes(ent)) entities.push(ent);
+  }
+
+  // Create new unique Clan
+  const founder = members[0];
+  const clan = createGroup(clanName, founder);
+  clan.members = members.map(m => m.id);
+  clan.claimedZones = [
+    `${Math.floor(centerX / currentZoneSize)}_${Math.floor(centerY / currentZoneSize)}`,
+    `${Math.floor(centerX / currentZoneSize) + 1}_${Math.floor(centerY / currentZoneSize)}`
+  ];
+
+  for (const m of members) {
+    m.properties.group = clan;
+    m.properties.group_member = createGroupMemberProp();
+    if (m.properties.brain) {
+      if (!m.properties.brain.affinities) m.properties.brain.affinities = {};
+      for (const peer of members) {
+        if (peer.id !== m.id) {
+          m.properties.brain.affinities[peer.id] = 40;
+        }
+      }
+    }
+  }
+
+  // Spawn starter stockpile resources on ground
+  if (entities) {
+    entities.push(createWoodItem(centerX + 1, centerY - 1));
+    entities.push(createWoodItem(centerX + 2, centerY));
+    entities.push(createStoneItem(centerX - 1, centerY - 1));
+    entities.push(createStoneItem(centerX - 2, centerY));
+    entities.push(createSeedEntity(centerX, centerY + 2, "large", "oak"));
+    entities.push(createFruit(centerX + 1, centerY + 2, "large", "oak"));
+  }
+
+  // Record World Event
+  recordWorldEvent({
+    type: "BIRTH",
+    primaryEntityId: founder.id,
+    location: { x: centerX, y: centerY },
+    description: `The clan "${clanName}" has embarked and established a settlement at [X: ${centerX}, Y: ${centerY}]!`
+  });
+
+  return { clan, members };
+}
+
+/**
+ * Rebinds simulation effect methods on an entity deserialized from a save file
+ */
+export function rebindEntityMethods(ent) {
+  if (!ent || !ent.properties) return ent;
+  const p = ent.properties;
+
+  if (p.life) {
+    const dummy = createLifeProp(p.life.max || 100, p.life.energy || 100);
+    for (const [k, fn] of Object.entries(dummy)) {
+      if (typeof fn === "function") p.life[k] = fn;
+    }
+  }
+  if (p.stomach) {
+    const dummy = createStomachProp(p.stomach.capacity || 4, p.stomach.preferences || {});
+    for (const [k, fn] of Object.entries(dummy)) {
+      if (typeof fn === "function") p.stomach[k] = fn;
+    }
+  }
+  if (p.brain) {
+    const dummy = createBrainProp(p.brain.iq || 25, p.brain.personality || {});
+    for (const [k, fn] of Object.entries(dummy)) {
+      if (typeof fn === "function") p.brain[k] = fn;
+    }
+    if (!p.brain.objectMemory) p.brain.objectMemory = [];
+    if (!p.brain.memories) p.brain.memories = [];
+    if (!p.brain.affinities) p.brain.affinities = {};
+    if (!p.brain.geoMemory) p.brain.geoMemory = {};
+  }
+  if (p.locomotion) {
+    const dummy = createLocomotionProp();
+    for (const [k, fn] of Object.entries(dummy)) {
+      if (typeof fn === "function") p.locomotion[k] = fn;
+    }
+  }
+  if (p.combat) {
+    const dummy = createCombatProp();
+    for (const [k, fn] of Object.entries(dummy)) {
+      if (typeof fn === "function") p.combat[k] = fn;
+    }
+  }
+  if (p.communication) {
+    const dummy = createCommunicationProp();
+    for (const [k, fn] of Object.entries(dummy)) {
+      if (typeof fn === "function") p.communication[k] = fn;
+    }
+  }
+  if (p.body_regen) {
+    const dummy = createBodyRegenerationProp();
+    for (const [k, fn] of Object.entries(dummy)) {
+      if (typeof fn === "function") p.body_regen[k] = fn;
+    }
+  }
+  if (p.tree) {
+    const dummy = createOakTree(0, 0).properties.tree;
+    if (dummy) {
+      for (const [k, fn] of Object.entries(dummy)) {
+        if (typeof fn === "function") p.tree[k] = fn;
+      }
+    }
+  }
+  if (p.group_member) {
+    const dummy = createGroupMemberProp();
+    for (const [k, fn] of Object.entries(dummy)) {
+      if (typeof fn === "function") p.group_member[k] = fn;
+    }
+  }
+
+  // Rebind amputated limb stump bleed effects
+  for (const [k, v] of Object.entries(p)) {
+    if (k.startsWith("amputated_") && v && !v.effect) {
+      v.effect = function(e, dt) {
+        if (e.properties.life) {
+          e.properties.life.energy = Math.max(0, e.properties.life.energy - dt * (this.bleedRate || 18.0));
+        }
+      };
+    }
+  }
+
+  return ent;
 }
