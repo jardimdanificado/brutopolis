@@ -885,13 +885,19 @@ function registerClickableRegion(x, y, w, h, onClick, cursor = "pointer") {
 // ---------------------------------------------------------------------------
 
 function resizeCanvasToWindow() {
-  CANVAS_WIDTH = Math.max(320, window.innerWidth);
-  CANVAS_HEIGHT = Math.max(240, window.innerHeight);
+  const vv = window.visualViewport;
+  CANVAS_WIDTH = Math.max(320, Math.floor(vv ? vv.width : window.innerWidth));
+  CANVAS_HEIGHT = Math.max(240, Math.floor(vv ? vv.height : window.innerHeight));
 
   canvas.width = CANVAS_WIDTH;
   canvas.height = CANVAS_HEIGHT;
-  canvas.style.width = "100vw";
-  canvas.style.height = "100vh";
+  canvas.style.width = `${CANVAS_WIDTH}px`;
+  canvas.style.height = `${CANVAS_HEIGHT}px`;
+}
+
+if (window.visualViewport) {
+  window.visualViewport.addEventListener("resize", resizeCanvasToWindow);
+  window.visualViewport.addEventListener("scroll", resizeCanvasToWindow);
 }
 
 window.addEventListener("resize", resizeCanvasToWindow);
@@ -1340,6 +1346,8 @@ canvas.addEventListener("contextmenu", (e) => {
 });
 
 canvas.addEventListener("mousedown", (e) => {
+  // If recent touch occurred (within 600ms), ignore simulated mouse event from mobile browser
+  if (Date.now() - lastTouchTapTime < 600) return;
   if (e.button !== 0 && e.button !== 1 && e.button !== 2) return;
   const coords = getCanvasCoords(e.clientX, e.clientY);
   mouseX = coords.x;
@@ -1384,6 +1392,7 @@ canvas.addEventListener("mousedown", (e) => {
 });
 
 window.addEventListener("mousemove", (e) => {
+  if (Date.now() - lastTouchTapTime < 600) return;
   const coords = getCanvasCoords(e.clientX, e.clientY);
   mouseX = coords.x;
   mouseY = coords.y;
@@ -1434,6 +1443,7 @@ window.addEventListener("mousemove", (e) => {
 });
 
 window.addEventListener("mouseup", (e) => {
+  if (Date.now() - lastTouchTapTime < 600) return;
   if (isMouseDown && renderer && currentMode === "MAP") {
     const totalDist = Math.hypot(e.clientX - dragStartClientX, e.clientY - dragStartClientY);
     if (!isDragging && !isPainting && totalDist <= 5) {
@@ -3830,9 +3840,17 @@ init();
 // Mobile Multi-Touch & Gesture Controls
 // ---------------------------------------------------------------------------
 
+let activeTouchId = null;
+let touchMoved = false;
+
 canvas.addEventListener("touchstart", (e) => {
+  lastTouchTapTime = Date.now();
+
   if (e.touches.length === 1) {
     const t = e.touches[0];
+    activeTouchId = t.identifier;
+    touchMoved = false;
+
     const coords = getCanvasCoords(t.clientX, t.clientY);
     mouseX = coords.x;
     mouseY = coords.y;
@@ -3840,41 +3858,36 @@ canvas.addEventListener("touchstart", (e) => {
     touchStartY = t.clientY;
     dragStartClientX = t.clientX;
     dragStartClientY = t.clientY;
-    isMouseDown = true;
-    isDragging = false;
 
     if (renderer) {
       dragCameraStartX = renderer.getCameraX();
       dragCameraStartY = renderer.getCameraY();
     }
 
-    // If touch landed on UI, mark that we are pressing UI (do not drag map)
-    let isTouchOnUi = false;
-    for (let i = activeUiRegions.length - 1; i >= 0; i--) {
-      const reg = activeUiRegions[i];
-      if (coords.x >= reg.x && coords.x <= reg.x + reg.w && coords.y >= reg.y && coords.y <= reg.y + reg.h) {
-        isTouchOnUi = true;
-        break;
-      }
-    }
-    if (isTouchOnUi) {
-      isMouseDown = false;
-    }
-
     // Touch Editor Painting
     if (isEditorOpen && editorTool && renderer && currentMode === "MAP" && coords.inside && coords.y > 32 && coords.y < CANVAS_HEIGHT - 36) {
-      const zoom = renderer.getCameraZoom();
-      const tileSize = 16.0 * zoom;
-      const cx = renderer.getCameraX();
-      const cy = renderer.getCameraY();
-      const tileX = Math.floor(cx + (coords.x - CANVAS_WIDTH / 2) / tileSize);
-      const tileY = Math.floor(cy + (coords.y - CANVAS_HEIGHT / 2) / tileSize);
-      isPainting = true;
-      applyEditorActionAt(tileX, tileY);
+      let isOverUi = false;
+      for (let i = activeUiRegions.length - 1; i >= 0; i--) {
+        const reg = activeUiRegions[i];
+        if (coords.x >= reg.x && coords.x <= reg.x + reg.w && coords.y >= reg.y && coords.y <= reg.y + reg.h) {
+          isOverUi = true;
+          break;
+        }
+      }
+      if (!isOverUi) {
+        const zoom = renderer.getCameraZoom();
+        const tileSize = 16.0 * zoom;
+        const cx = renderer.getCameraX();
+        const cy = renderer.getCameraY();
+        const tileX = Math.floor(cx + (coords.x - CANVAS_WIDTH / 2) / tileSize);
+        const tileY = Math.floor(cy + (coords.y - CANVAS_HEIGHT / 2) / tileSize);
+        isPainting = true;
+        applyEditorActionAt(tileX, tileY);
+      }
     }
   } else if (e.touches.length === 2) {
     // 2-Finger Pinch Zoom Initiation
-    isDragging = false;
+    touchMoved = true;
     isPainting = false;
     const t1 = e.touches[0];
     const t2 = e.touches[1];
@@ -3884,11 +3897,18 @@ canvas.addEventListener("touchstart", (e) => {
 
 canvas.addEventListener("touchmove", (e) => {
   e.preventDefault();
+  lastTouchTapTime = Date.now();
+
   if (e.touches.length === 1) {
     const t = e.touches[0];
     const coords = getCanvasCoords(t.clientX, t.clientY);
     mouseX = coords.x;
     mouseY = coords.y;
+
+    const totalDist = Math.hypot(t.clientX - touchStartX, t.clientY - touchStartY);
+    if (totalDist > 8) {
+      touchMoved = true;
+    }
 
     if (isEditorOpen && isPainting && renderer && currentMode === "MAP" && (editorTool === "PAINT" || editorTool === "BULLDOZER")) {
       if (coords.inside && coords.y > 32 && coords.y < CANVAS_HEIGHT - 36) {
@@ -3904,24 +3924,21 @@ canvas.addEventListener("touchmove", (e) => {
     }
 
     // Single-finger camera pan
-    if (isMouseDown && renderer && !isPainting && currentMode === "MAP") {
-      const totalDist = Math.hypot(t.clientX - dragStartClientX, t.clientY - dragStartClientY);
-      if (totalDist > 4) {
-        isDragging = true;
-        const zoom = renderer.getCameraZoom();
-        const rect = canvas.getBoundingClientRect();
-        const pixelScale = rect.width / CANVAS_WIDTH;
-        const tileSizeScreen = 16.0 * zoom * pixelScale;
+    if (touchMoved && renderer && !isPainting && currentMode === "MAP") {
+      const zoom = renderer.getCameraZoom();
+      const rect = canvas.getBoundingClientRect();
+      const pixelScale = rect.width / CANVAS_WIDTH;
+      const tileSizeScreen = 16.0 * zoom * pixelScale;
 
-        if (tileSizeScreen > 0.2) {
-          const dx = (t.clientX - dragStartClientX) / tileSizeScreen;
-          const dy = (t.clientY - dragStartClientY) / tileSizeScreen;
-          renderer.setCamera(dragCameraStartX - dx, dragCameraStartY - dy, zoom);
-        }
+      if (tileSizeScreen > 0.2) {
+        const dx = (t.clientX - dragStartClientX) / tileSizeScreen;
+        const dy = (t.clientY - dragStartClientY) / tileSizeScreen;
+        renderer.setCamera(dragCameraStartX - dx, dragCameraStartY - dy, zoom);
       }
     }
   } else if (e.touches.length === 2 && touchPinchDist && renderer) {
     // 2-Finger Pinch Zooming
+    touchMoved = true;
     const t1 = e.touches[0];
     const t2 = e.touches[1];
     const newDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
@@ -3937,25 +3954,33 @@ canvas.addEventListener("touchmove", (e) => {
 }, { passive: false });
 
 canvas.addEventListener("touchend", (e) => {
+  lastTouchTapTime = Date.now();
+
   if (e.touches.length === 0) {
-    const coords = getCanvasCoords(touchStartX, touchStartY);
-    let isOverUi = false;
-    for (let i = activeUiRegions.length - 1; i >= 0; i--) {
-      const reg = activeUiRegions[i];
-      if (coords.x >= reg.x && coords.x <= reg.x + reg.w && coords.y >= reg.y && coords.y <= reg.y + reg.h) {
-        reg.onClick();
-        isOverUi = true;
-        break;
+    // Tap execution (only if finger did not drag/pan)
+    if (!touchMoved && !isPainting) {
+      const coords = getCanvasCoords(touchStartX, touchStartY);
+      let clickedUi = false;
+
+      // 1. Check UI Click
+      for (let i = activeUiRegions.length - 1; i >= 0; i--) {
+        const reg = activeUiRegions[i];
+        if (coords.x >= reg.x && coords.x <= reg.x + reg.w && coords.y >= reg.y && coords.y <= reg.y + reg.h) {
+          reg.onClick();
+          clickedUi = true;
+          break;
+        }
       }
-    }
-    if (!isOverUi && isMouseDown && renderer && currentMode === "MAP" && !isDragging && !isPainting) {
-      if (coords.inside && coords.y > 32 && coords.y < CANVAS_HEIGHT - 36) {
+
+      // 2. Check Map Selection
+      if (!clickedUi && renderer && currentMode === "MAP" && coords.inside && coords.y > 32 && coords.y < CANVAS_HEIGHT - 36) {
         const foundId = renderer.selectAt(coords.x, coords.y, entities);
         lastSelectedId = foundId;
       }
     }
-    isMouseDown = false;
-    isDragging = false;
+
+    activeTouchId = null;
+    touchMoved = false;
     isPainting = false;
     touchPinchDist = null;
   } else if (e.touches.length === 1) {
@@ -3969,4 +3994,3 @@ canvas.addEventListener("touchend", (e) => {
     }
   }
 });
-
