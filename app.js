@@ -613,8 +613,8 @@ function wrapText8x8(text, maxCharsPerLine) {
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
 
-const CANVAS_WIDTH = 800;
-const CANVAS_HEIGHT = 600;
+let CANVAS_WIDTH = window.innerWidth || 800;
+let CANVAS_HEIGHT = window.innerHeight || 600;
 canvas.width = CANVAS_WIDTH;
 canvas.height = CANVAS_HEIGHT;
 
@@ -885,21 +885,13 @@ function registerClickableRegion(x, y, w, h, onClick, cursor = "pointer") {
 // ---------------------------------------------------------------------------
 
 function resizeCanvasToWindow() {
-  const windowW = window.innerWidth;
-  const windowH = window.innerHeight;
-  const aspect = CANVAS_WIDTH / CANVAS_HEIGHT;
+  CANVAS_WIDTH = Math.max(320, window.innerWidth);
+  CANVAS_HEIGHT = Math.max(240, window.innerHeight);
 
-  let displayW, displayH;
-  if (windowW / windowH > aspect) {
-    displayH = windowH;
-    displayW = displayH * aspect;
-  } else {
-    displayW = windowW;
-    displayH = displayW / aspect;
-  }
-
-  canvas.style.width = `${Math.floor(displayW)}px`;
-  canvas.style.height = `${Math.floor(displayH)}px`;
+  canvas.width = CANVAS_WIDTH;
+  canvas.height = CANVAS_HEIGHT;
+  canvas.style.width = "100vw";
+  canvas.style.height = "100vh";
 }
 
 window.addEventListener("resize", resizeCanvasToWindow);
@@ -907,8 +899,8 @@ resizeCanvasToWindow();
 
 function getCanvasCoords(clientX, clientY) {
   const rect = canvas.getBoundingClientRect();
-  const scaleX = CANVAS_WIDTH / rect.width;
-  const scaleY = CANVAS_HEIGHT / rect.height;
+  const scaleX = CANVAS_WIDTH / (rect.width || 1);
+  const scaleY = CANVAS_HEIGHT / (rect.height || 1);
 
   const cx = (clientX - rect.left) * scaleX;
   const cy = (clientY - rect.top) * scaleY;
@@ -3856,14 +3848,17 @@ canvas.addEventListener("touchstart", (e) => {
       dragCameraStartY = renderer.getCameraY();
     }
 
-    // Touch UI Click Handling
+    // If touch landed on UI, mark that we are pressing UI (do not drag map)
+    let isTouchOnUi = false;
     for (let i = activeUiRegions.length - 1; i >= 0; i--) {
       const reg = activeUiRegions[i];
       if (coords.x >= reg.x && coords.x <= reg.x + reg.w && coords.y >= reg.y && coords.y <= reg.y + reg.h) {
-        reg.onClick();
-        isMouseDown = false;
-        return;
+        isTouchOnUi = true;
+        break;
       }
+    }
+    if (isTouchOnUi) {
+      isMouseDown = false;
     }
 
     // Touch Editor Painting
@@ -3943,17 +3938,18 @@ canvas.addEventListener("touchmove", (e) => {
 
 canvas.addEventListener("touchend", (e) => {
   if (e.touches.length === 0) {
-    if (isMouseDown && renderer && currentMode === "MAP" && !isDragging && !isPainting) {
-      const coords = getCanvasCoords(touchStartX, touchStartY);
-      let isOverUi = false;
-      for (let i = activeUiRegions.length - 1; i >= 0; i--) {
-        const reg = activeUiRegions[i];
-        if (coords.x >= reg.x && coords.x <= reg.x + reg.w && coords.y >= reg.y && coords.y <= reg.y + reg.h) {
-          isOverUi = true;
-          break;
-        }
+    const coords = getCanvasCoords(touchStartX, touchStartY);
+    let isOverUi = false;
+    for (let i = activeUiRegions.length - 1; i >= 0; i--) {
+      const reg = activeUiRegions[i];
+      if (coords.x >= reg.x && coords.x <= reg.x + reg.w && coords.y >= reg.y && coords.y <= reg.y + reg.h) {
+        reg.onClick();
+        isOverUi = true;
+        break;
       }
-      if (!isOverUi && coords.inside && coords.y > 32 && coords.y < CANVAS_HEIGHT - 36) {
+    }
+    if (!isOverUi && isMouseDown && renderer && currentMode === "MAP" && !isDragging && !isPainting) {
+      if (coords.inside && coords.y > 32 && coords.y < CANVAS_HEIGHT - 36) {
         const foundId = renderer.selectAt(coords.x, coords.y, entities);
         lastSelectedId = foundId;
       }
