@@ -62,6 +62,7 @@ export const OPCODE_TO_TYPE = {
 export const TYPE_TO_OPCODE = {
   "BIRTH": OP_BIRTH,
   "DEATH": OP_DEATH,
+  "KILL": OP_DEATH,
   "ATTACK": OP_ATTACK,
   "AMPUTATION": OP_AMPUTATION,
   "FEED": OP_FEED,
@@ -432,7 +433,14 @@ export function exportWorldChronicleJSON(world, entities, currentTick = 0, entit
     stockpile: g.stockpile || {}
   }));
 
-  // 3. Serialize all entities with intact relationships
+  // 3. Serialize all entities with intact relationships and body parts
+  const BODY_PART_KEYS = [
+    "arm_left", "arm_right", "leg_left", "leg_right",
+    "eye_left", "eye_right", "mouth", "ear_left", "ear_right",
+    "hand_left", "hand_right", "wing_left", "wing_right",
+    "tail", "head", "torso", "abdomen"
+  ];
+
   const entitiesList = Array.from(allEnts.values()).map(ent => {
     const props = ent.properties || {};
     const hasLife = !!props.life;
@@ -443,6 +451,7 @@ export function exportWorldChronicleJSON(world, entities, currentTick = 0, entit
     const perks = [];
     if (props.skeptic) perks.push("skeptic");
     if (props.gullible) perks.push("gullible");
+    if (props.schizophrenic) perks.push("schizophrenic");
     if (props.liar) perks.push(props.liar.type || "liar");
 
     const fatherId = props.fatherId !== undefined ? props.fatherId : props.life?.fatherId ?? null;
@@ -454,10 +463,53 @@ export function exportWorldChronicleJSON(world, entities, currentTick = 0, entit
       ? Object.fromEntries(Object.entries(props.brain.affinities).map(([k, v]) => [k, Math.round(v)]))
       : {};
 
+    // Serialize body parts
+    const bodyParts = {};
+    for (const key of BODY_PART_KEYS) {
+      if (!props[key]) continue;
+      const part = props[key];
+      const serialized = {};
+      for (const [pk, pv] of Object.entries(part)) {
+        if (typeof pv === "function") continue;
+        if (pk === "heldItem" && pv && typeof pv === "object") {
+          serialized.heldItem = {
+            name: pv.name || null,
+            resourceType: pv.resourceType || null,
+            species: pv.species || null
+          };
+        } else if (typeof pv !== "object" || pv === null) {
+          serialized[pk] = pv;
+        }
+      }
+      bodyParts[key] = serialized;
+    }
+
+    // Serialize geo memory (known zones)
+    const geoMemory = props.brain?.geoMemory ? Object.keys(props.brain.geoMemory) : [];
+
+    // Serialize recent memories (last 10)
+    const memories = [];
+    if (props.brain?.memories && Array.isArray(props.brain.memories)) {
+      const memSlice = props.brain.memories.slice(-10);
+      for (const m of memSlice) {
+        if (!m) continue;
+        memories.push({
+          eventId: m.eventId || null,
+          type: m.type || null,
+          tick: m.tick || null,
+          isLie: m.isLie || false,
+          actorId: m.actorId || null,
+          targetId: m.targetId || null,
+          description: m.description || null
+        });
+      }
+    }
+
     return {
       id: ent.id,
       name: props.name || `Entity #${ent.id}`,
       species: props.species || "creature",
+      role: props.role || null,
       x: ent.x,
       y: ent.y,
       isAlive,
@@ -472,10 +524,14 @@ export function exportWorldChronicleJSON(world, entities, currentTick = 0, entit
       groupId: props.group?.id ?? null,
       groupName: props.group?.name ?? null,
       affinities,
+      geoMemory,
+      memories,
+      bodyParts,
       fatUnits: props.stomach?.fatUnits || 0,
       energy: props.life ? Math.round(props.life.energy) : null,
       maxEnergy: props.life?.max || null,
       mood: props.brain && typeof props.brain.mood === "number" ? Math.round(props.brain.mood) : null,
+      viewRange: props.eye_left?.viewRange || props.eye_right?.viewRange || null,
       heldItem: props.arm_right?.heldItem?.resourceType || props.arm_left?.heldItem?.resourceType || null
     };
   });
@@ -495,15 +551,27 @@ export function exportWorldChronicleJSON(world, entities, currentTick = 0, entit
     metadata: ev.metadata || {}
   }));
 
+  // 5. Serialize terrain tile map as Base64
+  let terrainBase64 = null;
+  if (world && world.map && world.map instanceof Uint8Array) {
+    const bytes = world.map.slice(0, world.width * world.height);
+    let binary = "";
+    for (let i = 0; i < bytes.length; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    terrainBase64 = btoa(binary);
+  }
+
   return {
-    version: "1.0",
+    version: "2.0",
     format: "brutopolis_chronicle",
     generatedAt: new Date().toISOString(),
     world: {
       width: world?.width || 512,
       height: world?.height || 512,
       clock: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute, totalSeconds: world.clock.totalSeconds } : null,
-      tick: currentTick
+      tick: currentTick,
+      terrain: terrainBase64
     },
     stats: {
       totalTicks: currentTick,

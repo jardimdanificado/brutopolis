@@ -732,9 +732,6 @@ function spawnRandomGlobal(count, factoryFn, conditionFn = null) {
     const ry = Math.floor(Math.random() * 508) + 2;
     if (!conditionFn || conditionFn(rx, ry)) {
       const e = factoryFn(rx, ry);
-      if (e.properties.life) {
-        e.properties.mystic_grace = createMysticGraceProp(180);
-      }
       entities.push(e);
       spawned++;
     }
@@ -844,11 +841,10 @@ function resetWorld(presetId = 0) {
 
   for (const m of clanMembers) {
     m.properties.group = foundingClan;
-    m.properties.mystic_grace = createMysticGraceProp(180);
     if (m.properties.brain) {
       if (!m.properties.brain.affinities) m.properties.brain.affinities = {};
       for (const other of clanMembers) {
-        if (m !== other) m.properties.brain.affinities[other.id] = 85;
+        if (m !== other) m.properties.brain.affinities[other.id] = 35; // Moderate starting affinity
       }
     }
   }
@@ -1416,6 +1412,7 @@ function renderDossierModal() {
     const perks = [];
     if (props.skeptic) perks.push("SKEPTIC 🧐");
     if (props.gullible) perks.push("GULLIBLE 🥺");
+    if (props.schizophrenic) perks.push("SCHIZOPHRENIC 🌀");
     if (props.liar) perks.push(props.liar.type === "believer" ? "BELIEVER 🤥" : "LIAR 🤥");
     if (perks.length > 0) {
       drawText8x8(`PERKS: [${perks.join(" | ")}]`, mx + 20, lineageY + 8, "#ffd700", 1);
@@ -1719,10 +1716,10 @@ function renderDossierModal() {
 function getFilteredEntities() {
   return entities.filter(e => {
     if (e.destroyed) return false;
-    if (entityFilter === "LIVING") return !!e.properties.life;
-    if (entityFilter === "ITEMS") return !!e.properties.edible || !!e.properties.resourceType || !!e.properties.germination;
-    if (entityFilter === "HUMANOID") return e.properties.name?.includes("Knight") || e.properties.name?.includes("Archer") || e.properties.name?.includes("Goblin");
-    if (entityFilter === "BEAST") return e.properties.species === "wolf" || e.properties.species === "bear" || e.properties.species === "cat" || e.properties.species === "scorpion" || e.properties.species === "lizard" || e.properties.species === "goat" || e.properties.species === "dragon";
+    if (entityFilter === "LIVING") return !!e.properties.life && e.properties.species !== "item";
+    if (entityFilter === "ITEMS") return !!e.properties.edible || !!e.properties.resourceType || !!e.properties.germination || e.properties.species === "item";
+    if (entityFilter === "HUMANOID") return !e.properties.edible && e.properties.species !== "item" && !!e.properties.life && (e.properties.species === "human" || e.properties.species === "goblin" || e.properties.name?.includes("Knight") || e.properties.name?.includes("Archer") || e.properties.name?.includes("Goblin") || e.properties.name?.includes("Human"));
+    if (entityFilter === "BEAST") return !e.properties.edible && e.properties.species !== "item" && (e.properties.species === "wolf" || e.properties.species === "bear" || e.properties.species === "cat" || e.properties.species === "scorpion" || e.properties.species === "lizard" || e.properties.species === "goat" || e.properties.species === "dragon" || e.properties.species === "bat" || e.properties.species === "serpent");
     if (entityFilter === "FLORA") return e.properties.species === "oak" || e.properties.species === "willow" || e.properties.species === "pine" || e.properties.species === "cactus" || e.properties.species === "shrub";
     return true;
   });

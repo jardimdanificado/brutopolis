@@ -2,7 +2,7 @@
 // Brutopolis - Flat Property Bag Engine (Zero Nesting)
 // =============================================================================
 
-import { recordWorldEvent } from "./event_log.js";
+import { recordWorldEvent, OP_DEATH } from "./event_log.js";
 
 const encoder = new TextEncoder();
 let nextEntityId = 1;
@@ -130,7 +130,8 @@ export function amputateLimb(entity, propKey, prop, entitiesArray, world) {
 
   const severedFood = createEntity(
     {
-      name: `${partName} Decepado de ${entity.properties.name || "Criatura"}`,
+      name: `Severed ${partName} of ${entity.properties.name || "Creature"}`,
+      species: "item",
       render: { skin, color, backcolor: 0x00000000 },
       edible: {
         nutrition: prop.nutrition || 1200,
@@ -281,9 +282,10 @@ export function explodeEntityOnDeath(entity, entitiesArray, world) {
     }
 
     recordWorldEvent({
-      type: "KILL",
-      primaryEntityId: killerId,
-      secondaryEntityId: entity.id,
+      opcode: OP_DEATH,
+      type: "DEATH",
+      primaryEntityId: entity.id,
+      secondaryEntityId: killerId,
       location: { x: ex, y: ey },
       description: killDesc,
       tick: currentTick,
