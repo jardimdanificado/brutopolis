@@ -2,8 +2,9 @@
 // Brutopolis — Pure Canvas Simulation Engine (Embedded 8x8 Engine Font)
 // =============================================================================
 
-import { wash_memory, wash_load, wash_write_string } from "./wash.js";
+// WASM replaced by Pure JS Renderer
 import { World } from "./js/world.js";
+import { Renderer } from "./js/renderer.js";
 import {
   createEntity,
   tickEntities,
@@ -619,10 +620,10 @@ canvas.height = CANVAS_HEIGHT;
 
 const FRAMEBUFFER_SIZE = CANVAS_WIDTH * CANVAS_HEIGHT * 4;
 
-const mem = wash_memory(32 * 1024 * 1024);
-const imageData = ctx.createImageData(CANVAS_WIDTH, CANVAS_HEIGHT);
+// Memory managed by JS
+// Canvas 2D Native Rendering
 
-let shader = null;
+let renderer = new Renderer(canvas);
 let world = null;
 let entities = [];
 
@@ -638,9 +639,9 @@ function increaseSimSpeed() {
   } else if (idx === -1) {
     simSpeed = 1.0;
   }
-  if (shader) {
+  if (renderer) {
     const tps = simSpeed === "??" ? 600 : Math.round(60 * (typeof simSpeed === "number" ? simSpeed : 32));
-    shader.exports.wasm_set_tps(tps);
+    renderer.setTps(tps);
   }
 }
 
@@ -651,18 +652,18 @@ function decreaseSimSpeed() {
   } else if (idx === -1) {
     simSpeed = 1.0;
   }
-  if (shader) {
+  if (renderer) {
     const tps = simSpeed === "??" ? 600 : Math.round(60 * (typeof simSpeed === "number" ? simSpeed : 0.5));
-    shader.exports.wasm_set_tps(tps);
+    renderer.setTps(tps);
   }
 }
 
 function cycleSimSpeed() {
   const idx = SPEED_TIERS.indexOf(simSpeed);
   simSpeed = SPEED_TIERS[(idx + 1) % SPEED_TIERS.length];
-  if (shader) {
+  if (renderer) {
     const tps = simSpeed === "??" ? 600 : Math.round(60 * (typeof simSpeed === "number" ? simSpeed : 32));
-    shader.exports.wasm_set_tps(tps);
+    renderer.setTps(tps);
   }
 }
 
@@ -955,16 +956,12 @@ let genPlantDensity = "NORMAL"; // "SPARSE", "NORMAL", "DENSE"
 let genSpawnPioneers = true;
 
 function generateConfiguredWorld() {
-  if (!shader) return;
+  if (!renderer || !world) return;
   currentPreset = genPreset;
   setZoneSize(genZoneSize);
   const seed = genSeed || (Math.floor(Math.random() * 1000000) + 1);
 
-  if (shader.exports.wasm_init_with_seed) {
-    shader.exports.wasm_init_with_seed(genPreset, seed);
-  } else {
-    shader.exports.wasm_init(genPreset);
-  }
+  world.generate(genPreset, seed);
 
   resetEngineTicks();
   resetWorldEvents();
@@ -1064,7 +1061,7 @@ function generateConfiguredWorld() {
     const res = createEmbarkParty(startX, startY, world, entities);
     if (res.members.length > 0) {
       lastSelectedId = res.members[0].id;
-      shader.exports.wasm_select_entity(lastSelectedId);
+      renderer.selectEntity(lastSelectedId);
     }
   }
 
@@ -1072,7 +1069,7 @@ function generateConfiguredWorld() {
   rebuildSpatialGrid(entities, getZoneSize());
 
   const zoomFactor = genWidth <= 128 ? 3.0 : genWidth <= 256 ? 2.0 : 1.5;
-  shader.exports.wasm_set_camera(startX, startY, zoomFactor);
+  renderer.setCamera(startX, startY, zoomFactor);
   currentMode = "MAP";
 }
 
@@ -1083,10 +1080,10 @@ function resetWorld(presetId = 0) {
 }
 
 function saveWorldState() {
-  if (!world || !shader) return;
-  const cx = shader.exports.wasm_get_camera_x();
-  const cy = shader.exports.wasm_get_camera_y();
-  const zoom = shader.exports.wasm_get_camera_zoom();
+  if (!world || !renderer) return;
+  const cx = renderer.getCameraX();
+  const cy = renderer.getCameraY();
+  const zoom = renderer.getCameraZoom();
   const camera = { x: cx, y: cy, zoom };
 
   const customWorld = {
@@ -1108,7 +1105,7 @@ function saveWorldState() {
 }
 
 function loadWorldState(saveData) {
-  if (!saveData || !world || !shader) {
+  if (!saveData || !world || !renderer) {
     alert("Invalid save file!");
     return;
   }
@@ -1151,14 +1148,7 @@ function loadWorldState(saveData) {
       world.clock.globalLight = saveData.world.clock.globalLight !== undefined ? saveData.world.clock.globalLight : 1.0;
       world.clock.totalSeconds = saveData.world.clock.totalSeconds || 0;
 
-      shader.exports.wasm_set_clock(
-        world.clock.day,
-        world.clock.hour,
-        world.clock.minute,
-        world.clock.globalLight,
-        0.0,
-        saveData.entities?.length || 0
-      );
+      // clock updated
     }
 
     if (saveData.world?.tick !== undefined) {
@@ -1216,7 +1206,7 @@ function loadWorldState(saveData) {
 
     // 9. Restore Camera
     if (saveData.camera) {
-      shader.exports.wasm_set_camera(saveData.camera.x || 256, saveData.camera.y || 256, saveData.camera.zoom || 1.0);
+      renderer.setCamera(saveData.camera.x || 256, saveData.camera.y || 256, saveData.camera.zoom || 1.0);
     }
 
     currentPreset = saveData.world?.preset || 0;
@@ -1255,17 +1245,17 @@ function openSaveFilePicker() {
 }
 
 function spawnEntityAtCamera(factoryFn) {
-  if (!shader) return;
-  const cx = Math.floor(shader.exports.wasm_get_camera_x());
-  const cy = Math.floor(shader.exports.wasm_get_camera_y());
+  if (!renderer || !world) return;
+  const cx = Math.floor(renderer.getCameraX());
+  const cy = Math.floor(renderer.getCameraY());
   const ent = factoryFn(cx, cy);
   entities.push(ent);
   lastSelectedId = ent.id;
-  shader.exports.wasm_select_entity(ent.id);
+  renderer.selectEntity(ent.id);
 }
 
 function cycleNextLivingEntity() {
-  if (entities.length === 0 || !shader) return;
+  if (entities.length === 0 || !renderer) return;
   const living = entities.filter(e => !e.destroyed && e.properties && e.properties.life);
   if (living.length === 0) return;
 
@@ -1274,24 +1264,24 @@ function cycleNextLivingEntity() {
   const nextEnt = living[nextIdx];
 
   lastSelectedId = nextEnt.id;
-  shader.exports.wasm_select_entity(nextEnt.id);
-  shader.exports.wasm_set_camera(nextEnt.x, nextEnt.y, shader.exports.wasm_get_camera_zoom());
+  renderer.selectEntity(nextEnt.id);
+  renderer.setCamera(nextEnt.x, nextEnt.y, renderer.getCameraZoom());
 }
 
 function centerCamera() {
-  if (!shader) return;
+  if (!renderer || !world) return;
   const sel = getEntityById(lastSelectedId);
   if (sel) {
-    shader.exports.wasm_set_camera(sel.x, sel.y, shader.exports.wasm_get_camera_zoom());
+    renderer.setCamera(sel.x, sel.y, renderer.getCameraZoom());
   } else {
-    shader.exports.wasm_set_camera(256, 256, 1.0);
+    renderer.setCamera(256, 256, 1.0);
   }
 }
 
 function togglePause() {
-  if (!shader) return;
+  if (!renderer || !world) return;
   isPaused = !isPaused;
-  shader.exports.wasm_set_paused(isPaused ? 1 : 0);
+  renderer.setPaused(isPaused ? 1 : 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -1314,9 +1304,9 @@ canvas.addEventListener("mousedown", (e) => {
   dragStartClientX = e.clientX;
   dragStartClientY = e.clientY;
 
-  if (shader) {
-    dragCameraStartX = shader.exports.wasm_get_camera_x();
-    dragCameraStartY = shader.exports.wasm_get_camera_y();
+  if (renderer) {
+    dragCameraStartX = renderer.getCameraX();
+    dragCameraStartY = renderer.getCameraY();
   }
 
   // Handle clickable UI regions first on left-click
@@ -1331,11 +1321,11 @@ canvas.addEventListener("mousedown", (e) => {
     }
 
     // If Editor is active and clicked on map canvas (not over UI bars or corner menu)
-    if (isEditorOpen && editorTool && shader && currentMode === "MAP" && coords.inside && coords.y > 32 && coords.y < CANVAS_HEIGHT - 36) {
-      const zoom = shader.exports.wasm_get_camera_zoom();
+    if (isEditorOpen && editorTool && renderer && currentMode === "MAP" && coords.inside && coords.y > 32 && coords.y < CANVAS_HEIGHT - 36) {
+      const zoom = renderer.getCameraZoom();
       const tileSize = 16.0 * zoom;
-      const cx = shader.exports.wasm_get_camera_x();
-      const cy = shader.exports.wasm_get_camera_y();
+      const cx = renderer.getCameraX();
+      const cy = renderer.getCameraY();
       const tileX = Math.floor(cx + (coords.x - CANVAS_WIDTH / 2) / tileSize);
       const tileY = Math.floor(cy + (coords.y - CANVAS_HEIGHT / 2) / tileSize);
 
@@ -1364,12 +1354,12 @@ window.addEventListener("mousemove", (e) => {
   }
 
   // Active Real-Time Painting Drag
-  if (isEditorOpen && isPainting && isMouseDown && shader && currentMode === "MAP" && (editorTool === "PAINT" || editorTool === "BULLDOZER")) {
+  if (isEditorOpen && isPainting && isMouseDown && renderer && currentMode === "MAP" && (editorTool === "PAINT" || editorTool === "BULLDOZER")) {
     if (coords.inside && coords.y > 32 && coords.y < CANVAS_HEIGHT - 36) {
-      const zoom = shader.exports.wasm_get_camera_zoom();
+      const zoom = renderer.getCameraZoom();
       const tileSize = 16.0 * zoom;
-      const cx = shader.exports.wasm_get_camera_x();
-      const cy = shader.exports.wasm_get_camera_y();
+      const cx = renderer.getCameraX();
+      const cy = renderer.getCameraY();
       const tileX = Math.floor(cx + (coords.x - CANVAS_WIDTH / 2) / tileSize);
       const tileY = Math.floor(cy + (coords.y - CANVAS_HEIGHT / 2) / tileSize);
       applyEditorActionAt(tileX, tileY);
@@ -1378,11 +1368,11 @@ window.addEventListener("mousemove", (e) => {
   }
 
   // Camera Drag (Right Click or Left Click Drag when not painting)
-  if (isMouseDown && shader && !isPainting && currentMode === "MAP") {
+  if (isMouseDown && renderer && !isPainting && currentMode === "MAP") {
     const totalDist = Math.hypot(e.clientX - dragStartClientX, e.clientY - dragStartClientY);
     if (totalDist > 4) {
       isDragging = true;
-      const zoom = shader.exports.wasm_get_camera_zoom();
+      const zoom = renderer.getCameraZoom();
       const rect = canvas.getBoundingClientRect();
       const pixelScale = rect.width / CANVAS_WIDTH;
       const tileSizeScreen = 16.0 * zoom * pixelScale;
@@ -1390,14 +1380,14 @@ window.addEventListener("mousemove", (e) => {
       if (tileSizeScreen > 0.2) {
         const dx = (e.clientX - dragStartClientX) / tileSizeScreen;
         const dy = (e.clientY - dragStartClientY) / tileSizeScreen;
-        shader.exports.wasm_set_camera(dragCameraStartX - dx, dragCameraStartY - dy, zoom);
+        renderer.setCamera(dragCameraStartX - dx, dragCameraStartY - dy, zoom);
       }
     }
   }
 });
 
 window.addEventListener("mouseup", (e) => {
-  if (isMouseDown && shader && currentMode === "MAP") {
+  if (isMouseDown && renderer && currentMode === "MAP") {
     const totalDist = Math.hypot(e.clientX - dragStartClientX, e.clientY - dragStartClientY);
     if (!isDragging && !isPainting && totalDist <= 5) {
       const coords = getCanvasCoords(e.clientX, e.clientY);
@@ -1413,7 +1403,7 @@ window.addEventListener("mouseup", (e) => {
       }
 
       if (!isOverUi && coords.inside && coords.y > 32 && coords.y < CANVAS_HEIGHT - 36) {
-        const foundId = shader.exports.wasm_select_at(coords.x, coords.y, CANVAS_WIDTH, CANVAS_HEIGHT);
+        const foundId = renderer.selectAt(coords.x, coords.y, entities);
         lastSelectedId = foundId;
       }
     }
@@ -1432,10 +1422,10 @@ canvas.addEventListener("wheel", (e) => {
     return;
   }
 
-  if (!shader) return;
-  let zoom = shader.exports.wasm_get_camera_zoom();
-  const cx = shader.exports.wasm_get_camera_x();
-  const cy = shader.exports.wasm_get_camera_y();
+  if (!renderer || !world) return;
+  let zoom = renderer.getCameraZoom();
+  const cx = renderer.getCameraX();
+  const cy = renderer.getCameraY();
 
   if (e.deltaY < 0) {
     zoom = Math.min(8.0, zoom * 1.15);
@@ -1443,7 +1433,7 @@ canvas.addEventListener("wheel", (e) => {
     zoom = Math.max(0.15, zoom / 1.15);
   }
 
-  shader.exports.wasm_set_camera(cx, cy, zoom);
+  renderer.setCamera(cx, cy, zoom);
 }, { passive: false });
 
 window.addEventListener("keydown", (e) => {
@@ -1528,10 +1518,10 @@ window.addEventListener("keyup", (e) => {
 });
 
 function handleCameraKeys(dt) {
-  if (!shader || currentMode !== "MAP") return;
-  let cx = shader.exports.wasm_get_camera_x();
-  let cy = shader.exports.wasm_get_camera_y();
-  let zoom = shader.exports.wasm_get_camera_zoom();
+  if (!renderer || currentMode !== "MAP") return;
+  let cx = renderer.getCameraX();
+  let cy = renderer.getCameraY();
+  let zoom = renderer.getCameraZoom();
 
   const speed = (240.0 / zoom) * dt;
 
@@ -1540,7 +1530,7 @@ function handleCameraKeys(dt) {
   if (keysDown.has("ArrowLeft")) cx -= speed;
   if (keysDown.has("ArrowRight")) cx += speed;
 
-  shader.exports.wasm_set_camera(cx, cy, zoom);
+  renderer.setCamera(cx, cy, zoom);
 }
 
 // ---------------------------------------------------------------------------
@@ -1711,11 +1701,11 @@ function renderBottomToolbar() {
   registerClickableRegion(plusX, CANVAS_HEIGHT - 30, 20, 24, increaseSimSpeed);
 
   // Coordinates [X, Y] on bottom right (Tile name removed as requested)
-  if (shader && world) {
-    const zoom = shader.exports.wasm_get_camera_zoom();
+  if (renderer && world) {
+    const zoom = renderer.getCameraZoom();
     const tileSize = 16.0 * zoom;
-    const cx = shader.exports.wasm_get_camera_x();
-    const cy = shader.exports.wasm_get_camera_y();
+    const cx = renderer.getCameraX();
+    const cy = renderer.getCameraY();
     const hoverTileX = Math.floor(cx + (mouseX - CANVAS_WIDTH / 2) / tileSize);
     const hoverTileY = Math.floor(cy + (mouseY - CANVAS_HEIGHT / 2) / tileSize);
 
@@ -2118,8 +2108,8 @@ function renderDossierModal() {
         if (ev.location) {
           drawNESButton(mx + mw - 165, curY + 2, 45, 20, "MAP", false, false);
           registerClickableRegion(mx + mw - 165, curY + 2, 45, 20, () => {
-            if (shader) {
-              shader.exports.wasm_set_camera(ev.location.x, ev.location.y, shader.exports.wasm_get_camera_zoom());
+            if (renderer) {
+              renderer.setCamera(ev.location.x, ev.location.y, renderer.getCameraZoom());
               currentMode = "MAP";
             }
           });
@@ -2243,9 +2233,9 @@ function renderEntitiesModal() {
     const curEnt = ent;
     registerClickableRegion(mx + 12, rowY - 4, mw - 24, rowH, () => {
       lastSelectedId = curEnt.id;
-      if (shader) {
-        shader.exports.wasm_select_entity(curEnt.id);
-        shader.exports.wasm_set_camera(curEnt.x, curEnt.y, shader.exports.wasm_get_camera_zoom());
+      if (renderer) {
+        renderer.selectEntity(curEnt.id);
+        renderer.setCamera(curEnt.x, curEnt.y, renderer.getCameraZoom());
       }
       currentMode = "INSPECT";
     });
@@ -2374,8 +2364,8 @@ function renderGroupsModal() {
           count++;
         }
       }
-      if (count > 0 && shader) {
-        shader.exports.wasm_set_camera(sumX / count, sumY / count, 1.5);
+      if (count > 0 && renderer) {
+        renderer.setCamera(sumX / count, sumY / count, 1.5);
       }
       currentMode = "MAP";
     });
@@ -2383,10 +2373,10 @@ function renderGroupsModal() {
     // Focus Leader Button
     drawNESButton(mx + cardW - 85, cardY + 24, 75, 22, "LEADER", false, false);
     registerClickableRegion(mx + cardW - 85, cardY + 24, 75, 22, () => {
-      if (leaderEnt && shader) {
+      if (leaderEnt && renderer) {
         lastSelectedId = leaderEnt.id;
-        shader.exports.wasm_select_entity(leaderEnt.id);
-        shader.exports.wasm_set_camera(leaderEnt.x, leaderEnt.y, shader.exports.wasm_get_camera_zoom());
+        renderer.selectEntity(leaderEnt.id);
+        renderer.setCamera(leaderEnt.x, leaderEnt.y, renderer.getCameraZoom());
         currentMode = "MAP";
       }
     });
@@ -2438,18 +2428,18 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
         count++;
       }
     }
-    if (count > 0 && shader) {
-      shader.exports.wasm_set_camera(sumX / count, sumY / count, 1.5);
+    if (count > 0 && renderer) {
+      renderer.setCamera(sumX / count, sumY / count, 1.5);
     }
     currentMode = "MAP";
   });
 
   drawNESButton(mx + mw - 124, my + 32, 110, 24, "FOCUS LEADER", false, false);
   registerClickableRegion(mx + mw - 124, my + 32, 110, 24, () => {
-    if (leaderEnt && shader) {
+    if (leaderEnt && renderer) {
       lastSelectedId = leaderEnt.id;
-      shader.exports.wasm_select_entity(leaderEnt.id);
-      shader.exports.wasm_set_camera(leaderEnt.x, leaderEnt.y, shader.exports.wasm_get_camera_zoom());
+      renderer.selectEntity(leaderEnt.id);
+      renderer.setCamera(leaderEnt.x, leaderEnt.y, renderer.getCameraZoom());
       currentMode = "MAP";
     }
   });
@@ -2528,9 +2518,9 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
         drawNESButton(mx + mw - 100, rosterY - 2, 70, 20, "FOCUS", false, false);
         registerClickableRegion(mx + mw - 100, rosterY - 2, 70, 20, () => {
           lastSelectedId = curM.id;
-          if (shader) {
-            shader.exports.wasm_select_entity(curM.id);
-            shader.exports.wasm_set_camera(curM.x, curM.y, shader.exports.wasm_get_camera_zoom());
+          if (renderer) {
+            renderer.selectEntity(curM.id);
+            renderer.setCamera(curM.x, curM.y, renderer.getCameraZoom());
           }
           currentMode = "MAP";
         });
@@ -2596,8 +2586,8 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
         // Locate Button
         drawNESButton(mx + mw - 80, logY - 1, 60, 20, "MAP", false, false);
         registerClickableRegion(mx + mw - 80, logY - 1, 60, 20, () => {
-          if (shader && curEv.location) {
-            shader.exports.wasm_set_camera(curEv.location.x, curEv.location.y, 2.0);
+          if (renderer && curEv.location) {
+            renderer.setCamera(curEv.location.x, curEv.location.y, 2.0);
           }
           currentMode = "MAP";
         });
@@ -2612,7 +2602,7 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
  * Renders glowing claimed territory overlay on the world map for the selected clan.
  */
 function renderTerritoryOverlay() {
-  if (currentMode !== "MAP" || !shader || !world || visualizedGroupId === null) return;
+  if (currentMode !== "MAP" || !renderer || !world || visualizedGroupId === null) return;
   const groups = getAllGroups();
   const g = groups.find(grp => grp.id === visualizedGroupId);
   if (!g) {
@@ -2620,10 +2610,10 @@ function renderTerritoryOverlay() {
     return;
   }
 
-  const zoom = shader.exports.wasm_get_camera_zoom();
+  const zoom = renderer.getCameraZoom();
   const tileSize = 16.0 * zoom;
-  const cx = shader.exports.wasm_get_camera_x();
-  const cy = shader.exports.wasm_get_camera_y();
+  const cx = renderer.getCameraX();
+  const cy = renderer.getCameraY();
   const centerScreenX = CANVAS_WIDTH / 2;
   const centerScreenY = CANVAS_HEIGHT / 2;
 
@@ -2886,8 +2876,8 @@ function renderLogDetailView(mx, my, mw, mh, ev) {
   if (ev.location) {
     drawNESButton(mx + 30, my + mh - 70, 200, 30, "JUMP TO LOCATION", false, false);
     registerClickableRegion(mx + 30, my + mh - 70, 200, 30, () => {
-      if (shader) {
-        shader.exports.wasm_set_camera(ev.location.x, ev.location.y, shader.exports.wasm_get_camera_zoom());
+      if (renderer) {
+        renderer.setCamera(ev.location.x, ev.location.y, renderer.getCameraZoom());
         currentMode = "MAP";
       }
     });
@@ -3012,9 +3002,9 @@ function renderCompactEditorPanel() {
     // Fill Viewport Button
     drawNESButton(px + 8, brushY + 38, pw - 16, 22, "FILL VIEWPORT AREA", false, false);
     registerClickableRegion(px + 8, brushY + 38, pw - 16, 22, () => {
-      if (shader && world) {
-        const cx = Math.floor(shader.exports.wasm_get_camera_x());
-        const cy = Math.floor(shader.exports.wasm_get_camera_y());
+      if (renderer && world) {
+        const cx = Math.floor(renderer.getCameraX());
+        const cy = Math.floor(renderer.getCameraY());
         applyTileBrush(cx, cy, editorSelectedTile, 30);
       }
     });
@@ -3152,12 +3142,12 @@ function renderCompactEditorPanel() {
 }
 
 function renderMapEditorOverlay() {
-  if (!shader || !world || !isEditorOpen || !editorTool || currentMode !== "MAP") return;
+  if (!renderer || !world || !isEditorOpen || !editorTool || currentMode !== "MAP") return;
 
-  const zoom = shader.exports.wasm_get_camera_zoom();
+  const zoom = renderer.getCameraZoom();
   const tileSize = 16.0 * zoom;
-  const cx = shader.exports.wasm_get_camera_x();
-  const cy = shader.exports.wasm_get_camera_y();
+  const cx = renderer.getCameraX();
+  const cy = renderer.getCameraY();
   const hoverTileX = Math.floor(cx + (mouseX - CANVAS_WIDTH / 2) / tileSize);
   const hoverTileY = Math.floor(cy + (mouseY - CANVAS_HEIGHT / 2) / tileSize);
 
@@ -3222,12 +3212,12 @@ function renderMapEditorOverlay() {
 // ---------------------------------------------------------------------------
 
 function renderHoverTooltip() {
-  if (currentMode !== "MAP" || !shader || !world) return;
+  if (currentMode !== "MAP" || !renderer || !world) return;
 
-  const zoom = shader.exports.wasm_get_camera_zoom();
+  const zoom = renderer.getCameraZoom();
   const tileSize = 16.0 * zoom;
-  const cx = shader.exports.wasm_get_camera_x();
-  const cy = shader.exports.wasm_get_camera_y();
+  const cx = renderer.getCameraX();
+  const cy = renderer.getCameraY();
   const hoverTileX = Math.floor(cx + (mouseX - CANVAS_WIDTH / 2) / tileSize);
   const hoverTileY = Math.floor(cy + (mouseY - CANVAS_HEIGHT / 2) / tileSize);
 
@@ -3260,17 +3250,17 @@ function renderHoverTooltip() {
  * - Unexplored / Unknown zones: pitch black
  */
 function renderCreatureVisionOverlay() {
-  if (currentMode !== "MAP" || !shader || !world || !isCreatureVisionMode || lastSelectedId <= 0) return;
+  if (currentMode !== "MAP" || !renderer || !world || !isCreatureVisionMode || lastSelectedId <= 0) return;
   const target = getEntityById(lastSelectedId);
   if (!target || target.destroyed) {
     isCreatureVisionMode = false;
     return;
   }
 
-  const zoom = shader.exports.wasm_get_camera_zoom();
+  const zoom = renderer.getCameraZoom();
   const tileSize = 16.0 * zoom;
-  const camX = shader.exports.wasm_get_camera_x();
-  const camY = shader.exports.wasm_get_camera_y();
+  const camX = renderer.getCameraX();
+  const camY = renderer.getCameraY();
   const centerScreenX = CANVAS_WIDTH / 2;
   const centerScreenY = CANVAS_HEIGHT / 2;
 
@@ -3669,17 +3659,17 @@ function frame(time) {
   activeUiRegions = [];
 
   // Automatic Camera Tracking / Follow Mode
-  if (isFollowMode && lastSelectedId > 0 && shader) {
+  if (isFollowMode && lastSelectedId > 0 && renderer) {
     const target = getEntityById(lastSelectedId);
     if (target && !target.destroyed) {
-      const curZoom = shader.exports.wasm_get_camera_zoom();
-      shader.exports.wasm_set_camera(target.x, target.y, curZoom);
+      const curZoom = renderer.getCameraZoom();
+      renderer.setCamera(target.x, target.y, curZoom);
     } else {
       isFollowMode = false;
     }
   }
 
-  if (shader && world) {
+  if (renderer && world) {
     // 1. Tick Simulation if not paused
     if (!isPaused) {
       if (simSpeed === "??") {
@@ -3719,48 +3709,8 @@ function frame(time) {
       lastTpsUpdate = time;
     }
 
-    // 2. High-performance Frustum Culling & Sync renderable entities into WASM shared memory
-    const camZoom = shader.exports.wasm_get_camera_zoom();
-    const tSize = 16.0 * camZoom;
-    const camX = shader.exports.wasm_get_camera_x();
-    const camY = shader.exports.wasm_get_camera_y();
-    const halfVisW = (CANVAS_WIDTH / (2 * tSize)) + 4;
-    const halfVisH = (CANVAS_HEIGHT / (2 * tSize)) + 4;
-    const cameraBounds = {
-      minX: Math.floor(camX - halfVisW),
-      maxX: Math.ceil(camX + halfVisW),
-      minY: Math.floor(camY - halfVisH),
-      maxY: Math.ceil(camY + halfVisH)
-    };
-
-    syncRenderToWasm(entities, mem, shader.exports, isCreatureVisionMode ? lastSelectedId : null, cameraBounds);
-
-    // 3. Update WASM clock & lighting
-    shader.exports.wasm_set_clock(
-      world.clock.day,
-      world.clock.hour,
-      world.clock.minute,
-      world.clock.globalLight,
-      0.0,
-      entities.length
-    );
-
-    // 4. Run WASM Pixel Renderer
-    shader.exports._start(
-      mem.heapBase,
-      CANVAS_WIDTH,
-      CANVAS_HEIGHT,
-      time * 0.001,
-      mouseX,
-      mouseY,
-      mouseButtons,
-      dt
-    );
-
-    // 5. Blit rendered pixel buffer to Canvas
-    const pixelsU8 = new Uint8Array(mem.buffer, mem.heapBase, FRAMEBUFFER_SIZE);
-    imageData.data.set(pixelsU8);
-    ctx.putImageData(imageData, 0, 0);
+    // 2. High-performance Frustum Culling & Pure Canvas 2D Rendering
+    renderer.render(world, entities, time * 0.001, dt);
 
     // 6. Draw Pure In-Engine Canvas UI Overlay using Renderer's 8x8 Font
     renderCreatureVisionOverlay();
@@ -3795,10 +3745,11 @@ function frame(time) {
 
 async function init() {
   try {
-    shader = await wash_load("./brutopolis.wasm", mem);
-    world = new World(mem, shader.exports);
+    renderer = new Renderer(canvas);
+    await renderer.initPromise;
+    world = new World(0, genSeed);
     resetWorld(0);
-    console.log("✓ Brutopolis (Pure Canvas Engine with Embedded 8x8 Font) initialized successfully!");
+    console.log("✓ Brutopolis (Pure JavaScript & Canvas 2D Engine) initialized successfully!");
     requestAnimationFrame(frame);
   } catch (err) {
     console.error("Failed to load Brutopolis:", err);

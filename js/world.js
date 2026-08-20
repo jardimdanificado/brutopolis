@@ -1,9 +1,24 @@
 // =============================================================================
-// Brutopolis - World & Environment System
+// Brutopolis - World & Environment System (Pure JS Engine)
 // =============================================================================
 
-export const MAP_WIDTH = 1024;
-export const MAP_HEIGHT = 1024;
+import {
+  MAP_WIDTH,
+  MAP_HEIGHT,
+  TILE_FLOOR,
+  TILE_MOUNTAIN,
+  TILE_WATER,
+  TILE_SAND,
+  TILE_STONE,
+  TILE_VOID,
+  MAP_PRESET_ARCHIPELAGO,
+  MAP_PRESET_CONTINENT,
+  MAP_PRESET_HIGHLANDS,
+  world_gen_generate,
+  world_gen_is_walkable
+} from "./world_gen.js";
+
+export { MAP_WIDTH, MAP_HEIGHT };
 
 export class WorldClock {
   constructor() {
@@ -51,35 +66,42 @@ export class WorldClock {
 }
 
 export class World {
-  constructor(wasmMemory, wasmExports) {
-    this.mem = wasmMemory;
-    this.wasm = wasmExports;
+  constructor(presetId = 0, seed = 1337) {
     this.width = MAP_WIDTH;
     this.height = MAP_HEIGHT;
     this.clock = new WorldClock();
-    this.refresh();
+    this.map = new Uint8Array(MAP_WIDTH * MAP_HEIGHT);
+    this.generate(presetId, seed);
+  }
+
+  generate(presetId = 0, seed = 1337) {
+    let cfg = MAP_PRESET_ARCHIPELAGO;
+    if (presetId === 1) cfg = MAP_PRESET_CONTINENT;
+    else if (presetId === 2) cfg = MAP_PRESET_HIGHLANDS;
+
+    const outCenter = { x: 256, y: 256 };
+    world_gen_generate(this.map, { ...cfg, seed }, outCenter);
+    this.spawnCenter = outCenter;
+    this.clock.reset();
+    return outCenter;
   }
 
   refresh() {
-    this.width = MAP_WIDTH;
-    this.height = MAP_HEIGHT;
-    const ptr = this.wasm.wasm_get_map_ptr();
-    this.map = new Uint8Array(this.mem.buffer, ptr, MAP_WIDTH * MAP_HEIGHT);
     this.clock.reset();
   }
 
   getTile(x, y) {
-    if (x < 0 || x >= MAP_WIDTH || y < 0 || y >= MAP_HEIGHT) return 5; // VOID
+    if (x < 0 || x >= MAP_WIDTH || y < 0 || y >= MAP_HEIGHT) return TILE_VOID;
     return this.map[y * MAP_WIDTH + x];
   }
 
   getTileName(t) {
     switch (t) {
-      case 0: return "Fertile Soil / Forest";
-      case 1: return "Mountain Peak";
-      case 2: return "Ocean Water";
-      case 3: return "Sand Dunes / Desert";
-      case 4: return "Rocky Foothills / Stone";
+      case TILE_FLOOR: return "Fertile Soil / Forest";
+      case TILE_MOUNTAIN: return "Mountain Peak";
+      case TILE_WATER: return "Ocean Water";
+      case TILE_SAND: return "Sand Dunes / Desert";
+      case TILE_STONE: return "Rocky Foothills / Stone";
       default: return "Void";
     }
   }
@@ -87,12 +109,9 @@ export class World {
   setTile(x, y, tile) {
     if (x < 0 || x >= MAP_WIDTH || y < 0 || y >= MAP_HEIGHT) return;
     this.map[y * MAP_WIDTH + x] = tile;
-    this.wasm.wasm_set_tile(x, y, tile);
   }
 
-  isWalkable(x, y) {
-    if (x < 0 || x >= MAP_WIDTH || y < 0 || y >= MAP_HEIGHT) return false;
-    const t = this.map[y * MAP_WIDTH + x];
-    return t !== 5; // All tiles except bedrock/abyss (5) are traversable
+  isWalkable(x, y, moveType = 1) {
+    return world_gen_is_walkable(this.map, x, y, moveType);
   }
 }

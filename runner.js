@@ -7,7 +7,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { wash_memory, wash_load } from "./wash.js";
+// Pure JS Simulation Engine
 import { World, MAP_WIDTH, MAP_HEIGHT } from "./js/world.js";
 import {
   createEntity,
@@ -88,10 +88,10 @@ const __dirname = path.dirname(__filename);
 // Simulation State & Modes ("MAP", "INSPECT", "ENTITIES", "GROUPS", "LOGS")
 // ---------------------------------------------------------------------------
 
-let shader = null;
+
 let world = null;
 let entities = [];
-let mem = null;
+
 
 let isPaused = false;
 let simSpeed = 1.0; // 0.5x, 1x, 2x, 4x, 8x, 16x
@@ -297,22 +297,17 @@ function spawnRandomGlobal(count, factoryFn, conditionFn = null) {
 }
 
 function resetWorld(presetId = 0) {
-  if (!shader) return;
+  if (!world) return;
   currentPreset = presetId;
   const seed = Math.floor(Math.random() * 1000000) + 1;
-  if (shader.exports.wasm_init_with_seed) {
-    shader.exports.wasm_init_with_seed(presetId, seed);
-  } else {
-    shader.exports.wasm_init(presetId);
-  }
+  const center = world.generate(presetId, seed);
 
   resetEngineTicks();
   resetWorldEvents();
-  world.refresh();
   entities = [];
 
-  cursorX = Math.floor(shader.exports.wasm_get_camera_x()) || 256;
-  cursorY = Math.floor(shader.exports.wasm_get_camera_y()) || 256;
+  cursorX = center.x || 256;
+  cursorY = center.y || 256;
   camX = cursorX;
   camY = cursorY;
 
@@ -1606,21 +1601,21 @@ function handleTerminalInput(key) {
     const idx = SPEED_TIERS.indexOf(simSpeed);
     if (idx !== -1 && idx < SPEED_TIERS.length - 1) simSpeed = SPEED_TIERS[idx + 1];
     else simSpeed = Math.min(32, simSpeed * 2);
-    if (shader) shader.exports.wasm_set_tps(Math.round(60 * simSpeed));
+    
     return;
   }
   if (key === "-" || key === "_" || key === "[") {
     const idx = SPEED_TIERS.indexOf(simSpeed);
     if (idx > 0) simSpeed = SPEED_TIERS[idx - 1];
     else simSpeed = Math.max(0.25, simSpeed / 2);
-    if (shader) shader.exports.wasm_set_tps(Math.round(60 * simSpeed));
+    
     return;
   }
 
   // Space or 'p' -> Pause / Resume
   if (key === " " || key === "p" || key === "P") {
     isPaused = !isPaused;
-    if (shader) shader.exports.wasm_set_paused(isPaused ? 1 : 0);
+    
     return;
   }
 
