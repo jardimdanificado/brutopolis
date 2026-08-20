@@ -4,6 +4,7 @@
 
 import { ASSET_DATA } from "./assets_data.js";
 import { MAP_WIDTH, MAP_HEIGHT, TILE_FLOOR, TILE_MOUNTAIN, TILE_WATER, TILE_SAND, TILE_STONE } from "./world_gen.js";
+import { globalWallCoords, resolveWallSkin } from "./engine.js";
 
 // ---------------------------------------------------------------------------
 // 32-bit Little-Endian RGBA Color Utilities
@@ -31,6 +32,14 @@ function hexToRgba32(num, defaultAlpha = 255) {
   let a = (num >>> 24) & 0xff;
   if (a === 0 && defaultAlpha > 0) a = defaultAlpha;
   return rgba32(r, g, b, a);
+}
+
+// Keep terrain decoration stable between frames instead of using Math.random,
+// which would make the tiles flicker while the camera is rendered.
+function shouldRenderTerrainSprite(x, y, tileType) {
+  let hash = Math.imul(x ^ Math.imul(y, 374761393), 668265263);
+  hash = Math.imul(hash ^ (hash >>> 13) ^ tileType, 1274126177) >>> 0;
+  return hash % 100 < 15;
 }
 
 // ---------------------------------------------------------------------------
@@ -88,17 +97,53 @@ function findTexture(path) {
     if (k.includes(baseNoExt)) return tex;
   }
 
-  if (baseNoExt.includes("nut") || baseNoExt.includes("acorn") || baseNoExt.includes("seed")) {
+  if (baseNoExt.includes("grass") || baseNoExt.includes("relva") || baseNoExt.includes("grama")) {
+    return rawTextures.get("feature_grass.png");
+  }
+  if (baseNoExt.includes("mountain") || baseNoExt.includes("montanha") || baseNoExt.includes("boulder")) {
+    return rawTextures.get("feature_boulders.png");
+  }
+  if (baseNoExt.includes("sand") || baseNoExt.includes("areia") || baseNoExt.includes("duna")) {
+    return rawTextures.get("feature_pebbles.png");
+  }
+  if (baseNoExt.includes("oak") || baseNoExt.includes("carvalho") || baseNoExt.includes("arvore")) {
+    return rawTextures.get("feature_tree_full.png");
+  }
+  if (baseNoExt.includes("pine") || baseNoExt.includes("pinheiro")) {
+    return rawTextures.get("feature_tree_pine.png");
+  }
+  if (baseNoExt.includes("willow") || baseNoExt.includes("salgueiro")) {
+    return rawTextures.get("feature_tree_bare.png");
+  }
+  if (baseNoExt.includes("flower") || baseNoExt.includes("flor") || baseNoExt.includes("lily")) {
+    return rawTextures.get("feature_flower.png");
+  }
+  if (baseNoExt.includes("cactus") || baseNoExt.includes("cacto") || baseNoExt.includes("shrub")) {
+    return rawTextures.get("item_herb.png");
+  }
+  if (baseNoExt.includes("seaweed") || baseNoExt.includes("alga")) {
+    return rawTextures.get("feature_web.png");
+  }
+  if (baseNoExt.includes("fruit") || baseNoExt.includes("fruta") || baseNoExt.includes("maca")) {
+    return rawTextures.get("item_fruit.png");
+  }
+  if (baseNoExt.includes("nut") || baseNoExt.includes("acorn") || baseNoExt.includes("seed") || baseNoExt.includes("semente")) {
     return rawTextures.get("item_egg.png");
   }
-  if (baseNoExt.includes("poop") || baseNoExt.includes("feces") || baseNoExt.includes("dung")) {
+  if (baseNoExt.includes("poop") || baseNoExt.includes("feces") || baseNoExt.includes("dung") || baseNoExt.includes("fezes")) {
     return rawTextures.get("item_nugget.png");
   }
-  if (baseNoExt.includes("wood") || baseNoExt.includes("log") || baseNoExt.includes("stick")) {
+  if (baseNoExt.includes("wood") || baseNoExt.includes("log") || baseNoExt.includes("stick") || baseNoExt.includes("madeira")) {
     return rawTextures.get("item_pole.png");
   }
-  if (baseNoExt.includes("stone") || baseNoExt.includes("rock") || baseNoExt.includes("boulder")) {
-    return rawTextures.get("feature_stone_a.png");
+  if (baseNoExt.includes("stone") || baseNoExt.includes("rock") || baseNoExt.includes("pedra")) {
+    return rawTextures.get("feature_boulders.png");
+  }
+  if (baseNoExt.includes("meat") || baseNoExt.includes("carne")) {
+    return rawTextures.get("item_steak.png");
+  }
+  if (baseNoExt.includes("campfire") || baseNoExt.includes("fogueira") || baseNoExt.includes("fire")) {
+    return rawTextures.get("other_fire.png");
   }
 
   return null;
@@ -355,18 +400,18 @@ export class Renderer {
     const globalLight = world?.clock?.globalLight !== undefined ? world.clock.globalLight : 1.0;
 
     // 2. Cached tile textures
-    const texFloor = findTexture("Feature_Stone_A.png");
+    const texFloor = findTexture("Feature_Grass.png");
     const texMountain = findTexture("Feature_Stone_C.png");
     const texWater = findTexture("Feature_Waves.png");
-    const texSand = findTexture("Feature_Stone_A.png");
-    const texStone = findTexture("Feature_Stone_C.png");
+    const texSand = findTexture("Feature_Pebbles.png");
+    const texStone = findTexture("Feature_Stone_B.png");
 
     const colFloorFg = rgba32(140, 200, 110);
     const colFloorBg = rgba32(35, 65, 30);
     const colMountainFg = rgba32(180, 175, 170);
     const colMountainBg = rgba32(70, 65, 65);
-    const colSandFg = rgba32(235, 205, 115);
-    const colSandBg = rgba32(95, 78, 35);
+    const colSandFg = rgba32(95, 78, 35);
+    const colSandBg = rgba32(235, 205, 115);
     const colStoneFg = rgba32(165, 165, 175);
     const colStoneBg = rgba32(55, 55, 62);
     const colWaterFg = rgba32(80, 150, 240);
@@ -421,6 +466,13 @@ export class Renderer {
           tex = texStone;
           fg = colStoneFg;
           bg = colStoneBg;
+        }
+
+        // Most grass and sand tiles are intentionally kept clean. A small,
+        // coordinate-stable portion keeps the full sprite for visual texture.
+        if ((t === TILE_FLOOR || t === TILE_SAND) && !shouldRenderTerrainSprite(tx, ty, t)) {
+          tex = null;
+          fg = bg;
         }
 
         if (tex) {
@@ -481,7 +533,12 @@ export class Renderer {
           entBg = rgba32(255, 255, 255);
         }
 
-        const entTex = findTexture(r.skin || "Human_Knight_M.png");
+        // Walls are autotiled from their cardinal neighbours. The WASM path
+        // already does this during render syncing; apply the same rule here
+        // because the main renderer is the pure-JS Canvas renderer.
+        const isWall = e.properties.structure || r.skin?.startsWith("Wall_") || e.properties.name?.includes("Muralha") || e.properties.name?.includes("Wall");
+        const entSkin = isWall ? resolveWallSkin(e.x, e.y, globalWallCoords) : (r.skin || "Human_Knight_M.png");
+        const entTex = findTexture(entSkin);
         if (entTex) {
           drawSpriteTinted32(buf32, width, height, entTex, sx, sy, tileSize, tileSize, entFg, entBg, globalLight);
         } else {

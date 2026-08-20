@@ -3153,7 +3153,7 @@ export function createWoodItem(x, y) {
     {
       name: "Wood Log",
       resourceType: "wood",
-      render: { skin: "Item_Pole.png", color: 0xffa06e32, backcolor: 0x00000000 },
+      render: { skin: "Item_Wood.png", color: 0xffa06e32, backcolor: 0x00000000 },
       edible: { nutrition: 200, foodType: "plant", digestDuration: 30 }
     },
     x,
@@ -3169,7 +3169,7 @@ export function createStoneItem(x, y) {
     {
       name: "Stone Block",
       resourceType: "stone",
-      render: { skin: "Feature_Stone_A.png", color: 0xffc8c8c8, backcolor: 0x00000000 },
+      render: { skin: "Feature_Boulders.png", color: 0xffc8c8c8, backcolor: 0x00000000 },
       edible: { nutrition: 50, foodType: "bone", digestDuration: 10 }
     },
     x,
