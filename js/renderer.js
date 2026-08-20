@@ -251,6 +251,7 @@ export class Renderer {
     this.selectedEntityId = -1;
     this.isPaused = false;
     this.targetTps = 60;
+    this.waterTime = 0.0;
 
     this.initPromise = loadAllAssets();
   }
@@ -315,7 +316,7 @@ export class Renderer {
     return foundId;
   }
 
-  render(world, entities, time, dt) {
+  render(world, entities, time, dt, simSpeed = 1.0) {
     const width = this.canvas.width;
     const height = this.canvas.height;
     if (width === 0 || height === 0) return;
@@ -325,6 +326,11 @@ export class Renderer {
       this.height = height;
       this.imageData = this.ctx.createImageData(width, height);
       this.buf32 = new Uint32Array(this.imageData.data.buffer);
+    }
+
+    if (!this.isPaused) {
+      const speedVal = typeof simSpeed === "number" ? simSpeed : 32.0;
+      this.waterTime += Math.min(dt, 0.1) * speedVal;
     }
 
     const buf32 = this.buf32;
@@ -363,6 +369,7 @@ export class Renderer {
     const colSandBg = rgba32(95, 78, 35);
     const colStoneFg = rgba32(165, 165, 175);
     const colStoneBg = rgba32(55, 55, 62);
+    const colWaterFg = rgba32(80, 150, 240);
     const colWaterBg = rgba32(20, 45, 90);
 
     const map = world.map;
@@ -380,20 +387,40 @@ export class Renderer {
         let fg = colFloorFg;
         let bg = colFloorBg;
 
-        if (t === TILE_FLOOR) {
-          tex = texFloor; fg = colFloorFg; bg = colFloorBg;
-        } else if (t === TILE_MOUNTAIN) {
-          tex = texMountain; fg = colMountainFg; bg = colMountainBg;
-        } else if (t === TILE_WATER) {
+        if (t === TILE_WATER) {
           tex = texWater;
-          const wave = Math.sin(time * 2.0 + tx * 0.5 + ty * 0.3) * 0.1;
+
+          // Velocidade e comprimento da onda adaptados a velocidade da simulacao
+          const speedNum = typeof simSpeed === "number" ? simSpeed : 32.0;
+          // Quanto mais rapido, menor o comprimento da onda (frequencia espacial maior)
+          const spatialFreq = 0.5 + Math.min(2.0, Math.log2(Math.max(0.5, speedNum)) * 0.35);
+          
+          const wave = Math.sin(this.waterTime * 2.0 + tx * spatialFreq + ty * (spatialFreq * 0.6)) * 0.1;
           const waveScale = Math.max(0.5, Math.min(1.5, 1.0 + wave));
-          fg = rgba32(Math.round(80 * waveScale), Math.round(150 * waveScale), Math.round(240 * waveScale));
+
+          fg = rgba32(
+            Math.round(80 * waveScale),
+            Math.round(150 * waveScale),
+            Math.round(240 * waveScale)
+          );
           bg = colWaterBg;
+        } else if (t === TILE_FLOOR) {
+          // Grama sem efeito
+          tex = texFloor;
+          fg = colFloorFg;
+          bg = colFloorBg;
         } else if (t === TILE_SAND) {
-          tex = texSand; fg = colSandFg; bg = colSandBg;
+          tex = texSand;
+          fg = colSandFg;
+          bg = colSandBg;
+        } else if (t === TILE_MOUNTAIN) {
+          tex = texMountain;
+          fg = colMountainFg;
+          bg = colMountainBg;
         } else if (t === TILE_STONE) {
-          tex = texStone; fg = colStoneFg; bg = colStoneBg;
+          tex = texStone;
+          fg = colStoneFg;
+          bg = colStoneBg;
         }
 
         if (tex) {

@@ -3710,7 +3710,7 @@ function frame(time) {
     }
 
     // 2. High-performance Frustum Culling & Pure Canvas 2D Rendering
-    renderer.render(world, entities, time * 0.001, dt);
+    renderer.render(world, entities, time * 0.001, dt, simSpeed);
 
     // 6. Draw Pure In-Engine Canvas UI Overlay using Renderer's 8x8 Font
     renderCreatureVisionOverlay();
