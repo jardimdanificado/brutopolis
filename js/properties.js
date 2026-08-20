@@ -2281,11 +2281,6 @@ export function createAndTransmitLie(speaker, listener, world, entities) {
         disbelievedBy: []
       }
     });
-
-    // If speaker is a conscious manipulator (not believer, not schizo), small chance to acquire liar trait
-    if (!speaker.properties.liar && !isSchizo && !speakerBelievesLie && Math.random() < 0.20) {
-      speaker.properties.liar = createLiarProp("manipulator", 0.85);
-    }
   }
 
   // Check if someone present knows the true version of this event (Witness / Truth Knower)

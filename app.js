@@ -618,7 +618,7 @@ let tpsCounter = 0;
 let measuredTps = 60;
 let lastTpsUpdate = performance.now();
 
-// Active In-Game Screen Mode ("MAP", "INSPECT", "ENTITIES", "GROUPS", "LOGS", "SPAWNER")
+// Active In-Game Screen Mode ("MAP", "INSPECT", "ENTITIES", "GROUPS", "LOGS")
 let currentMode = "MAP";
 let modalScroll = 0;
 let inspectingLogEvent = null;
@@ -629,6 +629,96 @@ let inspectingFromCreature = false;
 let visualizedGroupId = null; // ID of clan whose claimed territory is being highlighted on map
 let isFollowMode = false; // Camera automatically follows and locks onto selected creature
 let isCreatureVisionMode = false; // "See through creature's eyes" perception FOV & Fog of War
+
+// Real-Time Floating Corner Map Editor State
+let isEditorOpen = false; // Floating corner editor menu visibility
+let editorTab = "TILES"; // "TILES", "CREATURES", "ITEMS", "TOOLS"
+let editorSelectedTile = 0; // 0: Grass, 1: Mountain, 2: Water, 3: Sand, 4: Stone, 5: Void
+let editorBrushSize = 1; // 1, 3, 5
+let editorTool = null; // null when closed; "PAINT", "SPAWN", "BULLDOZER", "EYEDROPPER"
+let editorActiveSpawner = null; // { label, fn }
+let isPainting = false;
+let editorPage = 0; // Pagination for mob/item lists in compact bar
+
+const EDITOR_TILES = [
+  { id: 0, label: "GRASS / SOIL", color: "#58d854", desc: "Fertile land / forest" },
+  { id: 1, label: "MOUNTAIN PEAK", color: "#f8f8f8", desc: "High rocky terrain" },
+  { id: 2, label: "OCEAN WATER", color: "#0078f8", desc: "Deep / ocean water" },
+  { id: 3, label: "DESERT SAND", color: "#f8b800", desc: "Arid desert dunes" },
+  { id: 4, label: "FOOTHILLS", color: "#888888", desc: "Stone & mineral hills" },
+  { id: 5, label: "VOID / ABYSS", color: "#222222", desc: "Impassable bedrock" }
+];
+
+const EDITOR_CREATURES = [
+  { label: "KNIGHT", fn: (x, y) => createKnight(x, y) },
+  { label: "ARCHER", fn: (x, y) => createArcher(x, y) },
+  { label: "FARMER", fn: (x, y) => createHumanFarmer(x, y) },
+  { label: "MINER", fn: (x, y) => createHumanMiner(x, y) },
+  { label: "BUILDER", fn: (x, y) => createHumanBuilder(x, y) },
+  { label: "MATRIARCH", fn: (x, y) => createHumanMatriarch(x, y) },
+  { label: "ARTISAN", fn: (x, y) => createHumanCrafter(x, y) },
+  { label: "HUNTER", fn: (x, y) => createHumanHunter(x, y) },
+  { label: "EXPLORER", fn: (x, y) => createHumanExplorer(x, y) },
+  { label: "WOLF", fn: (x, y) => createWolf(x, y) },
+  { label: "BEAR", fn: (x, y) => createBear(x, y) },
+  { label: "CAT", fn: (x, y) => createCat(x, y) },
+  { label: "GOAT", fn: (x, y) => createMountainGoat(x, y) },
+  { label: "BAT", fn: (x, y) => createBat(x, y) },
+  { label: "GOBLIN", fn: (x, y) => createGoblin(x, y) },
+  { label: "SCORPION", fn: (x, y) => createScorpion(x, y) },
+  { label: "LIZARD", fn: (x, y) => createLizard(x, y) },
+  { label: "DRAGON", fn: (x, y) => createDragon(x, y) },
+  { label: "SERPENT", fn: (x, y) => createSeaSerpent(x, y) }
+];
+
+const EDITOR_ITEMS = [
+  { label: "OAK TREE", fn: (x, y) => createOakTree(x, y) },
+  { label: "PINE TREE", fn: (x, y) => createPineTree(x, y) },
+  { label: "WILLOW", fn: (x, y) => createWillowTree(x, y) },
+  { label: "CACTUS", fn: (x, y) => createCactus(x, y) },
+  { label: "SHRUB", fn: (x, y) => createAlpineShrub(x, y) },
+  { label: "WATER LILY", fn: (x, y) => createWaterLily(x, y) },
+  { label: "SEAWEED", fn: (x, y) => createSeaweed(x, y) },
+  { label: "WOOD ITEM", fn: (x, y) => createWoodItem(x, y) },
+  { label: "STONE ITEM", fn: (x, y) => createStoneItem(x, y) },
+  { label: "STONE WALL", fn: (x, y) => createStoneWallEntity(x, y) },
+  { label: "OAK SEED", fn: (x, y) => createSeedEntity(x, y, "large", "oak") },
+  { label: "FRUIT", fn: (x, y) => createFruit(x, y, "large", "oak") }
+];
+
+function applyTileBrush(cx, cy, tileType, brushSize) {
+  if (!world) return;
+  const half = Math.floor(brushSize / 2);
+  for (let dy = -half; dy <= half; dy++) {
+    for (let dx = -half; dx <= half; dx++) {
+      const tx = cx + dx;
+      const ty = cy + dy;
+      if (tx >= 0 && tx < (world.width || 512) && ty >= 0 && ty < (world.height || 512)) {
+        world.setTile(tx, ty, tileType);
+      }
+    }
+  }
+}
+
+function applyEditorActionAt(tileX, tileY) {
+  if (!world || tileX < 0 || tileX >= (world.width || 512) || tileY < 0 || tileY >= (world.height || 512)) return;
+
+  if (editorTool === "PAINT") {
+    applyTileBrush(tileX, tileY, editorSelectedTile, editorBrushSize);
+  } else if (editorTool === "SPAWN" && editorActiveSpawner) {
+    const ent = editorActiveSpawner.fn(tileX, tileY);
+    entities.push(ent);
+  } else if (editorTool === "BULLDOZER") {
+    const targets = entities.filter(e => !e.destroyed && e.x === tileX && e.y === tileY);
+    for (const t of targets) {
+      destroyEntity(t, entities);
+    }
+  } else if (editorTool === "EYEDROPPER") {
+    const sampled = world.getTile(tileX, tileY);
+    editorSelectedTile = sampled;
+    editorTool = "PAINT";
+  }
+}
 
 function toggleFollowMode() {
   isFollowMode = !isFollowMode;
@@ -911,6 +1001,10 @@ function togglePause() {
 // Mouse & Keyboard Input Dispatcher
 // ---------------------------------------------------------------------------
 
+canvas.addEventListener("contextmenu", (e) => {
+  e.preventDefault();
+});
+
 canvas.addEventListener("mousedown", (e) => {
   if (e.button !== 0 && e.button !== 1 && e.button !== 2) return;
   const coords = getCanvasCoords(e.clientX, e.clientY);
@@ -928,15 +1022,29 @@ canvas.addEventListener("mousedown", (e) => {
     dragCameraStartY = shader.exports.wasm_get_camera_y();
   }
 
-  // Handle clickable UI regions first
+  // Handle clickable UI regions first on left-click
   if (e.button === 0) {
     for (let i = activeUiRegions.length - 1; i >= 0; i--) {
       const reg = activeUiRegions[i];
       if (coords.x >= reg.x && coords.x <= reg.x + reg.w && coords.y >= reg.y && coords.y <= reg.y + reg.h) {
         reg.onClick();
-        isMouseDown = false; // Consume click: do not initiate world drag or map selection
+        isMouseDown = false;
         return;
       }
+    }
+
+    // If Editor is active and clicked on map canvas (not over UI bars or corner menu)
+    if (isEditorOpen && editorTool && shader && currentMode === "MAP" && coords.inside && coords.y > 32 && coords.y < CANVAS_HEIGHT - 36) {
+      const zoom = shader.exports.wasm_get_camera_zoom();
+      const tileSize = 16.0 * zoom;
+      const cx = shader.exports.wasm_get_camera_x();
+      const cy = shader.exports.wasm_get_camera_y();
+      const tileX = Math.floor(cx + (coords.x - CANVAS_WIDTH / 2) / tileSize);
+      const tileY = Math.floor(cy + (coords.y - CANVAS_HEIGHT / 2) / tileSize);
+
+      isPainting = true;
+      applyEditorActionAt(tileX, tileY);
+      return;
     }
   }
 });
@@ -955,11 +1063,25 @@ window.addEventListener("mousemove", (e) => {
     }
   }
   if (!isOverUi) {
-    canvas.style.cursor = currentMode === "MAP" ? "crosshair" : "default";
+    canvas.style.cursor = (currentMode === "MAP" && isEditorOpen && editorTool) ? "crosshair" : "default";
   }
 
-  // Camera Drag
-  if (isMouseDown && shader && currentMode === "MAP") {
+  // Active Real-Time Painting Drag
+  if (isEditorOpen && isPainting && isMouseDown && shader && currentMode === "MAP" && (editorTool === "PAINT" || editorTool === "BULLDOZER")) {
+    if (coords.inside && coords.y > 32 && coords.y < CANVAS_HEIGHT - 36) {
+      const zoom = shader.exports.wasm_get_camera_zoom();
+      const tileSize = 16.0 * zoom;
+      const cx = shader.exports.wasm_get_camera_x();
+      const cy = shader.exports.wasm_get_camera_y();
+      const tileX = Math.floor(cx + (coords.x - CANVAS_WIDTH / 2) / tileSize);
+      const tileY = Math.floor(cy + (coords.y - CANVAS_HEIGHT / 2) / tileSize);
+      applyEditorActionAt(tileX, tileY);
+      return;
+    }
+  }
+
+  // Camera Drag (Right Click or Left Click Drag when not painting)
+  if (isMouseDown && shader && !isPainting && currentMode === "MAP") {
     const totalDist = Math.hypot(e.clientX - dragStartClientX, e.clientY - dragStartClientY);
     if (totalDist > 4) {
       isDragging = true;
@@ -980,7 +1102,7 @@ window.addEventListener("mousemove", (e) => {
 window.addEventListener("mouseup", (e) => {
   if (isMouseDown && shader && currentMode === "MAP") {
     const totalDist = Math.hypot(e.clientX - dragStartClientX, e.clientY - dragStartClientY);
-    if (!isDragging && totalDist <= 5) {
+    if (!isDragging && !isPainting && totalDist <= 5) {
       const coords = getCanvasCoords(e.clientX, e.clientY);
 
       // Check if mouseup landed on any active UI region before selecting on map
@@ -1001,6 +1123,7 @@ window.addEventListener("mouseup", (e) => {
   }
   isMouseDown = false;
   isDragging = false;
+  isPainting = false;
   mouseButtons = 0;
 });
 
@@ -1066,12 +1189,27 @@ window.addEventListener("keydown", (e) => {
     modalScroll = 0;
     inspectingLogEvent = null;
   } else if (e.code === "KeyS") {
-    currentMode = currentMode === "SPAWNER" ? "MAP" : "SPAWNER";
-    modalScroll = 0;
+    isEditorOpen = !isEditorOpen;
+    if (isEditorOpen) {
+      if (!editorTool) editorTool = "PAINT";
+    } else {
+      editorTool = null;
+      editorActiveSpawner = null;
+      isPainting = false;
+    }
   } else if (e.code === "Escape") {
-    if (inspectingLogEvent) inspectingLogEvent = null;
-    else if (inspectingGroup) inspectingGroup = null;
-    else currentMode = "MAP";
+    if (isEditorOpen) {
+      isEditorOpen = false;
+      editorTool = null;
+      editorActiveSpawner = null;
+      isPainting = false;
+    } else if (inspectingLogEvent) {
+      inspectingLogEvent = null;
+    } else if (inspectingGroup) {
+      inspectingGroup = null;
+    } else {
+      currentMode = "MAP";
+    }
   } else if (e.code === "Equal" || e.code === "NumpadAdd" || e.code === "BracketRight") {
     const idx = SPEED_TIERS.indexOf(simSpeed);
     if (idx !== -1 && idx < SPEED_TIERS.length - 1) simSpeed = SPEED_TIERS[idx + 1];
@@ -1105,10 +1243,10 @@ function handleCameraKeys(dt) {
 
   const speed = (240.0 / zoom) * dt;
 
-  if (keysDown.has("KeyW") || keysDown.has("ArrowUp")) cy -= speed;
-  if (keysDown.has("KeyS") || keysDown.has("ArrowDown")) cy += speed;
-  if (keysDown.has("KeyA") || keysDown.has("ArrowLeft")) cx -= speed;
-  if (keysDown.has("KeyD") || keysDown.has("ArrowRight")) cx -= speed;
+  if (keysDown.has("ArrowUp")) cy -= speed;
+  if (keysDown.has("ArrowDown")) cy += speed;
+  if (keysDown.has("ArrowLeft")) cx -= speed;
+  if (keysDown.has("ArrowRight")) cx += speed;
 
   shader.exports.wasm_set_camera(cx, cy, zoom);
 }
@@ -1250,14 +1388,27 @@ function renderBottomToolbar() {
     { label: "ENTITIES", mode: "ENTITIES" },
     { label: "GROUPS", mode: "GROUPS" },
     { label: "LOGS", mode: "LOGS" },
-    { label: "SPAWN", mode: "SPAWNER" },
+    {
+      label: "EDITOR",
+      isEditorBtn: true,
+      action: () => {
+        isEditorOpen = !isEditorOpen;
+        if (isEditorOpen) {
+          if (!editorTool) editorTool = "PAINT";
+        } else {
+          editorTool = null;
+          editorActiveSpawner = null;
+          isPainting = false;
+        }
+      }
+    },
     { label: "NEXT", action: cycleNextLivingEntity },
     { label: "CENTER", action: centerCamera }
   ];
 
   let btnX = 8;
   for (const b of buttons) {
-    const isAct = currentMode === b.mode;
+    const isAct = b.isEditorBtn ? isEditorOpen : currentMode === b.mode;
     const bw = b.label.length * 8 + 18;
     drawNESButton(btnX, CANVAS_HEIGHT - 30, bw, 24, b.label, isAct, false);
 
@@ -2479,70 +2630,316 @@ function renderLogDetailView(mx, my, mw, mh, ev) {
 }
 
 // ---------------------------------------------------------------------------
-// 6. In-Engine Modal 5: Spawner Tool Screen ([S])
+// 6. In-Engine Modal 5: Real-Time Map & World Editor ([S])
 // ---------------------------------------------------------------------------
 
-function renderSpawnerModal() {
-  const mx = 50;
-  const my = 40;
-  const mw = CANVAS_WIDTH - 100;
-  const mh = CANVAS_HEIGHT - 86;
+// ---------------------------------------------------------------------------
+// 6. Real-Time Floating Corner Map & World Editor Bar ([S])
+// ---------------------------------------------------------------------------
+
+function renderCompactEditorPanel() {
+  if (!isEditorOpen || currentMode !== "MAP") return;
+
+  const pw = 216;
+  const ph = 380;
+  const px = CANVAS_WIDTH - pw - 10;
+  const py = 36;
 
   ctx.save();
-  ctx.fillStyle = "rgba(0, 0, 0, 0.9)";
-  ctx.fillRect(0, 32, CANVAS_WIDTH, CANVAS_HEIGHT - 68);
+  ctx.fillStyle = "rgba(10, 10, 18, 0.94)";
+  ctx.fillRect(px, py, pw, ph);
 
-  drawNESBox(mx, my, mw, mh);
+  ctx.strokeStyle = "#f8b800";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(px + 1, py + 1, pw - 2, ph - 2);
 
-  drawNESButton(mx + mw - 32, my + 6, 26, 24, "X", false, true);
-  registerClickableRegion(mx + mw - 32, my + 6, 26, 24, () => { currentMode = "MAP"; });
+  // Header Title & Close Button
+  drawText8x8("MAP EDITOR", px + 8, py + 10, "#f8b800", 1);
+  drawNESButton(px + pw - 20, py + 5, 15, 15, "X", false, true);
+  registerClickableRegion(px + pw - 20, py + 5, 15, 15, () => {
+    isEditorOpen = false;
+    editorTool = null;
+    editorActiveSpawner = null;
+    isPainting = false;
+  });
 
-  drawText8x8("SPAWNER TOOL", mx + 16, my + 14, "#f8b800", 1);
-
-  const spawners = [
-    { label: "KNIGHT", fn: createKnight },
-    { label: "ARCHER", fn: createArcher },
-    { label: "FARMER", fn: createHumanFarmer },
-    { label: "WOLF", fn: createWolf },
-    { label: "BEAR", fn: createBear },
-    { label: "CAT", fn: createCat },
-    { label: "GOBLIN", fn: createGoblin },
-    { label: "BAT", fn: createBat },
-    { label: "SERPENT", fn: createSeaSerpent },
-    { label: "DRAGON", fn: createDragon },
-    { label: "CACTUS", fn: createCactus },
-    { label: "SCORPION", fn: createScorpion },
-    { label: "LIZARD", fn: createLizard },
-    { label: "GOAT", fn: createMountainGoat },
-    { label: "SHRUB", fn: createAlpineShrub },
-    { label: "WOOD", fn: createWoodItem },
-    { label: "STONE", fn: createStoneItem },
-    { label: "WALL", fn: (x, y) => createStoneWallEntity(x, y) },
-    { label: "SEED", fn: (x,y) => createSeedEntity(x,y,"large","oak") },
-    { label: "FRUIT", fn: (x,y) => createFruit(x,y,"large","oak") }
+  // Mini Category Tabs: [TILE] [MOB] [ITEM] [TOOL]
+  const tabs = [
+    { id: "TILES", label: "TILE", w: 46 },
+    { id: "CREATURES", label: "MOB", w: 44 },
+    { id: "ITEMS", label: "ITEM", w: 46 },
+    { id: "TOOLS", label: "TOOL", w: 46 }
   ];
 
-  const cols = 2;
-  const colW = (mw - 36) / cols;
-  const itemH = 26;
+  let tabX = px + 8;
+  for (const t of tabs) {
+    const isAct = editorTab === t.id;
+    drawNESButton(tabX, py + 26, t.w, 20, t.label, isAct, false);
+    const tabId = t.id;
+    registerClickableRegion(tabX, py + 26, t.w, 20, () => {
+      editorTab = tabId;
+      editorPage = 0;
+    });
+    tabX += t.w + 4;
+  }
 
-  for (let i = 0; i < spawners.length; i++) {
-    const s = spawners[i];
-    const col = i % cols;
-    const row = Math.floor(i / cols);
-    const sx = mx + 18 + col * colW;
-    const sy = my + 44 + row * (itemH + 6);
+  const contentY = py + 52;
 
-    drawNESButton(sx, sy, colW - 10, itemH, `+ ${s.label}`, false, false);
+  // TAB 1: TILES
+  if (editorTab === "TILES") {
+    drawText8x8("TERRAIN TILES:", px + 8, contentY, "#3cbcfc", 1);
 
-    const spawnFn = s.fn;
-    registerClickableRegion(sx, sy, colW - 10, itemH, () => {
-      spawnEntityAtCamera(spawnFn);
-      currentMode = "MAP";
+    const cols = 2;
+    const colW = Math.floor((pw - 20) / cols);
+    const itemH = 24;
+
+    for (let i = 0; i < EDITOR_TILES.length; i++) {
+      const tile = EDITOR_TILES[i];
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      const bx = px + 8 + col * (colW + 4);
+      const by = contentY + 12 + row * (itemH + 4);
+      const isSel = editorTool === "PAINT" && editorSelectedTile === tile.id;
+
+      drawNESButton(bx, by, colW, itemH, ` ${tile.label.slice(0, 7)}`, isSel, false);
+
+      // Mini Color Swatch
+      ctx.fillStyle = tile.color;
+      ctx.fillRect(bx + 4, by + 6, 10, 10);
+      ctx.strokeStyle = "#ffffff";
+      ctx.strokeRect(bx + 4, by + 6, 10, 10);
+
+      const tileId = tile.id;
+      registerClickableRegion(bx, by, colW, itemH, () => {
+        editorSelectedTile = tileId;
+        editorTool = "PAINT";
+        editorActiveSpawner = null;
+      });
+    }
+
+    // Brush Sizes
+    const brushY = contentY + 104;
+    drawText8x8("BRUSH RADIUS:", px + 8, brushY, "#f8b800", 1);
+    const sizes = [1, 3, 5, 9];
+    let bsizeX = px + 8;
+    const bsizeW = Math.floor((pw - 20 - 12) / 4);
+    for (const sz of sizes) {
+      const isAct = editorBrushSize === sz;
+      drawNESButton(bsizeX, brushY + 12, bsizeW, 20, `${sz}x${sz}`, isAct, false);
+      const sizeVal = sz;
+      registerClickableRegion(bsizeX, brushY + 12, bsizeW, 20, () => {
+        editorBrushSize = sizeVal;
+        editorTool = "PAINT";
+      });
+      bsizeX += bsizeW + 4;
+    }
+
+    // Fill Viewport Button
+    drawNESButton(px + 8, brushY + 38, pw - 16, 22, "FILL VIEWPORT AREA", false, false);
+    registerClickableRegion(px + 8, brushY + 38, pw - 16, 22, () => {
+      if (shader && world) {
+        const cx = Math.floor(shader.exports.wasm_get_camera_x());
+        const cy = Math.floor(shader.exports.wasm_get_camera_y());
+        applyTileBrush(cx, cy, editorSelectedTile, 30);
+      }
     });
   }
 
+  // TAB 2: CREATURES (Paginated: 8 per page)
+  else if (editorTab === "CREATURES") {
+    const itemsPerPage = 8;
+    const maxPages = Math.ceil(EDITOR_CREATURES.length / itemsPerPage);
+    drawText8x8(`SPAWN MOB (P.${editorPage + 1}/${maxPages}):`, px + 8, contentY, "#3cbcfc", 1);
+
+    const cols = 2;
+    const colW = Math.floor((pw - 20) / cols);
+    const itemH = 24;
+
+    const startIdx = editorPage * itemsPerPage;
+    const pageItems = EDITOR_CREATURES.slice(startIdx, startIdx + itemsPerPage);
+
+    for (let i = 0; i < pageItems.length; i++) {
+      const c = pageItems[i];
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      const bx = px + 8 + col * (colW + 4);
+      const by = contentY + 12 + row * (itemH + 4);
+      const isSel = editorTool === "SPAWN" && editorActiveSpawner?.label === c.label;
+
+      drawNESButton(bx, by, colW, itemH, `+${c.label.slice(0, 8)}`, isSel, false);
+
+      const spawnerObj = c;
+      registerClickableRegion(bx, by, colW, itemH, () => {
+        editorActiveSpawner = spawnerObj;
+        editorTool = "SPAWN";
+      });
+    }
+
+    // Pagination buttons
+    const pageY = contentY + 128;
+    drawNESButton(px + 8, pageY, 90, 20, "◀ PREV", false, false);
+    registerClickableRegion(px + 8, pageY, 90, 20, () => {
+      editorPage = (editorPage - 1 + maxPages) % maxPages;
+    });
+
+    drawNESButton(px + pw - 98, pageY, 90, 20, "NEXT ▶", false, false);
+    registerClickableRegion(px + pw - 98, pageY, 90, 20, () => {
+      editorPage = (editorPage + 1) % maxPages;
+    });
+  }
+
+  // TAB 3: NATURE & ITEMS (Paginated)
+  else if (editorTab === "ITEMS") {
+    const itemsPerPage = 8;
+    const maxPages = Math.ceil(EDITOR_ITEMS.length / itemsPerPage);
+    drawText8x8(`ITEMS/NATURE (P.${editorPage + 1}/${maxPages}):`, px + 8, contentY, "#3cbcfc", 1);
+
+    const cols = 2;
+    const colW = Math.floor((pw - 20) / cols);
+    const itemH = 24;
+
+    const startIdx = editorPage * itemsPerPage;
+    const pageItems = EDITOR_ITEMS.slice(startIdx, startIdx + itemsPerPage);
+
+    for (let i = 0; i < pageItems.length; i++) {
+      const it = pageItems[i];
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      const bx = px + 8 + col * (colW + 4);
+      const by = contentY + 12 + row * (itemH + 4);
+      const isSel = editorTool === "SPAWN" && editorActiveSpawner?.label === it.label;
+
+      drawNESButton(bx, by, colW, itemH, `+${it.label.slice(0, 8)}`, isSel, false);
+
+      const spawnerObj = it;
+      registerClickableRegion(bx, by, colW, itemH, () => {
+        editorActiveSpawner = spawnerObj;
+        editorTool = "SPAWN";
+      });
+    }
+
+    // Pagination buttons
+    const pageY = contentY + 128;
+    drawNESButton(px + 8, pageY, 90, 20, "◀ PREV", false, false);
+    registerClickableRegion(px + 8, pageY, 90, 20, () => {
+      editorPage = (editorPage - 1 + maxPages) % maxPages;
+    });
+
+    drawNESButton(px + pw - 98, pageY, 90, 20, "NEXT ▶", false, false);
+    registerClickableRegion(px + pw - 98, pageY, 90, 20, () => {
+      editorPage = (editorPage + 1) % maxPages;
+    });
+  }
+
+  // TAB 4: TOOLS
+  else if (editorTab === "TOOLS") {
+    drawText8x8("MAP TOOLS:", px + 8, contentY, "#3cbcfc", 1);
+
+    const tools = [
+      { id: "PAINT", label: "TERRAIN BRUSH" },
+      { id: "EYEDROPPER", label: "EYEDROPPER" },
+      { id: "BULLDOZER", label: "BULLDOZER (DEL)" }
+    ];
+
+    let toolY = contentY + 12;
+    for (const t of tools) {
+      const isAct = editorTool === t.id;
+      drawNESButton(px + 8, toolY, pw - 16, 26, t.label, isAct, t.id === "BULLDOZER");
+
+      const toolId = t.id;
+      registerClickableRegion(px + 8, toolY, pw - 16, 26, () => {
+        editorTool = toolId;
+        if (toolId !== "SPAWN") editorActiveSpawner = null;
+      });
+
+      toolY += 32;
+    }
+  }
+
+  // Bottom Quick Status & Instructions
+  const footerY = py + ph - 54;
+  ctx.fillStyle = "#181824";
+  ctx.fillRect(px + 8, footerY, pw - 16, 44);
+  ctx.strokeStyle = "#444458";
+  ctx.strokeRect(px + 8, footerY, pw - 16, 44);
+
+  let activeStr = "NONE";
+  if (editorTool === "PAINT") activeStr = `TILE: ${EDITOR_TILES[editorSelectedTile]?.label.slice(0, 8)}`;
+  else if (editorTool === "SPAWN") activeStr = `MOB: ${editorActiveSpawner?.label.slice(0, 9)}`;
+  else if (editorTool === "BULLDOZER") activeStr = "BULLDOZER";
+  else if (editorTool === "EYEDROPPER") activeStr = "EYEDROPPER";
+
+  drawText8x8(`ACTIVE: ${activeStr}`, px + 12, footerY + 6, "#f8b800", 1);
+  drawText8x8("L-CLICK MAP: APPLY", px + 12, footerY + 20, "#58d854", 1);
+  drawText8x8("R-CLICK: PAN | ESC: EXIT", px + 12, footerY + 32, "#bcbcbc", 1);
+
   ctx.restore();
+}
+
+function renderMapEditorOverlay() {
+  if (!shader || !world || !isEditorOpen || !editorTool || currentMode !== "MAP") return;
+
+  const zoom = shader.exports.wasm_get_camera_zoom();
+  const tileSize = 16.0 * zoom;
+  const cx = shader.exports.wasm_get_camera_x();
+  const cy = shader.exports.wasm_get_camera_y();
+  const hoverTileX = Math.floor(cx + (mouseX - CANVAS_WIDTH / 2) / tileSize);
+  const hoverTileY = Math.floor(cy + (mouseY - CANVAS_HEIGHT / 2) / tileSize);
+
+  const panelX = CANVAS_WIDTH - 226;
+  const isOverPanel = mouseX >= panelX && mouseY >= 36 && mouseY <= 420;
+
+  // If hovering over active map area and not over the docked corner panel
+  if (!isOverPanel && mouseY > 32 && mouseY < CANVAS_HEIGHT - 36 && mouseX >= 0 && mouseX <= CANVAS_WIDTH) {
+    const centerScreenX = CANVAS_WIDTH / 2;
+    const centerScreenY = CANVAS_HEIGHT / 2;
+
+    if (editorTool === "PAINT") {
+      const half = Math.floor(editorBrushSize / 2);
+      const startX = centerScreenX + (hoverTileX - half - cx) * tileSize;
+      const startY = centerScreenY + (hoverTileY - half - cy) * tileSize;
+      const boxSize = editorBrushSize * tileSize;
+
+      ctx.save();
+      ctx.strokeStyle = EDITOR_TILES[editorSelectedTile]?.color || "#f8b800";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(startX, startY, boxSize, boxSize);
+
+      ctx.fillStyle = (EDITOR_TILES[editorSelectedTile]?.color || "#f8b800") + "44";
+      ctx.fillRect(startX, startY, boxSize, boxSize);
+      ctx.restore();
+    } else if (editorTool === "SPAWN" && editorActiveSpawner) {
+      const startX = centerScreenX + (hoverTileX - cx) * tileSize;
+      const startY = centerScreenY + (hoverTileY - cy) * tileSize;
+
+      ctx.save();
+      ctx.strokeStyle = "#58d854";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(startX, startY, tileSize, tileSize);
+      drawText8x8(`SPAWN: ${editorActiveSpawner.label}`, Math.min(CANVAS_WIDTH - 230, mouseX + 12), Math.max(48, mouseY - 14), "#58d854", 1);
+      ctx.restore();
+    } else if (editorTool === "BULLDOZER") {
+      const startX = centerScreenX + (hoverTileX - cx) * tileSize;
+      const startY = centerScreenY + (hoverTileY - cy) * tileSize;
+
+      ctx.save();
+      ctx.strokeStyle = "#e40058";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(startX, startY, tileSize, tileSize);
+      drawText8x8("ERASE / BULLDOZE", Math.min(CANVAS_WIDTH - 230, mouseX + 12), Math.max(48, mouseY - 14), "#e40058", 1);
+      ctx.restore();
+    } else if (editorTool === "EYEDROPPER") {
+      const startX = centerScreenX + (hoverTileX - cx) * tileSize;
+      const startY = centerScreenY + (hoverTileY - cy) * tileSize;
+
+      ctx.save();
+      ctx.strokeStyle = "#3cbcfc";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(startX, startY, tileSize, tileSize);
+      drawText8x8("SAMPLE TILE", Math.min(CANVAS_WIDTH - 230, mouseX + 12), Math.max(48, mouseY - 14), "#3cbcfc", 1);
+      ctx.restore();
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -2877,6 +3274,8 @@ function frame(time) {
     renderHoverTooltip();
     renderCreatureSummaryBox();
     renderCreatureEventLogPanel();
+    renderMapEditorOverlay();
+    renderCompactEditorPanel();
 
     if (inspectingLogEvent) {
       const mx = 30;
@@ -2888,7 +3287,6 @@ function frame(time) {
     else if (currentMode === "ENTITIES") renderEntitiesModal();
     else if (currentMode === "GROUPS") renderGroupsModal();
     else if (currentMode === "LOGS") renderLogsModal();
-    else if (currentMode === "SPAWNER") renderSpawnerModal();
   }
 
   requestAnimationFrame(frame);

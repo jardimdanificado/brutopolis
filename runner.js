@@ -1642,14 +1642,14 @@ function handleTerminalInput(key) {
     return;
   }
 
-  // Roguelike Cursor Movement
+  // Roguelike Cursor Movement (Arrow Keys and Numpad)
   let dx = 0;
   let dy = 0;
 
-  if (key === "\x1b[A" || key === "w" || key === "W" || key === "k" || key === "8") dy = -1;
-  else if (key === "\x1b[B" || key === "s" || key === "S" || key === "j" || key === "2") dy = 1;
-  else if (key === "\x1b[D" || key === "a" || key === "A" || key === "h" || key === "4") dx = -1;
-  else if (key === "\x1b[C" || key === "d" || key === "D" || key === "l" || key === "6") dx = 1;
+  if (key === "\x1b[A" || key === "k" || key === "8") dy = -1;
+  else if (key === "\x1b[B" || key === "j" || key === "2") dy = 1;
+  else if (key === "\x1b[D" || key === "h" || key === "4") dx = -1;
+  else if (key === "\x1b[C" || key === "l" || key === "6") dx = 1;
   else if (key === "y" || key === "7") { dx = -1; dy = -1; }
   else if (key === "u" || key === "9") { dx = 1; dy = -1; }
   else if (key === "b" || key === "1") { dx = -1; dy = 1; }
@@ -1659,6 +1659,16 @@ function handleTerminalInput(key) {
     cursorX += dx;
     cursorY += dy;
     keepCursorInCamera();
+    return;
+  }
+
+  // Tile Editor Cycle at Cursor ('t' or 'T')
+  if (key === "t" || key === "T") {
+    if (world) {
+      const curTile = world.getTile(cursorX, cursorY);
+      const nextTile = (curTile + 1) % 6;
+      world.setTile(cursorX, cursorY, nextTile);
+    }
     return;
   }
 
@@ -1686,7 +1696,7 @@ function handleTerminalInput(key) {
     return;
   }
 
-  // Creature Spawners
+  // Creature & Item Spawners (Map Editor)
   if (key === "1") spawnEntityAtCursor(createKnight);
   if (key === "2") spawnEntityAtCursor(createArcher);
   if (key === "3") spawnEntityAtCursor(createWolf);
@@ -1704,6 +1714,7 @@ function handleTerminalInput(key) {
   if (key === "%") spawnEntityAtCursor(createFruit);
   if (key === "^") spawnEntityAtCursor(createWoodItem);
   if (key === "&") spawnEntityAtCursor(createStoneItem);
+  if (key === "*") spawnEntityAtCursor(createStoneWallEntity);
 }
 
 // ---------------------------------------------------------------------------
