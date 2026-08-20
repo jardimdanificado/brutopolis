@@ -3685,6 +3685,8 @@ export function createLocomotionProp() {
           chosenDx = Math.sign(landTarget.x - ent.x);
           chosenDy = Math.sign(landTarget.y - ent.y);
           hasIntention = true;
+          ent._navGoal = null;
+          ent._taskGoal = null;
         }
       }
 
@@ -3715,6 +3717,8 @@ export function createLocomotionProp() {
           chosenDy = -Math.sign(nearestHostile.y - ent.y);
           hasIntention = true;
           isFleeingHostile = true;
+          ent._navGoal = null;
+          ent._taskGoal = null;
         }
       }
 
@@ -3766,18 +3770,18 @@ export function createLocomotionProp() {
       }
 
       // -----------------------------------------------------------------------
-      // Priority 3.5: Targeted Memory Navigation / Goal Heading
+      // Priority 3.5: Active Navigation Intent Goal (Explicit Actionable Target)
       // -----------------------------------------------------------------------
-      if (!hasIntention && ent.properties.brain?.shortTermMemory) {
-        const mem = ent.properties.brain.shortTermMemory.find(m => m && (m.targetLocation || m.location));
-        if (mem) {
-          const loc = mem.targetLocation || mem.location;
-          const dist = Math.abs(loc.x - ent.x) + Math.abs(loc.y - ent.y);
-          if (dist > 1) {
-            chosenDx = Math.sign(loc.x - ent.x);
-            chosenDy = Math.sign(loc.y - ent.y);
-            hasIntention = true;
-          }
+      if (!hasIntention && ent._navGoal) {
+        const goal = ent._navGoal;
+        goal.ttl = (goal.ttl || 30) - 1;
+        const gdist = Math.abs(goal.x - ent.x) + Math.abs(goal.y - ent.y);
+        if (goal.ttl <= 0 || gdist <= 1) {
+          ent._navGoal = null;
+        } else {
+          chosenDx = Math.sign(goal.x - ent.x);
+          chosenDy = Math.sign(goal.y - ent.y);
+          hasIntention = true;
         }
       }
 
@@ -3790,20 +3794,28 @@ export function createLocomotionProp() {
           if (world.getTile(ent.x + off.dx, ent.y + off.dy) === 2) {
             adjacentWater = true;
             if (ent.properties.bladder) ent.properties.bladder.water = ent.properties.bladder.maxWater;
+            ent._waterGoal = null;
             break;
           }
         }
 
         if (!adjacentWater) {
-          const shoreTarget = isTerrestrial && !isAquatic
-            ? findNearestShoreTile(world, ent.x, ent.y, 40)
-            : findNearestWaterTile(world, ent.x, ent.y, 40);
-          if (shoreTarget) {
-            chosenDx = Math.sign(shoreTarget.x - ent.x);
-            chosenDy = Math.sign(shoreTarget.y - ent.y);
+          if (!ent._waterGoal || Math.abs(ent._waterGoal.x - ent.x) + Math.abs(ent._waterGoal.y - ent.y) > 40) {
+            const shoreTarget = isTerrestrial && !isAquatic
+              ? findNearestShoreTile(world, ent.x, ent.y, 40)
+              : findNearestWaterTile(world, ent.x, ent.y, 40);
+            if (shoreTarget) {
+              ent._waterGoal = { x: shoreTarget.x, y: shoreTarget.y };
+            }
+          }
+          if (ent._waterGoal) {
+            chosenDx = Math.sign(ent._waterGoal.x - ent.x);
+            chosenDy = Math.sign(ent._waterGoal.y - ent.y);
             hasIntention = true;
           }
         }
+      } else if (waterRatio > 0.40) {
+        ent._waterGoal = null;
       }
 
       // -----------------------------------------------------------------------
@@ -3821,51 +3833,67 @@ export function createLocomotionProp() {
           chosenDy = Math.sign(homeBaseY - ent.y);
           hasIntention = true;
         } else {
-          let bestFood = null;
-          let highestFoodScore = -Infinity;
-
-          for (const item of entities) {
-            if (!item.destroyed && item.properties.edible) {
-              const dist = Math.abs(item.x - ent.x) + Math.abs(item.y - ent.y);
-              if (dist <= 35) {
-                let score = 100 - dist * 3;
-                const ed = item.properties.edible;
-
-                if (ed.foodType === "feces" && !ent.properties.scatological) {
-                  if (energyRatio > 0.15) {
-                    score = -9999;
-                  } else {
-                    score -= 300;
-                  }
-                }
-
-                const prefs = ent.properties.brain?.preferences;
-                if (prefs) {
-                  if (prefs.likes.some(l => (l.type === "part" && ed.partKey?.includes(l.value)) || (l.type === "species" && ed.sourceSpecies === l.value))) {
-                    score += 40;
-                  }
-                  if (prefs.dislikes.some(d => (d.type === "part" && ed.partKey?.includes(d.value)) || (d.type === "species" && ed.sourceSpecies === d.value))) {
-                    score -= 30;
-                  }
-                }
-
-                if (score > highestFoodScore) {
-                  highestFoodScore = score;
-                  bestFood = item;
-                }
-              }
+          // Check if current locked food target is still valid
+          let foodTarget = null;
+          if (ent._foodGoalTargetId) {
+            const locked = entities.find(e => e.id === ent._foodGoalTargetId && !e.destroyed && e.properties.edible);
+            if (locked && (Math.abs(locked.x - ent.x) + Math.abs(locked.y - ent.y)) <= 40) {
+              foodTarget = locked;
+            } else {
+              ent._foodGoalTargetId = null;
             }
           }
 
-          if (bestFood) {
-            chosenDx = Math.sign(bestFood.x - ent.x);
-            chosenDy = Math.sign(bestFood.y - ent.y);
+          if (!foodTarget) {
+            let highestFoodScore = -Infinity;
+            for (const item of entities) {
+              if (!item.destroyed && item.properties.edible) {
+                const dist = Math.abs(item.x - ent.x) + Math.abs(item.y - ent.y);
+                if (dist <= 35) {
+                  let score = 100 - dist * 3;
+                  const ed = item.properties.edible;
+
+                  if (ed.foodType === "feces" && !ent.properties.scatological) {
+                    if (energyRatio > 0.15) {
+                      score = -9999;
+                    } else {
+                      score -= 300;
+                    }
+                  }
+
+                  const prefs = ent.properties.brain?.preferences;
+                  if (prefs) {
+                    if (prefs.likes.some(l => (l.type === "part" && ed.partKey?.includes(l.value)) || (l.type === "species" && ed.sourceSpecies === l.value))) {
+                      score += 40;
+                    }
+                    if (prefs.dislikes.some(d => (d.type === "part" && ed.partKey?.includes(d.value)) || (d.type === "species" && ed.sourceSpecies === d.value))) {
+                      score -= 30;
+                    }
+                  }
+
+                  if (score > highestFoodScore) {
+                    highestFoodScore = score;
+                    foodTarget = item;
+                  }
+                }
+              }
+            }
+            if (foodTarget) {
+              ent._foodGoalTargetId = foodTarget.id;
+            }
+          }
+
+          if (foodTarget) {
+            chosenDx = Math.sign(foodTarget.x - ent.x);
+            chosenDy = Math.sign(foodTarget.y - ent.y);
             hasIntention = true;
-            if (world && world.getTile(bestFood.x, bestFood.y) === 2) {
+            if (world && world.getTile(foodTarget.x, foodTarget.y) === 2) {
               targetInWater = true;
             }
           }
         }
+      } else if (energyRatio > 0.40) {
+        ent._foodGoalTargetId = null;
       }
 
       // -----------------------------------------------------------------------
@@ -4047,7 +4075,7 @@ export function createLocomotionProp() {
           }
         }
 
-        // 5. If hands are free: autonomously pick tasks based on clan needs and environment
+        // 5. If hands are free: autonomously pick tasks based on clan needs and environment (Persistent Task Locking)
         else if (!hasIntention) {
           // A. If perimeter needs walls and materials are in storage/territory: go get material
           let hasUnbuiltWall = false;
@@ -4078,18 +4106,68 @@ export function createLocomotionProp() {
             chosenDy = Math.sign(homeBaseY - ent.y);
             hasIntention = true;
           } else {
-            // B. Faxina: Check for feces inside territory to clean up
-            const fecesInsideBase = entities.find(e => !e.destroyed && (e.properties.resourceType === "feces" || e.properties.edible?.foodType === "feces") && isTileInClaimedZones(e.x, e.y, group.claimedZones) && Math.abs(e.x - ent.x) <= 20 && Math.abs(e.y - ent.y) <= 20);
-            if (fecesInsideBase && energyRatio > 0.40) {
-              chosenDx = Math.sign(fecesInsideBase.x - ent.x);
-              chosenDy = Math.sign(fecesInsideBase.y - ent.y);
+            // B. Faxina: Check for closest feces inside territory to clean up with intent locking
+            let fecesTarget = null;
+            if (ent._taskGoal && ent._taskGoal.type === "clean_feces") {
+              const lockedFeces = entities.find(e => e.id === ent._taskGoal.id && !e.destroyed);
+              if (lockedFeces && isTileInClaimedZones(lockedFeces.x, lockedFeces.y, group.claimedZones)) {
+                fecesTarget = lockedFeces;
+              } else {
+                ent._taskGoal = null;
+              }
+            }
+
+            if (!fecesTarget && energyRatio > 0.40) {
+              let minFecesDist = 9999;
+              for (const e of entities) {
+                if (!e.destroyed && (e.properties.resourceType === "feces" || e.properties.edible?.foodType === "feces") && isTileInClaimedZones(e.x, e.y, group.claimedZones)) {
+                  const fdist = Math.abs(e.x - ent.x) + Math.abs(e.y - ent.y);
+                  if (fdist <= 20 && fdist < minFecesDist) {
+                    minFecesDist = fdist;
+                    fecesTarget = e;
+                  }
+                }
+              }
+              if (fecesTarget) {
+                ent._taskGoal = { type: "clean_feces", id: fecesTarget.id };
+              }
+            }
+
+            if (fecesTarget) {
+              chosenDx = Math.sign(fecesTarget.x - ent.x);
+              chosenDy = Math.sign(fecesTarget.y - ent.y);
               hasIntention = true;
             } else {
-              // C. Check loose seeds to farm
-              const nearbySeed = entities.find(e => !e.destroyed && !e.properties.photosynthesis && !e.properties.deep_root && (e.properties.germination || e.properties.resourceType === "seed" || e.properties.name?.includes("Seed") || e.properties.name?.includes("Semente")) && Math.abs(e.x - homeBaseX) <= 24 && Math.abs(e.y - homeBaseY) <= 24);
-              if (nearbySeed) {
-                chosenDx = Math.sign(nearbySeed.x - ent.x);
-                chosenDy = Math.sign(nearbySeed.y - ent.y);
+              // C. Check loose seeds to farm (find closest seed with intent locking)
+              let seedTarget = null;
+              if (ent._taskGoal && ent._taskGoal.type === "get_seed") {
+                const lockedSeed = entities.find(e => e.id === ent._taskGoal.id && !e.destroyed && !e.properties.photosynthesis && !e.properties.deep_root);
+                if (lockedSeed) {
+                  seedTarget = lockedSeed;
+                } else {
+                  ent._taskGoal = null;
+                }
+              }
+
+              if (!seedTarget) {
+                let minSeedDist = 9999;
+                for (const e of entities) {
+                  if (!e.destroyed && !e.properties.photosynthesis && !e.properties.deep_root && (e.properties.germination || e.properties.resourceType === "seed" || e.properties.name?.includes("Seed") || e.properties.name?.includes("Semente")) && Math.abs(e.x - homeBaseX) <= 24 && Math.abs(e.y - homeBaseY) <= 24) {
+                    const sdist = Math.abs(e.x - ent.x) + Math.abs(e.y - ent.y);
+                    if (sdist < minSeedDist) {
+                      minSeedDist = sdist;
+                      seedTarget = e;
+                    }
+                  }
+                }
+                if (seedTarget) {
+                  ent._taskGoal = { type: "get_seed", id: seedTarget.id };
+                }
+              }
+
+              if (seedTarget) {
+                chosenDx = Math.sign(seedTarget.x - ent.x);
+                chosenDy = Math.sign(seedTarget.y - ent.y);
                 hasIntention = true;
               } else {
                 // D. Check stone/mountain to mine if clan needs stone
@@ -4109,13 +4187,21 @@ export function createLocomotionProp() {
                   chosenDx = 0;
                   chosenDy = 0;
                   hasIntention = true;
+                  ent._taskGoal = null;
                 } else {
-                  // Seek nearest stone/mountain tiles in radius
                   let targetStone = null;
-                  let minDist = 9999;
+                  if (ent._taskGoal && ent._taskGoal.type === "mine_stone" && world) {
+                    const t = world.getTile(ent._taskGoal.x, ent._taskGoal.y);
+                    if (t === 4 || t === 1) {
+                      targetStone = { x: ent._taskGoal.x, y: ent._taskGoal.y };
+                    } else {
+                      ent._taskGoal = null;
+                    }
+                  }
 
-                  if (world) {
-                    for (let r = 1; r <= 60; r++) {
+                  if (!targetStone && world) {
+                    let minDist = 9999;
+                    for (let r = 1; r <= 30; r++) {
                       for (let dy = -r; dy <= r; dy++) {
                         for (let dx = -r; dx <= r; dx++) {
                           if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
@@ -4135,6 +4221,9 @@ export function createLocomotionProp() {
                       }
                       if (targetStone) break;
                     }
+                    if (targetStone) {
+                      ent._taskGoal = { type: "mine_stone", x: targetStone.x, y: targetStone.y };
+                    }
                   }
 
                   if (targetStone) {
@@ -4150,7 +4239,7 @@ export function createLocomotionProp() {
       }
 
       // -----------------------------------------------------------------------
-      // Priority 7: Clan Base Cohesion & Territory Tether
+      // Priority 7: Clan Base Cohesion & Territory Tether (With Hysteresis)
       // -----------------------------------------------------------------------
       if (!hasIntention && ent.properties.group && entities) {
         const group = ent.properties.group;
@@ -4161,6 +4250,7 @@ export function createLocomotionProp() {
         const homeBaseX = baseZx * 8 + 4;
         const homeBaseY = baseZy * 8 + 4;
         const distToBase = Math.abs(ent.x - homeBaseX) + Math.abs(ent.y - homeBaseY);
+        const inClanTerritory = isTileInClaimedZones(ent.x, ent.y, group.claimedZones);
 
         // Ensure living leaderId is tracked or auto-elected
         if (!group.leaderId || !entities.some(e => e.id === group.leaderId && !e.destroyed)) {
@@ -4170,13 +4260,24 @@ export function createLocomotionProp() {
           }
         }
 
-        // If wandering too far from clan base territory (> 5 tiles), reliably return home!
-        if (distToBase > 5) {
+        // Hysteresis leash: Only trigger returning home if outside territory OR > 14 tiles away
+        if (!ent._returningClanBase) {
+          if (!inClanTerritory || distToBase > 14) {
+            ent._returningClanBase = true;
+          }
+        } else {
+          // Keep returning until safely inside base core (<= 4 tiles)
+          if (distToBase <= 4) {
+            ent._returningClanBase = false;
+          }
+        }
+
+        if (ent._returningClanBase) {
           chosenDx = Math.sign(homeBaseX - ent.x);
           chosenDy = Math.sign(homeBaseY - ent.y);
           hasIntention = true;
         } else {
-          // Inside base territory: hang around allies or stay nearby
+          // Inside base territory: gently drift towards closest ally if lonely (> 5 tiles)
           let closestAlly = null;
           let minAllyDist = 9999;
           for (const mid of group.members) {
@@ -4192,7 +4293,7 @@ export function createLocomotionProp() {
             }
           }
 
-          if (closestAlly && minAllyDist > 3 && minAllyDist <= 8) {
+          if (closestAlly && minAllyDist > 5 && minAllyDist <= 12) {
             chosenDx = Math.sign(closestAlly.x - ent.x);
             chosenDy = Math.sign(closestAlly.y - ent.y);
             hasIntention = true;
@@ -4201,13 +4302,23 @@ export function createLocomotionProp() {
       }
 
       // -----------------------------------------------------------------------
-      // Priority 7.5: Romantic Partner Tethering (Couples roam together in pairs)
+      // Priority 7.5: Romantic Partner Tethering (With Hysteresis)
       // -----------------------------------------------------------------------
       if (!hasIntention && ent.properties.monogamy?.partnerId && entities && energyRatio > 0.35 && waterRatio > 0.35) {
         const partner = entities.find(e => e.id === ent.properties.monogamy.partnerId && !e.destroyed);
         if (partner) {
           const pdist = Math.abs(partner.x - ent.x) + Math.abs(partner.y - ent.y);
-          if (pdist > 2 && pdist <= 24) {
+          if (!ent._followingPartner) {
+            if (pdist > 7 && pdist <= 28) {
+              ent._followingPartner = true;
+            }
+          } else {
+            if (pdist <= 2 || pdist > 30) {
+              ent._followingPartner = false;
+            }
+          }
+
+          if (ent._followingPartner) {
             chosenDx = Math.sign(partner.x - ent.x);
             chosenDy = Math.sign(partner.y - ent.y);
             hasIntention = true;
@@ -4216,7 +4327,7 @@ export function createLocomotionProp() {
       }
 
       // -----------------------------------------------------------------------
-      // Priority 8: Wandering & Exploration (Momentum-based Smooth Wandering)
+      // Priority 8: Wandering & Territory Demarcation (With Hysteresis)
       // -----------------------------------------------------------------------
       if (!hasIntention) {
         const territoryKey = ent.properties.brain?.territoryZoneKey;
@@ -4226,7 +4337,17 @@ export function createLocomotionProp() {
           const targetY = tGeo.zy * 8 + 4;
           const distToCenter = Math.abs(targetX - ent.x) + Math.abs(targetY - ent.y);
 
-          if (distToCenter > 4) {
+          if (!ent._returningTerritory) {
+            if (distToCenter > 8) {
+              ent._returningTerritory = true;
+            }
+          } else {
+            if (distToCenter <= 3) {
+              ent._returningTerritory = false;
+            }
+          }
+
+          if (ent._returningTerritory) {
             chosenDx = Math.sign(targetX - ent.x);
             chosenDy = Math.sign(targetY - ent.y);
             hasIntention = true;
@@ -4234,10 +4355,8 @@ export function createLocomotionProp() {
         }
       }
 
-      if (hasIntention) {
-        ent._wanderHeading = null; // Clear wander momentum when fulfilling a purposeful intention
-      } else {
-        // Wandering Momentum: commit to moving in the same direction for 6-12 steps to prevent flickering!
+      if (!hasIntention) {
+        // Wandering Momentum: commit to moving in the same direction for 8-16 steps
         if (!ent._wanderHeading || ent._wanderHeading.steps <= 0) {
           const dirs = [
             { dx: 0, dy: -1 }, { dx: 0, dy: 1 }, { dx: -1, dy: 0 }, { dx: 1, dy: 0 },
@@ -4255,7 +4374,7 @@ export function createLocomotionProp() {
           ent._wanderHeading = {
             dx: chosen.dx,
             dy: chosen.dy,
-            steps: Math.floor(Math.random() * 8) + 6
+            steps: Math.floor(Math.random() * 9) + 8
           };
         }
 
@@ -4349,9 +4468,30 @@ export function createLocomotionProp() {
         }
       }
 
-      // If creature was wandering and hit an obstacle, clear heading so it picks a new path next step
-      if (!moved) {
-        ent._wanderHeading = null;
+      // If creature was wandering and hit an obstacle, smoothly deflect heading
+      if (!moved && ent._wanderHeading) {
+        const prevDx = ent._wanderHeading.dx;
+        const prevDy = ent._wanderHeading.dy;
+        const perpDirs = [
+          { dx: -prevDy, dy: prevDx },
+          { dx: prevDy, dy: -prevDx },
+          { dx: -prevDx, dy: -prevDy }
+        ];
+        let defChosen = perpDirs[0];
+        if (world) {
+          for (const pd of perpDirs) {
+            const pTile = world.getTile(ent.x + pd.dx, ent.y + pd.dy);
+            if (pTile !== 5 && (isFlying || isAquatic || pTile !== 2)) {
+              defChosen = pd;
+              break;
+            }
+          }
+        }
+        ent._wanderHeading = {
+          dx: defChosen.dx,
+          dy: defChosen.dy,
+          steps: Math.floor(Math.random() * 6) + 6
+        };
       }
 
       // Anti-Stuck Watchdog: If creature failed to move despite an intention, break lock

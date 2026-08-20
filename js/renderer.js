@@ -210,10 +210,8 @@ function drawSpriteTinted32(buf32, fbW, fbH, tex, x, y, sx, sy, fg32, bg32, ligh
   let drawBg = bg32;
 
   if (light < 1.0) {
-    const minLight = 0.15;
-    const l = minLight + light * (1.0 - minLight);
-    drawFg = colorScale(fg32, l);
-    drawBg = colorScale(bg32, l);
+    drawFg = colorScale(fg32, light);
+    drawBg = colorScale(bg32, light);
   }
 
   const bgAlpha = (drawBg >>> 24) & 0xff;
@@ -476,6 +474,7 @@ export class Renderer {
         }
 
         if (tex) {
+          drawBox32(buf32, width, height, screenX, screenY, tileSize, tileSize, colorScale(bg, globalLight));
           drawSpriteTinted32(buf32, width, height, tex, screenX, screenY, tileSize, tileSize, fg, bg, globalLight);
         } else {
           drawBox32(buf32, width, height, screenX, screenY, tileSize, tileSize, colorScale(fg, globalLight));
