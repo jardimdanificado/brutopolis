@@ -37,3 +37,14 @@ html, body {
   box-shadow: 0 0 40px rgba(0, 0, 0, 0.9);
   cursor: crosshair;
 }
+
+/* Mobile Optimization & Touch Controls */
+html, body {
+  touch-action: none;
+  -webkit-touch-callout: none;
+}
+
+#canvas {
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}

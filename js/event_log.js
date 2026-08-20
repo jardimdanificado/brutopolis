@@ -29,6 +29,13 @@ export const OP_DROP = 23;
 export const OP_CRAFT = 24;
 export const OP_PLANT = 25;
 export const OP_HARVEST = 26;
+export const OP_SLEEP = 27;
+export const OP_WAKE = 28;
+export const OP_THEFT = 29;
+export const OP_TROPHY = 30;
+export const OP_SUCCESSION = 31;
+export const OP_FORGET = 32;
+export const OP_JEALOUSY = 33;
 
 export const OPCODE_TO_TYPE = {
   [OP_BIRTH]: "BIRTH",
@@ -56,7 +63,14 @@ export const OPCODE_TO_TYPE = {
   [OP_DROP]: "DROP",
   [OP_CRAFT]: "CRAFT",
   [OP_PLANT]: "PLANT",
-  [OP_HARVEST]: "HARVEST"
+  [OP_HARVEST]: "HARVEST",
+  [OP_SLEEP]: "SLEEP",
+  [OP_WAKE]: "WAKE",
+  [OP_THEFT]: "THEFT",
+  [OP_TROPHY]: "TROPHY",
+  [OP_SUCCESSION]: "SUCCESSION",
+  [OP_FORGET]: "FORGET",
+  [OP_JEALOUSY]: "JEALOUSY"
 };
 
 export const TYPE_TO_OPCODE = {
@@ -77,7 +91,14 @@ export const TYPE_TO_OPCODE = {
   "DROP": OP_DROP,
   "CRAFT": OP_CRAFT,
   "PLANT": OP_PLANT,
-  "HARVEST": OP_HARVEST
+  "HARVEST": OP_HARVEST,
+  "SLEEP": OP_SLEEP,
+  "WAKE": OP_WAKE,
+  "THEFT": OP_THEFT,
+  "TROPHY": OP_TROPHY,
+  "SUCCESSION": OP_SUCCESSION,
+  "FORGET": OP_FORGET,
+  "JEALOUSY": OP_JEALOUSY
 };
 
 let nextEventId = 1;
@@ -167,6 +188,20 @@ export function formatEventDescription(ev) {
       return `${pName} planted a ${ev.metadata?.seedSpecies || "flora"} seed in fertile soil.${locStr}`;
     case OP_HARVEST:
       return `${pName} harvested fresh ${ev.metadata?.cropName || "fruit"} from the wild.${locStr}`;
+    case OP_SLEEP:
+      return `${pName} fell asleep peacefully ${ev.metadata?.inBed ? "in a cozy bed" : "on the ground"} to restore vital energy.${locStr}`;
+    case OP_WAKE:
+      return `${pName} woke up well-rested and energized!${locStr}`;
+    case OP_THEFT:
+      return `${pName} stole ${ev.metadata?.itemName || "a valued possession"} belonging to ${sName}!${locStr}`;
+    case OP_TROPHY:
+      return `${pName} claimed ${ev.metadata?.trophyName || "a battle trophy"} from ${sName}!${locStr}`;
+    case OP_SUCCESSION:
+      return `${pName} ascended as the new clan leader following the succession of '${ev.metadata?.groupName || "the clan"}'!${locStr}`;
+    case OP_FORGET:
+      return `${pName} experienced memory loss due to cognitive decline (${ev.metadata?.forgottenType || "memories"}).${locStr}`;
+    case OP_JEALOUSY:
+      return `${pName} was consumed by intense jealousy regarding ${sName}!${locStr}`;
     case OP_DIALOGUE: {
       if (ev.metadata?.text) return `${ev.metadata.text}${locStr}`;
       return `${pName} conversed with ${sName}.${locStr}`;

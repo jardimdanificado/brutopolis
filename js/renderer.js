@@ -532,11 +532,10 @@ export class Renderer {
           entBg = rgba32(255, 255, 255);
         }
 
-        // Walls are autotiled from their cardinal neighbours. The WASM path
-        // already does this during render syncing; apply the same rule here
-        // because the main renderer is the pure-JS Canvas renderer.
-        const isWall = e.properties.structure || r.skin?.startsWith("Wall_") || e.properties.name?.includes("Muralha") || e.properties.name?.includes("Wall");
-        const entSkin = isWall ? resolveWallSkin(e.x, e.y, globalWallCoords) : (r.skin || "Human_Knight_M.png");
+        // Walls and Doors rendering
+        const isDoor = !!e.properties.door;
+        const isWall = !isDoor && (e.properties.structure || r.skin?.startsWith("Wall_") || e.properties.name?.includes("Muralha") || e.properties.name?.includes("Wall"));
+        const entSkin = isDoor ? (e.properties.door.isOpen ? "Feature_Door_Open.png" : "Feature_Door_Closed.png") : (isWall ? resolveWallSkin(e.x, e.y, globalWallCoords) : (r.skin || "Human_Knight_M.png"));
         const entTex = findTexture(entSkin);
         if (entTex) {
           drawSpriteTinted32(buf32, width, height, entTex, sx, sy, tileSize, tileSize, entFg, entBg, globalLight);

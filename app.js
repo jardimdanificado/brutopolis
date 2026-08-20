@@ -945,6 +945,14 @@ function spawnRandomGlobal(count, factoryFn, conditionFn = null, bounds = null) 
   }
 }
 
+
+// Mobile Detection & Multi-Touch State
+const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || (window.matchMedia && window.matchMedia("(pointer: coarse)").matches) || ("ontouchstart" in window);
+let touchPinchDist = null;
+let lastTouchTapTime = 0;
+let touchStartX = 0;
+let touchStartY = 0;
+
 // World Generator & Configurator State
 let genPreset = 0; // 0: ARCHIPELAGO, 1: CONTINENT, 2: HIGHLANDS
 let genWidth = 512; // 64 to 1024
@@ -954,6 +962,7 @@ let genSeed = Math.floor(Math.random() * 1000000) + 1;
 let genCreatureDensity = "STANDARD"; // "NONE", "LOW", "STANDARD", "HIGH"
 let genPlantDensity = "NORMAL"; // "SPARSE", "NORMAL", "DENSE"
 let genSpawnPioneers = true;
+let genEmbarkCount = 3; // 0, 1, 2, 3, 4, 5, 8
 
 function generateConfiguredWorld() {
   if (!renderer || !world) return;
@@ -1056,12 +1065,58 @@ function generateConfiguredWorld() {
     spawnRandomGlobal(mobCount(20), createGoblin, (x, y) => inBounds(x, y) && (world.getTile(x, y) === 0 || world.getTile(x, y) === 4) && outsideSettlement(x, y), spawnBounds);
   }
 
-  // Founding Pioneers Clan
-  if (genSpawnPioneers) {
-    const res = createEmbarkParty(startX, startY, world, entities);
-    if (res.members.length > 0) {
-      lastSelectedId = res.members[0].id;
-      renderer.selectEntity(lastSelectedId);
+  // Founding Pioneers Clans / Multiple Embark Parties
+  if (genSpawnPioneers && genEmbarkCount > 0) {
+    const minDistanceBetweenEmbarks = Math.max(30, Math.floor(Math.min(genWidth, genHeight) / (genEmbarkCount + 1)));
+    const spawnedEmbarkCenters = [];
+
+    // Helper to find a suitable walkable terrain spot for an embark party
+    function findSuitableEmbarkSpot(targetX, targetY, searchRadius) {
+      for (let r = 0; r < searchRadius; r += 2) {
+        for (let dy = -r; dy <= r; dy += 2) {
+          for (let dx = -r; dx <= r; dx += 2) {
+            const cx = targetX + dx;
+            const cy = targetY + dy;
+            if (inBounds(cx, cy) && world.isWalkable(cx, cy)) {
+              // Check separation from existing embarks
+              let tooClose = false;
+              for (const [ex, ey] of spawnedEmbarkCenters) {
+                if (Math.hypot(cx - ex, cy - ey) < minDistanceBetweenEmbarks) {
+                  tooClose = true;
+                  break;
+                }
+              }
+              if (!tooClose) return { x: cx, y: cy };
+            }
+          }
+        }
+      }
+      return null;
+    }
+
+    for (let k = 0; k < genEmbarkCount; k++) {
+      let embarkSpot = null;
+      if (k === 0) {
+        // First embark at primary spawn
+        embarkSpot = { x: startX, y: startY };
+      } else {
+        // Distribute other embarks around playable quadrants/regions
+        const angle = (k / genEmbarkCount) * Math.PI * 2 + (Math.random() * 0.4 - 0.2);
+        const dist = (Math.min(genWidth, genHeight) * 0.25) + Math.random() * (Math.min(genWidth, genHeight) * 0.15);
+        const approxX = Math.floor(centerPlayX + Math.cos(angle) * dist);
+        const approxY = Math.floor(centerPlayY + Math.sin(angle) * dist);
+
+        embarkSpot = findSuitableEmbarkSpot(approxX, approxY, 60) || findSuitableEmbarkSpot(centerPlayX, centerPlayY, maxSearchRadius);
+      }
+
+      if (embarkSpot) {
+        spawnedEmbarkCenters.push([embarkSpot.x, embarkSpot.y]);
+        const res = createEmbarkParty(embarkSpot.x, embarkSpot.y, world, entities);
+        if (k === 0 && res.members.length > 0) {
+          lastSelectedId = res.members[0].id;
+          renderer.selectEntity(lastSelectedId);
+        }
+      }
     }
   }
 
@@ -3618,13 +3673,33 @@ function renderGeneratorModal() {
 
   curY += 38;
 
-  // 7. Founding Pioneer Clan
-  drawText8x8("7. FOUNDING COLONISTS:", mx + 16, curY, "#3cbcfc", 1);
-  const pioLabel = genSpawnPioneers ? "[X] SPAWN PIONEER CLAN (7 SETTLERS)" : "[ ] NO PIONEERS (PURE WILDERNESS)";
-  drawNESButton(mx + 16, curY + 10, 340, 22, pioLabel, genSpawnPioneers, false);
-  registerClickableRegion(mx + 16, curY + 10, 340, 22, () => {
-    genSpawnPioneers = !genSpawnPioneers;
-  });
+  // 7. Founding Pioneer Clans / Embarks
+  drawText8x8(`7. EMBARKS / FOUNDING CLANS: [ ${genSpawnPioneers ? genEmbarkCount + " CLANS" : "NONE"} ]`, mx + 16, curY, "#3cbcfc", 1);
+  const embarkOptions = [
+    { count: 0, label: "NONE" },
+    { count: 1, label: "1 CLAN" },
+    { count: 2, label: "2 CLANS" },
+    { count: 3, label: "3 CLANS (DEF)" },
+    { count: 4, label: "4 CLANS" },
+    { count: 5, label: "5 CLANS" }
+  ];
+  let ebx = mx + 16;
+  for (const opt of embarkOptions) {
+    const isSel = genSpawnPioneers ? (genEmbarkCount === opt.count) : (opt.count === 0);
+    const bw = opt.count === 3 ? 128 : 88;
+    drawNESButton(ebx, curY + 10, bw, 22, opt.label, isSel, false);
+    const cnt = opt.count;
+    registerClickableRegion(ebx, curY + 10, bw, 22, () => {
+      if (cnt === 0) {
+        genSpawnPioneers = false;
+        genEmbarkCount = 0;
+      } else {
+        genSpawnPioneers = true;
+        genEmbarkCount = cnt;
+      }
+    });
+    ebx += bw + 6;
+  }
 
   // Action Button at Bottom: [GENERATE WORLD]
   const genBtnW = 380;
@@ -3757,3 +3832,145 @@ async function init() {
 }
 
 init();
+
+
+// ---------------------------------------------------------------------------
+// Mobile Multi-Touch & Gesture Controls
+// ---------------------------------------------------------------------------
+
+canvas.addEventListener("touchstart", (e) => {
+  if (e.touches.length === 1) {
+    const t = e.touches[0];
+    const coords = getCanvasCoords(t.clientX, t.clientY);
+    mouseX = coords.x;
+    mouseY = coords.y;
+    touchStartX = t.clientX;
+    touchStartY = t.clientY;
+    dragStartClientX = t.clientX;
+    dragStartClientY = t.clientY;
+    isMouseDown = true;
+    isDragging = false;
+
+    if (renderer) {
+      dragCameraStartX = renderer.getCameraX();
+      dragCameraStartY = renderer.getCameraY();
+    }
+
+    // Touch UI Click Handling
+    for (let i = activeUiRegions.length - 1; i >= 0; i--) {
+      const reg = activeUiRegions[i];
+      if (coords.x >= reg.x && coords.x <= reg.x + reg.w && coords.y >= reg.y && coords.y <= reg.y + reg.h) {
+        reg.onClick();
+        isMouseDown = false;
+        return;
+      }
+    }
+
+    // Touch Editor Painting
+    if (isEditorOpen && editorTool && renderer && currentMode === "MAP" && coords.inside && coords.y > 32 && coords.y < CANVAS_HEIGHT - 36) {
+      const zoom = renderer.getCameraZoom();
+      const tileSize = 16.0 * zoom;
+      const cx = renderer.getCameraX();
+      const cy = renderer.getCameraY();
+      const tileX = Math.floor(cx + (coords.x - CANVAS_WIDTH / 2) / tileSize);
+      const tileY = Math.floor(cy + (coords.y - CANVAS_HEIGHT / 2) / tileSize);
+      isPainting = true;
+      applyEditorActionAt(tileX, tileY);
+    }
+  } else if (e.touches.length === 2) {
+    // 2-Finger Pinch Zoom Initiation
+    isDragging = false;
+    isPainting = false;
+    const t1 = e.touches[0];
+    const t2 = e.touches[1];
+    touchPinchDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+  }
+}, { passive: false });
+
+canvas.addEventListener("touchmove", (e) => {
+  e.preventDefault();
+  if (e.touches.length === 1) {
+    const t = e.touches[0];
+    const coords = getCanvasCoords(t.clientX, t.clientY);
+    mouseX = coords.x;
+    mouseY = coords.y;
+
+    if (isEditorOpen && isPainting && renderer && currentMode === "MAP" && (editorTool === "PAINT" || editorTool === "BULLDOZER")) {
+      if (coords.inside && coords.y > 32 && coords.y < CANVAS_HEIGHT - 36) {
+        const zoom = renderer.getCameraZoom();
+        const tileSize = 16.0 * zoom;
+        const cx = renderer.getCameraX();
+        const cy = renderer.getCameraY();
+        const tileX = Math.floor(cx + (coords.x - CANVAS_WIDTH / 2) / tileSize);
+        const tileY = Math.floor(cy + (coords.y - CANVAS_HEIGHT / 2) / tileSize);
+        applyEditorActionAt(tileX, tileY);
+        return;
+      }
+    }
+
+    // Single-finger camera pan
+    if (isMouseDown && renderer && !isPainting && currentMode === "MAP") {
+      const totalDist = Math.hypot(t.clientX - dragStartClientX, t.clientY - dragStartClientY);
+      if (totalDist > 4) {
+        isDragging = true;
+        const zoom = renderer.getCameraZoom();
+        const rect = canvas.getBoundingClientRect();
+        const pixelScale = rect.width / CANVAS_WIDTH;
+        const tileSizeScreen = 16.0 * zoom * pixelScale;
+
+        if (tileSizeScreen > 0.2) {
+          const dx = (t.clientX - dragStartClientX) / tileSizeScreen;
+          const dy = (t.clientY - dragStartClientY) / tileSizeScreen;
+          renderer.setCamera(dragCameraStartX - dx, dragCameraStartY - dy, zoom);
+        }
+      }
+    }
+  } else if (e.touches.length === 2 && touchPinchDist && renderer) {
+    // 2-Finger Pinch Zooming
+    const t1 = e.touches[0];
+    const t2 = e.touches[1];
+    const newDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+    const factor = newDist / touchPinchDist;
+
+    if (Math.abs(factor - 1.0) > 0.01) {
+      let curZoom = renderer.getCameraZoom();
+      curZoom = Math.max(0.15, Math.min(8.0, curZoom * factor));
+      renderer.setCamera(renderer.getCameraX(), renderer.getCameraY(), curZoom);
+      touchPinchDist = newDist;
+    }
+  }
+}, { passive: false });
+
+canvas.addEventListener("touchend", (e) => {
+  if (e.touches.length === 0) {
+    if (isMouseDown && renderer && currentMode === "MAP" && !isDragging && !isPainting) {
+      const coords = getCanvasCoords(touchStartX, touchStartY);
+      let isOverUi = false;
+      for (let i = activeUiRegions.length - 1; i >= 0; i--) {
+        const reg = activeUiRegions[i];
+        if (coords.x >= reg.x && coords.x <= reg.x + reg.w && coords.y >= reg.y && coords.y <= reg.y + reg.h) {
+          isOverUi = true;
+          break;
+        }
+      }
+      if (!isOverUi && coords.inside && coords.y > 32 && coords.y < CANVAS_HEIGHT - 36) {
+        const foundId = renderer.selectAt(coords.x, coords.y, entities);
+        lastSelectedId = foundId;
+      }
+    }
+    isMouseDown = false;
+    isDragging = false;
+    isPainting = false;
+    touchPinchDist = null;
+  } else if (e.touches.length === 1) {
+    touchPinchDist = null;
+    const t = e.touches[0];
+    dragStartClientX = t.clientX;
+    dragStartClientY = t.clientY;
+    if (renderer) {
+      dragCameraStartX = renderer.getCameraX();
+      dragCameraStartY = renderer.getCameraY();
+    }
+  }
+});
+

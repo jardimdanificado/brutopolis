@@ -28,7 +28,14 @@ import {
   OP_DROP,
   OP_CRAFT,
   OP_PLANT,
-  OP_HARVEST
+  OP_HARVEST,
+  OP_SLEEP,
+  OP_WAKE,
+  OP_THEFT,
+  OP_TROPHY,
+  OP_SUCCESSION,
+  OP_FORGET,
+  OP_JEALOUSY
 } from "./event_log.js";
 import { vocabulario } from "./vocabulario.js";
 
@@ -511,12 +518,424 @@ export function generateSchizophrenicDelusion(ent, world, entities) {
   ent.emote = 10; // Shocked / In a trance
 }
 
-export function applyRandomPersonalityPerks(ent) {
-  if (!ent || !ent.properties) return;
+export function createJealousProp() {
+  return {
+    name: "Ciumento",
+    type: "jealous",
+    description: "Extremamente apegado e ciumento. Não tolera que mexam em suas posses nem que o parceiro interaja com outros.",
+    effect(ent, dt) {}
+  };
+}
+
+export function createTraitorProp() {
+  return {
+    name: "Traíra",
+    type: "traitor",
+    description: "Dissimulado e infiel. Tende a trair parceiros, furtar itens alheios e mentir sem culpa.",
+    effect(ent, dt) {}
+  };
+}
+
+export function createDetachedProp() {
+  return {
+    name: "Desapegado",
+    type: "detached",
+    description: "Livre de apego material. Não marca posse sobre objetos e não se irrita se forem levados.",
+    effect(ent, dt) {}
+  };
+}
+
+export function createThiefProp() {
+  return {
+    name: "Ladrão",
+    type: "thief",
+    description: "Especialista em se apropriar de pertences de outros e vasculhar quartos.",
+    effect(ent, dt) {}
+  };
+}
+
+export function createStressedProp() {
+  return {
+    name: "Estressado",
+    type: "stressed",
+    description: "Ansioso e impaciente. Reage negativamente a conflitos com maior perda de humor.",
+    effect(ent, dt) {}
+  };
+}
+
+export function createCalmProp() {
+  return {
+    name: "Calmo",
+    type: "calm",
+    description: "Sereno e amigável. Tem alta paciência, boa diplomacia e bônus em conversas.",
+    effect(ent, dt) {}
+  };
+}
+
+export function createAlzheimerProp() {
+  return {
+    name: "Alzheimer",
+    type: "alzheimer",
+    description: "Degradação cognitiva progressiva: perda de memória de objetos, depois geografia/casas, depois amigos e por fim o clã.",
+    decayTimer: 0,
+    interval: 20.0,
+    effect(ent, dt, world, entities) {
+      if (!ent.properties.brain || ent.destroyed) return;
+      this.decayTimer = (this.decayTimer || 0) + dt;
+      if (this.decayTimer < this.interval) return;
+      this.decayTimer = 0;
+
+      const brain = ent.properties.brain;
+      brain.shortTermCapacity = 2;
+      if (brain.shortTermMemory && brain.shortTermMemory.length > 2) {
+        brain.shortTermMemory = brain.shortTermMemory.slice(-2);
+      }
+
+      // 1. Esquecimento de Objetos
+      if (brain.objectMemory && brain.objectMemory.length > 0 && Math.random() < 0.60) {
+        const forgotten = brain.objectMemory.shift();
+        recordWorldEvent({
+          opcode: OP_FORGET,
+          type: "FORGET",
+          primaryEntityId: ent.id,
+          location: { x: ent.x, y: ent.y },
+          description: `${ent.properties.name} esqueceu completamente onde viu o item '${forgotten.name || "Objeto"}' devido ao Alzheimer.`,
+          tick: currentTick,
+          metadata: { forgottenType: `objeto (${forgotten.name || "item"})` }
+        });
+        return;
+      }
+
+      // 2. Esquecimento de Geografia / Casa / Território
+      if (brain.geoMemory && Object.keys(brain.geoMemory).length > 0 && Math.random() < 0.40) {
+        const keys = Object.keys(brain.geoMemory);
+        const randomKey = keys[Math.floor(Math.random() * keys.length)];
+        delete brain.geoMemory[randomKey];
+        if (brain.territoryZoneKey === randomKey) {
+          brain.territoryZoneKey = null;
+        }
+        recordWorldEvent({
+          opcode: OP_FORGET,
+          type: "FORGET",
+          primaryEntityId: ent.id,
+          location: { x: ent.x, y: ent.y },
+          description: `${ent.properties.name} desorientou-se e esqueceu os caminhos do seu território residencial.`,
+          tick: currentTick,
+          metadata: { forgottenType: "geografia / caminhos de casa" }
+        });
+        return;
+      }
+
+      // 3. Esquecimento de Pessoas / Amigos
+      if (brain.affinities && Object.keys(brain.affinities).length > 0 && Math.random() < 0.30) {
+        const affKeys = Object.keys(brain.affinities);
+        const randId = affKeys[Math.floor(Math.random() * affKeys.length)];
+        delete brain.affinities[randId];
+        const person = getEntityById(parseInt(randId, 10));
+        recordWorldEvent({
+          opcode: OP_FORGET,
+          type: "FORGET",
+          primaryEntityId: ent.id,
+          secondaryEntityId: parseInt(randId, 10),
+          location: { x: ent.x, y: ent.y },
+          description: `${ent.properties.name} olhou para ${person?.properties.name || `Criatura #${randId}`} com olhar vazio e não conseguiu se lembrar de quem era.`,
+          tick: currentTick,
+          metadata: { forgottenType: `relação com ${person?.properties.name || `Criatura #${randId}`}` }
+        });
+        return;
+      }
+
+      // 4. Esquecimento Raro do Clã (chance minúscula < 0.1%)
+      if (ent.properties.group && Math.random() < 0.001) {
+        const groupName = ent.properties.group.name;
+        recordWorldEvent({
+          opcode: OP_FORGET,
+          type: "FORGET",
+          primaryEntityId: ent.id,
+          location: { x: ent.x, y: ent.y },
+          description: `${ent.properties.name} perdeu a noção de pertencimento ao clã '${groupName}' devido ao estágio avançado do Alzheimer.`,
+          tick: currentTick,
+          metadata: { forgottenType: `o clã '${groupName}'` }
+        });
+      }
+    }
+  };
+}
+
+export function createSleepProp() {
+  return {
+    isSleeping: false,
+    sleepTimer: 0,
+    bedEntityId: null,
+    _energyFloor: 0,
+    effect(ent, dt, world, entities) {
+      if (!ent.properties.life || ent.destroyed) return;
+      const energy = ent.properties.life.energy;
+      const maxEnergy = ent.properties.life.max;
+      const energyRatio = energy / maxEnergy;
+      const stomach = ent.properties.stomach;
+      const hasFood = stomach && stomach.items && stomach.items.length > 0;
+      const inCombat = ent.combatFlash > 0 || (ent._lastAttacker && (currentTick - (ent._lastAttacker.tick || 0) < 60));
+      const hasWater = !ent.properties.bladder || ent.properties.bladder.water > 0;
+
+      if (this.isSleeping) {
+        // ENFORCE ZERO ENERGY DROP DURING SLEEP
+        if (ent.properties.life.energy < this._energyFloor) {
+          ent.properties.life.energy = this._energyFloor;
+        }
+
+        // Wake up immediately if attacked in sleep!
+        if (inCombat) {
+          this.wakeUp(ent, "attacked", world);
+          return;
+        }
+
+        // Digest stomach food at accelerated rate into vital life energy
+        let bedBonus = 1.0;
+        if (this.bedEntityId) {
+          const bed = entities?.find(e => e.id === this.bedEntityId && !e.destroyed);
+          if (bed && Math.abs(bed.x - ent.x) <= 1 && Math.abs(bed.y - ent.y) <= 1) {
+            bedBonus = bed.properties.furniture?.isDouble ? 2.2 : 1.6;
+          } else {
+            this.bedEntityId = null;
+          }
+        }
+
+        if (hasFood) {
+          for (let i = stomach.items.length - 1; i >= 0; i--) {
+            const item = stomach.items[i];
+            const eff = (stomach.diet && stomach.diet[item.foodType] !== undefined) ? stomach.diet[item.foodType] : 0.8;
+            const transfer = (item.nutrition / Math.max(1, item.totalTurns || 20)) * eff * 3.0 * bedBonus * dt;
+            const added = Math.min(maxEnergy - ent.properties.life.energy, transfer);
+            ent.properties.life.energy += added;
+            item.remainingTurns = (item.remainingTurns || item.totalTurns || 20) - dt * 3.0;
+            if (item.remainingTurns <= 0) {
+              stomach.items.splice(i, 1);
+            }
+          }
+        }
+
+        this._energyFloor = ent.properties.life.energy;
+        ent.motor = 4; // Sleep motor
+        ent.emote = 8; // Sleeping emote
+
+        // Wake up condition: full energy or ran out of food in stomach
+        if (ent.properties.life.energy >= maxEnergy * 0.95 || !hasFood) {
+          this.wakeUp(ent, "rested", world);
+        }
+      } else {
+        // Fall asleep automatically if low on energy, stomach has food, not in combat, and not dehydrated
+        if (energyRatio < 0.35 && hasFood && !inCombat && hasWater) {
+          this.fallAsleep(ent, world, entities);
+        }
+      }
+    },
+    fallAsleep(ent, world, entities) {
+      this.isSleeping = true;
+      this._energyFloor = ent.properties.life.energy;
+      ent.motor = 4;
+      ent.emote = 8;
+
+      let inBed = false;
+      // Look for a nearby bed in bedroom, dormitory or vicinity
+      if (entities) {
+        let bestBed = null;
+        let minBedDist = 9999;
+        for (const e of entities) {
+          if (!e.destroyed && e.properties.furniture?.type === "bed" && !e.properties.furniture.occupiedById) {
+            const bdist = Math.abs(e.x - ent.x) + Math.abs(e.y - ent.y);
+            if (bdist <= 20 && bdist < minBedDist) {
+              minBedDist = bdist;
+              bestBed = e;
+            }
+          }
+        }
+        if (bestBed && minBedDist <= 1) {
+          this.bedEntityId = bestBed.id;
+          bestBed.properties.furniture.occupiedById = ent.id;
+          inBed = true;
+        }
+      }
+
+      recordWorldEvent({
+        opcode: OP_SLEEP,
+        type: "SLEEP",
+        primaryEntityId: ent.id,
+        location: { x: ent.x, y: ent.y },
+        description: `${ent.properties.name} fell asleep ${inBed ? "in a warm bed" : "on the ground"} to restore vital energy.`,
+        tick: currentTick,
+        metadata: { inBed }
+      });
+    },
+    wakeUp(ent, reason = "rested", world) {
+      this.isSleeping = false;
+      ent.motor = 0;
+      ent.emote = (reason === "attacked") ? 0 : 2; // Angry if attacked, happy if rested
+
+      if (this.bedEntityId) {
+        const bed = getEntityById(this.bedEntityId);
+        if (bed && bed.properties.furniture) {
+          bed.properties.furniture.occupiedById = null;
+        }
+        this.bedEntityId = null;
+      }
+
+      recordWorldEvent({
+        opcode: OP_WAKE,
+        type: "WAKE",
+        primaryEntityId: ent.id,
+        location: { x: ent.x, y: ent.y },
+        description: `${ent.properties.name} woke up ${reason === "attacked" ? "in shock from an attack!" : "fully refreshed and energized!"}`,
+        tick: currentTick,
+        metadata: { reason }
+      });
+    }
+  };
+}
+
+export function createBedEntity(x, y, isDouble = false) {
+  return createEntity({
+    name: isDouble ? "Double Bed" : "Single Bed",
+    species: "furniture",
+    render: {
+      skin: "Feature_Bed.png",
+      color: isDouble ? 0xffc89650 : 0xffe6d2a0,
+      backcolor: 0xff3c2814
+    },
+    furniture: {
+      type: "bed",
+      isDouble,
+      occupiedById: null,
+      assignedToRoomId: null,
+      comfort: isDouble ? 1.8 : 1.4
+    }
+  }, x, y);
+}
+
+export function createDoorEntity(x, y, ownerIds = []) {
+  return createEntity({
+    name: "Wooden Door",
+    structure: true,
+    render: {
+      skin: "Feature_Door_Closed.png",
+      color: 0xffb48250,
+      backcolor: 0xff322010
+    },
+    door: {
+      isOpen: false,
+      owners: [...ownerIds],
+      autoCloseTimer: 0,
+      open() {
+        this.isOpen = true;
+        this.autoCloseTimer = 10.0;
+      },
+      close() {
+        this.isOpen = false;
+        this.autoCloseTimer = 0;
+      }
+    },
+    effect(ent, dt, world, entities) {
+      if (this.door && this.door.isOpen) {
+        this.door.autoCloseTimer -= dt;
+        if (this.door.autoCloseTimer <= 0) {
+          // 5% chance to remain forgotten open
+          if (Math.random() > 0.05) {
+            this.door.close();
+          } else {
+            this.door.autoCloseTimer = 15.0; // Forgot open
+          }
+        }
+      }
+    }
+  }, x, y);
+}
+
+export function createTrophyEntity(x, y, sourceEntity, partName = "Dente", captorId = null) {
+  const sourceName = sourceEntity?.properties?.name || "Besta";
+  const captor = captorId ? getEntityById(captorId) : null;
+  const captorName = captor?.properties?.name || "Guerreiro";
+  const trophyTitle = `Troféu de ${partName} de ${sourceName}`;
+
+  const trophy = createEntity({
+    name: trophyTitle,
+    species: "trophy",
+    ownedById: captorId,
+    render: {
+      skin: partName.toLowerCase().includes("dente") ? "Item_Eyeball.png" : "Item_Bone.png",
+      color: 0xfff0e6c8,
+      backcolor: 0x00000000
+    },
+    trophy: {
+      partName,
+      sourceId: sourceEntity?.id,
+      sourceName,
+      captorId,
+      captorName,
+      value: 120
+    }
+  }, x, y);
+
+  if (captorId) {
+    recordWorldEvent({
+      opcode: OP_TROPHY,
+      type: "TROPHY",
+      primaryEntityId: captorId,
+      secondaryEntityId: sourceEntity?.id,
+      location: { x, y },
+      description: `${captorName} arrancou e guardou com orgulho um '${trophyTitle}' como troféu de batalha!`,
+      tick: currentTick,
+      metadata: { trophyName: trophyTitle }
+    });
+  }
+
+  return trophy;
+}
+
+export function applyRandomPersonalityPerks(ent, isFemale = null) {
+  if (!ent) return;
+  const p = ent.properties || ent;
+  const female = isFemale !== null ? isFemale : (getCreatureGender(ent) === "female");
   const r = Math.random();
-  if (r < 0.10) ent.properties.skeptic = createSkepticProp();
-  else if (r < 0.20) ent.properties.gullible = createGullibleProp();
-  else if (r < 0.27) ent.properties.schizophrenic = createSchizophrenicProp();
+
+  // Ciumento: maior chance em mulheres
+  if (female ? (r < 0.30) : (r < 0.10)) {
+    p.ciumento = createJealousProp();
+  }
+
+  // Traíra: maior chance em homens
+  const rTraitor = Math.random();
+  if (!female ? (rTraitor < 0.30) : (rTraitor < 0.10)) {
+    p.traira = createTraitorProp();
+  }
+
+  // Desapegado
+  if (Math.random() < 0.15) {
+    p.desapegado = createDetachedProp();
+  }
+
+  // Ladrão
+  if (Math.random() < 0.12) {
+    p.ladrao = createThiefProp();
+  }
+
+  // Estressado / Calmo
+  const rMood = Math.random();
+  if (rMood < 0.16) {
+    p.estressado = createStressedProp();
+  } else if (rMood < 0.32) {
+    p.calmo = createCalmProp();
+  }
+
+  // Alzheimer congênito (raro ao nascer)
+  if (Math.random() < 0.04) {
+    p.alzheimer = createAlzheimerProp();
+  }
+
+  // Outros traços preexistentes
+  const rOther = Math.random();
+  if (rOther < 0.10) p.skeptic = createSkepticProp();
+  else if (rOther < 0.20) p.gullible = createGullibleProp();
+  else if (rOther < 0.27) p.schizophrenic = createSchizophrenicProp();
 }
 
 /**
@@ -1641,7 +2060,7 @@ export function createScarProp(location = "torso", name = "Blade Scar") {
  */
 let nextGroupId = 1;
 
-export function createGroup(name, founder, baseZone = null, claimedZones = null) {
+export function createGroup(name, founder, baseZone = null, claimedZones = null, style = null) {
   let founderId = typeof founder === "object" && founder !== null ? founder.id : founder;
   let zx = 32;
   let zy = 32;
@@ -1657,6 +2076,8 @@ export function createGroup(name, founder, baseZone = null, claimedZones = null)
   }
 
   const defaultZones = [`${zx}_${zy}`, `${zx + 1}_${zy}`];
+  const STYLES = ["padrao", "labirinto", "condominio", "fortaleza", "troglodita"];
+  const chosenStyle = style || STYLES[Math.floor(Math.random() * STYLES.length)];
 
   const group = {
     id: nextGroupId++,
@@ -1664,6 +2085,13 @@ export function createGroup(name, founder, baseZone = null, claimedZones = null)
     leaderId: founderId !== undefined && founderId !== null ? founderId : null,
     members: founderId !== undefined && founderId !== null ? [founderId] : [],
     claimedZones: claimedZones || defaultZones,
+    architectStyle: chosenStyle,
+    rooms: [
+      { id: 1, type: "dormitory", zx, zy, name: "Dormitório Comunitário", assignedMembers: [], bedIds: [] },
+      { id: 2, type: "storage", zx, zy, name: "Depósito de Recursos", assignedMembers: [], bedIds: [] },
+      { id: 3, type: "dining", zx, zy, name: "Refeitório do Clã", assignedMembers: [], bedIds: [] },
+      { id: 4, type: "meeting", zx, zy, name: "Sala de Reunião", assignedMembers: [], bedIds: [] }
+    ],
     campfire: null, // { x, y }
     storage: [],
     createdTick: currentTick,
@@ -1897,6 +2325,20 @@ export function gossipBetweenCreatures(speaker, listener, world, entities) {
         spkBrain.addLongTerm({ type: "BOND", desc: `Formed a romantic couple bond with ${listener.properties.name}` });
         lisBrain.addLongTerm({ type: "BOND", desc: `Formed a romantic couple bond with ${speaker.properties.name}` });
 
+        // Couple Room Sharing & Room Release
+        const spkGroup = speaker.properties.group;
+        if (spkGroup && spkGroup.rooms) {
+          const spkRoom = spkGroup.rooms.find(r => r.assignedMembers?.includes(speaker.id));
+          const lisRoom = spkGroup.rooms.find(r => r.assignedMembers?.includes(listener.id));
+          if (spkRoom && lisRoom && spkRoom !== lisRoom) {
+            // Free listener room for others
+            lisRoom.assignedMembers = lisRoom.assignedMembers.filter(id => id !== listener.id);
+            if (!spkRoom.assignedMembers.includes(listener.id)) spkRoom.assignedMembers.push(listener.id);
+          } else if (spkRoom && !spkRoom.assignedMembers.includes(listener.id)) {
+            spkRoom.assignedMembers.push(listener.id);
+          }
+        }
+
         recordWorldEvent({
           opcode: OP_PROPOSAL_ACCEPTED,
           primaryEntityId: speaker.id,
@@ -1935,6 +2377,10 @@ export function gossipBetweenCreatures(speaker, listener, world, entities) {
 
   // 2. Physical & Emotional Social Interactions (Only occasional, picked exclusively)
   if (dist <= 1) {
+    // Check Traitor / Infidelity vs Monogamy
+    const spkPartnerId = spkMono?.partnerId;
+    const isCheating = spkPartnerId && spkPartnerId !== listener.id;
+
     // A. Kiss (Beijar)
     if (spkAffToLis >= 55 && (spkMono?.partnerId === listener.id || Math.random() < 0.18)) {
       if (lisAffToSpk >= 45 || lisMono?.partnerId === speaker.id) {
@@ -1944,6 +2390,49 @@ export function gossipBetweenCreatures(speaker, listener, world, entities) {
         lisBrain.mood = Math.min(100, lisBrain.mood + 12);
         speaker.emote = 12; // Heart
         listener.emote = 12; // Heart
+
+        // Infidelity & Jealousy reaction
+        if (isCheating && entities) {
+          if (!speaker.properties.traira) {
+            spkBrain.mood = Math.max(-100, spkBrain.mood - 25); // Guilt
+          }
+          const partner = entities.find(e => e.id === spkPartnerId && !e.destroyed);
+          if (partner && Math.abs(partner.x - speaker.x) <= 12 && Math.abs(partner.y - speaker.y) <= 12) {
+            if (partner.properties.ciumento) {
+              partner.properties.brain.mood = Math.max(-100, (partner.properties.brain?.mood || 0) - 60);
+              partner.properties.brain.affinities[speaker.id] = -80;
+              partner.properties.brain.affinities[listener.id] = -100;
+              partner.emote = 0; // Angry
+
+              recordWorldEvent({
+                opcode: OP_JEALOUSY,
+                type: "JEALOUSY",
+                primaryEntityId: partner.id,
+                secondaryEntityId: speaker.id,
+                location: { x: partner.x, y: partner.y },
+                description: `${partner.properties.name} flagrou ${speaker.properties.name} beijando ${listener.properties.name} e foi tomado por fúria de ciúmes!`,
+                tick: currentTick,
+                metadata: { partnerName: speaker.properties.name, rivalName: listener.properties.name }
+              });
+
+              // Fabricate lie to defame cheater
+              recordWorldEvent({
+                opcode: OP_LIE,
+                type: "LIE",
+                primaryEntityId: partner.id,
+                secondaryEntityId: speaker.id,
+                location: { x: partner.x, y: partner.y },
+                description: `${partner.properties.name} espalhou uma história difamatória de que ${speaker.properties.name} é um monstro traidor sem escrúpulos!`,
+                tick: currentTick,
+                metadata: { lieType: "FRAME_JOB", targetName: speaker.properties.name }
+              });
+            } else {
+              partner.properties.brain.mood = Math.max(-100, (partner.properties.brain?.mood || 0) - 40);
+              partner.properties.brain.affinities[speaker.id] = Math.max(-100, (partner.properties.brain.affinities[speaker.id] || 0) - 40);
+              partner.emote = 5; // Sad
+            }
+          }
+        }
 
         recordWorldEvent({
           opcode: OP_KISS,
@@ -2698,6 +3187,71 @@ export function createGroupMemberProp() {
       // ---------------------------------------------------------------------
       const livingMems = (group.members || []).map(id => entities.find(e => e.id === id && !e.destroyed && e.properties.life)).filter(Boolean);
       group.maxMembersEver = Math.max(group.maxMembersEver || 0, livingMems.length);
+
+      // Leadership Succession Check (Dynastic Fortaleza & Clan Lineage)
+      if (!group.leaderId || !entities.some(e => e.id === group.leaderId && !e.destroyed && e.properties.life)) {
+        if (livingMems.length > 0) {
+          let newLeader = null;
+          const oldLeader = getEntityById(group.leaderId);
+
+          if (group.architectStyle === "fortaleza" && oldLeader) {
+            // 1. Partner
+            const partnerId = oldLeader.properties.monogamy?.partnerId;
+            const partner = partnerId ? livingMems.find(m => m.id === partnerId) : null;
+            if (partner) newLeader = partner;
+
+            // 2. Eldest Child
+            if (!newLeader) {
+              const child = livingMems.find(m => m.properties.parents?.includes(oldLeader.id));
+              if (child) newLeader = child;
+            }
+
+            // 3. Highest Affinity with deceased leader
+            if (!newLeader && oldLeader.properties.brain?.affinities) {
+              let maxAff = -999;
+              for (const m of livingMems) {
+                const aff = oldLeader.properties.brain.affinities[m.id] || 0;
+                if (aff > maxAff) {
+                  maxAff = aff;
+                  newLeader = m;
+                }
+              }
+            }
+
+            // 4. Most popular / loved member
+            if (!newLeader) {
+              let maxPop = -9999;
+              for (const candidate of livingMems) {
+                let pop = 0;
+                for (const peer of livingMems) {
+                  if (peer.id !== candidate.id && peer.properties.brain?.affinities) {
+                    pop += (peer.properties.brain.affinities[candidate.id] || 0);
+                  }
+                }
+                if (pop > maxPop) {
+                  maxPop = pop;
+                  newLeader = candidate;
+                }
+              }
+            }
+          }
+
+          if (!newLeader) {
+            newLeader = livingMems[0];
+          }
+
+          group.leaderId = newLeader.id;
+          recordWorldEvent({
+            opcode: OP_SUCCESSION,
+            type: "SUCCESSION",
+            primaryEntityId: newLeader.id,
+            location: { x: newLeader.x, y: newLeader.y },
+            description: `Com a sucessão em '${group.name}' (${group.architectStyle || "padrao"}), ${newLeader.properties.name} assumiu a liderança do clã!`,
+            tick: currentTick,
+            metadata: { groupName: group.name, architectStyle: group.architectStyle }
+          });
+        }
+      }
       
       // Auto-claim 1 new zone for every 4 living/peak members (zones are NEVER lost!)
       const targetZoneCount = Math.max(2, Math.floor((group.maxMembersEver || 0) / 4) + 1);
@@ -4437,6 +4991,23 @@ export function createLocomotionProp() {
               }
 
               if (canTraverse) {
+                const occ = getEntityAtTile(tx, ty);
+                if (occ && occ.properties.structure) {
+                  if (occ.properties.door) {
+                    if (occ.properties.door.isOpen) {
+                      // Open door can be traversed
+                    } else if (!occ.properties.door.owners || occ.properties.door.owners.length === 0 || occ.properties.door.owners.includes(ent.id)) {
+                      occ.properties.door.open();
+                    } else {
+                      canTraverse = false; // Locked for non-owner
+                    }
+                  } else {
+                    canTraverse = false; // Solid wall
+                  }
+                }
+              }
+
+              if (canTraverse) {
                 ent.x = tx;
                 ent.y = ty;
                 moved = true;
@@ -4678,6 +5249,59 @@ export function createLocomotionProp() {
                   desc: `Ate ${foodName} ${provenance}`,
                   location: { x: ent.x, y: ent.y }
                 });
+              }
+
+              // Ownership & Theft Check
+              if (other.properties.ownedById && other.properties.ownedById !== ent.id) {
+                const ownerId = other.properties.ownedById;
+                const owner = getEntityById(ownerId);
+                const isMarriedPartner = ent.properties.monogamy?.partnerId === ownerId;
+
+                if (isMarriedPartner) {
+                  // Married couple taking partner's item: normal pickup, but ciumento or mentiroso can complain
+                  if (owner && (owner.properties.ciumento || ent.properties.mentiroso) && Math.random() < 0.25) {
+                    recordWorldEvent({
+                      opcode: OP_LIE,
+                      type: "LIE",
+                      primaryEntityId: ownerId,
+                      secondaryEntityId: ent.id,
+                      location: { x: ent.x, y: ent.y },
+                      description: `${owner.properties.name} fez um escândalo ciumento acusando ${ent.properties.name} de ter pegado seus pertences sem permissão!`,
+                      tick: currentTick,
+                      metadata: { lieType: "FRAME_JOB" }
+                    });
+                  }
+                } else if (owner && owner.properties.desapegado) {
+                  // Detached owner doesn't care
+                } else {
+                  // THEFT!
+                  recordWorldEvent({
+                    opcode: OP_THEFT,
+                    type: "THEFT",
+                    primaryEntityId: ent.id,
+                    secondaryEntityId: ownerId,
+                    location: { x: ent.x, y: ent.y },
+                    description: `${ent.properties.name} apropriou-se indevidamente de ${foodName} pertencente a ${owner?.properties.name || `Criatura #${ownerId}`}!`,
+                    tick: currentTick,
+                    metadata: { itemName: foodName }
+                  });
+
+                  // Thief gain chance
+                  if (!ent.properties.ladrao && !ent.properties.traira && Math.random() < 0.35) {
+                    ent.properties.ladrao = createThiefProp();
+                  }
+
+                  // Victim reaction & Jealous gain chance
+                  if (owner && owner.properties.brain) {
+                    owner.properties.brain.mood = Math.max(-100, (owner.properties.brain.mood || 0) - 40);
+                    if (!owner.properties.brain.affinities) owner.properties.brain.affinities = {};
+                    owner.properties.brain.affinities[ent.id] = Math.max(-100, (owner.properties.brain.affinities[ent.id] || 0) - 60);
+
+                    if (!owner.properties.ciumento && Math.random() < 0.30) {
+                      owner.properties.ciumento = createJealousProp();
+                    }
+                  }
+                }
               }
 
               other.destroyed = true;
@@ -5429,6 +6053,12 @@ export function createCreatureFromArchetype(speciesKey, x, y, customOpts = {}) {
     if (tVal) entProps[tKey] = true;
   }
 
+  // Apply sleep and randomized personality perks
+  if (entProps.life) {
+    if (!entProps.sleep) entProps.sleep = createSleepProp();
+    applyRandomPersonalityPerks(entProps, isFemale);
+  }
+
   return createEntity(entProps, x, y);
 }
 
@@ -6073,6 +6703,24 @@ export function rebindEntityMethods(ent) {
     const dummy = createGroupMemberProp();
     for (const [k, fn] of Object.entries(dummy)) {
       if (typeof fn === "function") p.group_member[k] = fn;
+    }
+  }
+  if (p.sleep) {
+    const dummy = createSleepProp();
+    for (const [k, fn] of Object.entries(dummy)) {
+      if (typeof fn === "function") p.sleep[k] = fn;
+    }
+  }
+  if (p.door) {
+    const dummy = createDoorEntity(0, 0).properties.door;
+    for (const [k, fn] of Object.entries(dummy)) {
+      if (typeof fn === "function") p.door[k] = fn;
+    }
+  }
+  if (p.alzheimer) {
+    const dummy = createAlzheimerProp();
+    for (const [k, fn] of Object.entries(dummy)) {
+      if (typeof fn === "function") p.alzheimer[k] = fn;
     }
   }
 
