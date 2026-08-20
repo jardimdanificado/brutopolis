@@ -14,7 +14,11 @@ import {
   explodeEntityOnDeath,
   currentTick,
   resetEngineTicks,
-  incrementEngineTick
+  incrementEngineTick,
+  rebuildSpatialGrid,
+  getEntityAtTile,
+  getEntitiesInRadius,
+  getEntitiesInViewport
 } from "./js/engine.js";
 import {
   resetWorldEvents,
@@ -28,6 +32,8 @@ import {
   exportWorldSaveJSON,
   downloadWorldSaveJSON,
   restoreWorldEvents,
+  recordWorldEvent,
+  OP_RELATION,
   allEvents
 } from "./js/event_log.js";
 import {
@@ -50,6 +56,14 @@ import {
   createBurnProp,
   createViolentProp,
   createPacifistProp,
+  createCreatureFromArchetype,
+  createHuman,
+  createElf,
+  createDwarf,
+  createOrc,
+  createBoar,
+  createDeer,
+  createSpider,
   createKnight,
   createArcher,
   createCat,
@@ -72,6 +86,8 @@ import {
   createMinerProp,
   createBuilderProp,
   createGroup,
+  createGroupMemberProp,
+  isTileInClaimedZones,
   createBruiseProp,
   createConcussionProp,
   createScarProp,
@@ -694,26 +710,24 @@ const EDITOR_TILES = [
 ];
 
 const EDITOR_CREATURES = [
-  { label: "EMBARK CLAN", fn: (x, y) => { const res = createEmbarkParty(x, y, world, entities); return res.members[0]; } },
-  { label: "KNIGHT", fn: (x, y) => createKnight(x, y) },
-  { label: "ARCHER", fn: (x, y) => createArcher(x, y) },
-  { label: "FARMER", fn: (x, y) => createHumanFarmer(x, y) },
-  { label: "MINER", fn: (x, y) => createHumanMiner(x, y) },
-  { label: "BUILDER", fn: (x, y) => createHumanBuilder(x, y) },
-  { label: "MATRIARCH", fn: (x, y) => createHumanMatriarch(x, y) },
-  { label: "ARTISAN", fn: (x, y) => createHumanCrafter(x, y) },
-  { label: "HUNTER", fn: (x, y) => createHumanHunter(x, y) },
-  { label: "EXPLORER", fn: (x, y) => createHumanExplorer(x, y) },
+  { label: "HUMAN", fn: (x, y) => createHuman(x, y) },
+  { label: "ELF", fn: (x, y) => createElf(x, y) },
+  { label: "DWARF", fn: (x, y) => createDwarf(x, y) },
+  { label: "ORC", fn: (x, y) => createOrc(x, y) },
+  { label: "GOBLIN", fn: (x, y) => createGoblin(x, y) },
+  { label: "BOAR", fn: (x, y) => createBoar(x, y) },
+  { label: "DEER", fn: (x, y) => createDeer(x, y) },
+  { label: "SPIDER", fn: (x, y) => createSpider(x, y) },
   { label: "WOLF", fn: (x, y) => createWolf(x, y) },
   { label: "BEAR", fn: (x, y) => createBear(x, y) },
   { label: "CAT", fn: (x, y) => createCat(x, y) },
   { label: "GOAT", fn: (x, y) => createMountainGoat(x, y) },
   { label: "BAT", fn: (x, y) => createBat(x, y) },
-  { label: "GOBLIN", fn: (x, y) => createGoblin(x, y) },
   { label: "SCORPION", fn: (x, y) => createScorpion(x, y) },
   { label: "LIZARD", fn: (x, y) => createLizard(x, y) },
   { label: "DRAGON", fn: (x, y) => createDragon(x, y) },
-  { label: "SERPENT", fn: (x, y) => createSeaSerpent(x, y) }
+  { label: "SERPENT", fn: (x, y) => createSeaSerpent(x, y) },
+  { label: "EMBARK CLAN", fn: (x, y) => { const res = createEmbarkParty(x, y, world, entities); return res.members[0]; } }
 ];
 
 const EDITOR_ITEMS = [
@@ -752,7 +766,55 @@ function applyEditorActionAt(tileX, tileY) {
     applyTileBrush(tileX, tileY, editorSelectedTile, editorBrushSize);
   } else if (editorTool === "SPAWN" && editorActiveSpawner) {
     const ent = editorActiveSpawner.fn(tileX, tileY);
-    entities.push(ent);
+    if (ent) {
+      // Auto-assign to clan if spawned within active clan's claimed territory
+      const allActiveClans = getAllGroups();
+      const targetClan = allActiveClans.find(g => isTileInClaimedZones(tileX, tileY, g.claimedZones));
+
+      if (targetClan) {
+        ent.properties.group = targetClan;
+        if (!ent.properties.group_member) {
+          ent.properties.group_member = createGroupMemberProp();
+        }
+        if (!targetClan.members) targetClan.members = [];
+        if (!targetClan.members.includes(ent.id)) targetClan.members.push(ent.id);
+
+        if (ent.properties.brain) {
+          if (!ent.properties.brain.affinities) ent.properties.brain.affinities = {};
+          for (const mid of targetClan.members) {
+            if (mid !== ent.id) {
+              ent.properties.brain.affinities[mid] = 40;
+              const peer = entities.find(e => e.id === mid && !e.destroyed);
+              if (peer && peer.properties?.brain) {
+                if (!peer.properties.brain.affinities) peer.properties.brain.affinities = {};
+                peer.properties.brain.affinities[ent.id] = 40;
+              }
+            }
+          }
+        }
+
+        // Inherit clan surname if humanoid
+        if (targetClan.founderSurname && ent.properties.surname) {
+          ent.properties.surname = targetClan.founderSurname;
+        }
+
+        recordWorldEvent({
+          opcode: OP_RELATION,
+          type: "RELATION",
+          primaryEntityId: ent.id,
+          location: { x: tileX, y: tileY },
+          description: `${ent.properties.name} joined the '${targetClan.name}' faction in their territory!`,
+          tick: currentTick,
+          timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
+          metadata: { clan: targetClan.name }
+        });
+      }
+
+      entities.push(ent);
+      if (typeof registerEntitySpatial === "function") {
+        registerEntitySpatial(ent);
+      }
+    }
   } else if (editorTool === "BULLDOZER") {
     const targets = entities.filter(e => !e.destroyed && e.x === tileX && e.y === tileY);
     for (const t of targets) {
@@ -1006,6 +1068,9 @@ function generateConfiguredWorld() {
     }
   }
 
+  // Rebuild Spatial Hash Grid across all active entities
+  rebuildSpatialGrid(entities, getZoneSize());
+
   const zoomFactor = genWidth <= 128 ? 3.0 : genWidth <= 256 ? 2.0 : 1.5;
   shader.exports.wasm_set_camera(startX, startY, zoomFactor);
   currentMode = "MAP";
@@ -1156,6 +1221,7 @@ function loadWorldState(saveData) {
 
     currentPreset = saveData.world?.preset || 0;
     genSeed = saveData.world?.seed || 12345;
+    rebuildSpatialGrid(entities, getZoneSize());
     currentMode = "MAP";
     console.log("✓ Brutopolis world save restored successfully!");
   } catch (err) {
@@ -3165,7 +3231,7 @@ function renderHoverTooltip() {
   const hoverTileX = Math.floor(cx + (mouseX - CANVAS_WIDTH / 2) / tileSize);
   const hoverTileY = Math.floor(cy + (mouseY - CANVAS_HEIGHT / 2) / tileSize);
 
-  const hoveredEnt = entities.find(e => !e.destroyed && e.x === hoverTileX && e.y === hoverTileY);
+  const hoveredEnt = getEntityAtTile(hoverTileX, hoverTileY);
   if (!hoveredEnt) return;
 
   const tw = 180;
@@ -3617,11 +3683,11 @@ function frame(time) {
     // 1. Tick Simulation if not paused
     if (!isPaused) {
       if (simSpeed === "??") {
-        // Unleashed ??X speed: process as many ticks as possible within frame budget
+        // Unleashed ??X speed: process as many ticks as possible (up to 300 subticks with elastic frame budget)
         const startPerf = performance.now();
         const subDt = 0.05;
         let subTicks = 0;
-        while (subTicks < 150 && (subTicks < 30 || (performance.now() - startPerf) < 14)) {
+        while (subTicks < 300 && (subTicks < 75 || (performance.now() - startPerf) < 18)) {
           world.clock.tick(subDt);
           incrementEngineTick();
           tickEntities(entities, subDt, world);
@@ -3653,8 +3719,21 @@ function frame(time) {
       lastTpsUpdate = time;
     }
 
-    // 2. Sync renderable entities into WASM shared memory
-    syncRenderToWasm(entities, mem, shader.exports, isCreatureVisionMode ? lastSelectedId : null);
+    // 2. High-performance Frustum Culling & Sync renderable entities into WASM shared memory
+    const camZoom = shader.exports.wasm_get_camera_zoom();
+    const tSize = 16.0 * camZoom;
+    const camX = shader.exports.wasm_get_camera_x();
+    const camY = shader.exports.wasm_get_camera_y();
+    const halfVisW = (CANVAS_WIDTH / (2 * tSize)) + 4;
+    const halfVisH = (CANVAS_HEIGHT / (2 * tSize)) + 4;
+    const cameraBounds = {
+      minX: Math.floor(camX - halfVisW),
+      maxX: Math.ceil(camX + halfVisW),
+      minY: Math.floor(camY - halfVisH),
+      maxY: Math.ceil(camY + halfVisH)
+    };
+
+    syncRenderToWasm(entities, mem, shader.exports, isCreatureVisionMode ? lastSelectedId : null, cameraBounds);
 
     // 3. Update WASM clock & lighting
     shader.exports.wasm_set_clock(

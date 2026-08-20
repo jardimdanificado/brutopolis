@@ -10,18 +10,211 @@ let nextEntityId = 1;
 // Global simulation tick counter
 export let currentTick = 0;
 
+// Central O(1) registry for all entities in the universe (living and deceased)
+export const entityRegistry = new Map();
+
+// Global persistent wall coordinates for zero-GC autotiling
+export const globalWallCoords = new Set();
+
+// Spatial Hash Grid partitioning for ultra-fast O(1) zone and radius queries
+export const spatialGrid = new Map(); // zoneKey ("zx_zy") -> Set<Entity>
+export const tileEntityMap = new Map(); // tileKey ("x_y") -> Set<Entity>
+let activeZoneSize = 8;
+
+export function setSpatialZoneSize(sz) {
+  if (sz > 0) activeZoneSize = sz;
+}
+
+export function getSpatialZoneSize() {
+  return activeZoneSize;
+}
+
+export function getSpatialZoneKey(x, y, zoneSize = activeZoneSize) {
+  const zx = Math.floor(x / zoneSize);
+  const zy = Math.floor(y / zoneSize);
+  return `${zx}_${zy}`;
+}
+
+export function registerEntitySpatial(entity, zoneSize = activeZoneSize) {
+  if (!entity || entity.destroyed) return;
+  const zk = getSpatialZoneKey(entity.x, entity.y, zoneSize);
+  let bucket = spatialGrid.get(zk);
+  if (!bucket) {
+    bucket = new Set();
+    spatialGrid.set(zk, bucket);
+  }
+  bucket.add(entity);
+  entity._lastSpatialZone = zk;
+  entity._lastSpatialX = entity.x;
+  entity._lastSpatialY = entity.y;
+
+  const tk = `${entity.x}_${entity.y}`;
+  let tileBucket = tileEntityMap.get(tk);
+  if (!tileBucket) {
+    tileBucket = new Set();
+    tileEntityMap.set(tk, tileBucket);
+  }
+  tileBucket.add(entity);
+
+  if (entity.properties?.structure || entity.properties?.render?.skin?.startsWith("Wall_") || entity.properties?.name?.includes("Muralha") || entity.properties?.name?.includes("Wall")) {
+    globalWallCoords.add(`${entity.x},${entity.y}`);
+  }
+}
+
+export function unregisterEntitySpatial(entity, zoneSize = activeZoneSize) {
+  if (!entity) return;
+  const zk = entity._lastSpatialZone || getSpatialZoneKey(entity.x, entity.y, zoneSize);
+  const bucket = spatialGrid.get(zk);
+  if (bucket) {
+    bucket.delete(entity);
+    if (bucket.size === 0) spatialGrid.delete(zk);
+  }
+
+  const lastX = entity._lastSpatialX !== undefined ? entity._lastSpatialX : entity.x;
+  const lastY = entity._lastSpatialY !== undefined ? entity._lastSpatialY : entity.y;
+  const tk = `${lastX}_${lastY}`;
+  const tileBucket = tileEntityMap.get(tk);
+  if (tileBucket) {
+    tileBucket.delete(entity);
+    if (tileBucket.size === 0) tileEntityMap.delete(tk);
+  }
+
+  if (entity.properties?.structure || entity.properties?.render?.skin?.startsWith("Wall_") || entity.properties?.name?.includes("Muralha") || entity.properties?.name?.includes("Wall")) {
+    globalWallCoords.delete(`${lastX},${lastY}`);
+  }
+}
+
+export function updateEntitySpatial(entity, zoneSize = activeZoneSize) {
+  if (!entity || entity.destroyed) return;
+  if (entity.x === entity._lastSpatialX && entity.y === entity._lastSpatialY) return;
+
+  // Tile map update
+  if (entity._lastSpatialX !== undefined && entity._lastSpatialY !== undefined) {
+    const oldTk = `${entity._lastSpatialX}_${entity._lastSpatialY}`;
+    const oldTileBucket = tileEntityMap.get(oldTk);
+    if (oldTileBucket) {
+      oldTileBucket.delete(entity);
+      if (oldTileBucket.size === 0) tileEntityMap.delete(oldTk);
+    }
+  }
+  const newTk = `${entity.x}_${entity.y}`;
+  let newTileBucket = tileEntityMap.get(newTk);
+  if (!newTileBucket) {
+    newTileBucket = new Set();
+    tileEntityMap.set(newTk, newTileBucket);
+  }
+  newTileBucket.add(entity);
+
+  // Zone bucket update
+  const newZk = getSpatialZoneKey(entity.x, entity.y, zoneSize);
+  if (newZk !== entity._lastSpatialZone) {
+    if (entity._lastSpatialZone) {
+      const oldBucket = spatialGrid.get(entity._lastSpatialZone);
+      if (oldBucket) {
+        oldBucket.delete(entity);
+        if (oldBucket.size === 0) spatialGrid.delete(entity._lastSpatialZone);
+      }
+    }
+    let newBucket = spatialGrid.get(newZk);
+    if (!newBucket) {
+      newBucket = new Set();
+      spatialGrid.set(newZk, newBucket);
+    }
+    newBucket.add(entity);
+    entity._lastSpatialZone = newZk;
+  }
+
+  entity._lastSpatialX = entity.x;
+  entity._lastSpatialY = entity.y;
+}
+
+export function getEntitiesInRadius(centerX, centerY, radiusTiles, zoneSize = activeZoneSize) {
+  const minZx = Math.floor((centerX - radiusTiles) / zoneSize);
+  const maxZx = Math.floor((centerX + radiusTiles) / zoneSize);
+  const minZy = Math.floor((centerY - radiusTiles) / zoneSize);
+  const maxZy = Math.floor((centerY + radiusTiles) / zoneSize);
+
+  const results = [];
+  const rSq = radiusTiles * radiusTiles;
+
+  for (let zy = minZy; zy <= maxZy; zy++) {
+    for (let zx = minZx; zx <= maxZx; zx++) {
+      const zk = `${zx}_${zy}`;
+      const bucket = spatialGrid.get(zk);
+      if (bucket) {
+        for (const ent of bucket) {
+          if (!ent.destroyed) {
+            const dx = ent.x - centerX;
+            const dy = ent.y - centerY;
+            if (dx * dx + dy * dy <= rSq) {
+              results.push(ent);
+            }
+          }
+        }
+      }
+    }
+  }
+  return results;
+}
+
+export function getEntitiesInViewport(minX, maxX, minY, maxY, zoneSize = activeZoneSize) {
+  const minZx = Math.floor(minX / zoneSize);
+  const maxZx = Math.floor(maxX / zoneSize);
+  const minZy = Math.floor(minY / zoneSize);
+  const maxZy = Math.floor(maxY / zoneSize);
+
+  const results = [];
+  for (let zy = minZy; zy <= maxZy; zy++) {
+    for (let zx = minZx; zx <= maxZx; zx++) {
+      const zk = `${zx}_${zy}`;
+      const bucket = spatialGrid.get(zk);
+      if (bucket) {
+        for (const ent of bucket) {
+          if (!ent.destroyed && ent.x >= minX && ent.x <= maxX && ent.y >= minY && ent.y <= maxY) {
+            results.push(ent);
+          }
+        }
+      }
+    }
+  }
+  return results;
+}
+
+export function getEntityAtTile(x, y) {
+  const tk = `${x}_${y}`;
+  const bucket = tileEntityMap.get(tk);
+  if (!bucket || bucket.size === 0) return null;
+  for (const ent of bucket) {
+    if (!ent.destroyed) return ent;
+  }
+  return null;
+}
+
+export function rebuildSpatialGrid(entities, zoneSize = activeZoneSize) {
+  spatialGrid.clear();
+  tileEntityMap.clear();
+  globalWallCoords.clear();
+  activeZoneSize = zoneSize;
+  for (let i = 0; i < entities.length; i++) {
+    const e = entities[i];
+    if (!e.destroyed) {
+      registerEntitySpatial(e, zoneSize);
+    }
+  }
+}
+
 export function resetEngineTicks() {
   currentTick = 0;
   nextEntityId = 1;
   entityRegistry.clear();
+  spatialGrid.clear();
+  tileEntityMap.clear();
+  globalWallCoords.clear();
 }
 
 export function incrementEngineTick() {
   currentTick++;
 }
-
-// Central O(1) registry for all entities in the universe (living and deceased)
-export const entityRegistry = new Map();
 
 /**
  * Creates a pure JavaScript Entity with a flat Property Bag
@@ -38,6 +231,7 @@ export function createEntity(properties = {}, x = 0, y = 0) {
   };
 
   entityRegistry.set(entity.id, entity);
+  registerEntitySpatial(entity);
   return entity;
 }
 
@@ -55,6 +249,7 @@ export function destroyEntity(entity, entitiesArray = null) {
   if (!entity) return;
   entity.destroyed = true;
   entity.deathTick = currentTick;
+  unregisterEntitySpatial(entity);
 
   // Retain in entityRegistry permanently!
   if (entitiesArray) {
@@ -312,8 +507,9 @@ export function explodeEntityOnDeath(entity, entitiesArray, world) {
         });
       }
 
-      // Clan and friends of victim remember the tragedy and set hatred for killer
-      for (const friend of entitiesArray) {
+      // Witnessing tragedy: only notify nearby entities within spatial perception radius (24 tiles) in O(1)
+      const nearbyWitnesses = getEntitiesInRadius(ex, ey, 24);
+      for (const friend of nearbyWitnesses) {
         if (friend.destroyed || !friend.properties.brain) continue;
         const isClan = entity.properties.group && friend.properties.group === entity.properties.group;
         const isFriend = (friend.properties.brain.affinities?.[entity.id] || 0) >= 30;
@@ -365,7 +561,7 @@ export function tickEntities(entities, dt, world) {
     const entity = entities[i];
     if (entity.destroyed) {
       entities.splice(i, 1);
-      // Retain in entityRegistry permanently!
+      unregisterEntitySpatial(entity);
       continue;
     }
 
@@ -385,6 +581,9 @@ export function tickEntities(entities, dt, world) {
         }
       }
     }
+
+    // Synchronize spatial hash grid if entity coordinates changed
+    updateEntitySpatial(entity);
 
     // 2. Check for limb condition degradation & automatic amputation (condition <= 0)
     for (const [key, prop] of Object.entries(entity.properties)) {
@@ -413,7 +612,7 @@ export function tickEntities(entities, dt, world) {
       entity.deathTick = currentTick;
       explodeEntityOnDeath(entity, entities, world);
       entities.splice(i, 1);
-      // Retain in entityRegistry permanently!
+      unregisterEntitySpatial(entity);
     }
   }
 }
@@ -428,7 +627,7 @@ function getSkinBytes(skinStr) {
   return cached;
 }
 
-export function resolveWallSkin(x, y, wallCoords) {
+export function resolveWallSkin(x, y, wallCoords = globalWallCoords) {
   const hasN = wallCoords.has(`${x},${y - 1}`);
   const hasS = wallCoords.has(`${x},${y + 1}`);
   const hasE = wallCoords.has(`${x + 1},${y}`);
@@ -459,10 +658,12 @@ export function resolveWallSkin(x, y, wallCoords) {
   return "Wall_NESW.png";
 }
 
+let _lastWasmRenderCount = 0;
+
 /**
- * Directly syncs renderable entities into WASM shared memory
+ * Directly syncs renderable entities into WASM shared memory with high-performance Frustum Culling
  */
-export function syncRenderToWasm(entities, wasmMemory, wasmExports, perceptionEntityId = null) {
+export function syncRenderToWasm(entities, wasmMemory, wasmExports, perceptionEntityId = null, cameraBounds = null) {
   const entitiesPtr = wasmExports.wasm_get_entities_ptr();
   const maxEntities = wasmExports.wasm_get_max_entities();
 
@@ -470,25 +671,21 @@ export function syncRenderToWasm(entities, wasmMemory, wasmExports, perceptionEn
   const view = new DataView(memBuf);
   const u8 = new Uint8Array(memBuf);
 
-  // Pre-calculate wall coordinates for dynamic autotiling
-  const wallCoords = new Set();
-  for (let i = 0; i < entities.length; i++) {
-    const e = entities[i];
-    if (!e.destroyed && (e.properties?.structure || e.properties?.render?.skin?.startsWith("Wall_") || e.properties?.name?.includes("Muralha") || e.properties?.name?.includes("Wall"))) {
-      wallCoords.add(`${e.x},${e.y}`);
-    }
-  }
+  // High performance Frustum Culling: only process entities inside/near visible viewport
+  const renderList = cameraBounds
+    ? getEntitiesInViewport(cameraBounds.minX, cameraBounds.maxX, cameraBounds.minY, cameraBounds.maxY)
+    : entities;
 
-  const perceiver = perceptionEntityId ? entities.find(e => e.id === perceptionEntityId && !e.destroyed) : null;
+  const perceiver = perceptionEntityId ? getEntityById(perceptionEntityId) : null;
   const perceiverBrain = perceiver?.properties?.brain;
   const perceiverPartnerId = perceiver?.properties?.monogamy?.partnerId;
 
   const STRUCT_SIZE = 108;
   let renderIdx = 0;
 
-  for (let i = 0; i < entities.length; i++) {
-    const e = entities[i];
-    if (e.destroyed || !e.properties || !e.properties.render) continue;
+  for (let i = 0; i < renderList.length; i++) {
+    const e = renderList[i];
+    if (!e || e.destroyed || !e.properties || !e.properties.render) continue;
     if (renderIdx >= maxEntities) break;
 
     const r = e.properties.render;
@@ -535,7 +732,7 @@ export function syncRenderToWasm(entities, wasmMemory, wasmExports, perceptionEn
 
     let skinStr = r.skin || "Human_Knight_M.png";
     if (e.properties.structure || skinStr.startsWith("Wall_") || e.properties.name?.includes("Muralha") || e.properties.name?.includes("Wall")) {
-      skinStr = resolveWallSkin(e.x, e.y, wallCoords);
+      skinStr = resolveWallSkin(e.x, e.y, globalWallCoords);
       r.skin = skinStr;
     }
 
@@ -548,9 +745,11 @@ export function syncRenderToWasm(entities, wasmMemory, wasmExports, perceptionEn
     renderIdx++;
   }
 
-  // Clear remaining slots in WASM buffer
-  for (let i = renderIdx; i < maxEntities; i++) {
+  // Clear previously occupied slots that are now empty (avoid looping 4096 times)
+  const clearEnd = Math.max(renderIdx, _lastWasmRenderCount);
+  for (let i = renderIdx; i < clearEnd && i < maxEntities; i++) {
     const offset = entitiesPtr + i * STRUCT_SIZE;
     view.setInt32(offset + 0, 0, true); // inactive
   }
+  _lastWasmRenderCount = renderIdx;
 }

@@ -1,4 +1,4 @@
-import { createEntity, getEntityById, currentTick } from "./engine.js";
+import { createEntity, getEntityById, currentTick, getEntitiesInRadius, getEntityAtTile, setSpatialZoneSize } from "./engine.js";
 import {
   recordWorldEvent,
   allEvents,
@@ -39,6 +39,7 @@ export function getZoneSize() {
 }
 export function setZoneSize(sz) {
   currentZoneSize = Math.max(2, Math.min(64, parseInt(sz, 10) || 8));
+  setSpatialZoneSize(currentZoneSize);
 }
 
 // ---------------------------------------------------------------------------
@@ -297,30 +298,72 @@ export function isSexuallyCompatible(proposer, recipient) {
   return true;
 }
 
-export function rollRandomSexualOrientation() {
+export function rollCreatureGender() {
+  return Math.random() < 0.5 ? "female" : "male";
+}
+
+export function rollCreatureOrientation() {
   const r = Math.random();
-  if (r < 0.08) return "bisexual";
-  if (r < 0.15) return "homosexual";
-  return "heterosexual";
+  if (r < 0.82) return "heterosexual";
+  if (r < 0.92) return "bisexual";
+  return "homosexual";
+}
+
+export function rollCreatureTraits() {
+  const traits = {};
+  if (Math.random() < 0.10) traits.violent = true;
+  else if (Math.random() < 0.10) traits.pacifist = true;
+
+  if (Math.random() < 0.06) traits.schizophrenic = true;
+  if (Math.random() < 0.03) traits.scatological = true;
+  if (Math.random() < 0.18) traits.industrious = true;
+  if (Math.random() < 0.15) traits.brave = true;
+  if (Math.random() < 0.20) traits.curious = true;
+  if (Math.random() < 0.15) traits.creative = true;
+
+  return traits;
+}
+
+export function getBirthDateData(world = null) {
+  const day = (world?.clock?.day) || 1;
+  const hour = (world?.clock?.hour !== undefined) ? world.clock.hour : Math.floor(Math.random() * 24);
+  const minute = (world?.clock?.minute !== undefined) ? world.clock.minute : Math.floor(Math.random() * 60);
+  return {
+    day,
+    hour,
+    minute,
+    tick: currentTick,
+    year: Math.floor(day / 365) + 1
+  };
+}
+
+export function rollRandomSexualOrientation() {
+  return rollCreatureOrientation();
 }
 
 export function applyRandomSexualOrientation(ent) {
   if (!ent || !ent.properties) return;
-  const orient = rollRandomSexualOrientation();
+  const orient = rollCreatureOrientation();
   if (orient === "bisexual") ent.properties.bisexual = createBisexualProp();
   else if (orient === "homosexual") ent.properties.homosexual = createHomosexualProp();
 }
 
 export const SPECIES_SPEED_MULTIPLIERS = {
   cat: 1.45,
-  wolf: 1.35,
+  deer: 1.40,
   bat: 1.40,
+  wolf: 1.35,
   dragon: 1.30,
   mountain_goat: 1.25,
   goat: 1.25,
+  elf: 1.25,
   lizard: 1.20,
+  spider: 1.20,
   goblin: 1.10,
+  boar: 1.10,
+  orc: 1.05,
   human: 1.0,
+  dwarf: 0.90,
   scorpion: 0.90,
   bear: 0.85,
   serpent: 1.0 // dynamically adjusted: 1.4 in water, 0.55 on land
@@ -739,8 +782,9 @@ export function createBrainProp(maxPath = 16, personality = { bravery: 0.7, curi
 
       // 2. Scan Entities in Perception Range for Affinity, Memory & Object Memorization
       let allyAffinitySumInZone = 0;
+      const nearbyVisible = getEntitiesInRadius(ent.x, ent.y, viewRange);
 
-      for (const other of entities) {
+      for (const other of nearbyVisible) {
         if (other === ent || other.destroyed) continue;
 
         const dist = Math.abs(other.x - ent.x) + Math.abs(other.y - ent.y);
@@ -1051,14 +1095,12 @@ export function generateBabyName(mother, father = null, babyGender = "male", ent
     let bestPartner = null;
     let highestAff = 59;
 
-    if (entities) {
-      for (const other of entities) {
-        if (other !== mother && !other.destroyed && other.properties?.name) {
-          const aff = affinities[other.id] || 0;
-          if (aff > highestAff) {
-            highestAff = aff;
-            bestPartner = other;
-          }
+    for (const [otherIdStr, aff] of Object.entries(affinities)) {
+      if (aff > highestAff) {
+        const other = getEntityById(parseInt(otherIdStr, 10));
+        if (other && other !== mother && !other.destroyed && other.properties?.name) {
+          highestAff = aff;
+          bestPartner = other;
         }
       }
     }
@@ -1796,8 +1838,9 @@ export function createCommunicationProp(talkRate = 12.0) {
 
       const mouth = ent.properties.mouth;
       const talkRange = mouth ? (mouth.talkRadius || 6) : 4;
+      const nearbyTalkers = getEntitiesInRadius(ent.x, ent.y, talkRange);
 
-      for (const other of entities) {
+      for (const other of nearbyTalkers) {
         if (other === ent || other.destroyed || !other.properties.brain) continue;
 
         // Pair interaction cooldown (120 ticks between conversations with the same person)
@@ -2089,7 +2132,39 @@ export function gossipBetweenCreatures(speaker, listener, world, entities) {
     }
   }
 
-  // 4. Deception, Lies, and Truthful Memory Sharing (Occasional Verbal Exchange)
+  // 4. Sharing Date of Birth / Age in Casual Conversation
+  if (Math.random() < 0.22 && speaker.properties.birthDate) {
+    const b = speaker.properties.birthDate;
+    const currentDay = world?.clock?.day || b.day;
+    const ageDays = Math.max(0, currentDay - b.day);
+    let birthDesc = "";
+    if (ageDays === 0) {
+      birthDesc = `${speaker.properties.name} told ${listener.properties.name}: "I was born today at ${String(b.hour).padStart(2,"0")}:${String(b.minute).padStart(2,"0")}!"`;
+    } else {
+      birthDesc = `${speaker.properties.name} shared with ${listener.properties.name}: "I was born on Day ${b.day} at ${String(b.hour).padStart(2,"0")}:${String(b.minute).padStart(2,"0")} (${ageDays} days old)!"`;
+    }
+
+    lisBrain.addShortTerm({
+      type: "BIRTHDATE_HEARD",
+      desc: `Learned that ${speaker.properties.name} was born on Day ${b.day} at ${String(b.hour).padStart(2,"0")}:${String(b.minute).padStart(2,"0")}`,
+      targetId: speaker.id
+    });
+
+    recordWorldEvent({
+      opcode: OP_DIALOGUE,
+      type: "DIALOGUE",
+      primaryEntityId: speaker.id,
+      secondaryEntityId: listener.id,
+      location: { x: speaker.x, y: speaker.y },
+      description: birthDesc,
+      tick: currentTick,
+      timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
+      metadata: { primaryName: speaker.properties.name, secondaryName: listener.properties.name, birthDay: b.day, ageDays }
+    });
+    return;
+  }
+
+  // 5. Deception, Lies, and Truthful Memory Sharing (Occasional Verbal Exchange)
   const isLiar = !!speaker.properties.liar;
   const isSchizophrenic = !!speaker.properties.schizophrenic;
   const lieChance = isSchizophrenic ? 0.25 : (isLiar ? (speaker.properties.liar.type === "manipulator" ? 0.35 : 0.20) : 0.08);
@@ -3171,7 +3246,9 @@ export function createCombatProp(attackInterval = 1.2, aggroRange = 3) {
       let targetIsHate = false;
       let targetIsHunger = false;
 
-      for (const other of entities) {
+      const nearbyCombatants = getEntitiesInRadius(ent.x, ent.y, 1);
+
+      for (const other of nearbyCombatants) {
         if (other !== ent && !other.destroyed && other.properties.life) {
           // Never attack members of the same group/clan!
           if (ent.properties.group && other.properties.group && ent.properties.group === other.properties.group) {
@@ -3614,11 +3691,12 @@ export function createLocomotionProp() {
       // -----------------------------------------------------------------------
       // Priority 1: Pacifist Escape (Flee from nearby threats/hostiles)
       // -----------------------------------------------------------------------
-      if (!hasIntention && ent.properties.pacifist && entities) {
+      if (!hasIntention && ent.properties.pacifist) {
         let nearestHostile = null;
         let minThreatDist = 999;
+        const nearbyHostiles = getEntitiesInRadius(ent.x, ent.y, viewRange);
 
-        for (const other of entities) {
+        for (const other of nearbyHostiles) {
           if (other !== ent && !other.destroyed && other.properties.life) {
             const aff = ent.properties.brain?.affinities?.[other.id] ?? 0;
             const isAggro = other.properties.violent || (other.properties.brain?.personality?.aggression || 0) > 0.4 || aff < -10;
@@ -3685,6 +3763,22 @@ export function createLocomotionProp() {
         chosenDx = Math.sign(homeBaseX - ent.x);
         chosenDy = Math.sign(homeBaseY - ent.y);
         hasIntention = true;
+      }
+
+      // -----------------------------------------------------------------------
+      // Priority 3.5: Targeted Memory Navigation / Goal Heading
+      // -----------------------------------------------------------------------
+      if (!hasIntention && ent.properties.brain?.shortTermMemory) {
+        const mem = ent.properties.brain.shortTermMemory.find(m => m && (m.targetLocation || m.location));
+        if (mem) {
+          const loc = mem.targetLocation || mem.location;
+          const dist = Math.abs(loc.x - ent.x) + Math.abs(loc.y - ent.y);
+          if (dist > 1) {
+            chosenDx = Math.sign(loc.x - ent.x);
+            chosenDy = Math.sign(loc.y - ent.y);
+            hasIntention = true;
+          }
+        }
       }
 
       // -----------------------------------------------------------------------
@@ -3829,7 +3923,8 @@ export function createLocomotionProp() {
         if (group.wars && group.wars.length > 0) {
           let nearestEnemy = null;
           let minEnemyDist = 9999;
-          for (const other of entities) {
+          const nearbyEnemies = getEntitiesInRadius(ent.x, ent.y, viewRange + 12);
+          for (const other of nearbyEnemies) {
             if (other !== ent && !other.destroyed && other.properties.life && other.properties.group && group.wars.includes(other.properties.group.id)) {
               const edist = Math.abs(other.x - ent.x) + Math.abs(other.y - ent.y);
               if (edist <= viewRange + 12 && edist < minEnemyDist) {
@@ -4195,37 +4290,125 @@ export function createLocomotionProp() {
         candidateMoves.push({ dx: -1, dy: 0 });
       }
 
-      // Pass 1: Prioritize Dry Land traversal
-      for (const m of candidateMoves) {
-        if (m.dx === 0 && m.dy === 0) continue;
-        const tx = ent.x + m.dx;
-        const ty = ent.y + m.dy;
-
-        if (world && tx >= 0 && tx < mapW && ty >= 0 && ty < mapH) {
-          const targetTile = world.getTile(tx, ty);
-          if (targetTile !== 5) {
-            let canTraverse = false;
-            if (isFlying) {
-              canTraverse = true;
-            } else if (targetTile !== 2) {
-              // Valid Land Tile (0, 1, 3, 4)
-              canTraverse = true;
-              if (isAquatic && !isTerrestrial) {
-                this.stepTimer = -moveInterval * 3.0; // penalty for aquatic on land
+      // Pass 0.5: Straight Wooden Bridge Construction over Water Obstacles in Direct Line
+      // Max bridge distance is strictly bounded by builder's perception view range!
+      if (!moved && hasIntention && isTerrestrial && !isAquatic && !isFlying && ent.properties.brain) {
+        const viewRange = ent.properties.eye_left?.viewRange || ent.properties.eye_right?.viewRange || 8;
+        for (const m of candidateMoves.slice(0, 2)) {
+          if (m.dx === 0 && m.dy === 0) continue;
+          const tx = ent.x + m.dx;
+          const ty = ent.y + m.dy;
+          if (world && tx >= 0 && tx < mapW && ty >= 0 && ty < mapH) {
+            const targetTile = world.getTile(tx, ty);
+            if (targetTile === 2) {
+              // Raycast across water in straight cardinal line
+              let waterGap = 0;
+              let reachesLand = false;
+              for (let step = 1; step <= viewRange; step++) {
+                const rx = ent.x + m.dx * step;
+                const ry = ent.y + m.dy * step;
+                if (rx < 0 || rx >= mapW || ry < 0 || ry >= mapH) break;
+                const rt = world.getTile(rx, ry);
+                if (rt === 2) {
+                  waterGap++;
+                } else if (rt !== 5) {
+                  reachesLand = true;
+                  break;
+                } else {
+                  break;
+                }
               }
-            } else if (inWater || isAquatic) {
-              // Already in water or aquatic
-              canTraverse = true;
-              if (!isAquatic) {
-                this.stepTimer = -moveInterval * 2.5;
+
+              if (reachesLand && waterGap >= 1 && waterGap <= viewRange) {
+                let woodArmKey = null;
+                for (const [k, p] of Object.entries(ent.properties)) {
+                  if (k.startsWith("arm") && p && (p.heldItem?.resourceType === "wood" || p.heldItem?.name?.toLowerCase().includes("wood") || p.heldItem?.name?.toLowerCase().includes("plank"))) {
+                    woodArmKey = k;
+                    break;
+                  }
+                }
+
+                let groundWood = null;
+                if (!woodArmKey && entities) {
+                  const nearby = getEntitiesInRadius(ent.x, ent.y, 1);
+                  groundWood = nearby.find(e => !e.destroyed && (e.properties?.resourceType === "wood" || e.properties?.name?.toLowerCase().includes("wood") || e.properties?.name?.toLowerCase().includes("plank")));
+                }
+
+                if (woodArmKey || groundWood) {
+                  if (woodArmKey && ent.properties[woodArmKey]) {
+                    ent.properties[woodArmKey].heldItem = null;
+                  } else if (groundWood) {
+                    groundWood.destroyed = true;
+                  }
+
+                  world.setTile(tx, ty, 0); // Convert water into solid walkable floor
+                  const bridgeEnt = createEntity(
+                    {
+                      name: "Straight Wooden Bridge",
+                      structure: true,
+                      isBridge: true,
+                      render: { skin: "Floor_Wood.png", color: 0xffc8965a, backcolor: 0xff3c2814 }
+                    },
+                    tx,
+                    ty
+                  );
+                  if (entities) entities.push(bridgeEnt);
+
+                  recordWorldEvent({
+                    opcode: OP_BUILD,
+                    type: "BUILD",
+                    primaryEntityId: ent.id,
+                    location: { x: tx, y: ty },
+                    description: `${ent.properties.name} constructed a straight wooden bridge over the water at [X: ${tx}, Y: ${ty}] (gap: ${waterGap} tiles, view range: ${viewRange})!`,
+                    tick: currentTick,
+                    timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
+                    metadata: { gap: waterGap, viewRange }
+                  });
+
+                  ent.x = tx;
+                  ent.y = ty;
+                  moved = true;
+                  break;
+                }
               }
             }
+          }
+        }
+      }
 
-            if (canTraverse) {
-              ent.x = tx;
-              ent.y = ty;
-              moved = true;
-              break;
+      // Pass 1: Prioritize Dry Land traversal
+      if (!moved) {
+        for (const m of candidateMoves) {
+          if (m.dx === 0 && m.dy === 0) continue;
+          const tx = ent.x + m.dx;
+          const ty = ent.y + m.dy;
+
+          if (world && tx >= 0 && tx < mapW && ty >= 0 && ty < mapH) {
+            const targetTile = world.getTile(tx, ty);
+            if (targetTile !== 5) {
+              let canTraverse = false;
+              if (isFlying) {
+                canTraverse = true;
+              } else if (targetTile !== 2) {
+                // Valid Land Tile (0, 1, 3, 4)
+                canTraverse = true;
+                if (isAquatic && !isTerrestrial) {
+                  this.stepTimer = -moveInterval * 3.0; // penalty for aquatic on land
+                }
+              } else if (inWater || isAquatic) {
+                // Already in water or aquatic
+                canTraverse = true;
+                if (!isAquatic) {
+                  this.stepTimer = -moveInterval * 2.5;
+                }
+              }
+
+              if (canTraverse) {
+                ent.x = tx;
+                ent.y = ty;
+                moved = true;
+                break;
+              }
             }
           }
         }
@@ -4310,9 +4493,9 @@ export function createLocomotionProp() {
       // -----------------------------------------------------------------------
       // Item Pickup / Ingestion at Current Position
       // -----------------------------------------------------------------------
-      if (entities) {
-        for (const other of entities) {
-          if (other !== ent && !other.destroyed && other.x === ent.x && other.y === ent.y) {
+      const tileItems = getEntitiesInRadius(ent.x, ent.y, 0);
+      for (const other of tileItems) {
+        if (other !== ent && !other.destroyed && other.x === ent.x && other.y === ent.y) {
             // Food Consumption (Only eat if hungry, not when already full or digesting)
             if (other.properties.edible && ent.properties.stomach && ent.properties.stomach.items.length < ent.properties.stomach.capacity) {
               const stomachHasFood = ent.properties.stomach.items.length > 0;
@@ -4453,7 +4636,8 @@ export function createLocomotionProp() {
         if (ent.properties.brain?.mood >= 25 && Math.random() < 0.08) {
           for (const [k, p] of Object.entries(ent.properties)) {
             if (k.startsWith("arm") && p && p.heldItem) {
-              const friend = entities.find(e => e !== ent && !e.destroyed && e.properties.brain && Math.abs(e.x - ent.x) <= 2 && Math.abs(e.y - ent.y) <= 2 && (ent.properties.brain.affinities[e.id] || 0) >= 40);
+              const nearbyFriends = getEntitiesInRadius(ent.x, ent.y, 2);
+              const friend = nearbyFriends.find(e => e !== ent && !e.destroyed && e.properties.brain && (ent.properties.brain.affinities[e.id] || 0) >= 40);
               if (friend) {
                 for (const [fk, fp] of Object.entries(friend.properties)) {
                   if (fk.startsWith("arm") && fp && !fp.heldItem) {
@@ -4478,7 +4662,6 @@ export function createLocomotionProp() {
           }
         }
       }
-    }
   };
 }
 
@@ -4790,126 +4973,212 @@ export function createBurnProp(rate = 0.5, damage = 40) {
 }
 
 // ---------------------------------------------------------------------------
-// 5. Entity Prefabs / Archetypes (Fauna with Paws & Claws, Humanoids with Arms)
+// 5. Procedural Creature & Species Archetype System
 // ---------------------------------------------------------------------------
 
-export function createKnight(x, y, gender = "male") {
-  const naming = generateUniqueCreatureName("Imperial Knight", "human");
-  return createEntity(
-    {
+export function createCreatureFromArchetype(speciesKey, x, y, customOpts = {}) {
+  const normKey = (speciesKey || "human").toLowerCase();
+  const gender = customOpts.gender || rollCreatureGender();
+  const orientation = customOpts.orientation || rollCreatureOrientation();
+  const traits = customOpts.traits || rollCreatureTraits();
+  const birthDate = customOpts.birthDate || getBirthDateData(customOpts.world || null);
+
+  const isFemale = gender === "female";
+  const genitaliaType = isFemale ? "vagina" : "penis";
+
+  let entProps = {};
+  let naming = null;
+
+  // 1. HUMANOID SPECIES (Human, Elf, Dwarf, Orc, Goblin)
+  if (normKey === "human" || normKey === "elf" || normKey === "dwarf" || normKey === "orc" || normKey === "goblin") {
+    const roles = ["Builder", "Miner", "Farmer", "Crafter", "Hunter", "Explorer", "Guard", "Scholar"];
+    const chosenRole = customOpts.role || roles[Math.floor(Math.random() * roles.length)];
+    const customName = customOpts.name;
+
+    naming = customName ? { fullName: customName, surname: customName.split(" ")[1] || getRandomVocabWord() } : generateUniqueCreatureName(chosenRole, normKey);
+    usedGlobalNames.add(naming.fullName);
+
+    let skin = isFemale ? "Human_Normal_F.png" : "Human_Normal_M.png";
+    let color = 0xfff0c878;
+    let backcolor = 0xff3c2814;
+    let maxLife = 6500;
+    let iq = 18;
+    let viewRange = 9;
+    let heldWeapon = null;
+
+    if (normKey === "elf") {
+      skin = isFemale ? "Human_Archer_F.png" : "Human_Archer_M.png";
+      color = 0xffa0e678;
+      backcolor = 0xff143c14;
+      maxLife = 5800;
+      iq = 24;
+      viewRange = 12; // Keen perception
+      heldWeapon = { name: generateUniqueWeaponName("Elven Longbow"), damage: 38, isWeapon: true };
+    } else if (normKey === "dwarf") {
+      skin = "Human_Guard_U.png";
+      color = 0xffd29664;
+      backcolor = 0xff3c1e0a;
+      maxLife = 8500; // High resilience
+      iq = 18;
+      viewRange = 8;
+      heldWeapon = { name: generateUniqueWeaponName("Dwarven Pickaxe"), damage: 34, isTool: true };
+    } else if (normKey === "orc") {
+      skin = "Creature_Orc_U.png";
+      color = 0xff78b450;
+      backcolor = 0xff1e3c14;
+      maxLife = 9200; // Brute strength
+      iq = 14;
+      viewRange = 9;
+      heldWeapon = { name: generateUniqueWeaponName("Heavy Battleaxe"), damage: 45, isWeapon: true };
+    } else if (normKey === "goblin") {
+      skin = "Creature_Goblin_U.png";
+      color = 0xff78d250;
+      backcolor = 0xff283c14;
+      maxLife = 3500;
+      iq = 13;
+      viewRange = 10;
+      heldWeapon = { name: generateUniqueWeaponName("Scavenger Dagger"), damage: 24, isWeapon: true };
+    } else {
+      // Human role gear
+      if (chosenRole === "Miner") {
+        skin = "Human_Guard_U.png";
+        color = 0xffdcdce6;
+        heldWeapon = { name: generateUniqueWeaponName("Iron Pickaxe"), damage: 28, isTool: true };
+      } else if (chosenRole === "Builder") {
+        color = 0xfff0c878;
+        heldWeapon = { name: generateUniqueWeaponName("Carpenter Hammer"), damage: 22, isTool: true };
+      } else if (chosenRole === "Farmer") {
+        color = 0xff82c878;
+        heldWeapon = { name: generateUniqueWeaponName("Cultivation Hoe"), damage: 18, isTool: true, toolType: "hoe" };
+      } else if (chosenRole === "Hunter" || chosenRole === "Guard") {
+        skin = isFemale ? "Human_Knight_F.png" : "Human_Knight_M.png";
+        color = 0xffc87850;
+        heldWeapon = { name: generateUniqueWeaponName("Hunting Spear"), damage: 42, isWeapon: true };
+      } else if (chosenRole === "Explorer" || chosenRole === "Scholar") {
+        skin = isFemale ? "Human_Wizard_F.png" : "Human_Wizard_M.png";
+        color = 0xff78dce6;
+        heldWeapon = { name: generateUniqueWeaponName("Walking Staff"), damage: 20, isTool: true };
+      }
+    }
+
+    entProps = {
       name: naming.fullName,
       surname: naming.surname,
-      species: "human",
-      render: { skin: "Human_Knight_M.png", color: 0xffdcdce6, backcolor: 0xff1e283c },
-      life: createLifeProp(6000, 6000),
+      species: normKey,
+      birthDate,
+      render: { skin, color, backcolor },
+      life: createLifeProp(maxLife, maxLife),
       monogamy: createMonogamyProp(),
       terrestrial: createTerrestrialProp(),
       mouth: createMouthProp(32, 32),
-      communication: createCommunicationProp(2.0),
-      brain: createBrainProp(16, { bravery: 0.9, curiosity: 0.5, aggression: 0.4 }, 1.2),
-      stomach: createStomachProp(4, { meat: 1.0, plant: 0.8, fruit: 1.0, organ: 0.9, bone: 0.1 }),
-      bladder: createBladderProp(3000, 3000),
+      communication: createCommunicationProp(1.6),
+      brain: createBrainProp(iq, { bravery: 0.7, curiosity: 0.7, aggression: normKey === "orc" ? 0.7 : 0.2 }, 1.2),
+      stomach: createStomachProp(4, { meat: 1.0, plant: 1.0, fruit: 1.1, organ: 0.9, bone: 0.2 }),
+      bladder: createBladderProp(3500, 3500),
       kidney: createKidneyProp(0.75),
       body_regen: createBodyRegenerationProp(1.0, 4, 10),
-      combat: createCombatProp(1.2, 3),
-      crafter: createCrafterProp(),
-      builder: createBuilderProp(),
-      arm_left: createArmProp("left", 1.0, 100, 100, { name: generateUniqueWeaponName("Iron Shield"), defense: 20 }),
-      arm_right: createArmProp("right", 1.0, 100, 100, { name: generateUniqueWeaponName("Steel Sword"), damage: 35, isWeapon: true }),
+      combat: createCombatProp(1.1, 3),
+      arm_left: createArmProp("left", 1.0, 100, 100, heldWeapon),
+      arm_right: createArmProp("right", 1.0, 100, 100),
       leg_left: createLegProp("left", 1.0, 100, 100),
       leg_right: createLegProp("right", 1.0, 100, 100),
-      eye_left: createEyeProp("left", 9),
-      eye_right: createEyeProp("right", 9),
-      genitalia: createGenitaliaProp(gender === "male" ? "penis" : "vagina"),
+      eye_left: createEyeProp("left", viewRange),
+      eye_right: createEyeProp("right", viewRange),
+      genitalia: createGenitaliaProp(genitaliaType, false),
       locomotion: createLocomotionProp(),
       torso: { condition: 100, maxCondition: 100, nutrition: 2500, foodType: "meat" }
-    },
-    x,
-    y
-  );
-}
+    };
+  }
 
-export function createArcher(x, y, gender = "female") {
-  const naming = generateUniqueCreatureName("Forest Archer", "human");
-  return createEntity(
-    {
+  // 2. WILD FAUNA & BEAST SPECIES
+  else if (normKey === "boar") {
+    naming = generateUniqueCreatureName("Wild Boar", "boar");
+    entProps = {
       name: naming.fullName,
       surname: naming.surname,
-      species: "human",
-      render: { skin: "Human_Archer_F.png", color: 0xffa0e678, backcolor: 0xff1e3214 },
-      life: createLifeProp(5000, 5000),
-      monogamy: createMonogamyProp(),
+      species: "boar",
+      birthDate,
+      render: { skin: "Creature_Horse_U.png", color: 0xff8c5028, backcolor: 0xff28140a },
+      life: createLifeProp(5500, 5500),
       terrestrial: createTerrestrialProp(),
-      mouth: createMouthProp(32, 32),
-      communication: createCommunicationProp(2.0),
-      brain: createBrainProp(16, { bravery: 0.6, curiosity: 0.8, aggression: 0.3 }, 1.1),
-      stomach: createStomachProp(3, { meat: 0.9, plant: 1.0, fruit: 1.2, organ: 0.8, bone: 0.1 }),
-      bladder: createBladderProp(2500, 2500),
+      mouth: createMouthProp(36, 36),
+      communication: createCommunicationProp(2.5),
+      brain: createBrainProp(11, { bravery: 0.7, curiosity: 0.6, aggression: 0.4 }, 1.0),
+      stomach: createStomachProp(5, { plant: 1.4, fruit: 1.3, meat: 0.5, organ: 0.8 }),
+      bladder: createBladderProp(3000, 3000),
       kidney: createKidneyProp(0.7),
-      body_regen: createBodyRegenerationProp(1.0, 4, 10),
-      combat: createCombatProp(1.0, 4),
-      crafter: createCrafterProp(),
-      arm_left: createArmProp("left", 1.0, 100, 100),
-      arm_right: createArmProp("right", 1.0, 100, 100, { name: generateUniqueWeaponName("Recurve Bow"), damage: 40, isWeapon: true }),
-      leg_left: createLegProp("left", 1.1, 100, 100),
-      leg_right: createLegProp("right", 1.1, 100, 100),
-      eye_left: createEyeProp("left", 14),
-      eye_right: createEyeProp("right", 14),
-      genitalia: createGenitaliaProp(gender === "male" ? "penis" : "vagina"),
+      combat: createCombatProp(1.1, 3),
+      tusks: createArmProp("tusks", 1.2, 100, 100, { name: generateUniqueWeaponName("Boar Tusks"), damage: 32 }),
+      paw_front_left: createPawProp("front_left", 1.1, 100, 100, 0, 0, 0),
+      paw_front_right: createPawProp("front_right", 1.1, 100, 100, 0, 0, 0),
+      paw_back_left: createPawProp("back_left", 1.1, 100, 100, 0, 0, 0),
+      paw_back_right: createPawProp("back_right", 1.1, 100, 100, 0, 0, 0),
+      eye_left: createEyeProp("left", 9),
+      eye_right: createEyeProp("right", 9),
+      genitalia: createGenitaliaProp(genitaliaType),
       locomotion: createLocomotionProp(),
-      flesh: { condition: 100, maxCondition: 100, nutrition: 2000, foodType: "meat" }
-    },
-    x,
-    y
-  );
-}
-
-export function createCat(x, y, infected = false) {
-  const naming = generateUniqueCreatureName(infected ? "Infected Feline" : "Wild Feline", "cat");
-  const cat = createEntity(
-    {
+      flesh: { condition: 100, maxCondition: 100, nutrition: 3500, foodType: "meat" }
+    };
+  } else if (normKey === "deer") {
+    naming = generateUniqueCreatureName("Forest Deer", "deer");
+    entProps = {
       name: naming.fullName,
       surname: naming.surname,
-      species: "cat",
-      render: { skin: "Creature_Cat_U.png", color: 0xfff0b464, backcolor: 0xff321e0f },
-      life: createLifeProp(3500, 3500),
+      species: "deer",
+      birthDate,
+      render: { skin: "Creature_Horse_U.png", color: 0xffc89650, backcolor: 0xff3c280f },
+      life: createLifeProp(4200, 4200),
       terrestrial: createTerrestrialProp(),
       mouth: createMouthProp(30, 30),
       communication: createCommunicationProp(3.0),
-      brain: createBrainProp(12, { bravery: 0.4, curiosity: 0.9, aggression: 0.3 }, 1.0),
-      stomach: createStomachProp(2, { meat: 1.3, plant: 0.2, fruit: 0.5, organ: 1.4, bone: 0.4 }),
+      brain: createBrainProp(13, { bravery: 0.2, curiosity: 0.9, aggression: 0.05 }, 1.1),
+      stomach: createStomachProp(4, { plant: 1.5, fruit: 1.4, meat: 0.0 }),
+      bladder: createBladderProp(2200, 2200),
+      kidney: createKidneyProp(0.7),
+      combat: createCombatProp(0.8, 2),
+      paw_front_left: createPawProp("front_left", 1.3, 100, 100, 0, 0, 0),
+      paw_front_right: createPawProp("front_right", 1.3, 100, 100, 0, 0, 0),
+      paw_back_left: createPawProp("back_left", 1.3, 100, 100, 0, 0, 0),
+      paw_back_right: createPawProp("back_right", 1.3, 100, 100, 0, 0, 0),
+      eye_left: createEyeProp("left", 11),
+      eye_right: createEyeProp("right", 11),
+      genitalia: createGenitaliaProp(genitaliaType),
+      locomotion: createLocomotionProp(),
+      flesh: { condition: 100, maxCondition: 100, nutrition: 2600, foodType: "meat" }
+    };
+  } else if (normKey === "spider") {
+    naming = generateUniqueCreatureName("Giant Spider", "spider");
+    entProps = {
+      name: naming.fullName,
+      surname: naming.surname,
+      species: "spider",
+      birthDate,
+      render: { skin: "Creature_Spider_U.png", color: 0xff3c3c46, backcolor: 0xff141419 },
+      life: createLifeProp(3600, 3600),
+      terrestrial: createTerrestrialProp(),
+      mouth: createMouthProp(30, 30),
+      communication: createCommunicationProp(4.0),
+      brain: createBrainProp(11, { bravery: 0.8, curiosity: 0.5, aggression: 0.85 }, 0.9),
+      stomach: createStomachProp(2, { meat: 1.5, organ: 1.4 }),
       bladder: createBladderProp(1500, 1500),
       kidney: createKidneyProp(0.6),
-      body_regen: createBodyRegenerationProp(1.0, 3, 8),
-      combat: createCombatProp(1.0, 2),
-      paw_front_left: createPawProp("front_left", 1.0, 100, 100, 4, 4, 14),
-      paw_front_right: createPawProp("front_right", 1.0, 100, 100, 4, 4, 14),
-      paw_back_left: createPawProp("back_left", 1.0, 100, 100, 4, 4, 14),
-      paw_back_right: createPawProp("back_right", 1.0, 100, 100, 4, 4, 14),
-      eye_left: createEyeProp("left", 10),
-      eye_right: createEyeProp("right", 10),
-      genitalia: createGenitaliaProp("vagina"),
+      combat: createCombatProp(1.2, 2),
+      fangs: createArmProp("fangs", 1.2, 100, 100, { name: generateUniqueWeaponName("Venomous Fangs"), damage: 38 }),
+      leg_left: createLegProp("legs_left", 1.2, 100, 100),
+      leg_right: createLegProp("legs_right", 1.2, 100, 100),
+      eye_left: createEyeProp("left", 11),
+      eye_right: createEyeProp("right", 11),
+      genitalia: createGenitaliaProp(genitaliaType),
       locomotion: createLocomotionProp(),
-      flesh: { condition: 100, maxCondition: 100, nutrition: 1800, foodType: "meat" }
-    },
-    x,
-    y
-  );
-
-  if (infected) {
-    cat.properties.parasites = createParasitesProp(1.5);
-  }
-
-  return cat;
-}
-
-export function createWolf(x, y) {
-  const naming = generateUniqueCreatureName("Dire Wolf", "wolf");
-  return createEntity(
-    {
+      flesh: { condition: 100, maxCondition: 100, nutrition: 1500, foodType: "meat" }
+    };
+  } else if (normKey === "wolf") {
+    naming = generateUniqueCreatureName("Dire Wolf", "wolf");
+    entProps = {
       name: naming.fullName,
       surname: naming.surname,
       species: "wolf",
+      birthDate,
       render: { skin: "Creature_Wolf_U.png", color: 0xffc8c8dc, backcolor: 0xff28283c },
       life: createLifeProp(4500, 4500),
       terrestrial: createTerrestrialProp(),
@@ -4927,22 +5196,17 @@ export function createWolf(x, y) {
       paw_back_right: createPawProp("back_right", 1.1, 100, 100, 4, 4, 24),
       eye_left: createEyeProp("left", 12),
       eye_right: createEyeProp("right", 12),
-      genitalia: createGenitaliaProp("penis"),
+      genitalia: createGenitaliaProp(genitaliaType),
       locomotion: createLocomotionProp(),
       flesh: { condition: 100, maxCondition: 100, nutrition: 2200, foodType: "meat" }
-    },
-    x,
-    y
-  );
-}
-
-export function createBear(x, y) {
-  const naming = generateUniqueCreatureName("Grizzly Bear", "bear");
-  return createEntity(
-    {
+    };
+  } else if (normKey === "bear") {
+    naming = generateUniqueCreatureName("Grizzly Bear", "bear");
+    entProps = {
       name: naming.fullName,
       surname: naming.surname,
       species: "bear",
+      birthDate,
       render: { skin: "Creature_Bear_U.png", color: 0xff965a28, backcolor: 0xff32190a },
       life: createLifeProp(12000, 12000),
       terrestrial: createTerrestrialProp(),
@@ -4961,56 +5225,48 @@ export function createBear(x, y) {
       paw_back_right: createPawProp("back_right", 1.3, 100, 100, 5, 5, 32),
       eye_left: createEyeProp("left", 10),
       eye_right: createEyeProp("right", 10),
-      genitalia: createGenitaliaProp("penis"),
+      genitalia: createGenitaliaProp(genitaliaType),
       locomotion: createLocomotionProp(),
       flesh: { condition: 100, maxCondition: 100, nutrition: 6000, foodType: "meat" }
-    },
-    x,
-    y
-  );
-}
-
-export function createGoblin(x, y) {
-  const naming = generateUniqueCreatureName("Goblin Scavenger", "goblin");
-  return createEntity(
-    {
+    };
+  } else if (normKey === "cat") {
+    naming = generateUniqueCreatureName("Wild Feline", "cat");
+    entProps = {
       name: naming.fullName,
       surname: naming.surname,
-      species: "goblin",
-      render: { skin: "Creature_Goblin_U.png", color: 0xff78d250, backcolor: 0xff283c14 },
-      life: createLifeProp(3200, 3200),
+      species: "cat",
+      birthDate,
+      render: { skin: "Creature_Cat_U.png", color: 0xfff0b464, backcolor: 0xff321e0f },
+      life: createLifeProp(3500, 3500),
       terrestrial: createTerrestrialProp(),
-      mouth: createMouthProp(28, 28),
-      communication: createCommunicationProp(2.0),
-      brain: createBrainProp(12, { bravery: 0.3, curiosity: 0.9, aggression: 0.6 }, 0.9),
-      stomach: createStomachProp(3, { meat: 1.0, plant: 1.0, fruit: 1.1, organ: 1.0, bone: 0.4 }),
-      bladder: createBladderProp(1800, 1800),
-      kidney: createKidneyProp(0.7),
+      mouth: createMouthProp(30, 30),
+      communication: createCommunicationProp(3.0),
+      brain: createBrainProp(12, { bravery: 0.4, curiosity: 0.9, aggression: 0.3 }, 1.0),
+      stomach: createStomachProp(2, { meat: 1.3, plant: 0.2, fruit: 0.5, organ: 1.4, bone: 0.4 }),
+      bladder: createBladderProp(1500, 1500),
+      kidney: createKidneyProp(0.6),
       body_regen: createBodyRegenerationProp(1.0, 3, 8),
-      combat: createCombatProp(0.9, 3),
-      group_member: createGroupMemberProp(),
-      arm_left: createArmProp("left", 0.9, 100, 100),
-      arm_right: createArmProp("right", 0.9, 100, 100, { name: generateUniqueWeaponName("Rusty Dagger"), damage: 22, isWeapon: true }),
-      leg_left: createLegProp("left", 1.0, 100, 100),
-      leg_right: createLegProp("right", 1.0, 100, 100),
-      eye_left: createEyeProp("left", 11),
-      eye_right: createEyeProp("right", 11),
-      genitalia: createGenitaliaProp("male"),
+      combat: createCombatProp(1.0, 2),
+      paw_front_left: createPawProp("front_left", 1.0, 100, 100, 4, 4, 14),
+      paw_front_right: createPawProp("front_right", 1.0, 100, 100, 4, 4, 14),
+      paw_back_left: createPawProp("back_left", 1.0, 100, 100, 4, 4, 14),
+      paw_back_right: createPawProp("back_right", 1.0, 100, 100, 4, 4, 14),
+      eye_left: createEyeProp("left", 10),
+      eye_right: createEyeProp("right", 10),
+      genitalia: createGenitaliaProp(genitaliaType),
       locomotion: createLocomotionProp(),
-      flesh: { condition: 100, maxCondition: 100, nutrition: 1400, foodType: "meat" }
-    },
-    x,
-    y
-  );
-}
-
-export function createBat(x, y) {
-  const naming = generateUniqueCreatureName("Cave Bat", "bat");
-  return createEntity(
-    {
+      flesh: { condition: 100, maxCondition: 100, nutrition: 1800, foodType: "meat" }
+    };
+    if (customOpts.infected) {
+      entProps.parasites = createParasitesProp(1.5);
+    }
+  } else if (normKey === "bat") {
+    naming = generateUniqueCreatureName("Cave Bat", "bat");
+    entProps = {
       name: naming.fullName,
       surname: naming.surname,
       species: "bat",
+      birthDate,
       render: { skin: "Creature_Bat_U.png", color: 0xffb496dc, backcolor: 0xff281e3c },
       life: createLifeProp(2000, 2000),
       flying: createFlyingProp(2.2),
@@ -5026,22 +5282,17 @@ export function createBat(x, y) {
       paw_back_right: createPawProp("back_right", 0.9, 100, 100, 3, 3, 12),
       eye_left: createEyeProp("left", 12),
       eye_right: createEyeProp("right", 12),
-      genitalia: createGenitaliaProp("female"),
+      genitalia: createGenitaliaProp(genitaliaType),
       locomotion: createLocomotionProp(),
       flesh: { condition: 100, maxCondition: 100, nutrition: 800, foodType: "meat" }
-    },
-    x,
-    y
-  );
-}
-
-export function createSeaSerpent(x, y) {
-  const naming = generateUniqueCreatureName("Abyssal Serpent", "serpent");
-  return createEntity(
-    {
+    };
+  } else if (normKey === "serpent") {
+    naming = generateUniqueCreatureName("Abyssal Serpent", "serpent");
+    entProps = {
       name: naming.fullName,
       surname: naming.surname,
       species: "serpent",
+      birthDate,
       render: { skin: "Creature_Snake_U.png", color: 0xff32c8d2, backcolor: 0xff0a2832 },
       life: createLifeProp(8000, 8000),
       aquatic: createAquaticProp(),
@@ -5056,22 +5307,17 @@ export function createSeaSerpent(x, y) {
       tail: { condition: 100, maxCondition: 100, nutrition: 3000, foodType: "meat" },
       eye_left: createEyeProp("left", 11),
       eye_right: createEyeProp("right", 11),
-      genitalia: createGenitaliaProp("vagina"),
+      genitalia: createGenitaliaProp(genitaliaType),
       locomotion: createLocomotionProp(),
       flesh: { condition: 100, maxCondition: 100, nutrition: 4000, foodType: "meat" }
-    },
-    x,
-    y
-  );
-}
-
-export function createDragon(x, y) {
-  const naming = generateUniqueCreatureName("Ancient Wyrm", "dragon");
-  return createEntity(
-    {
+    };
+  } else if (normKey === "dragon") {
+    naming = generateUniqueCreatureName("Ancient Wyrm", "dragon");
+    entProps = {
       name: naming.fullName,
       surname: naming.surname,
       species: "dragon",
+      birthDate,
       render: { skin: "Creature_Dragon_U.png", color: 0xffff4646, backcolor: 0xff3c0f0f },
       life: createLifeProp(30000, 30000),
       flying: createFlyingProp(2.5),
@@ -5091,14 +5337,109 @@ export function createDragon(x, y) {
       paw_back_right: createPawProp("back_right", 1.5, 100, 100, 5, 5, 42),
       eye_left: createEyeProp("left", 15),
       eye_right: createEyeProp("right", 15),
-      genitalia: createGenitaliaProp("penis"),
+      genitalia: createGenitaliaProp(genitaliaType),
       regeneration: createRegenerationProp(1.0, 35),
       locomotion: createLocomotionProp(),
       dragon_flesh: { condition: 100, maxCondition: 100, nutrition: 10000, foodType: "meat" }
-    },
-    x,
-    y
-  );
+    };
+  } else {
+    naming = generateUniqueCreatureName("Creature", normKey);
+    entProps = {
+      name: naming.fullName,
+      surname: naming.surname,
+      species: normKey,
+      birthDate,
+      render: { skin: "Human_Normal_M.png", color: 0xffdcdce6, backcolor: 0xff1e283c },
+      life: createLifeProp(5000, 5000),
+      terrestrial: createTerrestrialProp(),
+      mouth: createMouthProp(30, 30),
+      communication: createCommunicationProp(1.5),
+      brain: createBrainProp(15, { bravery: 0.5, curiosity: 0.5, aggression: 0.3 }, 1.0),
+      stomach: createStomachProp(4, { meat: 1.0, plant: 1.0, fruit: 1.0, organ: 1.0 }),
+      bladder: createBladderProp(3000, 3000),
+      kidney: createKidneyProp(0.7),
+      eye_left: createEyeProp("left", 8),
+      eye_right: createEyeProp("right", 8),
+      genitalia: createGenitaliaProp(genitaliaType),
+      locomotion: createLocomotionProp(),
+      flesh: { condition: 100, maxCondition: 100, nutrition: 2000, foodType: "meat" }
+    };
+  }
+
+  // Apply procedural sexual orientation
+  if (orientation === "bisexual") entProps.bisexual = createBisexualProp();
+  else if (orientation === "homosexual") entProps.homosexual = createHomosexualProp();
+
+  // Apply procedural traits
+  for (const [tKey, tVal] of Object.entries(traits)) {
+    if (tVal) entProps[tKey] = true;
+  }
+
+  return createEntity(entProps, x, y);
+}
+
+export function createElf(x, y, opts = {}) {
+  return createCreatureFromArchetype("elf", x, y, opts);
+}
+
+export function createDwarf(x, y, opts = {}) {
+  return createCreatureFromArchetype("dwarf", x, y, opts);
+}
+
+export function createOrc(x, y, opts = {}) {
+  return createCreatureFromArchetype("orc", x, y, opts);
+}
+
+export function createBoar(x, y, opts = {}) {
+  return createCreatureFromArchetype("boar", x, y, opts);
+}
+
+export function createDeer(x, y, opts = {}) {
+  return createCreatureFromArchetype("deer", x, y, opts);
+}
+
+export function createSpider(x, y, opts = {}) {
+  return createCreatureFromArchetype("spider", x, y, opts);
+}
+
+export function createHuman(x, y, opts = {}) {
+  return createCreatureFromArchetype("human", x, y, opts);
+}
+
+export function createKnight(x, y, gender = null) {
+  return createCreatureFromArchetype("human", x, y, { role: "Guard", gender });
+}
+
+export function createArcher(x, y, gender = null) {
+  return createCreatureFromArchetype("elf", x, y, { role: "Hunter", gender });
+}
+
+export function createCat(x, y, infected = false) {
+  return createCreatureFromArchetype("cat", x, y, { infected });
+}
+
+export function createWolf(x, y) {
+  return createCreatureFromArchetype("wolf", x, y);
+}
+
+export function createBear(x, y) {
+  return createCreatureFromArchetype("bear", x, y);
+}
+
+export function createGoblin(x, y) {
+  return createCreatureFromArchetype("goblin", x, y);
+}
+
+export function createBat(x, y) {
+  return createCreatureFromArchetype("bat", x, y);
+}
+
+export function createSeaSerpent(x, y) {
+  return createCreatureFromArchetype("serpent", x, y);
+}
+
+export function createDragon(x, y) {
+  return createCreatureFromArchetype("dragon", x, y);
 }
 
 /**
@@ -5481,255 +5822,45 @@ export function createPoopEntity(x, y, seed = null) {
 // ---------------------------------------------------------------------------
 
 export function createHumanMiner(x, y, name = null) {
-  const naming = name ? { fullName: name, surname: name.split(" ")[1] || getRandomVocabWord() } : generateUniqueCreatureName("Miner", "human");
-  usedGlobalNames.add(naming.fullName);
-  return createEntity(
-    {
-      name: naming.fullName,
-      surname: naming.surname,
-      species: "human",
-      render: { skin: "Human_Guard_U.png", color: 0xffdcdce6, backcolor: 0xff1e283c },
-      life: createLifeProp(7000, 7000),
-      monogamy: createMonogamyProp(),
-      terrestrial: createTerrestrialProp(),
-      mouth: createMouthProp(32, 32),
-      communication: createCommunicationProp(1.5),
-      brain: createBrainProp(18, { bravery: 0.8, curiosity: 0.6, aggression: 0.2 }, 1.2),
-      stomach: createStomachProp(4, { meat: 1.0, plant: 0.9, fruit: 1.0, organ: 0.8, bone: 0.1 }),
-      bladder: createBladderProp(3500, 3500),
-      kidney: createKidneyProp(0.75),
-      body_regen: createBodyRegenerationProp(1.0, 4, 10),
-      combat: createCombatProp(1.2, 3),
-      group_member: createGroupMemberProp(),
-      arm_left: createArmProp("left", 1.0, 100, 100, { name: generateUniqueWeaponName("Iron Pickaxe"), damage: 28, isTool: true }),
-      arm_right: createArmProp("right", 1.0, 100, 100),
-      leg_left: createLegProp("left", 1.0, 100, 100),
-      leg_right: createLegProp("right", 1.0, 100, 100),
-      eye_left: createEyeProp("left", 9),
-      eye_right: createEyeProp("right", 9),
-      genitalia: createGenitaliaProp("penis", false),
-      locomotion: createLocomotionProp(),
-      torso: { condition: 100, maxCondition: 100, nutrition: 2500, foodType: "meat" }
-    },
-    x,
-    y
-  );
+  const ent = createCreatureFromArchetype("human", x, y, { role: "Miner", name });
+  ent.properties.group_member = createGroupMemberProp();
+  return ent;
 }
 
 export function createHumanBuilder(x, y, name = null) {
-  const naming = name ? { fullName: name, surname: name.split(" ")[1] || getRandomVocabWord() } : generateUniqueCreatureName("Builder", "human");
-  usedGlobalNames.add(naming.fullName);
-  return createEntity(
-    {
-      name: naming.fullName,
-      surname: naming.surname,
-      species: "human",
-      render: { skin: "Human_Normal_M.png", color: 0xfff0c878, backcolor: 0xff3c2814 },
-      life: createLifeProp(6500, 6500),
-      monogamy: createMonogamyProp(),
-      terrestrial: createTerrestrialProp(),
-      mouth: createMouthProp(32, 32),
-      communication: createCommunicationProp(1.5),
-      brain: createBrainProp(18, { bravery: 0.7, curiosity: 0.7, aggression: 0.2 }, 1.1),
-      stomach: createStomachProp(4, { meat: 1.0, plant: 0.9, fruit: 1.0, organ: 0.8, bone: 0.1 }),
-      bladder: createBladderProp(3500, 3500),
-      kidney: createKidneyProp(0.75),
-      body_regen: createBodyRegenerationProp(1.0, 4, 10),
-      combat: createCombatProp(1.1, 3),
-      group_member: createGroupMemberProp(),
-      arm_left: createArmProp("left", 1.0, 100, 100, { name: generateUniqueWeaponName("Carpenter Hammer"), damage: 22, isTool: true }),
-      arm_right: createArmProp("right", 1.0, 100, 100),
-      leg_left: createLegProp("left", 1.0, 100, 100),
-      leg_right: createLegProp("right", 1.0, 100, 100),
-      eye_left: createEyeProp("left", 9),
-      eye_right: createEyeProp("right", 9),
-      genitalia: createGenitaliaProp("penis", false),
-      locomotion: createLocomotionProp(),
-      torso: { condition: 100, maxCondition: 100, nutrition: 2500, foodType: "meat" }
-    },
-    x,
-    y
-  );
+  const ent = createCreatureFromArchetype("human", x, y, { role: "Builder", name });
+  ent.properties.group_member = createGroupMemberProp();
+  return ent;
 }
 
 export function createHumanCrafter(x, y, name = null) {
-  const naming = name ? { fullName: name, surname: name.split(" ")[1] || getRandomVocabWord() } : generateUniqueCreatureName("Crafter", "human");
-  usedGlobalNames.add(naming.fullName);
-  return createEntity(
-    {
-      name: naming.fullName,
-      surname: naming.surname,
-      species: "human",
-      render: { skin: "Human_Normal_M.png", color: 0xffa0b4e6, backcolor: 0xff1e2846 },
-      life: createLifeProp(6000, 6000),
-      monogamy: createMonogamyProp(),
-      terrestrial: createTerrestrialProp(),
-      mouth: createMouthProp(32, 32),
-      communication: createCommunicationProp(1.5),
-      brain: createBrainProp(20, { bravery: 0.6, curiosity: 0.9, aggression: 0.1 }, 1.3),
-      stomach: createStomachProp(4, { meat: 1.0, plant: 0.9, fruit: 1.0, organ: 0.8, bone: 0.1 }),
-      bladder: createBladderProp(3500, 3500),
-      kidney: createKidneyProp(0.75),
-      body_regen: createBodyRegenerationProp(1.0, 4, 10),
-      combat: createCombatProp(1.0, 2),
-      group_member: createGroupMemberProp(),
-      arm_left: createArmProp("left", 1.0, 100, 100, { name: generateUniqueWeaponName("Carving Knife"), damage: 18, isTool: true }),
-      arm_right: createArmProp("right", 1.0, 100, 100),
-      leg_left: createLegProp("left", 1.0, 100, 100),
-      leg_right: createLegProp("right", 1.0, 100, 100),
-      eye_left: createEyeProp("left", 9),
-      eye_right: createEyeProp("right", 9),
-      genitalia: createGenitaliaProp("penis", false),
-      locomotion: createLocomotionProp(),
-      torso: { condition: 100, maxCondition: 100, nutrition: 2500, foodType: "meat" }
-    },
-    x,
-    y
-  );
+  const ent = createCreatureFromArchetype("human", x, y, { role: "Crafter", name });
+  ent.properties.group_member = createGroupMemberProp();
+  return ent;
 }
 
 export function createHumanFarmer(x, y, name = null) {
-  const naming = name ? { fullName: name, surname: name.split(" ")[1] || getRandomVocabWord() } : generateUniqueCreatureName("Farmer", "human");
-  usedGlobalNames.add(naming.fullName);
-  return createEntity(
-    {
-      name: naming.fullName,
-      surname: naming.surname,
-      species: "human",
-      render: { skin: "Human_Normal_M.png", color: 0xff82c878, backcolor: 0xff143c1e },
-      life: createLifeProp(6500, 6500),
-      monogamy: createMonogamyProp(),
-      terrestrial: createTerrestrialProp(),
-      mouth: createMouthProp(32, 32),
-      communication: createCommunicationProp(1.5),
-      brain: createBrainProp(18, { bravery: 0.6, curiosity: 0.8, aggression: 0.1 }, 1.2),
-      stomach: createStomachProp(4, { meat: 1.0, plant: 1.2, fruit: 1.3, organ: 0.8, bone: 0.1 }),
-      bladder: createBladderProp(3500, 3500),
-      kidney: createKidneyProp(0.75),
-      body_regen: createBodyRegenerationProp(1.0, 4, 10),
-      combat: createCombatProp(1.0, 2),
-      group_member: createGroupMemberProp(),
-      arm_left: createArmProp("left", 1.0, 100, 100, { name: generateUniqueWeaponName("Cultivation Hoe"), damage: 18, isTool: true, toolType: "hoe" }),
-      arm_right: createArmProp("right", 1.0, 100, 100),
-      leg_left: createLegProp("left", 1.0, 100, 100),
-      leg_right: createLegProp("right", 1.0, 100, 100),
-      eye_left: createEyeProp("left", 9),
-      eye_right: createEyeProp("right", 9),
-      genitalia: createGenitaliaProp("penis", false),
-      locomotion: createLocomotionProp(),
-      torso: { condition: 100, maxCondition: 100, nutrition: 2500, foodType: "meat" }
-    },
-    x,
-    y
-  );
+  const ent = createCreatureFromArchetype("human", x, y, { role: "Farmer", name });
+  ent.properties.group_member = createGroupMemberProp();
+  return ent;
 }
 
 export function createHumanMatriarch(x, y, name = null) {
-  const naming = name ? { fullName: name, surname: name.split(" ")[1] || getRandomVocabWord() } : generateUniqueCreatureName("Matriarch", "human");
-  usedGlobalNames.add(naming.fullName);
-  return createEntity(
-    {
-      name: naming.fullName,
-      surname: naming.surname,
-      species: "human",
-      render: { skin: "Human_Normal_F.png", color: 0xffffb4c8, backcolor: 0xff461e28 },
-      life: createLifeProp(6500, 6500),
-      monogamy: createMonogamyProp(),
-      terrestrial: createTerrestrialProp(),
-      mouth: createMouthProp(32, 32),
-      communication: createCommunicationProp(1.8),
-      brain: createBrainProp(20, { bravery: 0.7, curiosity: 0.8, aggression: 0.1 }, 1.4),
-      stomach: createStomachProp(4, { meat: 1.0, plant: 1.0, fruit: 1.0, organ: 0.9, bone: 0.1 }),
-      bladder: createBladderProp(3500, 3500),
-      kidney: createKidneyProp(0.75),
-      body_regen: createBodyRegenerationProp(1.2, 4, 10),
-      combat: createCombatProp(1.0, 2),
-      group_member: createGroupMemberProp(),
-      arm_left: createArmProp("left", 1.0, 100, 100),
-      arm_right: createArmProp("right", 1.0, 100, 100),
-      leg_left: createLegProp("left", 1.0, 100, 100),
-      leg_right: createLegProp("right", 1.0, 100, 100),
-      eye_left: createEyeProp("left", 9),
-      eye_right: createEyeProp("right", 9),
-      genitalia: createGenitaliaProp("vagina", false),
-      locomotion: createLocomotionProp(),
-      torso: { condition: 100, maxCondition: 100, nutrition: 2500, foodType: "meat" }
-    },
-    x,
-    y
-  );
+  const ent = createCreatureFromArchetype("human", x, y, { role: "Matriarch", gender: "female", name });
+  ent.properties.group_member = createGroupMemberProp();
+  return ent;
 }
 
 export function createHumanHunter(x, y, name = null) {
-  const naming = name ? { fullName: name, surname: name.split(" ")[1] || getRandomVocabWord() } : generateUniqueCreatureName("Hunter", "human");
-  usedGlobalNames.add(naming.fullName);
-  return createEntity(
-    {
-      name: naming.fullName,
-      surname: naming.surname,
-      species: "human",
-      render: { skin: "Human_Guard_U.png", color: 0xffc87850, backcolor: 0xff3c140a },
-      life: createLifeProp(7500, 7500),
-      monogamy: createMonogamyProp(),
-      terrestrial: createTerrestrialProp(),
-      mouth: createMouthProp(32, 32),
-      communication: createCommunicationProp(1.6),
-      brain: createBrainProp(22, { bravery: 0.95, curiosity: 0.7, aggression: 0.75 }, 1.4),
-      stomach: createStomachProp(5, { meat: 1.4, plant: 0.7, fruit: 0.8, organ: 1.2, bone: 0.2 }),
-      bladder: createBladderProp(4000, 4000),
-      kidney: createKidneyProp(0.7),
-      body_regen: createBodyRegenerationProp(1.0, 4, 10),
-      combat: createCombatProp(1.3, 4),
-      group_member: createGroupMemberProp(),
-      arm_left: createArmProp("left", 1.0, 100, 100, { name: generateUniqueWeaponName("Hunting Spear"), damage: 45, isWeapon: true }),
-      arm_right: createArmProp("right", 1.0, 100, 100),
-      leg_left: createLegProp("left", 1.2, 100, 100),
-      leg_right: createLegProp("right", 1.2, 100, 100),
-      eye_left: createEyeProp("left", 12),
-      eye_right: createEyeProp("right", 12),
-      genitalia: createGenitaliaProp("penis", false),
-      locomotion: createLocomotionProp(),
-      torso: { condition: 100, maxCondition: 100, nutrition: 3000, foodType: "meat" }
-    },
-    x,
-    y
-  );
+  const ent = createCreatureFromArchetype("human", x, y, { role: "Hunter", name });
+  ent.properties.group_member = createGroupMemberProp();
+  return ent;
 }
 
 export function createHumanExplorer(x, y, name = null) {
-  const naming = name ? { fullName: name, surname: name.split(" ")[1] || getRandomVocabWord() } : generateUniqueCreatureName("Explorer", "human");
-  usedGlobalNames.add(naming.fullName);
-  return createEntity(
-    {
-      name: naming.fullName,
-      surname: naming.surname,
-      species: "human",
-      render: { skin: "Human_Normal_F.png", color: 0xff78dce6, backcolor: 0xff0a323c },
-      life: createLifeProp(6800, 6800),
-      monogamy: createMonogamyProp(),
-      terrestrial: createTerrestrialProp(),
-      mouth: createMouthProp(32, 32),
-      communication: createCommunicationProp(2.2),
-      brain: createBrainProp(28, { bravery: 0.9, curiosity: 1.0, aggression: 0.1 }, 1.8, true), // Infinite object memory!
-      stomach: createStomachProp(4, { meat: 1.0, plant: 1.1, fruit: 1.2, organ: 0.9, bone: 0.1 }),
-      bladder: createBladderProp(4500, 4500),
-      kidney: createKidneyProp(0.65),
-      body_regen: createBodyRegenerationProp(1.2, 4, 10),
-      combat: createCombatProp(1.0, 2),
-      group_member: createGroupMemberProp(),
-      arm_left: createArmProp("left", 1.0, 100, 100, { name: generateUniqueWeaponName("Walking Staff"), damage: 20, isTool: true }),
-      arm_right: createArmProp("right", 1.0, 100, 100),
-      leg_left: createLegProp("left", 1.2, 100, 100),
-      leg_right: createLegProp("right", 1.2, 100, 100),
-      eye_left: createEyeProp("left", 10),
-      eye_right: createEyeProp("right", 10),
-      genitalia: createGenitaliaProp("vagina", false),
-      locomotion: createLocomotionProp(),
-      torso: { condition: 100, maxCondition: 100, nutrition: 2500, foodType: "meat" }
-    },
-    x,
-    y
-  );
+  const ent = createCreatureFromArchetype("human", x, y, { role: "Explorer", name });
+  ent.properties.group_member = createGroupMemberProp();
+  return ent;
 }
 
 /**
@@ -5741,15 +5872,14 @@ export function createEmbarkParty(centerX, centerY, world, entities) {
   const CLAN_NOUNS = ["Vanguard", "Settlers", "Enclave", "Tribe", "Brotherhood", "Legion", "Pioneers", "Guild", "Syndicate", "Fellowship", "Haven", "Clan"];
   const clanName = `The ${CLAN_ADJECTIVES[Math.floor(Math.random() * CLAN_ADJECTIVES.length)]} ${CLAN_NOUNS[Math.floor(Math.random() * CLAN_NOUNS.length)]}`;
 
-  // 7 Intelligent settler professions
-  const professions = [
-    { title: "Builder", fn: createHumanBuilder },
-    { title: "Miner", fn: createHumanMiner },
-    { title: "Farmer", fn: createHumanFarmer },
-    { title: "Crafter", fn: createHumanCrafter },
-    { title: "Hunter", fn: createHumanHunter },
-    { title: "Matriarch", fn: createHumanMatriarch },
-    { title: "Knight", fn: (x, y) => createKnight(x, y, Math.random() < 0.5 ? "male" : "female") }
+  const partyPlan = [
+    { species: "human", role: "Builder" },
+    { species: "dwarf", role: "Miner" },
+    { species: "elf", role: "Farmer" },
+    { species: "human", role: "Crafter" },
+    { species: "orc", role: "Hunter" },
+    { species: "human", role: "Matriarch", gender: "female" },
+    { species: "elf", role: "Guard" }
   ];
 
   const SURNAMES = ["Vance", "Silveira", "Rocha", "Barros", "Prado", "Montes", "Ramos", "Torres", "Valente", "Thorne", "Alba", "Fletcher"];
@@ -5766,7 +5896,7 @@ export function createEmbarkParty(centerX, centerY, world, entities) {
     { dx: -1, dy: 1 }
   ];
 
-  for (let i = 0; i < professions.length; i++) {
+  for (let i = 0; i < partyPlan.length; i++) {
     const off = offsets[i] || { dx: 0, dy: 0 };
     let px = centerX + off.dx;
     let py = centerY + off.dy;
@@ -5774,8 +5904,8 @@ export function createEmbarkParty(centerX, centerY, world, entities) {
       px = centerX;
       py = centerY;
     }
-    const prof = professions[i];
-    const ent = prof.fn(px, py);
+    const plan = partyPlan[i];
+    const ent = createCreatureFromArchetype(plan.species, px, py, { role: plan.role, gender: plan.gender, world });
     ent.properties.surname = surname;
     members.push(ent);
     if (entities && !entities.includes(ent)) entities.push(ent);
