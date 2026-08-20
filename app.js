@@ -3842,6 +3842,8 @@ init();
 
 let activeTouchId = null;
 let touchMoved = false;
+let touchScrollAccumulator = 0;
+let lastTouchClientY = 0;
 
 canvas.addEventListener("touchstart", (e) => {
   lastTouchTapTime = Date.now();
@@ -3858,6 +3860,8 @@ canvas.addEventListener("touchstart", (e) => {
     touchStartY = t.clientY;
     dragStartClientX = t.clientX;
     dragStartClientY = t.clientY;
+    lastTouchClientY = t.clientY;
+    touchScrollAccumulator = 0;
 
     if (renderer) {
       dragCameraStartX = renderer.getCameraX();
@@ -3921,6 +3925,22 @@ canvas.addEventListener("touchmove", (e) => {
         applyEditorActionAt(tileX, tileY);
         return;
       }
+    }
+
+    // Single-finger modal scroll (Lists, Logs, Dossier, Entities, Groups)
+    if (currentMode !== "MAP" || inspectingLogEvent) {
+      const deltaY = lastTouchClientY - t.clientY;
+      lastTouchClientY = t.clientY;
+      touchScrollAccumulator += deltaY;
+
+      // Every 16px of finger drag scrolls 1 line smoothly
+      const step = 16;
+      if (Math.abs(touchScrollAccumulator) >= step) {
+        const linesToScroll = Math.trunc(touchScrollAccumulator / step);
+        modalScroll = Math.max(0, modalScroll + linesToScroll);
+        touchScrollAccumulator -= linesToScroll * step;
+      }
+      return;
     }
 
     // Single-finger camera pan
