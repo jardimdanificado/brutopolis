@@ -4,7 +4,31 @@
 
 import { ASSET_DATA } from "./assets_data.js";
 import { MAP_WIDTH, MAP_HEIGHT, TILE_FLOOR, TILE_MOUNTAIN, TILE_WATER, TILE_SAND, TILE_STONE } from "./world_gen.js";
-import { globalWallCoords, resolveWallSkin } from "./engine.js";
+import { globalWallCoords, resolveWallSkin, getEntitiesInViewport } from "./engine.js";
+
+// Cached emote textures
+let cachedEmoteTextures = null;
+function getEmoteTextures() {
+  if (!cachedEmoteTextures) {
+    cachedEmoteTextures = [
+      findTexture("Emote_Angry.png"),
+      findTexture("Emote_Excited.png"),
+      findTexture("Emote_Happy.png"),
+      findTexture("Emote_Hurt.png"),
+      findTexture("Emote_Nerd.png"),
+      findTexture("Emote_Sad.png"),
+      findTexture("Emote_Serious.png"),
+      findTexture("Emote_Sick.png"),
+      findTexture("Emote_Sleeping.png"),
+      findTexture("Emote_Smug.png"),
+      findTexture("Emote_Upset.png"),
+      findTexture("Emote_Yarr.png"),
+      findTexture("Other_Heart.png"),
+      findTexture("Item_Skull.png")
+    ];
+  }
+  return cachedEmoteTextures;
+}
 
 // ---------------------------------------------------------------------------
 // 32-bit Little-Endian RGBA Color Utilities
@@ -482,28 +506,13 @@ export class Renderer {
       }
     }
 
-    // 4. Render Dropped Items & Entities
-    const emoteTextures = [
-      findTexture("Emote_Angry.png"),
-      findTexture("Emote_Excited.png"),
-      findTexture("Emote_Happy.png"),
-      findTexture("Emote_Hurt.png"),
-      findTexture("Emote_Nerd.png"),
-      findTexture("Emote_Sad.png"),
-      findTexture("Emote_Serious.png"),
-      findTexture("Emote_Sick.png"),
-      findTexture("Emote_Sleeping.png"),
-      findTexture("Emote_Smug.png"),
-      findTexture("Emote_Upset.png"),
-      findTexture("Emote_Yarr.png"),
-      findTexture("Other_Heart.png"),
-      findTexture("Item_Skull.png")
-    ];
+    // 4. Render Dropped Items & Entities (Fast Viewport Culling)
+    const emoteTextures = getEmoteTextures();
+    const visibleEntities = getEntitiesInViewport(minTx - 1, maxTx + 1, minTy - 1, maxTy + 1);
 
-    for (let i = 0; i < entities.length; i++) {
-      const e = entities[i];
+    for (let i = 0; i < visibleEntities.length; i++) {
+      const e = visibleEntities[i];
       if (!e || e.destroyed || !e.properties || !e.properties.render) continue;
-      if (e.x < minTx - 1 || e.x > maxTx + 1 || e.y < minTy - 1 || e.y > maxTy + 1) continue;
 
       const r = e.properties.render;
       const isItem = !e.properties.life && (!!e.properties.edible || !!e.properties.resourceType || !!e.properties.germination || e.properties.species === "item");

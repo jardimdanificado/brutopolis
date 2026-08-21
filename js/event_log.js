@@ -307,6 +307,13 @@ export function recordWorldEvent({
   allEvents.push(event);
   eventsById.set(event.id, event);
 
+  if (allEvents.length > 5000) {
+    const removed = allEvents.shift();
+    if (removed) {
+      eventsById.delete(removed.id);
+    }
+  }
+
   // 1. Index by Primary Entity
   if (primaryEntityId !== null && primaryEntityId !== undefined) {
     if (!eventsByEntity.has(primaryEntityId)) {
