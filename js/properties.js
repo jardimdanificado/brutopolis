@@ -29,13 +29,7 @@ import {
   OP_CRAFT,
   OP_PLANT,
   OP_HARVEST,
-  OP_SLEEP,
-  OP_WAKE,
-  OP_THEFT,
-  OP_TROPHY,
-  OP_SUCCESSION,
-  OP_FORGET,
-  OP_JEALOUSY
+  OP_FORGET
 } from "./event_log.js";
 import { vocabulario } from "./vocabulario.js";
 
@@ -520,38 +514,11 @@ export function generateSchizophrenicDelusion(ent, world, entities) {
   ent.emote = 10; // Shocked / In a trance
 }
 
-export function createJealousProp() {
-  return {
-    name: "Ciumento",
-    type: "jealous",
-    description: "Extremamente apegado e ciumento. Não tolera que mexam em suas posses nem que o parceiro interaja com outros.",
-    effect(ent, dt) {}
-  };
-}
-
 export function createTraitorProp() {
   return {
     name: "Traíra",
     type: "traitor",
     description: "Dissimulado e infiel. Tende a trair parceiros, furtar itens alheios e mentir sem culpa.",
-    effect(ent, dt) {}
-  };
-}
-
-export function createDetachedProp() {
-  return {
-    name: "Desapegado",
-    type: "detached",
-    description: "Livre de apego material. Não marca posse sobre objetos e não se irrita se forem levados.",
-    effect(ent, dt) {}
-  };
-}
-
-export function createThiefProp() {
-  return {
-    name: "Ladrão",
-    type: "thief",
-    description: "Especialista em se apropriar de pertences de outros e vasculhar quartos.",
     effect(ent, dt) {}
   };
 }
@@ -702,72 +669,15 @@ export function createDoorEntity(x, y, ownerIds = []) {
   }, x, y);
 }
 
-export function createTrophyEntity(x, y, sourceEntity, partName = "Dente", captorId = null) {
-  const sourceName = sourceEntity?.properties?.name || "Besta";
-  const captor = captorId ? getEntityById(captorId) : null;
-  const captorName = captor?.properties?.name || "Guerreiro";
-  const trophyTitle = `Troféu de ${partName} de ${sourceName}`;
-
-  const trophy = createEntity({
-    name: trophyTitle,
-    species: "trophy",
-    ownedById: captorId,
-    render: {
-      skin: partName.toLowerCase().includes("dente") ? "Item_Eyeball.png" : "Item_Bone.png",
-      color: 0xfff0e6c8,
-      backcolor: 0x00000000
-    },
-    trophy: {
-      partName,
-      sourceId: sourceEntity?.id,
-      sourceName,
-      captorId,
-      captorName,
-      value: 120
-    }
-  }, x, y);
-
-  if (captorId) {
-    recordWorldEvent({
-      opcode: OP_TROPHY,
-      type: "TROPHY",
-      primaryEntityId: captorId,
-      secondaryEntityId: sourceEntity?.id,
-      location: { x, y },
-      description: `${captorName} arrancou e guardou com orgulho um '${trophyTitle}' como troféu de batalha!`,
-      tick: currentTick,
-      metadata: { trophyName: trophyTitle }
-    });
-  }
-
-  return trophy;
-}
-
 export function applyRandomPersonalityPerks(ent, isFemale = null) {
   if (!ent) return;
   const p = ent.properties || ent;
   const female = isFemale !== null ? isFemale : (getCreatureGender(ent) === "female");
-  const r = Math.random();
-
-  // Ciumento: maior chance em mulheres
-  if (female ? (r < 0.30) : (r < 0.10)) {
-    p.ciumento = createJealousProp();
-  }
 
   // Traíra: maior chance em homens
   const rTraitor = Math.random();
   if (!female ? (rTraitor < 0.30) : (rTraitor < 0.10)) {
     p.traira = createTraitorProp();
-  }
-
-  // Desapegado
-  if (Math.random() < 0.15) {
-    p.desapegado = createDetachedProp();
-  }
-
-  // Ladrão
-  if (Math.random() < 0.12) {
-    p.ladrao = createThiefProp();
   }
 
   // Estressado / Calmo
@@ -1913,7 +1823,7 @@ export function createScarProp(location = "torso", name = "Blade Scar") {
  */
 let nextGroupId = 1;
 
-export function createGroup(name, founder, baseZone = null, claimedZones = null, style = null) {
+export function createGroup(name, founder, baseZone = null, claimedZones = null) {
   let founderId = typeof founder === "object" && founder !== null ? founder.id : founder;
   let zx = 32;
   let zy = 32;
@@ -1929,8 +1839,6 @@ export function createGroup(name, founder, baseZone = null, claimedZones = null,
   }
 
   const defaultZones = [`${zx}_${zy}`, `${zx + 1}_${zy}`];
-  const STYLES = ["corredor", "mansao", "cidade_murada", "conectados", "compacto"];
-  const chosenStyle = style || STYLES[Math.floor(Math.random() * STYLES.length)];
 
   const group = {
     id: nextGroupId++,
@@ -1938,7 +1846,6 @@ export function createGroup(name, founder, baseZone = null, claimedZones = null,
     leaderId: founderId !== undefined && founderId !== null ? founderId : null,
     members: founderId !== undefined && founderId !== null ? [founderId] : [],
     claimedZones: claimedZones || defaultZones,
-    architectStyle: chosenStyle,
     rooms: [
       { id: 1, type: "residential", zx, zy, name: "Quartos do Líder", assignedMembers: founderId !== undefined && founderId !== null ? [founderId] : [] },
       { id: 2, type: "storage", zx, zy, name: "Depósito de Recursos", assignedMembers: [] },
@@ -1954,17 +1861,16 @@ export function createGroup(name, founder, baseZone = null, claimedZones = null,
 }
 
 /**
- * Returns blueprint grid positions and types (wall or door) for any architectural style (Memoized)
+ * Returns blueprint grid positions and types (wall or door) for clan buildings (Memoized)
  */
 export function getClanBlueprintTiles(group) {
   if (!group || !group.claimedZones) return [];
-  const versionKey = `${group.architectStyle || "corredor"}_${group.claimedZones.join(",")}`;
+  const versionKey = `${group.claimedZones.join(",")}`;
   if (group._cachedBlueprint && group._cachedBlueprintKey === versionKey) {
     return group._cachedBlueprint;
   }
 
   const tiles = [];
-  const style = group.architectStyle || "corredor";
   const sz = currentZoneSize;
 
   for (const zk of group.claimedZones) {
@@ -1978,64 +1884,14 @@ export function getClanBlueprintTiles(group) {
         const py = zy * sz + oy;
         const isPerim = isPerimeterEdge(zx, zy, ox, oy, group.claimedZones);
 
-        if (style === "mansao") {
-          // Grandes suítes 3x3
-          const isGateway = isPerim && ((oy === 0 && ox === 3) || (oy === sz - 1 && ox === 3) || (ox === 0 && oy === 3) || (ox === sz - 1 && oy === 3));
-          const isDivider = (ox === 4 || oy === 4);
-          const isDoorway = isDivider && ((ox === 4 && oy === 2) || (ox === 4 && oy === 6) || (ox === 2 && oy === 4) || (ox === 6 && oy === 4));
+        const isGateway = isPerim && ((oy === 0 && (ox === 3 || ox === 4)) || (oy === sz - 1 && (ox === 3 || ox === 4)));
+        const isHallWall = (ox === 2 || ox === 5) || (oy === 4 && (ox < 2 || ox > 5));
+        const isDoorway = (ox === 2 && oy === 2) || (ox === 2 && oy === 6) || (ox === 5 && oy === 2) || (ox === 5 && oy === 6);
 
-          if (isGateway || isDoorway) {
-            tiles.push({ x: px, y: py, type: "door" });
-          } else if (isPerim || isDivider) {
-            tiles.push({ x: px, y: py, type: "wall" });
-          }
-        } else if (style === "cidade_murada") {
-          // Cidade murada com casinhas internas
-          const isGateway = isPerim && ((oy === 0 && (ox === 3 || ox === 4)) || (oy === sz - 1 && (ox === 3 || ox === 4)));
-          const isCabinWall = ((ox === 1 || ox === 3) && (oy >= 1 && oy <= 3)) || ((oy === 1 || oy === 3) && (ox >= 1 && ox <= 3)) ||
-                              ((ox === 5 || ox === 7) && (oy >= 1 && oy <= 3)) || ((oy === 1 || oy === 3) && (ox >= 5 && ox <= 7)) ||
-                              ((ox === 1 || ox === 3) && (oy >= 5 && oy <= 7)) || ((oy === 5 || oy === 7) && (ox >= 1 && ox <= 3)) ||
-                              ((ox === 5 || ox === 7) && (oy >= 5 && oy <= 7)) || ((oy === 5 || oy === 7) && (ox >= 5 && ox <= 7));
-          const isCabinDoor = (ox === 2 && oy === 1) || (ox === 6 && oy === 1) || (ox === 2 && oy === 5) || (ox === 6 && oy === 5);
-
-          if (isGateway || isCabinDoor) {
-            tiles.push({ x: px, y: py, type: "door" });
-          } else if (isPerim || (isCabinWall && !isCabinDoor)) {
-            tiles.push({ x: px, y: py, type: "wall" });
-          }
-        } else if (style === "conectados") {
-          // Enfilade / quartos interligados sem corredor
-          const isGateway = isPerim && (ox === 0 && oy === 2);
-          const isDivider = (ox === 4 || oy === 4);
-          const isDoorway = isDivider && ((ox === 4 && oy === 2) || (ox === 6 && oy === 4) || (ox === 4 && oy === 6) || (ox === 2 && oy === 4));
-
-          if (isGateway || isDoorway) {
-            tiles.push({ x: px, y: py, type: "door" });
-          } else if (isPerim || isDivider) {
-            tiles.push({ x: px, y: py, type: "wall" });
-          }
-        } else if (style === "compacto") {
-          // Densidade máxima
-          const isGateway = isPerim && ((oy === 0 && ox === 3) || (oy === sz - 1 && ox === 3));
-          const isDivider = (ox === 2 || ox === 5 || oy === 4);
-          const isDoorway = isDivider && ((ox === 2 && oy === 2) || (ox === 5 && oy === 2) || (ox === 2 && oy === 6) || (ox === 5 && oy === 6));
-
-          if (isGateway || isDoorway) {
-            tiles.push({ x: px, y: py, type: "door" });
-          } else if (isPerim || isDivider) {
-            tiles.push({ x: px, y: py, type: "wall" });
-          }
-        } else {
-          // "corredor" (default)
-          const isGateway = isPerim && ((oy === 0 && (ox === 3 || ox === 4)) || (oy === sz - 1 && (ox === 3 || ox === 4)));
-          const isHallWall = (ox === 2 || ox === 5) || (oy === 4 && (ox < 2 || ox > 5));
-          const isDoorway = (ox === 2 && oy === 2) || (ox === 2 && oy === 6) || (ox === 5 && oy === 2) || (ox === 5 && oy === 6);
-
-          if (isGateway || isDoorway) {
-            tiles.push({ x: px, y: py, type: "door" });
-          } else if (isPerim || (isHallWall && !isDoorway)) {
-            tiles.push({ x: px, y: py, type: "wall" });
-          }
+        if (isGateway || isDoorway) {
+          tiles.push({ x: px, y: py, type: "door" });
+        } else if (isPerim || (isHallWall && !isDoorway)) {
+          tiles.push({ x: px, y: py, type: "wall" });
         }
       }
     }
@@ -2202,7 +2058,7 @@ export function createCommunicationProp(talkRate = 12.0) {
       if (this.talkTimer < this.talkRate) return;
       this.talkTimer = 0;
 
-      if (!ent.properties.brain || !entities || ent.destroyed || ent.properties.sleep?.isSleeping) return;
+      if (!ent.properties.brain || !entities || ent.destroyed) return;
 
       // General talking cooldown: creature only engages in conversation once per 45 ticks
       if (ent._lastTalkTick && (currentTick - ent._lastTalkTick < 45)) return;
@@ -2337,7 +2193,7 @@ export function gossipBetweenCreatures(speaker, listener, world, entities) {
         speaker.emote = 12; // Heart
         listener.emote = 12; // Heart
 
-        // Infidelity & Jealousy reaction
+        // Infidelity reaction
         if (isCheating && entities) {
           if (!speaker.properties.traira) {
             spkBrain.mood = Math.max(-100, spkBrain.mood - 25); // Guilt
@@ -2345,39 +2201,9 @@ export function gossipBetweenCreatures(speaker, listener, world, entities) {
           const pEnt = getEntityById(spkPartnerId);
           const partner = (pEnt && !pEnt.destroyed) ? pEnt : null;
           if (partner && Math.abs(partner.x - speaker.x) <= 12 && Math.abs(partner.y - speaker.y) <= 12) {
-            if (partner.properties.ciumento) {
-              partner.properties.brain.mood = Math.max(-100, (partner.properties.brain?.mood || 0) - 60);
-              partner.properties.brain.affinities[speaker.id] = -80;
-              partner.properties.brain.affinities[listener.id] = -100;
-              partner.emote = 0; // Angry
-
-              recordWorldEvent({
-                opcode: OP_JEALOUSY,
-                type: "JEALOUSY",
-                primaryEntityId: partner.id,
-                secondaryEntityId: speaker.id,
-                location: { x: partner.x, y: partner.y },
-                description: `${partner.properties.name} flagrou ${speaker.properties.name} beijando ${listener.properties.name} e foi tomado por fúria de ciúmes!`,
-                tick: currentTick,
-                metadata: { partnerName: speaker.properties.name, rivalName: listener.properties.name }
-              });
-
-              // Fabricate lie to defame cheater
-              recordWorldEvent({
-                opcode: OP_LIE,
-                type: "LIE",
-                primaryEntityId: partner.id,
-                secondaryEntityId: speaker.id,
-                location: { x: partner.x, y: partner.y },
-                description: `${partner.properties.name} espalhou uma história difamatória de que ${speaker.properties.name} é um monstro traidor sem escrúpulos!`,
-                tick: currentTick,
-                metadata: { lieType: "FRAME_JOB", targetName: speaker.properties.name }
-              });
-            } else {
-              partner.properties.brain.mood = Math.max(-100, (partner.properties.brain?.mood || 0) - 40);
-              partner.properties.brain.affinities[speaker.id] = Math.max(-100, (partner.properties.brain.affinities[speaker.id] || 0) - 40);
-              partner.emote = 5; // Sad
-            }
+            partner.properties.brain.mood = Math.max(-100, (partner.properties.brain?.mood || 0) - 40);
+            partner.properties.brain.affinities[speaker.id] = Math.max(-100, (partner.properties.brain.affinities[speaker.id] || 0) - 40);
+            partner.emote = 5; // Sad
           }
         }
 
@@ -3106,7 +2932,7 @@ export function createGroupMemberProp() {
   return {
     actionTimer: 0,
     effect(ent, dt, world, entities) {
-      if (!ent.properties.group || !world || !entities || ent.properties.sleep?.isSleeping) return;
+      if (!ent.properties.group || !world || !entities) return;
 
       const group = ent.properties.group;
       const freeArm = getFreeArm(ent);
@@ -3138,70 +2964,12 @@ export function createGroupMemberProp() {
       }).filter(Boolean);
       group.maxMembersEver = Math.max(group.maxMembersEver || 0, livingMems.length);
 
-      // Leadership Succession Check (Dynastic Fortaleza & Clan Lineage)
+      // Leadership check
       const curL = getEntityById(group.leaderId);
       const isCurLeaderAlive = (curL && !curL.destroyed && curL.properties.life);
       if (!group.leaderId || !isCurLeaderAlive) {
         if (livingMems.length > 0) {
-          let newLeader = null;
-          const oldLeader = curL || getEntityById(group.leaderId);
-
-          if (group.architectStyle === "fortaleza" && oldLeader) {
-            // 1. Partner
-            const partnerId = oldLeader.properties.monogamy?.partnerId;
-            const partner = partnerId ? livingMems.find(m => m.id === partnerId) : null;
-            if (partner) newLeader = partner;
-
-            // 2. Eldest Child
-            if (!newLeader) {
-              const child = livingMems.find(m => m.properties.parents?.includes(oldLeader.id));
-              if (child) newLeader = child;
-            }
-
-            // 3. Highest Affinity with deceased leader
-            if (!newLeader && oldLeader.properties.brain?.affinities) {
-              let maxAff = -999;
-              for (const m of livingMems) {
-                const aff = oldLeader.properties.brain.affinities[m.id] || 0;
-                if (aff > maxAff) {
-                  maxAff = aff;
-                  newLeader = m;
-                }
-              }
-            }
-
-            // 4. Most popular / loved member
-            if (!newLeader) {
-              let maxPop = -9999;
-              for (const candidate of livingMems) {
-                let pop = 0;
-                for (const peer of livingMems) {
-                  if (peer.id !== candidate.id && peer.properties.brain?.affinities) {
-                    pop += (peer.properties.brain.affinities[candidate.id] || 0);
-                  }
-                }
-                if (pop > maxPop) {
-                  maxPop = pop;
-                  newLeader = candidate;
-                }
-              }
-            }
-          }
-
-          if (!newLeader) {
-            newLeader = livingMems[0];
-          }
-
-          group.leaderId = newLeader.id;
-          recordWorldEvent({
-            opcode: OP_SUCCESSION,
-            type: "SUCCESSION",
-            primaryEntityId: newLeader.id,
-            location: { x: newLeader.x, y: newLeader.y },
-            description: `Com a sucessão em '${group.name}' (${group.architectStyle || "padrao"}), ${newLeader.properties.name} assumiu a liderança do clã!`,
-            tick: currentTick,
-            metadata: { groupName: group.name, architectStyle: group.architectStyle }
-          });
+          group.leaderId = livingMems[0].id;
         }
       }
       
@@ -3250,10 +3018,10 @@ export function createGroupMemberProp() {
           type: "TERRITORY_EXPANSION",
           primaryEntityId: ent.id,
           location: { x: nzx * 8 + 4, y: nzy * 8 + 4 },
-          description: `'${group.name}' expanded territory and claimed Zone [${nzx}, ${nzy}] (${group.architectStyle}) to provide private rooms for all settlers!`,
+          description: `'${group.name}' expanded territory and claimed Zone [${nzx}, ${nzy}] to provide private rooms for all settlers!`,
           tick: currentTick,
           timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
-          metadata: { newZone, architectStyle: group.architectStyle }
+          metadata: { newZone }
         });
 
         // Re-evaluate unhoused
@@ -3424,7 +3192,7 @@ export function createGroupMemberProp() {
                 type: "BUILD",
                 primaryEntityId: ent.id,
                 location: { x: bp.x, y: bp.y },
-                description: `${ent.properties.name} constructed a defensive Stone Wall fortifying '${group.name}' (${group.architectStyle})!`,
+                description: `${ent.properties.name} constructed a defensive Stone Wall fortifying '${group.name}'!`,
                 tick: currentTick,
                 timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
                 metadata: { structureName: "Defensive Stone Wall", clan: group.name }
@@ -3537,10 +3305,10 @@ export function createGroupMemberProp() {
               type: "TERRITORY_EXPANSION",
               primaryEntityId: ent.id,
               location: { x: nzx * 8 + 4, y: nzy * 8 + 4 },
-              description: `'${group.name}' expanded territory and claimed Zone [${nzx}, ${nzy}] (${group.architectStyle}) to provide private rooms for all settlers!`,
+              description: `'${group.name}' expanded territory and claimed Zone [${nzx}, ${nzy}] to provide private rooms for all settlers!`,
               tick: currentTick,
               timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
-              metadata: { newZone, architectStyle: group.architectStyle }
+              metadata: { newZone }
             });
 
             // Re-evaluate unhoused
@@ -4419,7 +4187,7 @@ export function createLocomotionProp() {
   return {
     stepTimer: 0,
     effect(ent, dt, world, entities) {
-      if (!ent.properties.brain || ent.destroyed || ent.properties.sleep?.isSleeping) return;
+      if (!ent.properties.brain || ent.destroyed) return;
 
       const isFlying = !!ent.properties.flying || ent.properties.wings?.flying === true;
       const isAquatic = !!ent.properties.aquatic;
@@ -5543,73 +5311,20 @@ export function createLocomotionProp() {
                 });
               }
 
-              // Ownership & Theft Check
-              if (other.properties.ownedById && other.properties.ownedById !== ent.id) {
-                const ownerId = other.properties.ownedById;
-                const owner = getEntityById(ownerId);
-                const isMarriedPartner = ent.properties.monogamy?.partnerId === ownerId;
-
-                if (isMarriedPartner) {
-                  // Married couple taking partner's item: normal pickup, but ciumento or mentiroso can complain
-                  if (owner && (owner.properties.ciumento || ent.properties.mentiroso) && Math.random() < 0.25) {
-                    recordWorldEvent({
-                      opcode: OP_LIE,
-                      type: "LIE",
-                      primaryEntityId: ownerId,
-                      secondaryEntityId: ent.id,
-                      location: { x: ent.x, y: ent.y },
-                      description: `${owner.properties.name} fez um escândalo ciumento acusando ${ent.properties.name} de ter pegado seus pertences sem permissão!`,
-                      tick: currentTick,
-                      metadata: { lieType: "FRAME_JOB" }
-                    });
-                  }
-                } else if (owner && owner.properties.desapegado) {
-                  // Detached owner doesn't care
-                } else {
-                  // THEFT!
-                  recordWorldEvent({
-                    opcode: OP_THEFT,
-                    type: "THEFT",
-                    primaryEntityId: ent.id,
-                    secondaryEntityId: ownerId,
-                    location: { x: ent.x, y: ent.y },
-                    description: `${ent.properties.name} apropriou-se indevidamente de ${foodName} pertencente a ${owner?.properties.name || `Criatura #${ownerId}`}!`,
-                    tick: currentTick,
-                    metadata: { itemName: foodName }
-                  });
-
-                  // Thief gain chance
-                  if (!ent.properties.ladrao && !ent.properties.traira && Math.random() < 0.35) {
-                    ent.properties.ladrao = createThiefProp();
-                  }
-
-                  // Victim reaction & Jealous gain chance
-                  if (owner && owner.properties.brain) {
-                    owner.properties.brain.mood = Math.max(-100, (owner.properties.brain.mood || 0) - 40);
-                    if (!owner.properties.brain.affinities) owner.properties.brain.affinities = {};
-                    owner.properties.brain.affinities[ent.id] = Math.max(-100, (owner.properties.brain.affinities[ent.id] || 0) - 60);
-
-                    if (!owner.properties.ciumento && Math.random() < 0.30) {
-                      owner.properties.ciumento = createJealousProp();
-                    }
-                  }
-                }
-              }
-
               other.destroyed = true;
               break;
             }
           }
         }
 
-        // Social Gifting: If mood is positive (>= 30), occasionally gift a trophy, surplus food, or non-equipped item to a close friend
+        // Social Gifting: If mood is positive (>= 30), occasionally gift surplus food or non-equipped item to a close friend
         if (ent.properties.brain?.mood >= 30 && Math.random() < 0.04) {
           for (const [k, p] of Object.entries(ent.properties)) {
             if (k.startsWith("arm") && p && p.heldItem) {
               // Avoid giving away essential equipped profession tools
               const itemType = p.heldItem.resourceType || p.heldItem.type;
               const isEssentialTool = (p.heldItem.attackBonus > 10 || p.heldItem.miningPower || p.heldItem.constructionPower);
-              if (isEssentialTool && !p.heldItem.trophy) continue;
+              if (isEssentialTool) continue;
 
               const nearbyFriends = getEntitiesInRadius(ent.x, ent.y, 2);
               const friend = nearbyFriends.find(e => {
@@ -5632,31 +5347,19 @@ export function createLocomotionProp() {
                     ent._socialCooldowns[friend.id] = currentTick + 300;
                     friend._socialCooldowns[ent.id] = currentTick + 300;
 
-                    const affinityBoost = fp.heldItem.trophy ? 40 : 20;
+                    const affinityBoost = 20;
                     friend.properties.brain.affinities[ent.id] = Math.min(100, (friend.properties.brain.affinities[ent.id] || 0) + affinityBoost);
                     friend.properties.brain.mood = Math.min(100, (friend.properties.brain.mood || 0) + 15);
                     ent.properties.brain.mood = Math.min(100, (ent.properties.brain.mood || 0) + 15);
 
-                    if (fp.heldItem.trophy) {
-                      recordWorldEvent({
-                        opcode: OP_TROPHY,
-                        type: "TROPHY",
-                        primaryEntityId: ent.id,
-                        secondaryEntityId: friend.id,
-                        location: { x: ent.x, y: ent.y },
-                        description: `${ent.properties.name} presenteou ${friend.properties.name} com o lendário '${fp.heldItem.name}' em prova de profunda amizade!`,
-                        tick: currentTick
-                      });
-                    } else {
-                      recordWorldEvent({
-                        type: "FEED",
-                        primaryEntityId: ent.id,
-                        secondaryEntityId: friend.id,
-                        location: { x: ent.x, y: ent.y },
-                        description: `${ent.properties.name} presenteou ${friend.properties.name} com ${fp.heldItem.name || "um item"}!`,
-                        tick: currentTick
-                      });
-                    }
+                    recordWorldEvent({
+                      type: "FEED",
+                      primaryEntityId: ent.id,
+                      secondaryEntityId: friend.id,
+                      location: { x: ent.x, y: ent.y },
+                      description: `${ent.properties.name} presenteou ${friend.properties.name} com ${fp.heldItem.name || "um item"}!`,
+                      tick: currentTick
+                    });
                     break;
                   }
                 }
