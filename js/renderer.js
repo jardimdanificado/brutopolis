@@ -541,10 +541,18 @@ export class Renderer {
           entBg = rgba32(255, 255, 255);
         }
 
-        // Walls and Doors rendering
+        // Walls, Doors/Gates, Houses and Structures rendering
         const isDoor = !!e.properties.door;
-        const isWall = !isDoor && (e.properties.structure || r.skin?.startsWith("Wall_") || e.properties.name?.includes("Muralha") || e.properties.name?.includes("Wall"));
-        const entSkin = isDoor ? (e.properties.door.isOpen ? "Feature_Door_Open.png" : "Feature_Door_Closed.png") : (isWall ? resolveWallSkin(e.x, e.y, globalWallCoords) : (r.skin || "Human_Knight_M.png"));
+        const isHouse = !!e.properties.house || r.skin === "Overworld_House.png";
+        const isWall = !isDoor && !isHouse && (e.properties.structure || r.skin?.startsWith("Wall_") || e.properties.name?.includes("Muralha") || e.properties.name?.includes("Wall"));
+        let entSkin = r.skin || "Human_Knight_M.png";
+        if (isDoor) {
+          entSkin = e.properties.door.isOpen ? "Feature_Door_Open.png" : "Feature_Door_Closed.png";
+        } else if (isHouse) {
+          entSkin = "Overworld_House.png";
+        } else if (isWall) {
+          entSkin = resolveWallSkin(e.x, e.y, globalWallCoords);
+        }
         const entTex = findTexture(entSkin);
         if (entTex) {
           drawSpriteTinted32(buf32, width, height, entTex, sx, sy, tileSize, tileSize, entFg, entBg, globalLight);

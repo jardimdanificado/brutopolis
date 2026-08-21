@@ -633,7 +633,7 @@ export function createAlzheimerProp() {
 
 export function createDoorEntity(x, y, ownerIds = []) {
   return createEntity({
-    name: "Wooden Door",
+    name: "Clan Gate",
     structure: true,
     render: {
       skin: "Feature_Door_Closed.png",
@@ -665,6 +665,34 @@ export function createDoorEntity(x, y, ownerIds = []) {
           }
         }
       }
+    }
+  }, x, y);
+}
+
+export function createHouseEntity(x, y, ownerId = null, ownerName = null) {
+  const houseTitle = ownerName ? `Casa de ${ownerName}` : "Casa";
+  return createEntity({
+    name: houseTitle,
+    species: "structure",
+    structure: {
+      condition: 1200,
+      maxCondition: 1200,
+      defense: 30
+    },
+    house: {
+      ownerId: ownerId,
+      ownerName: ownerName,
+      woodCost: 15,
+      stoneCost: 15,
+      woodCurrent: 15,
+      stoneCurrent: 15,
+      isCompleted: true
+    },
+    blocking: true,
+    render: {
+      skin: "Overworld_House.png",
+      color: 0xffe8d8c8,
+      backcolor: 0xff402818
     }
   }, x, y);
 }
@@ -1861,7 +1889,7 @@ export function createGroup(name, founder, baseZone = null, claimedZones = null)
 }
 
 /**
- * Returns blueprint grid positions and types (wall or door) for clan buildings (Memoized)
+ * Returns blueprint grid positions and types (wall, gate, house) for clan buildings (Memoized)
  */
 export function getClanBlueprintTiles(group) {
   if (!group || !group.claimedZones) return [];
@@ -1873,6 +1901,7 @@ export function getClanBlueprintTiles(group) {
   const tiles = [];
   const sz = currentZoneSize;
 
+  // 1. Perimeter Walls and Kingdom Gates
   for (const zk of group.claimedZones) {
     const zp = zk.includes("_") ? zk.split("_") : zk.split(",");
     const zx = parseInt(zp[0], 10);
@@ -1884,17 +1913,45 @@ export function getClanBlueprintTiles(group) {
         const py = zy * sz + oy;
         const isPerim = isPerimeterEdge(zx, zy, ox, oy, group.claimedZones);
 
-        const isGateway = isPerim && ((oy === 0 && (ox === 3 || ox === 4)) || (oy === sz - 1 && (ox === 3 || ox === 4)));
-        const isHallWall = (ox === 2 || ox === 5) || (oy === 4 && (ox < 2 || ox > 5));
-        const isDoorway = (ox === 2 && oy === 2) || (ox === 2 && oy === 6) || (ox === 5 && oy === 2) || (ox === 5 && oy === 6);
-
-        if (isGateway || isDoorway) {
-          tiles.push({ x: px, y: py, type: "door" });
-        } else if (isPerim || (isHallWall && !isDoorway)) {
-          tiles.push({ x: px, y: py, type: "wall" });
+        if (isPerim) {
+          const isGateway = (oy === 0 && (ox === 3 || ox === 4)) ||
+                            (oy === sz - 1 && (ox === 3 || ox === 4)) ||
+                            (ox === 0 && (oy === 3 || oy === 4)) ||
+                            (ox === sz - 1 && (oy === 3 || oy === 4));
+          if (isGateway) {
+            tiles.push({ x: px, y: py, type: "gate" });
+          } else {
+            tiles.push({ x: px, y: py, type: "wall" });
+          }
         }
       }
     }
+  }
+
+  // 2. Individual House Plots inside the Kingdom Zones (Each member gets a house plot)
+  const members = group.members || [];
+  const housePositionsPerZone = [
+    { ox: 2, oy: 2 },
+    { ox: 5, oy: 2 },
+    { ox: 2, oy: 5 },
+    { ox: 5, oy: 5 }
+  ];
+
+  let memberIdx = 0;
+  for (const zk of group.claimedZones) {
+    const zp = zk.includes("_") ? zk.split("_") : zk.split(",");
+    const zx = parseInt(zp[0], 10);
+    const zy = parseInt(zp[1], 10);
+
+    for (const pos of housePositionsPerZone) {
+      if (memberIdx >= members.length) break;
+      const ownerId = members[memberIdx];
+      const px = zx * sz + pos.ox;
+      const py = zy * sz + pos.oy;
+      tiles.push({ x: px, y: py, type: "house", ownerId });
+      memberIdx++;
+    }
+    if (memberIdx >= members.length) break;
   }
 
   group._cachedBlueprint = tiles;
@@ -3143,15 +3200,15 @@ export function createGroupMemberProp() {
       // 2. ACTIVE ACTIONS WITH HELD ITEMS (Just-in-Time Construction)
       // ---------------------------------------------------------------------
 
-      // A. Building Blueprint Fortifications & Doors (if holding Stone or Wood)
+      // A. Building Blueprint Walls, Kingdom Gates & Houses (if holding Stone or Wood)
       if (isCarryingMat) {
         const blueprint = getClanBlueprintTiles(group);
         for (const bp of blueprint) {
           const dist = Math.abs(bp.x - ent.x) + Math.abs(bp.y - ent.y);
 
-          if (bp.type === "door") {
-            const hasDoor = entities.some(e => !e.destroyed && e.properties.door && e.x === bp.x && e.y === bp.y);
-            if (!hasDoor && dist <= 1 && this.actionTimer >= 0.5) {
+          if (bp.type === "gate" || bp.type === "door") {
+            const hasGate = entities.some(e => !e.destroyed && e.properties.door && e.x === bp.x && e.y === bp.y);
+            if (!hasGate && dist <= 1 && this.actionTimer >= 0.5) {
               this.actionTimer = 0;
               for (const [k, p] of Object.entries(ent.properties)) {
                 if (k.startsWith("arm") && p && (p.heldItem?.resourceType === "stone" || p.heldItem?.resourceType === "wood")) {
@@ -3159,22 +3216,79 @@ export function createGroupMemberProp() {
                   break;
                 }
               }
-              const door = createDoorEntity(bp.x, bp.y, group.members);
-              entities.push(door);
+              const gate = createDoorEntity(bp.x, bp.y, group.members);
+              entities.push(gate);
               recordWorldEvent({
                 opcode: OP_BUILD,
                 type: "BUILD",
                 primaryEntityId: ent.id,
                 location: { x: bp.x, y: bp.y },
-                description: `${ent.properties.name} crafted and installed a secure Wooden Door for '${group.name}'!`,
+                description: `${ent.properties.name} construiu um Portão Fortificado para '${group.name}'!`,
                 tick: currentTick,
                 timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
-                metadata: { structureName: "Wooden Door", clan: group.name }
+                metadata: { structureName: "Portão do Reino", clan: group.name }
               });
               return;
             }
+          } else if (bp.type === "house") {
+            const houseEntity = entities.find(e => !e.destroyed && e.properties.house && e.x === bp.x && e.y === bp.y);
+            if (!houseEntity && dist <= 1 && this.actionTimer >= 0.5) {
+              // Initiate new house construction site
+              let resType = null;
+              for (const [k, p] of Object.entries(ent.properties)) {
+                if (k.startsWith("arm") && p && (p.heldItem?.resourceType === "stone" || p.heldItem?.resourceType === "wood")) {
+                  resType = p.heldItem.resourceType;
+                  p.heldItem = null;
+                  break;
+                }
+              }
+              this.actionTimer = 0;
+              const owner = getEntityById(bp.ownerId);
+              const ownerName = owner?.properties?.name || `Membro #${bp.ownerId}`;
+              const newHouse = createHouseEntity(bp.x, bp.y, bp.ownerId, ownerName);
+              newHouse.properties.house.woodCurrent = resType === "wood" ? 1 : 0;
+              newHouse.properties.house.stoneCurrent = resType === "stone" ? 1 : 0;
+              newHouse.properties.house.isCompleted = (newHouse.properties.house.woodCurrent >= 15 && newHouse.properties.house.stoneCurrent >= 15);
+              entities.push(newHouse);
+              return;
+            } else if (houseEntity && !houseEntity.properties.house?.isCompleted && dist <= 1 && this.actionTimer >= 0.5) {
+              const h = houseEntity.properties.house;
+              let contributed = false;
+              for (const [k, p] of Object.entries(ent.properties)) {
+                if (k.startsWith("arm") && p && p.heldItem) {
+                  if (p.heldItem.resourceType === "wood" && h.woodCurrent < h.woodCost) {
+                    h.woodCurrent++;
+                    p.heldItem = null;
+                    contributed = true;
+                    break;
+                  } else if (p.heldItem.resourceType === "stone" && h.stoneCurrent < h.stoneCost) {
+                    h.stoneCurrent++;
+                    p.heldItem = null;
+                    contributed = true;
+                    break;
+                  }
+                }
+              }
+              if (contributed) {
+                this.actionTimer = 0;
+                if (h.woodCurrent >= h.woodCost && h.stoneCurrent >= h.stoneCost) {
+                  h.isCompleted = true;
+                  recordWorldEvent({
+                    opcode: OP_BUILD,
+                    type: "BUILD",
+                    primaryEntityId: ent.id,
+                    location: { x: bp.x, y: bp.y },
+                    description: `${ent.properties.name} concluiu a construção da Casa de ${h.ownerName || "Membro"} (15 madeiras e 15 pedras)!`,
+                    tick: currentTick,
+                    timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
+                    metadata: { structureName: `Casa de ${h.ownerName || "Membro"}`, clan: group.name }
+                  });
+                }
+                return;
+              }
+            }
           } else {
-            const wallAlreadyThere = entities.some(e => !e.destroyed && e.properties.structure && e.x === bp.x && e.y === bp.y);
+            const wallAlreadyThere = entities.some(e => !e.destroyed && (e.properties.structure && !e.properties.house) && e.x === bp.x && e.y === bp.y);
             if (!wallAlreadyThere && dist <= 1 && this.actionTimer >= 0.5) {
               this.actionTimer = 0;
               for (const [k, p] of Object.entries(ent.properties)) {
@@ -3192,10 +3306,10 @@ export function createGroupMemberProp() {
                 type: "BUILD",
                 primaryEntityId: ent.id,
                 location: { x: bp.x, y: bp.y },
-                description: `${ent.properties.name} constructed a defensive Stone Wall fortifying '${group.name}'!`,
+                description: `${ent.properties.name} ergueu uma Muralha de Pedra defensiva para o reino '${group.name}'!`,
                 tick: currentTick,
                 timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
-                metadata: { structureName: "Defensive Stone Wall", clan: group.name }
+                metadata: { structureName: "Muralha de Pedra", clan: group.name }
               });
               return;
             }
@@ -3358,13 +3472,16 @@ export function createGroupMemberProp() {
           return;
         }
 
-        // Check if there is ANY pending construction on the clan's blueprint
+        // Check if there is ANY pending construction on the clan's blueprint (wall, gate, or house)
         const blueprint = getClanBlueprintTiles(group);
         const hasUnbuiltStruct = blueprint.some(bp => {
-          if (bp.type === "door") {
+          if (bp.type === "gate" || bp.type === "door") {
             return !entities.some(e => !e.destroyed && e.properties.door && e.x === bp.x && e.y === bp.y);
+          } else if (bp.type === "house") {
+            const h = entities.find(e => !e.destroyed && e.properties.house && e.x === bp.x && e.y === bp.y);
+            return !h || !h.properties.house?.isCompleted;
           }
-          return !entities.some(e => !e.destroyed && e.properties.structure && e.x === bp.x && e.y === bp.y);
+          return !entities.some(e => !e.destroyed && (e.properties.structure && !e.properties.house) && e.x === bp.x && e.y === bp.y);
         });
 
         // B. Just-In-Time Resource Pickup (ONLY if unbuilt structure exists)
@@ -3389,7 +3506,26 @@ export function createGroupMemberProp() {
             return;
           }
 
-          // C. Just-In-Time Mining from adjacent rock (ONLY if unbuilt structure exists)
+          // C. Just-In-Time Tree Chopping (Felling trees for wood)
+          const nearbyTree = getEntitiesInRadius(ent.x, ent.y, 1).find(e => !e.destroyed && (e.properties.photosynthesis || e.properties.deep_root || e.properties.species === "oak" || e.properties.species === "willow" || e.properties.species === "pine" || e.properties.species === "tree"));
+          if (nearbyTree && this.actionTimer >= 1.2) {
+            this.actionTimer = 0;
+            nearbyTree.destroyed = true;
+            freeArm.heldItem = { name: "Wood Log", resourceType: "wood", weight: 1 };
+            recordWorldEvent({
+              opcode: OP_CHOP,
+              type: "CHOP",
+              primaryEntityId: ent.id,
+              location: { x: ent.x, y: ent.y },
+              description: `${ent.properties.name} felled timber to build houses and fortifications for '${group.name}'!`,
+              tick: currentTick,
+              timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
+              metadata: { resource: "wood" }
+            });
+            return;
+          }
+
+          // D. Just-In-Time Mining from adjacent rock (Quarrying stone)
           const currentTile = world.getTile(ent.x, ent.y);
           let adjacentStone = (currentTile === 4 || currentTile === 1);
           if (!adjacentStone) {
@@ -3402,7 +3538,7 @@ export function createGroupMemberProp() {
             }
           }
 
-          if (adjacentStone && this.actionTimer >= 1.5) {
+          if (adjacentStone && this.actionTimer >= 1.2) {
             this.actionTimer = 0;
             freeArm.heldItem = { name: "Stone Block", resourceType: "stone", weight: 1 };
             recordWorldEvent({
@@ -3410,7 +3546,7 @@ export function createGroupMemberProp() {
               type: "MINE",
               primaryEntityId: ent.id,
               location: { x: ent.x, y: ent.y },
-              description: `${ent.properties.name} quarried stone to construct the clan's fortifications!`,
+              description: `${ent.properties.name} quarried stone to construct houses and defenses for '${group.name}'!`,
               tick: currentTick,
               timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
               metadata: { resource: "stone" }
@@ -4105,29 +4241,19 @@ export function evaluateAndAssignClanRoles(group, entities, world) {
     }
   }
 
-  // 2. Analyze Defensive Perimeter (Count missing walls / gates)
-  let missingWalls = 0;
-  let missingDoors = 0;
-  for (const zk of group.claimedZones || []) {
-    const zp = zk.includes("_") ? zk.split("_") : zk.split(",");
-    const pzx = parseInt(zp[0], 10);
-    const pzy = parseInt(zp[1], 10);
-    for (let ox = 0; ox < 8; ox++) {
-      for (let oy = 0; oy < 8; oy++) {
-        if (isPerimeterEdge(pzx, pzy, ox, oy, group.claimedZones)) {
-          const px = pzx * 8 + ox;
-          const py = pzy * 8 + oy;
-          const isGateway = (oy === 0 && (ox === 3 || ox === 4)) ||
-                            (oy === 7 && (ox === 3 || ox === 4)) ||
-                            (ox === 0 && (oy === 3 || oy === 4)) ||
-                            (ox === 7 && (oy === 3 || oy === 4));
-          const hasStruct = entities.some(e => !e.destroyed && e.properties.structure && e.x === px && e.y === py);
-          if (!hasStruct) {
-            if (isGateway) missingDoors++;
-            else missingWalls++;
-          }
-        }
-      }
+  // 2. Analyze Defensive Perimeter & Housing Needs
+  const blueprint = getClanBlueprintTiles(group);
+  let unbuiltCount = 0;
+  for (const bp of blueprint) {
+    if (bp.type === "gate" || bp.type === "door") {
+      const hasDoor = entities.some(e => !e.destroyed && e.properties.door && e.x === bp.x && e.y === bp.y);
+      if (!hasDoor) unbuiltCount++;
+    } else if (bp.type === "house") {
+      const h = entities.find(e => !e.destroyed && e.properties.house && e.x === bp.x && e.y === bp.y);
+      if (!h || !h.properties.house?.isCompleted) unbuiltCount++;
+    } else {
+      const hasWall = entities.some(e => !e.destroyed && (e.properties.structure && !e.properties.house) && e.x === bp.x && e.y === bp.y);
+      if (!hasWall) unbuiltCount++;
     }
   }
 
@@ -4150,8 +4276,8 @@ export function evaluateAndAssignClanRoles(group, entities, world) {
   const totalPop = livingMembers.length;
   let guardsNeeded = threatLevel > 0 ? Math.min(Math.ceil(totalPop * 0.4), threatLevel + 1) : 1;
   let huntersFarmersNeeded = foodCount < totalPop * 2 ? Math.max(2, Math.ceil(totalPop * 0.45)) : 1;
-  let buildersNeeded = (missingWalls > 0 || missingDoors > 0) && (stoneCount + woodCount >= 1) ? Math.max(1, Math.ceil(totalPop * 0.35)) : 1;
-  let minersNeeded = (stoneCount + woodCount < 4) ? Math.max(1, Math.ceil(totalPop * 0.3)) : 1;
+  let buildersNeeded = (unbuiltCount > 0) && (stoneCount + woodCount >= 1) ? Math.max(1, Math.ceil(totalPop * 0.35)) : 1;
+  let minersNeeded = (stoneCount + woodCount < 10) ? Math.max(1, Math.ceil(totalPop * 0.3)) : 1;
 
   for (const m of livingMembers) {
     if (m.id === group.leaderId) {
@@ -4168,10 +4294,10 @@ export function evaluateAndAssignClanRoles(group, entities, world) {
     } else if (foodCount < totalPop * 1.5 && huntersFarmersNeeded > 0) {
       m.properties.role = (m.properties.species === "orc" || isViolent) ? "Hunter" : "Farmer";
       huntersFarmersNeeded--;
-    } else if ((missingWalls > 0 || missingDoors > 0) && buildersNeeded > 0) {
+    } else if (unbuiltCount > 0 && buildersNeeded > 0) {
       m.properties.role = "Builder";
       buildersNeeded--;
-    } else if ((stoneCount + woodCount < 5) && minersNeeded > 0) {
+    } else if ((stoneCount + woodCount < 10) && minersNeeded > 0) {
       m.properties.role = "Miner";
       minersNeeded--;
     } else {
@@ -4536,29 +4662,38 @@ export function createLocomotionProp() {
           }
         }
 
-        // 1. If carrying building materials (stone or wood): build blueprint walls or doors
+        // 1. If carrying building materials (stone or wood): build blueprint walls, gates or houses
         if (!hasIntention && isCarryingMat) {
           const blueprint = getClanBlueprintTiles(group);
           let targetBuild = null;
           let minBuildDist = 9999;
 
           for (const bp of blueprint) {
-            if (bp.type === "door") {
-              const hasDoor = entities.some(e => !e.destroyed && e.properties.door && e.x === bp.x && e.y === bp.y);
-              if (!hasDoor) {
+            if (bp.type === "gate" || bp.type === "door") {
+              const hasGate = entities.some(e => !e.destroyed && e.properties.door && e.x === bp.x && e.y === bp.y);
+              if (!hasGate) {
                 const dist = Math.abs(bp.x - ent.x) + Math.abs(bp.y - ent.y);
                 if (dist < minBuildDist) {
                   minBuildDist = dist;
-                  targetBuild = { x: bp.x, y: bp.y, isDoor: true };
+                  targetBuild = { x: bp.x, y: bp.y, type: "gate" };
+                }
+              }
+            } else if (bp.type === "house") {
+              const houseEnt = entities.find(e => !e.destroyed && e.properties.house && e.x === bp.x && e.y === bp.y);
+              if (!houseEnt || !houseEnt.properties.house?.isCompleted) {
+                const dist = Math.abs(bp.x - ent.x) + Math.abs(bp.y - ent.y);
+                if (dist < minBuildDist) {
+                  minBuildDist = dist;
+                  targetBuild = { x: bp.x, y: bp.y, type: "house" };
                 }
               }
             } else {
-              const wallAtTile = globalWallCoords.has(`${bp.x},${bp.y}`) || (tileEntityMap.get(`${bp.x}_${bp.y}`) && Array.from(tileEntityMap.get(`${bp.x}_${bp.y}`)).some(e => !e.destroyed && e.properties.structure));
+              const wallAtTile = globalWallCoords.has(`${bp.x},${bp.y}`) || (tileEntityMap.get(`${bp.x}_${bp.y}`) && Array.from(tileEntityMap.get(`${bp.x}_${bp.y}`)).some(e => !e.destroyed && (e.properties.structure && !e.properties.house)));
               if (!wallAtTile) {
                 const dist = Math.abs(bp.x - ent.x) + Math.abs(bp.y - ent.y);
                 if (dist < minBuildDist) {
                   minBuildDist = dist;
-                  targetBuild = { x: bp.x, y: bp.y, isDoor: false };
+                  targetBuild = { x: bp.x, y: bp.y, type: "wall" };
                 }
               }
             }
@@ -4575,7 +4710,7 @@ export function createLocomotionProp() {
               hasIntention = true;
             }
           } else {
-            // Walls & doors are fully built: drop material on ground to free hands for other tasks!
+            // Walls, gates & houses are fully built: drop material on ground to free hands for other tasks!
             dropHeldItem(ent, entities, world);
           }
         }
@@ -4638,18 +4773,24 @@ export function createLocomotionProp() {
 
         // 5. If hands are free: autonomously pick tasks based on clan needs and environment (Persistent Task Locking)
         else if (!hasIntention) {
-          // A. Check if blueprint has ANY pending construction
+          // A. Check if blueprint has ANY pending construction (wall, gate, or house)
           const blueprint = getClanBlueprintTiles(group);
           let hasUnbuiltStruct = false;
           for (const bp of blueprint) {
-            if (bp.type === "door") {
+            if (bp.type === "gate" || bp.type === "door") {
               const hasDoor = entities.some(e => !e.destroyed && e.properties.door && e.x === bp.x && e.y === bp.y);
               if (!hasDoor) {
                 hasUnbuiltStruct = true;
                 break;
               }
+            } else if (bp.type === "house") {
+              const h = entities.find(e => !e.destroyed && e.properties.house && e.x === bp.x && e.y === bp.y);
+              if (!h || !h.properties.house?.isCompleted) {
+                hasUnbuiltStruct = true;
+                break;
+              }
             } else {
-              const wallAtTile = globalWallCoords.has(`${bp.x},${bp.y}`) || (tileEntityMap.get(`${bp.x}_${bp.y}`) && Array.from(tileEntityMap.get(`${bp.x}_${bp.y}`)).some(e => !e.destroyed && e.properties.structure));
+              const wallAtTile = globalWallCoords.has(`${bp.x},${bp.y}`) || (tileEntityMap.get(`${bp.x}_${bp.y}`) && Array.from(tileEntityMap.get(`${bp.x}_${bp.y}`)).some(e => !e.destroyed && (e.properties.structure && !e.properties.house)));
               if (!wallAtTile) {
                 hasUnbuiltStruct = true;
                 break;
@@ -4676,67 +4817,75 @@ export function createLocomotionProp() {
               chosenDx = Math.sign(nearestLooseMat.x - ent.x);
               chosenDy = Math.sign(nearestLooseMat.y - ent.y);
               hasIntention = true;
-            } else if (world) {
-              // Mine rock ONLY if unbuilt structures exist and no loose materials on ground
-              const currentTile = world.getTile(ent.x, ent.y);
-              let adjacentStone = (currentTile === 4 || currentTile === 1);
-              if (!adjacentStone) {
-                for (const off of [{dx:1,dy:0}, {dx:-1,dy:0}, {dx:0,dy:1}, {dx:0,dy:-1}]) {
-                  const at = world.getTile(ent.x + off.dx, ent.y + off.dy);
-                  if (at === 4 || at === 1) {
-                    adjacentStone = true;
-                    break;
-                  }
-                }
-              }
-
-              if (adjacentStone) {
-                chosenDx = 0;
-                chosenDy = 0;
+            } else {
+              // Look for nearby tree to chop first if within range
+              const nearbyTree = getEntitiesInRadius(ent.x, ent.y, 25).find(e => !e.destroyed && (e.properties.photosynthesis || e.properties.deep_root || e.properties.species === "oak" || e.properties.species === "willow" || e.properties.species === "pine" || e.properties.species === "tree"));
+              if (nearbyTree) {
+                chosenDx = Math.sign(nearbyTree.x - ent.x);
+                chosenDy = Math.sign(nearbyTree.y - ent.y);
                 hasIntention = true;
-                ent._taskGoal = null;
-              } else {
-                let targetStone = null;
-                if (ent._taskGoal && ent._taskGoal.type === "mine_stone") {
-                  const t = world.getTile(ent._taskGoal.x, ent._taskGoal.y);
-                  if (t === 4 || t === 1) {
-                    targetStone = { x: ent._taskGoal.x, y: ent._taskGoal.y };
-                  } else {
-                    ent._taskGoal = null;
+              } else if (world) {
+                // Mine rock ONLY if unbuilt structures exist and no loose materials on ground
+                const currentTile = world.getTile(ent.x, ent.y);
+                let adjacentStone = (currentTile === 4 || currentTile === 1);
+                if (!adjacentStone) {
+                  for (const off of [{dx:1,dy:0}, {dx:-1,dy:0}, {dx:0,dy:1}, {dx:0,dy:-1}]) {
+                    const at = world.getTile(ent.x + off.dx, ent.y + off.dy);
+                    if (at === 4 || at === 1) {
+                      adjacentStone = true;
+                      break;
+                    }
                   }
                 }
 
-                if (!targetStone) {
-                  let minDist = 9999;
-                  for (let r = 1; r <= 30; r++) {
-                    for (let dy = -r; dy <= r; dy++) {
-                      for (let dx = -r; dx <= r; dx++) {
-                        if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
-                        const tx = ent.x + dx;
-                        const ty = ent.y + dy;
-                        if (tx >= 0 && tx < (world.width || 512) && ty >= 0 && ty < (world.height || 512)) {
-                          const t = world.getTile(tx, ty);
-                          if (t === 4 || t === 1) {
-                            const dist = Math.abs(dx) + Math.abs(dy);
-                            if (dist < minDist) {
-                              minDist = dist;
-                              targetStone = { x: tx, y: ty };
+                if (adjacentStone) {
+                  chosenDx = 0;
+                  chosenDy = 0;
+                  hasIntention = true;
+                  ent._taskGoal = null;
+                } else {
+                  let targetStone = null;
+                  if (ent._taskGoal && ent._taskGoal.type === "mine_stone") {
+                    const t = world.getTile(ent._taskGoal.x, ent._taskGoal.y);
+                    if (t === 4 || t === 1) {
+                      targetStone = { x: ent._taskGoal.x, y: ent._taskGoal.y };
+                    } else {
+                      ent._taskGoal = null;
+                    }
+                  }
+
+                  if (!targetStone) {
+                    let minDist = 9999;
+                    for (let r = 1; r <= 30; r++) {
+                      for (let dy = -r; dy <= r; dy++) {
+                        for (let dx = -r; dx <= r; dx++) {
+                          if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
+                          const tx = ent.x + dx;
+                          const ty = ent.y + dy;
+                          if (tx >= 0 && tx < (world.width || 512) && ty >= 0 && ty < (world.height || 512)) {
+                            const t = world.getTile(tx, ty);
+                            if (t === 4 || t === 1) {
+                              const dist = Math.abs(dx) + Math.abs(dy);
+                              if (dist < minDist) {
+                                minDist = dist;
+                                targetStone = { x: tx, y: ty };
+                              }
                             }
                           }
                         }
                       }
+                      if (targetStone) break;
                     }
-                    if (targetStone) break;
+                    if (targetStone) {
+                      ent._taskGoal = { type: "mine_stone", x: targetStone.x, y: targetStone.y };
+                    }
                   }
-                  if (targetStone) {
-                    ent._taskGoal = { type: "mine_stone", x: targetStone.x, y: targetStone.y };
-                  }
-                }
 
-                if (targetStone) {
-                  chosenDx = Math.sign(targetStone.x - ent.x);
-                  chosenDy = Math.sign(targetStone.y - ent.y);
-                  hasIntention = true;
+                  if (targetStone) {
+                    chosenDx = Math.sign(targetStone.x - ent.x);
+                    chosenDy = Math.sign(targetStone.y - ent.y);
+                    hasIntention = true;
+                  }
                 }
               }
             }

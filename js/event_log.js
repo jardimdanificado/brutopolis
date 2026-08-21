@@ -158,8 +158,15 @@ export function formatEventDescription(ev) {
       return `${pName} mined stone from a rocky boulder!${locStr}`;
     case OP_CHOP:
       return `${pName} felled a tree and harvested timber!${locStr}`;
-    case OP_BUILD:
-      return `${pName} constructed a ${ev.metadata?.structureName || "Stone Wall"} fortification!${locStr}`;
+    case OP_BUILD: {
+      const struct = ev.metadata?.structureName || "Stone Wall";
+      if (struct.toLowerCase().includes("house") || struct.toLowerCase().includes("casa")) {
+        return `${pName} constructed a private home (${struct})!${locStr}`;
+      } else if (struct.toLowerCase().includes("gate") || struct.toLowerCase().includes("portão") || struct.toLowerCase().includes("door")) {
+        return `${pName} constructed a protective ${struct}!${locStr}`;
+      }
+      return `${pName} constructed a ${struct} fortification!${locStr}`;
+    }
     case OP_PICKUP:
       return `${pName} picked up ${ev.metadata?.itemName || "an item"} from the ground.${locStr}`;
     case OP_DROP:

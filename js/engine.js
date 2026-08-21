@@ -55,7 +55,8 @@ export function registerEntitySpatial(entity, zoneSize = activeZoneSize) {
   }
   tileBucket.add(entity);
 
-  if (entity.properties?.structure || entity.properties?.render?.skin?.startsWith("Wall_") || entity.properties?.name?.includes("Muralha") || entity.properties?.name?.includes("Wall")) {
+  const isWall = (entity.properties?.render?.skin?.startsWith("Wall_") || entity.properties?.name?.includes("Muralha") || entity.properties?.name?.includes("Wall") || (entity.properties?.structure && !entity.properties?.door && !entity.properties?.house));
+  if (isWall) {
     globalWallCoords.add(`${entity.x},${entity.y}`);
   }
 }
@@ -78,7 +79,8 @@ export function unregisterEntitySpatial(entity, zoneSize = activeZoneSize) {
     if (tileBucket.size === 0) tileEntityMap.delete(tk);
   }
 
-  if (entity.properties?.structure || entity.properties?.render?.skin?.startsWith("Wall_") || entity.properties?.name?.includes("Muralha") || entity.properties?.name?.includes("Wall")) {
+  const isWall = (entity.properties?.render?.skin?.startsWith("Wall_") || entity.properties?.name?.includes("Muralha") || entity.properties?.name?.includes("Wall") || (entity.properties?.structure && !entity.properties?.door && !entity.properties?.house));
+  if (isWall) {
     globalWallCoords.delete(`${lastX},${lastY}`);
   }
 }
