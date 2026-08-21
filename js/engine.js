@@ -4,7 +4,6 @@
 
 import { recordWorldEvent, OP_DEATH } from "./event_log.js";
 
-const encoder = new TextEncoder();
 let nextEntityId = 1;
 
 // Global simulation tick counter
@@ -617,16 +616,6 @@ export function tickEntities(entities, dt, world) {
   }
 }
 
-const skinCache = new Map();
-function getSkinBytes(skinStr) {
-  let cached = skinCache.get(skinStr);
-  if (!cached) {
-    cached = encoder.encode(skinStr);
-    skinCache.set(skinStr, cached);
-  }
-  return cached;
-}
-
 export function resolveWallSkin(x, y, wallCoords = globalWallCoords) {
   const hasN = wallCoords.has(`${x},${y - 1}`);
   const hasS = wallCoords.has(`${x},${y + 1}`);
@@ -658,98 +647,3 @@ export function resolveWallSkin(x, y, wallCoords = globalWallCoords) {
   return "Wall_NESW.png";
 }
 
-let _lastWasmRenderCount = 0;
-
-/**
- * Directly syncs renderable entities into WASM shared memory with high-performance Frustum Culling
- */
-export function syncRenderToWasm(entities, wasmMemory, wasmExports, perceptionEntityId = null, cameraBounds = null) {
-  const entitiesPtr = wasmExports.wasm_get_entities_ptr();
-  const maxEntities = wasmExports.wasm_get_max_entities();
-
-  const memBuf = wasmMemory.buffer;
-  const view = new DataView(memBuf);
-  const u8 = new Uint8Array(memBuf);
-
-  // High performance Frustum Culling: only process entities inside/near visible viewport
-  const renderList = cameraBounds
-    ? getEntitiesInViewport(cameraBounds.minX, cameraBounds.maxX, cameraBounds.minY, cameraBounds.maxY)
-    : entities;
-
-  const perceiver = perceptionEntityId ? getEntityById(perceptionEntityId) : null;
-  const perceiverBrain = perceiver?.properties?.brain;
-  const perceiverPartnerId = perceiver?.properties?.monogamy?.partnerId;
-
-  const STRUCT_SIZE = 108;
-  let renderIdx = 0;
-
-  for (let i = 0; i < renderList.length; i++) {
-    const e = renderList[i];
-    if (!e || e.destroyed || !e.properties || !e.properties.render) continue;
-    if (renderIdx >= maxEntities) break;
-
-    const r = e.properties.render;
-    const offset = entitiesPtr + renderIdx * STRUCT_SIZE;
-
-    view.setInt32(offset + 0, 1, true); // active
-    view.setInt32(offset + 4, e.id, true);
-    view.setInt32(offset + 8, e.x || 0, true);
-    view.setInt32(offset + 12, e.y || 0, true);
-    view.setInt32(offset + 16, e.motor || 0, true);
-    view.setUint32(offset + 20, r.color !== undefined ? r.color : 0xffffffff, true);
-    view.setUint32(offset + 24, r.backcolor !== undefined ? r.backcolor : 0x00000000, true);
-
-    // Energy / Health bar preview
-    if (e.properties.life) {
-      view.setFloat32(offset + 28, Math.max(0, e.properties.life.energy), true);
-      view.setFloat32(offset + 32, e.properties.life.max || 100, true);
-    } else if (e.properties.health) {
-      view.setFloat32(offset + 28, Math.max(0, e.properties.health.current), true);
-      view.setFloat32(offset + 32, e.properties.health.max || 100, true);
-    } else {
-      view.setFloat32(offset + 28, 0, true);
-      view.setFloat32(offset + 32, 0, true);
-    }
-
-    // Determine emote sprite: perception affinity or native active emote
-    let finalEmote = e.emote !== undefined ? e.emote : -1;
-    if (perceiver && e.id !== perceiver.id && e.properties?.life) {
-      if (perceiverPartnerId && e.id === perceiverPartnerId) {
-        finalEmote = 12; // Other_Heart.png
-      } else if (perceiverBrain?.affinities && perceiverBrain.affinities[e.id] !== undefined) {
-        const aff = perceiverBrain.affinities[e.id];
-        if (aff >= 80) finalEmote = 12; // Heart
-        else if (aff >= 50) finalEmote = 2; // Emote_Happy.png
-        else if (aff >= 15) finalEmote = 1; // Emote_Excited.png
-        else if (aff <= -50) finalEmote = 13; // Item_Skull.png
-        else if (aff <= -15) finalEmote = 0; // Emote_Angry.png
-        else finalEmote = 6; // Emote_Serious.png
-      }
-    }
-
-    view.setInt32(offset + 36, finalEmote, true);
-    view.setInt32(offset + 40, e.combatFlash > 0 ? 1 : 0, true);
-
-    let skinStr = r.skin || "Human_Knight_M.png";
-    if (e.properties.structure || skinStr.startsWith("Wall_") || e.properties.name?.includes("Muralha") || e.properties.name?.includes("Wall")) {
-      skinStr = resolveWallSkin(e.x, e.y, globalWallCoords);
-      r.skin = skinStr;
-    }
-
-    const skinBytes = getSkinBytes(skinStr);
-    const skinOffset = offset + 44;
-    const copyLen = Math.min(63, skinBytes.length);
-    u8.set(skinBytes.subarray(0, copyLen), skinOffset);
-    u8[skinOffset + copyLen] = 0;
-
-    renderIdx++;
-  }
-
-  // Clear previously occupied slots that are now empty (avoid looping 4096 times)
-  const clearEnd = Math.max(renderIdx, _lastWasmRenderCount);
-  for (let i = renderIdx; i < clearEnd && i < maxEntities; i++) {
-    const offset = entitiesPtr + i * STRUCT_SIZE;
-    view.setInt32(offset + 0, 0, true); // inactive
-  }
-  _lastWasmRenderCount = renderIdx;
-}

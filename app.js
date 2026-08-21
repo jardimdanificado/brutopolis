@@ -8,7 +8,6 @@ import { Renderer } from "./js/renderer.js";
 import {
   createEntity,
   tickEntities,
-  syncRenderToWasm,
   entityRegistry,
   getEntityById,
   destroyEntity,
@@ -19,7 +18,8 @@ import {
   rebuildSpatialGrid,
   getEntityAtTile,
   getEntitiesInRadius,
-  getEntitiesInViewport
+  getEntitiesInViewport,
+  tileEntityMap
 } from "./js/engine.js";
 import {
   resetWorldEvents,
@@ -108,7 +108,6 @@ import {
   createHumanExplorer,
   createStoneWallEntity,
   createFarmerProp,
-  createMysticGraceProp,
   createScatologicalProp,
   createEmbarkParty,
   rebindEntityMethods,
@@ -785,7 +784,8 @@ function applyEditorActionAt(tileX, tileY) {
           for (const mid of targetClan.members) {
             if (mid !== ent.id) {
               ent.properties.brain.affinities[mid] = 40;
-              const peer = entities.find(e => e.id === mid && !e.destroyed);
+              const peerEnt = getEntityById(mid);
+              const peer = (peerEnt && !peerEnt.destroyed) ? peerEnt : null;
               if (peer && peer.properties?.brain) {
                 if (!peer.properties.brain.affinities) peer.properties.brain.affinities = {};
                 peer.properties.brain.affinities[ent.id] = 40;
@@ -817,7 +817,8 @@ function applyEditorActionAt(tileX, tileY) {
       }
     }
   } else if (editorTool === "BULLDOZER") {
-    const targets = entities.filter(e => !e.destroyed && e.x === tileX && e.y === tileY);
+    const tileBucket = tileEntityMap.get(`${tileX}_${tileY}`);
+    const targets = tileBucket ? Array.from(tileBucket).filter(e => !e.destroyed) : [];
     for (const t of targets) {
       destroyEntity(t, entities);
     }
@@ -2372,8 +2373,12 @@ function renderGroupsModal() {
 
   for (let i = modalScroll; i < Math.min(groups.length, modalScroll + visibleClanCount); i++) {
     const g = groups[i];
-    const livingMembers = g.members.filter(mid => entities.some(e => e.id === mid && !e.destroyed)).length;
-    const leaderEnt = entities.find(e => e.id === g.members[0] && !e.destroyed);
+    const livingMembers = g.members.filter(mid => {
+      const m = getEntityById(mid);
+      return m && !m.destroyed;
+    }).length;
+    const lEnt = getEntityById(g.members[0]);
+    const leaderEnt = (lEnt && !lEnt.destroyed) ? lEnt : null;
     const stockpile = getGroupStockpile(g, entities);
 
     drawNESBox(mx + 12, cardY, cardW, cardH);
@@ -2448,8 +2453,13 @@ function renderGroupsModal() {
  * Full-screen Clan Dossier: detailed territory, itemized stockpile, member roster, and complete history.
  */
 function renderGroupDetailView(mx, my, mw, mh, g) {
-  const livingMembers = g.members.filter(mid => entities.some(e => e.id === mid && !e.destroyed));
-  const leaderEnt = entities.find(e => e.id === (g.leaderId || g.members[0]) && !e.destroyed);
+  const livingMembers = g.members.filter(mid => {
+    const m = getEntityById(mid);
+    return m && !m.destroyed;
+  });
+  const leaderIdToFind = g.leaderId || g.members[0];
+  const lEnt = getEntityById(leaderIdToFind);
+  const leaderEnt = (lEnt && !lEnt.destroyed) ? lEnt : null;
   const stockpile = getGroupStockpile(g, entities);
   const groupEvents = getEventsForGroup(g, 100);
 
@@ -2547,7 +2557,8 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
     for (let mi = 0; mi < g.members.length; mi++) {
       if (rosterY + 22 > box3Y + box3H) break;
       const mid = g.members[mi];
-      const mEnt = entities.find(e => e.id === mid && !e.destroyed);
+      const m = getEntityById(mid);
+      const mEnt = (m && !m.destroyed) ? m : null;
 
       const isAlive = !!mEnt;
       const isLeader = (mEnt && mEnt.id === g.leaderId);
