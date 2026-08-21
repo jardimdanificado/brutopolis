@@ -2,6 +2,8 @@
 // Brutopolis — Chronological & Compact Indexed World Event Log (Bytecode Architecture)
 // =============================================================================
 
+import { currentWorld } from "./engine.js";
+
 // Opcode constants for ultra-compact event representation
 export const OP_BIRTH = 1;
 export const OP_DEATH = 2;
@@ -261,12 +263,14 @@ export function recordWorldEvent({
     }
   }
 
+  const resolvedTimestamp = timestamp || (currentWorld?.clock ? { day: currentWorld.clock.day, hour: currentWorld.clock.hour, minute: currentWorld.clock.minute } : { day: 0, hour: 0, minute: 0 });
+
   const event = {
     id: nextEventId++,
     opcode: resolvedOpcode,
     count: 1,
     tick,
-    timestamp: timestamp || { day: 0, hour: 0, minute: 0 },
+    timestamp: resolvedTimestamp,
     type: resolvedType,
     primaryEntityId,
     secondaryEntityId,

@@ -108,7 +108,9 @@ function loadAllAssets() {
   });
 }
 
-function findTexture(path) {
+export { rawTextures };
+
+export function findTexture(path) {
   if (!path) return null;
   const clean = path.toLowerCase().replace(/\\/g, "/");
   const base = clean.split("/").pop();
@@ -532,9 +534,18 @@ export class Renderer {
           drawBox32(buf32, width, height, sx, sy, tileSize, tileSize, itemFg);
         }
       } else {
-        // Creature / Humanoid / Structure
+        // Creature / Humanoid / Structure Color resolution (uses Clan group contrasting colors if member/structure)
         let entFg = r.color !== undefined ? hexToRgba32(r.color, 255) : rgba32(240, 240, 240);
         let entBg = r.backcolor !== undefined ? hexToRgba32(r.backcolor, 0) : rgba32(20, 20, 20, 0);
+
+        // Group / Clan palette override
+        const entGroup = e.properties.group || (e.properties.house?.ownerId && entities.find(m => m.id === e.properties.house.ownerId)?.properties.group);
+        if (entGroup && entGroup.color) {
+          entFg = hexToRgba32(entGroup.color, 255);
+          if (entGroup.backcolor) {
+            entBg = hexToRgba32(entGroup.backcolor, 255);
+          }
+        }
 
         if (e.combatFlash > 0) {
           entFg = rgba32(255, 60, 60);
@@ -560,7 +571,7 @@ export class Renderer {
           drawBox32(buf32, width, height, sx + 2, sy + 2, tileSize - 4, tileSize - 4, entFg);
         }
 
-        // Health bar
+        // Health bar & Construction Progress bar
         const hp = e.properties.life ? e.properties.life.energy : e.properties.health ? e.properties.health.current : 0;
         const maxHp = e.properties.life ? e.properties.life.max : e.properties.health ? e.properties.health.max : 100;
 
@@ -571,6 +582,31 @@ export class Renderer {
           drawBox32(buf32, width, height, sx, barY, barW, barH, rgba32(50, 10, 10));
           const fillW = Math.max(1, Math.floor((hp / maxHp) * barW));
           drawBox32(buf32, width, height, sx, barY, fillW, barH, rgba32(80, 220, 80));
+        }
+
+        // Construction Progress indicator (renders for houses, walls, gates being built)
+        let buildProgress = null;
+        if (e.properties.house && !e.properties.house.isCompleted) {
+          const h = e.properties.house;
+          const cur = (h.woodCurrent || 0) + (h.stoneCurrent || 0);
+          const total = (h.woodCost || 50) + (h.stoneCost || 50);
+          buildProgress = Math.min(1.0, Math.max(0.0, cur / total));
+        } else if (e.isConstructed === false) {
+          if (e.woodCost) {
+            buildProgress = Math.min(1.0, Math.max(0.0, (e.woodCurrent || 0) / e.woodCost));
+          } else if (e.stoneCost) {
+            buildProgress = Math.min(1.0, Math.max(0.0, (e.stoneCurrent || 0) / e.stoneCost));
+          }
+        }
+
+        if (buildProgress !== null) {
+          const cBarW = tileSize;
+          const cBarH = tileSize > 16 ? 3 : 2;
+          const cBarY = sy - cBarH - 2;
+          drawBox32(buf32, width, height, sx, cBarY, cBarW, cBarH, rgba32(30, 30, 50));
+          const cFillW = Math.max(1, Math.floor(buildProgress * cBarW));
+          // Bright cyan/amber construction bar
+          drawBox32(buf32, width, height, sx, cBarY, cFillW, cBarH, rgba32(50, 210, 240));
         }
 
         // Emote bubble

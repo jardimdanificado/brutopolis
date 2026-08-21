@@ -9,6 +9,12 @@ let nextEntityId = 1;
 // Global simulation tick counter
 export let currentTick = 0;
 
+// Current active World instance reference for global time queries
+export let currentWorld = null;
+export function setCurrentWorld(w) {
+  currentWorld = w;
+}
+
 // Central O(1) registry for all entities in the universe (living and deceased)
 export const entityRegistry = new Map();
 
@@ -558,6 +564,7 @@ export function explodeEntityOnDeath(entity, entitiesArray, world) {
  * Flat simulation tick over all active entities
  */
 export function tickEntities(entities, dt, world) {
+  if (world) currentWorld = world;
   for (let i = entities.length - 1; i >= 0; i--) {
     const entity = entities[i];
     if (entity.destroyed) {

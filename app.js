@@ -4,7 +4,7 @@
 
 // WASM replaced by Pure JS Renderer
 import { World } from "./js/world.js";
-import { Renderer } from "./js/renderer.js";
+import { Renderer, findTexture } from "./js/renderer.js";
 import {
   createEntity,
   tickEntities,
@@ -2383,11 +2383,40 @@ function renderGroupsModal() {
 
     drawNESBox(mx + 12, cardY, cardW, cardH);
 
-    drawText8x8(`* ${(g.name || "CLAN").toUpperCase()}`, mx + 24, cardY + 10, "#f8b800", 1);
-    drawText8x8(`${livingMembers}/${g.members.length} ALIVE`, mx + cardW - 325, cardY + 10, "#58d854", 1);
+    // Render Clan Flag / Banner
+    const flagTex = g.flagSkin ? findTexture(g.flagSkin) : null;
+    const gFgColor = g.color ? `#${(g.color & 0xffffff).toString(16).padStart(6, "0")}` : "#f8b800";
+    const gBgColor = g.backcolor ? `#${(g.backcolor & 0xffffff).toString(16).padStart(6, "0")}` : "#1e1e28";
 
-    drawText8x8(`LEADER: ${leaderEnt ? leaderEnt.properties.name.toUpperCase() : `MEMBER #${g.members[0]}`}`, mx + 24, cardY + 26, "#ffffff", 1);
-    drawText8x8(`TERRITORY: ${g.claimedZones?.join(", ") || "NONE"} (${(g.claimedZones?.length || 0) * 64} TILES)`, mx + 24, cardY + 40, "#bcbcbc", 1);
+    // Draw Flag Box
+    ctx.fillStyle = gBgColor;
+    ctx.fillRect(mx + 22, cardY + 8, 20, 20);
+    ctx.strokeStyle = gFgColor;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(mx + 22, cardY + 8, 20, 20);
+
+    if (flagTex && flagTex.u8) {
+      if (!flagTex.canvas) {
+        const fc = document.createElement("canvas");
+        fc.width = flagTex.width || 16;
+        fc.height = flagTex.height || 16;
+        const fctx = fc.getContext("2d");
+        const fData = fctx.createImageData(fc.width, fc.height);
+        fData.data.set(flagTex.u8);
+        fctx.putImageData(fData, 0, 0);
+        flagTex.canvas = fc;
+      }
+      if (flagTex.canvas) {
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(flagTex.canvas, mx + 24, cardY + 10, 16, 16);
+      }
+    }
+
+    drawText8x8(`* ${(g.name || "CLAN").toUpperCase()}`, mx + 50, cardY + 14, gFgColor, 1);
+    drawText8x8(`${livingMembers}/${g.members.length} ALIVE`, mx + cardW - 325, cardY + 14, "#58d854", 1);
+
+    drawText8x8(`LEADER: ${leaderEnt ? leaderEnt.properties.name.toUpperCase() : `MEMBER #${g.members[0]}`}`, mx + 24, cardY + 34, "#ffffff", 1);
+    drawText8x8(`TERRITORY: ${g.claimedZones?.join(", ") || "NONE"} (${(g.claimedZones?.length || 0) * 64} TILES)`, mx + 24, cardY + 48, "#bcbcbc", 1);
 
     // Stockpile Summary
     const stockEntries = Object.entries(stockpile.items);
@@ -2463,7 +2492,35 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
   const stockpile = getGroupStockpile(g, entities);
   const groupEvents = getEventsForGroup(g, 100);
 
-  drawText8x8(`CLAN DOSSIER: ${(g.name || "CLAN").toUpperCase()}`, mx + 16, my + 14, "#f8b800", 1);
+  const flagTex = g.flagSkin ? findTexture(g.flagSkin) : null;
+  const gFgColor = g.color ? `#${(g.color & 0xffffff).toString(16).padStart(6, "0")}` : "#f8b800";
+  const gBgColor = g.backcolor ? `#${(g.backcolor & 0xffffff).toString(16).padStart(6, "0")}` : "#1e1e28";
+
+  // Flag Box in Dossier Header
+  ctx.fillStyle = gBgColor;
+  ctx.fillRect(mx + 16, my + 8, 20, 20);
+  ctx.strokeStyle = gFgColor;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(mx + 16, my + 8, 20, 20);
+
+  if (flagTex && flagTex.u8) {
+    if (!flagTex.canvas) {
+      const fc = document.createElement("canvas");
+      fc.width = flagTex.width || 16;
+      fc.height = flagTex.height || 16;
+      const fctx = fc.getContext("2d");
+      const fData = fctx.createImageData(fc.width, fc.height);
+      fData.data.set(flagTex.u8);
+      fctx.putImageData(fData, 0, 0);
+      flagTex.canvas = fc;
+    }
+    if (flagTex.canvas) {
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(flagTex.canvas, mx + 18, my + 10, 16, 16);
+    }
+  }
+
+  drawText8x8(`CLAN DOSSIER: ${(g.name || "CLAN").toUpperCase()}`, mx + 44, my + 14, gFgColor, 1);
 
   // Top Tabs
   const isOverview = groupDetailTab === "OVERVIEW";
