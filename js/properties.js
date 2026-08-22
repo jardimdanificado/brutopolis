@@ -217,13 +217,12 @@ export function createLifeProp(energy = 8000, max = 8000, basalRate = 0.05, init
     childrenIds: [],
     isSleeping: false,
     effect(ent, dt, world, entities) {
-      this.age = (this.age || 0) + (dt !== undefined ? dt : 1.0);
-
-      // Check if entity is currently inside their completed private home/house
+      // Check if entity is currently inside their completed private home/house (O(1) Spatial Hash Lookup)
       let inOwnHouse = false;
-      if (entities) {
-        for (const e of entities) {
-          if (!e.destroyed && e.properties?.house?.isCompleted && e.x === ent.x && e.y === ent.y) {
+      const tileEnts = tileEntityMap.get(`${ent.x}_${ent.y}`);
+      if (tileEnts) {
+        for (const e of tileEnts) {
+          if (!e.destroyed && e.properties?.house?.isCompleted) {
             if (e.properties.house.ownerId === ent.id || e.properties.house.partnerId === ent.id) {
               inOwnHouse = true;
               break;
@@ -461,8 +460,7 @@ export function createTraitorProp() {
   return {
     name: "Traíra",
     type: "traitor",
-    description: "Dissimulado e infiel. Tende a trair parceiros, furtar itens alheios e mentir sem culpa.",
-    effect(ent, dt) {}
+    description: "Dissimulado e infiel. Tende a trair parceiros, furtar itens alheios e mentir sem culpa."
   };
 }
 
@@ -470,8 +468,7 @@ export function createStressedProp() {
   return {
     name: "Estressado",
     type: "stressed",
-    description: "Ansioso e impaciente. Reage negativamente a conflitos com maior perda de humor.",
-    effect(ent, dt) {}
+    description: "Ansioso e impaciente. Reage negativamente a conflitos com maior perda de humor."
   };
 }
 
@@ -479,8 +476,7 @@ export function createCalmProp() {
   return {
     name: "Calmo",
     type: "calm",
-    description: "Sereno e amigável. Tem alta paciência, boa diplomacia e bônus em conversas.",
-    effect(ent, dt) {}
+    description: "Sereno e amigável. Tem alta paciência, boa diplomacia e bônus em conversas."
   };
 }
 
@@ -776,8 +772,7 @@ export function createIntestineProp() {
     condition: 100,
     maxCondition: 100,
     nutrition: 700,
-    foodType: "organ",
-    effect(ent, dt) {}
+    foodType: "organ"
   };
 }
 
@@ -791,8 +786,7 @@ export function createEarProp(side = "left") {
     condition: 100,
     maxCondition: 100,
     nutrition: 150,
-    foodType: "organ",
-    effect(ent, dt) {}
+    foodType: "organ"
   };
 }
 
@@ -1974,8 +1968,10 @@ export function createGroup(name, founder, baseZone = null, claimedZones = null)
  */
 export function getClanBlueprintTiles(group) {
   if (!group || !group.claimedZones) return [];
-  const versionKey = `${group.claimedZones.join(",")}`;
-  if (group._cachedBlueprint && group._cachedBlueprintKey === versionKey) {
+
+  // Fast Memoization Check: Check version key and cached tick
+  const versionKey = `${group.claimedZones.join(",")}_${(group.members || []).length}`;
+  if (group._cachedBlueprint && group._cachedBlueprintKey === versionKey && (currentTick - (group._cachedBlueprintTick || 0) < 30)) {
     return group._cachedBlueprint;
   }
 
@@ -1984,7 +1980,6 @@ export function getClanBlueprintTiles(group) {
   const members = group.members || [];
 
   // 1. Individual House Plots inside the Kingdom Zones (Organic random scatter avoiding perimeter edges, water & trees)
-  // Deterministic pseudo-random hashing based on groupId and ownerId so layout is stable
   function pseudoRandomPos(seedA, seedB, limit) {
     let h = (seedA * 374761393 + seedB * 668265263) ^ 0x5bf03635;
     h = Math.imul(h ^ (h >>> 13), 1274126177);
@@ -2005,12 +2000,15 @@ export function getClanBlueprintTiles(group) {
         const py = zy * sz + oy;
         const isPerim = isPerimeterEdge(zx, zy, ox, oy, group.claimedZones);
         if (!isPerim && isLandTile(px, py)) {
-          // Check if there is an existing standing tree entity on this tile
+          // O(1) Spatial Hash Check: avoid tiles with trees
           let hasTree = false;
-          for (const ent of entityRegistry.values()) {
-            if (!ent.destroyed && ent.x === px && ent.y === py && (ent.properties.photosynthesis || ent.properties.deep_root || ent.properties.species === "oak" || ent.properties.species === "willow" || ent.properties.species === "pine" || ent.properties.species === "tree" || ent.properties.species === "cactus")) {
-              hasTree = true;
-              break;
+          const tileEnts = tileEntityMap.get(`${px}_${py}`);
+          if (tileEnts) {
+            for (const ent of tileEnts) {
+              if (!ent.destroyed && (ent.properties?.photosynthesis || ent.properties?.deep_root || ent.properties?.species === "oak" || ent.properties?.species === "willow" || ent.properties?.species === "pine" || ent.properties?.species === "tree" || ent.properties?.species === "cactus")) {
+                hasTree = true;
+                break;
+              }
             }
           }
           if (!hasTree) {
@@ -2024,8 +2022,9 @@ export function getClanBlueprintTiles(group) {
   // Assign houses organically to members
   const occupiedHouseTiles = new Set();
   // Keep existing completed or active house locations pinned first!
+  const memberSet = new Set(members);
   for (const ent of entityRegistry.values()) {
-    if (!ent.destroyed && ent.properties.house && (members.includes(ent.properties.house.ownerId) || members.includes(ent.properties.house.partnerId))) {
+    if (!ent.destroyed && ent.properties.house && (memberSet.has(ent.properties.house.ownerId) || memberSet.has(ent.properties.house.partnerId))) {
       tiles.push({ x: ent.x, y: ent.y, type: "house", ownerId: ent.properties.house.ownerId });
       occupiedHouseTiles.add(`${ent.x}_${ent.y}`);
     }
@@ -2056,7 +2055,7 @@ export function getClanBlueprintTiles(group) {
   let completedHousesCount = 0;
   for (const ent of entityRegistry.values()) {
     if (!ent.destroyed && ent.properties.house?.isCompleted) {
-      if (members.includes(ent.properties.house.ownerId) || members.includes(ent.properties.house.partnerId)) {
+      if (memberSet.has(ent.properties.house.ownerId) || memberSet.has(ent.properties.house.partnerId)) {
         completedHousesCount++;
       }
     }
@@ -2093,7 +2092,8 @@ export function getClanBlueprintTiles(group) {
   }
 
   group._cachedBlueprint = tiles;
-  group._cachedBlueprintKey = `${versionKey}_${completedHousesCount}_${livingMemberIds.length}`;
+  group._cachedBlueprintKey = versionKey;
+  group._cachedBlueprintTick = currentTick;
   return tiles;
 }
 

@@ -447,9 +447,9 @@ export class RCT3DRenderer {
     this.height = container.clientHeight || window.innerHeight;
     this.scaleFactor = 0.5; // Defaults directly to 50% Retro Pixel Mode
 
-    // 1. Scene & Background
+    // 1. Scene & Pure Black Void Background
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x131922);
+    this.scene.background = new THREE.Color(0x000000);
 
     // 2. Fixed Isometric Camera (No Rotation - Locked 45 deg)
     const aspect = this.width / this.height;
@@ -482,6 +482,8 @@ export class RCT3DRenderer {
     // Wireframe Mode: 0 = OFF, 1 = GRID (RCT Dark Quad Lines), 2 = FULL
     this.wireframeMode = 0;
     this.shadowsEnabled = true;
+    this.renderFullWorld = false;
+    this.lastBuiltFullWorld = false;
 
     // Current Rendered Terrain Bounds
     this.renderedMinTx = 0;
@@ -497,6 +499,7 @@ export class RCT3DRenderer {
 
     // 3. WebGL Renderer with Optional Downscaling
     this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
+    this.renderer.setClearColor(0x000000, 1.0);
     this.updateRendererResolution();
 
     const canvasDom = this.renderer.domElement;
@@ -891,6 +894,23 @@ export class RCT3DRenderer {
     return "OFF";
   }
 
+  toggleFullWorld() {
+    this.renderFullWorld = !this.renderFullWorld;
+    this.lastBuiltCamTileX = -9999;
+    this.lastBuiltCamTileY = -9999;
+    return this.renderFullWorld;
+  }
+
+  setFullWorld(enabled) {
+    this.renderFullWorld = !!enabled;
+    this.lastBuiltCamTileX = -9999;
+    this.lastBuiltCamTileY = -9999;
+  }
+
+  getFullWorldModeName() {
+    return this.renderFullWorld ? "FULL" : "CHUNK";
+  }
+
   setTps(tps) { this.targetTps = tps; }
   getTps() { return this.targetTps; }
   setPaused(p) { this.isPaused = !!p; }
@@ -898,13 +918,13 @@ export class RCT3DRenderer {
 
   setCamera(x, y, zoom) {
     if (typeof x === "number" && !isNaN(x)) {
-      this.camX = Math.max(5, Math.min(MAP_WIDTH - 5, x));
+      this.camX = Math.max(0, Math.min(MAP_WIDTH, x));
     }
     if (typeof y === "number" && !isNaN(y)) {
-      this.camY = Math.max(5, Math.min(MAP_HEIGHT - 5, y));
+      this.camY = Math.max(0, Math.min(MAP_HEIGHT, y));
     }
     if (typeof zoom === "number" && !isNaN(zoom)) {
-      this.zoom = Math.max(0.2, Math.min(4.0, zoom));
+      this.zoom = Math.max(0.08, Math.min(5.0, zoom));
     }
   }
 
@@ -1330,9 +1350,11 @@ export class RCT3DRenderer {
     this.camera.right = viewSize * aspect;
     this.camera.top = viewSize;
     this.camera.bottom = -viewSize;
+    this.camera.near = -2000;
+    this.camera.far = 4000;
     this.camera.updateProjectionMatrix();
 
-    const distance = 100;
+    const distance = Math.max(100, viewSize * 2.0);
     const cosY = Math.cos(this.fixedRotationY);
     const sinY = Math.sin(this.fixedRotationY);
     const cosX = Math.cos(this.isometricAngleX);
@@ -1387,10 +1409,8 @@ export class RCT3DRenderer {
     this.tempColor1.lerp(this.tempColor2, sAlpha);
     this.ambientLight.color.copy(this.tempColor1);
 
-    this.tempColor1.setHex(k1.bg);
-    this.tempColor2.setHex(k2.bg);
-    this.tempColor1.lerp(this.tempColor2, sAlpha);
-    this.scene.background.copy(this.tempColor1);
+    // Keep the background void pure black
+    this.scene.background.setHex(0x000000);
 
     const sunIntensity = k1.sunI + (k2.sunI - k1.sunI) * sAlpha;
     const ambIntensity = k1.ambI + (k2.ambI - k1.ambI) * sAlpha;
@@ -1449,6 +1469,7 @@ export class RCT3DRenderer {
     if (curTileX === this.lastBuiltCamTileX && curTileY === this.lastBuiltCamTileY &&
         curZoom === this.lastBuiltZoom && curVisionZx === this.lastVisionZoneX &&
         curVisionZy === this.lastVisionZoneY && knownCount === this.lastVisionKnownCount &&
+        this.lastBuiltFullWorld === this.renderFullWorld &&
         this.terrainGroup.children.length > 0) {
       return;
     }
@@ -1459,6 +1480,7 @@ export class RCT3DRenderer {
     this.lastVisionZoneX = curVisionZx;
     this.lastVisionZoneY = curVisionZy;
     this.lastVisionKnownCount = knownCount;
+    this.lastBuiltFullWorld = this.renderFullWorld;
 
     while (this.terrainGroup.children.length > 0) {
       const m = this.terrainGroup.children[0];
@@ -1851,15 +1873,23 @@ export class RCT3DRenderer {
     this.updateCamera();
     const nightGlow = this.updateDayNightLighting(world);
 
-    const aspect = this.width / this.height;
-    const viewSize = Math.min(50, 28 / this.zoom);
-    const diagonal = Math.hypot(viewSize * aspect, viewSize);
-    const radius = Math.min(58, Math.ceil(diagonal * 1.4) + 4);
+    let minTx, maxTx, minTy, maxTy;
+    if (this.renderFullWorld) {
+      minTx = 0;
+      maxTx = MAP_WIDTH - 1;
+      minTy = 0;
+      maxTy = MAP_HEIGHT - 1;
+    } else {
+      const aspect = this.width / this.height;
+      const viewSize = Math.min(80, 28 / this.zoom);
+      const diagonal = Math.hypot(viewSize * aspect, viewSize);
+      const radius = Math.min(80, Math.ceil(diagonal * 1.4) + 4);
 
-    const minTx = Math.max(0, Math.floor(this.camX - radius));
-    const maxTx = Math.min(MAP_WIDTH - 1, Math.ceil(this.camX + radius));
-    const minTy = Math.max(0, Math.floor(this.camY - radius));
-    const maxTy = Math.min(MAP_HEIGHT - 1, Math.ceil(this.camY + radius));
+      minTx = Math.max(0, Math.floor(this.camX - radius));
+      maxTx = Math.min(MAP_WIDTH - 1, Math.ceil(this.camX + radius));
+      minTy = Math.max(0, Math.floor(this.camY - radius));
+      maxTy = Math.min(MAP_HEIGHT - 1, Math.ceil(this.camY + radius));
+    }
 
     this.rebuildTerrainIfNeeded(world, minTx, maxTx, minTy, maxTy, visionCreature);
 

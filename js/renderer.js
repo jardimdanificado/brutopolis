@@ -406,8 +406,8 @@ export class Renderer {
     const buf32 = this.buf32;
     const totalPixels = width * height;
 
-    // 1. Clear background (fast 32-bit fill)
-    const bgColor = rgba32(15, 18, 22, 255);
+    // 1. Clear background (pure black void)
+    const bgColor = rgba32(0, 0, 0, 255);
     buf32.fill(bgColor);
 
     const tileSize = Math.max(1, Math.floor(16 * this.zoom));

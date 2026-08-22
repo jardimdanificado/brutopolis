@@ -1803,16 +1803,21 @@ function renderTopHudBar() {
     registerClickableRegion(CANVAS_WIDTH - 218, 5, 52, 24, saveWorldState);
 
     if (is3DMode && rctRenderer) {
-      const wireMode = rctRenderer.getWireframeModeName ? rctRenderer.getWireframeModeName() : (rctRenderer.isWireframe ? "ON" : "OFF");
-      const wireTxt = "WIRE:" + wireMode;
-      const isWireActive = wireMode !== "OFF";
-      drawNESButton(CANVAS_WIDTH - 296, 5, 72, 24, wireTxt, isWireActive, false);
-      registerClickableRegion(CANVAS_WIDTH - 296, 5, 72, 24, () => rctRenderer.toggleWireframe());
+      const fullWorldActive = rctRenderer.isFullWorldMode ? rctRenderer.isFullWorldMode() : false;
+      const fullTxt = fullWorldActive ? "FULL 3D" : "CHUNK 3D";
+      drawNESButton(CANVAS_WIDTH - 460, 5, 80, 24, fullTxt, fullWorldActive, false);
+      registerClickableRegion(CANVAS_WIDTH - 460, 5, 80, 24, () => rctRenderer.toggleFullWorld());
 
       const resMode = rctRenderer.getResolutionName ? rctRenderer.getResolutionName() : "100%";
       const resTxt = "RES:" + resMode;
       drawNESButton(CANVAS_WIDTH - 374, 5, 72, 24, resTxt, resMode !== "100%", false);
       registerClickableRegion(CANVAS_WIDTH - 374, 5, 72, 24, () => rctRenderer.toggleResolution());
+
+      const wireMode = rctRenderer.getWireframeModeName ? rctRenderer.getWireframeModeName() : (rctRenderer.isWireframe ? "ON" : "OFF");
+      const wireTxt = "WIRE:" + wireMode;
+      const isWireActive = wireMode !== "OFF";
+      drawNESButton(CANVAS_WIDTH - 296, 5, 72, 24, wireTxt, isWireActive, false);
+      registerClickableRegion(CANVAS_WIDTH - 296, 5, 72, 24, () => rctRenderer.toggleWireframe());
     }
   } else {
     // Mobile responsive top bar
@@ -1839,6 +1844,12 @@ function renderTopHudBar() {
     topBtnX -= 46;
 
     if (is3DMode && rctRenderer) {
+      const fullWorldActive = rctRenderer.isFullWorldMode ? rctRenderer.isFullWorldMode() : false;
+      const fullTxt = fullWorldActive ? "FULL" : "CHUNK";
+      drawNESButton(topBtnX, 5, 42, 24, fullTxt, fullWorldActive, false);
+      registerClickableRegion(topBtnX, 5, 42, 24, () => rctRenderer.toggleFullWorld());
+      topBtnX -= 46;
+
       const resMode = rctRenderer.getResolutionName ? rctRenderer.getResolutionName() : "100%";
       const isResActive = resMode !== "100%";
       drawNESButton(topBtnX, 5, 42, 24, resMode, isResActive, false);
