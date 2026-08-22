@@ -875,6 +875,28 @@ function createStoneItemGeometry() {
   return mergeBufferGeometries(parts);
 }
 
+// Standing Outdoor Wood & Iron Torch Post Geometry
+function createStandingTorchGeometry() {
+  const parts = [];
+
+  // 1. Wooden Stake Post (penetrates down to -0.2 into ground for solid anchor)
+  const post = new THREE.CylinderGeometry(0.045, 0.065, 1.25, 6);
+  post.translate(0, 0.425, 0); // Bottom is at y = -0.20, Top is at y = 1.05
+  parts.push(post);
+
+  // 2. Iron Top Basket / Ring
+  const ironRing = new THREE.CylinderGeometry(0.08, 0.055, 0.16, 6);
+  ironRing.translate(0, 0.98, 0);
+  parts.push(ironRing);
+
+  // 3. Flame core
+  const flame = new THREE.OctahedronGeometry(0.11);
+  flame.translate(0, 1.12, 0);
+  parts.push(flame);
+
+  return mergeBufferGeometries(parts);
+}
+
 // ---------------------------------------------------------------------------
 // Main RCT 3D Renderer Class (Volumetric 3D Models + Shaded Terrain)
 // ---------------------------------------------------------------------------
@@ -1336,6 +1358,12 @@ export class RCT3DRenderer {
     this.instStoneItems.castShadow = true;
     this.instStoneItems.receiveShadow = true;
 
+    // 3D Standing Torches
+    const standingTorchGeo = createStandingTorchGeometry();
+    this.instTorches = new THREE.InstancedMesh(standingTorchGeo, this.materials.woodWall, 600);
+    this.instTorches.castShadow = true;
+    this.instTorches.receiveShadow = true;
+
     // Disable Frustum Culling on Instanced Meshes (Manual Viewport Spatial Grid Culling is active)
     this.instOakTrunks.frustumCulled = false;
     this.instOakLeaves.frustumCulled = false;
@@ -1366,6 +1394,7 @@ export class RCT3DRenderer {
     this.instGrassTufts.frustumCulled = false;
     this.instWoodLogs.frustumCulled = false;
     this.instStoneItems.frustumCulled = false;
+    this.instTorches.frustumCulled = false;
 
     this.instancedGroup = new THREE.Group();
     this.instancedGroup.add(
@@ -1381,7 +1410,8 @@ export class RCT3DRenderer {
       this.instHousePegs, this.instHouseStage1,
       this.instHouseStage2, this.instHouseStage3,
       this.instGrassTufts,
-      this.instWoodLogs, this.instStoneItems
+      this.instWoodLogs, this.instStoneItems,
+      this.instTorches
     );
     this.scene.add(this.instancedGroup);
 
@@ -2661,6 +2691,7 @@ export class RCT3DRenderer {
     let stage1Count = 0;
     let stage2Count = 0;
     let stage3Count = 0;
+    let torchCount = 0;
 
     const mMatrix = new THREE.Matrix4();
     const scaleMatrix = new THREE.Matrix4();
@@ -2697,19 +2728,20 @@ export class RCT3DRenderer {
       }
 
       const r = e.properties.render;
+      const isTorch = !e.properties.life && (!!e.properties.torch || e.properties.name?.includes("Torch") || e.properties.name?.includes("Tocha"));
       const isWarehouse = !e.properties.life && (!!e.properties.warehouse || e.properties.name?.includes("Armazém"));
-      const isDoor = !e.properties.life && !isWarehouse && !!e.properties.door;
-      const isHouse = !e.properties.life && !isWarehouse && (!!e.properties.house || r.skin === "Overworld_House.png" || e.properties.name?.includes("Casa") || e.properties.name?.includes("Ossuário") || e.properties.name?.includes("Castelo") || e.properties.name?.includes("Cabana"));
-      const isWall = !e.properties.life && !isDoor && !isHouse && !isWarehouse && (e.properties.structure || r.skin?.startsWith("Wall_") || e.properties.name?.includes("Muralha") || e.properties.name?.includes("Paliçada") || e.properties.name?.includes("Muro") || e.properties.name?.includes("Wall"));
+      const isDoor = !e.properties.life && !isWarehouse && !isTorch && !!e.properties.door;
+      const isHouse = !e.properties.life && !isWarehouse && !isTorch && (!!e.properties.house || r.skin === "Overworld_House.png" || e.properties.name?.includes("Casa") || e.properties.name?.includes("Ossuário") || e.properties.name?.includes("Castelo") || e.properties.name?.includes("Cabana"));
+      const isWall = !e.properties.life && !isDoor && !isHouse && !isWarehouse && !isTorch && (e.properties.structure || r.skin?.startsWith("Wall_") || e.properties.name?.includes("Muralha") || e.properties.name?.includes("Paliçada") || e.properties.name?.includes("Muro") || e.properties.name?.includes("Wall"));
       const isCactus = e.properties.species === "cactus" || e.properties.name?.toLowerCase().includes("cactus") || e.properties.name?.toLowerCase().includes("cacto");
       const isTree = !isCactus && (e.properties.species === "oak" || e.properties.species === "pine" || e.properties.species === "willow" || e.properties.species === "tree" || !!e.properties.tree || (r.skin && r.skin.toLowerCase().includes("tree")));
       const isPine = isTree && (e.properties.species === "pine" || (r.skin && r.skin.toLowerCase().includes("pine")));
 
-      const isWoodLog = !e.properties.life && (e.properties.resourceType === "wood" || e.properties.name?.includes("Wood Log") || e.properties.name?.includes("Madeira") || r.skin === "Item_Wood.png") && !isHouse && !isWall && !isDoor && !isTree && !isWarehouse;
-      const isStoneItem = !e.properties.life && (e.properties.resourceType === "stone" || e.properties.name?.includes("Stone Block") || e.properties.name?.includes("Pedra")) && !isHouse && !isWall && !isDoor && !isWarehouse;
-      const isItem = !e.properties.life && (!!e.properties.edible || !!e.properties.resourceType || !!e.properties.germination || e.properties.species === "item");
+      const isWoodLog = !e.properties.life && (e.properties.resourceType === "wood" || e.properties.name?.includes("Wood Log") || e.properties.name?.includes("Madeira") || r.skin === "Item_Wood.png") && !isHouse && !isWall && !isDoor && !isTree && !isWarehouse && !isTorch;
+      const isStoneItem = !e.properties.life && (e.properties.resourceType === "stone" || e.properties.name?.includes("Stone Block") || e.properties.name?.includes("Pedra")) && !isHouse && !isWall && !isDoor && !isWarehouse && !isTorch;
+      const isItem = !e.properties.life && !isTorch && (!!e.properties.edible || !!e.properties.resourceType || !!e.properties.germination || e.properties.species === "item");
 
-      const isPlantOrItem = isTree || isCactus || isWoodLog || isStoneItem;
+      const isPlantOrItem = isTree || isCactus || isWoodLog || isStoneItem || isTorch;
       const isBuilding = isHouse || isWall || isDoor || isWarehouse;
       const surfaceH = isBuilding
         ? this.getTileSurfaceHeight(map, Math.floor(e.x), Math.floor(e.y))
@@ -2754,6 +2786,12 @@ export class RCT3DRenderer {
         mMatrix.setPosition(e.x + 0.5, surfaceH, e.y + 0.5);
         this.instCacti.setMatrixAt(cactusCount, mMatrix);
         cactusCount++;
+      }
+      // --- 3D STANDING TORCHES (Wooden Stake Post + Iron Ring + Flame) ---
+      else if (isTorch && torchCount < 600) {
+        mMatrix.identity();
+        mMatrix.setPosition(e.x + 0.5, surfaceH, e.y + 0.5);
+        this.instTorches.setMatrixAt(torchCount++, mMatrix);
       }
       // --- 3D WALLS (Stone, Wood, Mixed & Slope/Ramp Adaptive) ---
       else if (isWall) {
@@ -2967,11 +3005,21 @@ export class RCT3DRenderer {
         }
 
         const isSleeping = !!e.properties?.life?.isSleeping;
-        if (isItem) {
+        const isStandingTorch = !!e.properties?.torch;
+        if (isStandingTorch) {
+          sprite.scale.set(0.68, 0.68, 0.68);
+          sprite.position.set(e.x + 0.5, surfaceH, e.y + 0.5);
+          sprite.rotation.y = this.fixedRotationY;
+          sprite.rotation.z = 0;
+          sprite.castShadow = false; // Do not occlude own light source
+          sprite.receiveShadow = false;
+        } else if (isItem) {
           sprite.scale.set(0.48, 0.48, 0.48);
           sprite.position.set(e.x, surfaceH, e.y);
           sprite.rotation.y = this.fixedRotationY;
           sprite.rotation.z = 0;
+          sprite.castShadow = true;
+          sprite.receiveShadow = true;
         } else if (isSleeping) {
           // Lying down flat on the ground while sleeping
           sprite.scale.set(0.65, 0.65, 0.65);
@@ -3137,46 +3185,55 @@ export class RCT3DRenderer {
         const e = visibleEntities[i];
         if (!e || e.destroyed) continue;
 
-        const isHouse = !!e.properties?.house || e.properties?.render?.skin === "Overworld_House.png";
-        if (isHouse && e.properties?.house?.isCompleted !== false) {
-          const sH = this.getTileSurfaceHeight(map, Math.floor(e.x), Math.floor(e.y));
-          // Place light source on top of the house (roof peak) so light radiates unobstructed in all directions
+        // 1. Standing Furniture Torches on Ground
+        const isStandingTorch = !!e.properties?.torch;
+        if (isStandingTorch && e.properties?.torch?.isLit !== false) {
+          const sH = this.getSurfaceElevation(map, e.x + 0.5, e.y + 0.5);
           const dx = (e.x + 0.5) - focusX;
           const dy = (e.y + 0.5) - focusY;
           candidates.push({
             x: e.x + 0.5,
-            y: sH + 2.35,
+            y: sH + 1.20,
             z: e.y + 0.5,
-            color: 0xffa040,
+            color: 0xffa033,
             distance: 16.0,
-            decay: 1.4,
-            intensity: nightGlow * 3.0,
-            priority: 2, // High priority
+            decay: 1.3,
+            intensity: nightGlow * 3.5,
+            priority: 1, // Top priority for placed torches
             distSq: dx * dx + dy * dy
           });
           continue;
         }
 
+        // 2. Torches Carried by Intelligent Creatures (MainHand or OffHand)
         const isIntelligent = !!e.properties?.brain || !!e.properties?.group_member;
         if (isIntelligent) {
-          const sH = this.getSurfaceElevation(map, e.x, e.y);
-          const dx = e.x - focusX;
-          const dy = e.y - focusY;
-          candidates.push({
-            x: e.x,
-            y: sH + 0.95,
-            z: e.y,
-            color: 0xffaa44,
-            distance: 9.0,
-            decay: 1.6,
-            intensity: nightGlow * 2.0,
-            priority: e.id === this.selectedEntityId ? 0 : 3, // Selected character is top priority
-            distSq: dx * dx + dy * dy
-          });
+          const carriesTorch = (
+            e.properties.arm_left?.heldItem?.resourceType === "torch" ||
+            e.properties.arm_right?.heldItem?.resourceType === "torch" ||
+            e.properties.heldItem?.resourceType === "torch"
+          );
+          if (carriesTorch) {
+            const sH = this.getSurfaceElevation(map, e.x, e.y);
+            const dx = e.x - focusX;
+            const dy = e.y - focusY;
+            candidates.push({
+              x: e.x,
+              y: sH + 0.95,
+              z: e.y,
+              color: 0xffaa44,
+              distance: 12.0,
+              decay: 1.5,
+              intensity: nightGlow * 2.8,
+              priority: e.id === this.selectedEntityId ? 0 : 2,
+              distSq: dx * dx + dy * dy
+            });
+          }
           continue;
         }
 
-        const isWall = e.properties?.structure && !e.properties?.house && !e.properties?.door;
+        // 3. Wall Torches / Watchtower Torch Brackets
+        const isWall = e.properties?.structure && !e.properties?.house && !e.properties?.door && !!e.properties?.torch;
         if (isWall) {
           const sH = this.getTileSurfaceHeight(map, Math.floor(e.x), Math.floor(e.y));
           const dx = (e.x + 0.5) - focusX;
@@ -3189,7 +3246,7 @@ export class RCT3DRenderer {
             distance: 10.0,
             decay: 1.6,
             intensity: nightGlow * 2.0,
-            priority: 4,
+            priority: 3,
             distSq: dx * dx + dy * dy
           });
         }
@@ -3297,6 +3354,9 @@ export class RCT3DRenderer {
 
     this.instHouseStage3.count = stage3Count;
     this.instHouseStage3.instanceMatrix.needsUpdate = true;
+
+    this.instTorches.count = torchCount;
+    this.instTorches.instanceMatrix.needsUpdate = true;
 
     // Clean inactive dynamic billboards
     for (const [id, spr] of this.entitySprites.entries()) {

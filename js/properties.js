@@ -598,6 +598,38 @@ export function createDoorEntity(x, y, ownerIds = []) {
   }, x, y);
 }
 
+export function createTorchItem(ownerId = null) {
+  return {
+    name: "Torch",
+    itemType: "torch",
+    resourceType: "torch",
+    skin: "Item_Torch.png",
+    isLit: true,
+    ownerId: ownerId
+  };
+}
+
+export function createTorchEntity(x, y, ownerId = null) {
+  return createEntity({
+    name: "Standing Torch",
+    structure: {
+      condition: 800,
+      maxCondition: 800,
+      defense: 10
+    },
+    render: {
+      skin: "Item_Torch.png",
+      color: 0xffffffff,
+      backcolor: 0x00000000
+    },
+    torch: {
+      isLit: true,
+      ownerId: ownerId,
+      radius: 13.0
+    }
+  }, x, y);
+}
+
 export function createHouseEntity(x, y, ownerId = null, ownerName = null, style = "mixed", boneOwnerName = null) {
   let condition = 5500;
   let defense = 75;
@@ -3420,6 +3452,100 @@ export function isPerimeterEdge(zx, zy, ox, oy, claimedZones) {
   return false;
 }
 
+// ---------------------------------------------------------------------------
+// Creature Torch Management (Standing Furniture Torch & Night Offhand Torch)
+// ---------------------------------------------------------------------------
+
+export function manageCreatureTorches(ent, group, world, entities) {
+  if (!ent || ent.destroyed || !ent.properties?.life || !group) return;
+
+  // 1. Check if creature has a completed house and build a standing torch nearby
+  const houseEnt = Array.from(entityRegistry.values()).find(e =>
+    !e.destroyed &&
+    e.properties?.house &&
+    e.properties.house.isCompleted !== false &&
+    e.properties.house.ownerId === ent.id
+  );
+
+  if (houseEnt) {
+    const hasStandingTorch = Array.from(entityRegistry.values()).some(e =>
+      !e.destroyed &&
+      e.properties?.torch &&
+      (e.properties.torch.ownerId === ent.id || (Math.abs(e.x - houseEnt.x) <= 2 && Math.abs(e.y - houseEnt.y) <= 2))
+    );
+
+    if (!hasStandingTorch) {
+      const candidates = [];
+      for (let dx = -2; dx <= 2; dx++) {
+        for (let dy = -2; dy <= 2; dy++) {
+          if (dx === 0 && dy === 0) continue;
+          if (Math.abs(dx) + Math.abs(dy) > 3) continue;
+          const tx = houseEnt.x + dx;
+          const ty = houseEnt.y + dy;
+          if (tx < 0 || ty < 0 || (world && (tx >= world.width || ty >= world.height))) continue;
+          if (world && world.getTile(tx, ty) === TILE_WATER) continue;
+
+          const isOccupied = Array.from(entityRegistry.values()).some(e =>
+            !e.destroyed &&
+            e.x === tx && e.y === ty &&
+            (e.properties?.structure || e.properties?.house || e.properties?.tree || e.properties?.cactus || e.properties?.torch)
+          );
+          if (!isOccupied) {
+            candidates.push({ x: tx, y: ty, dist: Math.abs(dx) + Math.abs(dy) });
+          }
+        }
+      }
+
+      if (candidates.length > 0) {
+        candidates.sort((a, b) => a.dist - b.dist);
+        const best = candidates[0];
+        const torchEnt = createTorchEntity(best.x, best.y, ent.id);
+        entities.push(torchEnt);
+        recordWorldEvent({
+          type: "BUILD",
+          primaryEntityId: ent.id,
+          location: { x: best.x, y: best.y },
+          description: `${ent.properties.name} fincou uma tocha de chão perto de sua casa para iluminar a vizinhança!`,
+          tick: currentTick,
+          timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
+        });
+      }
+    }
+  }
+
+  // 2. Offhand Handheld Torch Management for Night/Day
+  const curHour = world?.clock ? (world.clock.hour + (world.clock.minute || 0) / 60) : 12;
+  const isNight = (curHour >= 17.5 || curHour < 5.8);
+
+  const leftArm = ent.properties.arm_left;
+  const rightArm = ent.properties.arm_right;
+
+  const isHoldingTorch = (
+    leftArm?.heldItem?.resourceType === "torch" ||
+    rightArm?.heldItem?.resourceType === "torch" ||
+    ent.properties.heldItem?.resourceType === "torch"
+  );
+
+  if (isNight) {
+    if (!isHoldingTorch) {
+      if (leftArm && !leftArm.heldItem) {
+        leftArm.heldItem = createTorchItem(ent.id);
+      } else if (rightArm && !rightArm.heldItem) {
+        rightArm.heldItem = createTorchItem(ent.id);
+      }
+    }
+  } else {
+    const isCarryingMaterial = isCarryingItem(ent, "stone") || isCarryingItem(ent, "wood") || isCarryingItem(ent, "bone");
+    if (isCarryingMaterial && isHoldingTorch) {
+      if (leftArm?.heldItem?.resourceType === "torch") {
+        leftArm.heldItem = null;
+      } else if (rightArm?.heldItem?.resourceType === "torch") {
+        rightArm.heldItem = null;
+      }
+    }
+  }
+}
+
 /**
  * Fluid Group Member Property:
  * Dynamically performs building, mining, crafting, farming, foraging, hunting, hauling,
@@ -3432,6 +3558,8 @@ export function createGroupMemberProp() {
       if (!ent.properties.group || !world || !entities) return;
 
       const group = ent.properties.group;
+      manageCreatureTorches(ent, group, world, entities);
+
       const freeArm = getFreeArm(ent);
       const isCarryingMat = isCarryingItem(ent, "stone") || isCarryingItem(ent, "wood") || isCarryingItem(ent, "bone");
       const isCarryingSeed = isCarryingItem(ent, "seed");
