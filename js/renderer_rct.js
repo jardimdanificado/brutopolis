@@ -59,6 +59,7 @@ const EMOTE_SKINS = [
 ];
 
 function getCreatureEmoteSkin(e) {
+  if (e.properties?.life?.isSleeping) return "Emote_Sleeping.png";
   if (e.emote !== undefined && e.emote >= 0 && e.emote < EMOTE_SKINS.length) {
     return EMOTE_SKINS[e.emote];
   }
@@ -461,6 +462,52 @@ function createStoneWallGeometry() {
   return mergeBufferGeometries(parts);
 }
 
+// Wooden Palisade Wall Geometry (Pointed Vertical Logs + Anchoring Skirt)
+function createWoodPalisadeGeometry() {
+  const parts = [];
+  const skirt = new THREE.BoxGeometry(1.02, 0.50, 0.40);
+  skirt.translate(0, -0.12, 0);
+  parts.push(skirt);
+
+  for (let i = -1.5; i <= 1.5; i += 1.0) {
+    const log = new THREE.CylinderGeometry(0.11, 0.12, 1.15, 6);
+    log.translate(i * 0.24, 0.575, 0);
+    parts.push(log);
+    const tip = new THREE.ConeGeometry(0.11, 0.22, 6);
+    tip.translate(i * 0.24, 1.15 + 0.11, 0);
+    parts.push(tip);
+  }
+  return mergeBufferGeometries(parts);
+}
+
+// Mixed Stone Foundation & Wooden Parapet Wall Geometry
+function createMixedWallGeometry() {
+  const parts = [];
+  const skirt = new THREE.BoxGeometry(1.02, 0.50, 0.80);
+  skirt.translate(0, -0.12, 0);
+  parts.push(skirt);
+
+  // Stone base
+  const stoneBase = new THREE.BoxGeometry(1.0, 0.65, 0.80);
+  stoneBase.translate(0, 0.325, 0);
+  parts.push(stoneBase);
+
+  // Timber railing & posts
+  const beam = new THREE.BoxGeometry(1.02, 0.14, 0.18);
+  beam.translate(0, 0.95, 0);
+  parts.push(beam);
+
+  const post1 = new THREE.BoxGeometry(0.14, 0.45, 0.20);
+  post1.translate(-0.35, 0.80, 0);
+  parts.push(post1);
+
+  const post2 = new THREE.BoxGeometry(0.14, 0.45, 0.20);
+  post2.translate(0.35, 0.80, 0);
+  parts.push(post2);
+
+  return mergeBufferGeometries(parts);
+}
+
 // Stage 1: Wall Foundation Trench & Timber Scaffolding
 function createWallStage1Geometry() {
   const parts = [];
@@ -701,12 +748,36 @@ export class RCT3DRenderer {
         map: createTintedTexture("Feature_Brick_C.png", 0xff6238, 0x941e0a, 1.0),
         side: THREE.DoubleSide
       }),
+      woodHouseWall: new THREE.MeshLambertMaterial({
+        map: createTintedTexture("Feature_Wood.png", 0xd4a373, 0x4a3525, 1.0),
+        side: THREE.DoubleSide
+      }),
+      woodHouseRoof: new THREE.MeshLambertMaterial({
+        map: createTintedTexture("Feature_Wood.png", 0xa67c52, 0x3b271a, 1.0),
+        side: THREE.DoubleSide
+      }),
+      stoneHouseWall: new THREE.MeshLambertMaterial({
+        map: createTintedTexture("Feature_Stone_C.png", 0xd8d7de, 0x3a3842, 1.0),
+        side: THREE.DoubleSide
+      }),
+      stoneHouseRoof: new THREE.MeshLambertMaterial({
+        map: createTintedTexture("Feature_Stone_B.png", 0x718096, 0x2d3748, 1.0),
+        side: THREE.DoubleSide
+      }),
       houseBlueprint: new THREE.MeshLambertMaterial({
         map: createTintedTexture("Feature_Wood.png", 0xdfa052, 0x5a3418, 1.0),
         side: THREE.DoubleSide
       }),
       wall: new THREE.MeshLambertMaterial({
         map: createTintedTexture("Feature_Stone_C.png", 0xd8d7de, 0x3a3842, 1.0),
+        side: THREE.DoubleSide
+      }),
+      woodWall: new THREE.MeshLambertMaterial({
+        map: createTintedTexture("Feature_Wood.png", 0xc89858, 0x482c18, 1.0),
+        side: THREE.DoubleSide
+      }),
+      mixedWall: new THREE.MeshLambertMaterial({
+        map: createTintedTexture("Feature_Stone_A.png", 0xdfd0b0, 0x3d3024, 1.0),
         side: THREE.DoubleSide
       }),
       wallBlueprint: new THREE.MeshLambertMaterial({
@@ -772,6 +843,16 @@ export class RCT3DRenderer {
     this.instWalls.castShadow = true;
     this.instWalls.receiveShadow = true;
 
+    const woodPalGeo = createWoodPalisadeGeometry();
+    this.instWoodWalls = new THREE.InstancedMesh(woodPalGeo, this.materials.woodWall, this.maxInstances);
+    this.instWoodWalls.castShadow = true;
+    this.instWoodWalls.receiveShadow = true;
+
+    const mixedWallGeo = createMixedWallGeometry();
+    this.instMixedWalls = new THREE.InstancedMesh(mixedWallGeo, this.materials.mixedWall, this.maxInstances);
+    this.instMixedWalls.castShadow = true;
+    this.instMixedWalls.receiveShadow = true;
+
     const wallSt1Geo = createWallStage1Geometry();
     this.instWallsStage1 = new THREE.InstancedMesh(wallSt1Geo, this.materials.wallBlueprint, this.maxInstances);
     this.instWallsStage1.castShadow = true;
@@ -793,12 +874,20 @@ export class RCT3DRenderer {
     this.instGatesStage1.castShadow = true;
     this.instGatesStage1.receiveShadow = true;
 
-    // Houses (Finished Stage 4: Stone Walls + Terracotta Clay Roof + Flagpole Mast)
+    // Houses (Finished Stage 4: Mixed, Wood, Stone Walls + Roof + Flagpole Mast)
     const houseWallGeo = new THREE.BoxGeometry(1.5, 1.2, 1.5);
     houseWallGeo.translate(0, 0.6, 0);
     this.instHouseWalls = new THREE.InstancedMesh(houseWallGeo, this.materials.houseWall, 400);
     this.instHouseWalls.castShadow = true;
     this.instHouseWalls.receiveShadow = true;
+
+    this.instWoodHouseWalls = new THREE.InstancedMesh(houseWallGeo, this.materials.woodHouseWall, 400);
+    this.instWoodHouseWalls.castShadow = true;
+    this.instWoodHouseWalls.receiveShadow = true;
+
+    this.instStoneHouseWalls = new THREE.InstancedMesh(houseWallGeo, this.materials.stoneHouseWall, 400);
+    this.instStoneHouseWalls.castShadow = true;
+    this.instStoneHouseWalls.receiveShadow = true;
 
     const houseRoofParts = [];
     const roofGeo = createPitchedRoofGeometry(1.68, 1.68, 0.78);
@@ -814,6 +903,14 @@ export class RCT3DRenderer {
     this.instHouseRoofs = new THREE.InstancedMesh(fullRoofGeo, this.materials.houseRoof, 400);
     this.instHouseRoofs.castShadow = true;
     this.instHouseRoofs.receiveShadow = true;
+
+    this.instWoodHouseRoofs = new THREE.InstancedMesh(fullRoofGeo, this.materials.woodHouseRoof, 400);
+    this.instWoodHouseRoofs.castShadow = true;
+    this.instWoodHouseRoofs.receiveShadow = true;
+
+    this.instStoneHouseRoofs = new THREE.InstancedMesh(fullRoofGeo, this.materials.stoneHouseRoof, 400);
+    this.instStoneHouseRoofs.castShadow = true;
+    this.instStoneHouseRoofs.receiveShadow = true;
 
     // Progressive Construction Stages
     // Stage 0: Pegs & String Layout (0 materials)
@@ -850,12 +947,18 @@ export class RCT3DRenderer {
     this.instPineLeaves.frustumCulled = false;
     this.instCacti.frustumCulled = false;
     this.instWalls.frustumCulled = false;
+    this.instWoodWalls.frustumCulled = false;
+    this.instMixedWalls.frustumCulled = false;
     this.instWallsStage1.frustumCulled = false;
     this.instGatesClosed.frustumCulled = false;
     this.instGatesOpen.frustumCulled = false;
     this.instGatesStage1.frustumCulled = false;
     this.instHouseWalls.frustumCulled = false;
     this.instHouseRoofs.frustumCulled = false;
+    this.instWoodHouseWalls.frustumCulled = false;
+    this.instWoodHouseRoofs.frustumCulled = false;
+    this.instStoneHouseWalls.frustumCulled = false;
+    this.instStoneHouseRoofs.frustumCulled = false;
     this.instHousePegs.frustumCulled = false;
     this.instHouseStage1.frustumCulled = false;
     this.instHouseStage2.frustumCulled = false;
@@ -866,9 +969,11 @@ export class RCT3DRenderer {
     this.instancedGroup.add(
       this.instOakTrunks, this.instOakLeaves,
       this.instPineTrunks, this.instPineLeaves,
-      this.instCacti, this.instWalls, this.instWallsStage1,
+      this.instCacti, this.instWalls, this.instWoodWalls, this.instMixedWalls, this.instWallsStage1,
       this.instGatesClosed, this.instGatesOpen, this.instGatesStage1,
       this.instHouseWalls, this.instHouseRoofs,
+      this.instWoodHouseWalls, this.instWoodHouseRoofs,
+      this.instStoneHouseWalls, this.instStoneHouseRoofs,
       this.instHousePegs, this.instHouseStage1,
       this.instHouseStage2, this.instHouseStage3,
       this.instGrassTufts
@@ -2071,11 +2176,15 @@ export class RCT3DRenderer {
     let pineCount = 0;
     let cactusCount = 0;
     let wallCount = 0;
+    let woodWallCount = 0;
+    let mixedWallCount = 0;
     let wallStage1Count = 0;
     let gateClosedCount = 0;
     let gateOpenCount = 0;
     let gateStage1Count = 0;
     let houseCount = 0;
+    let woodHouseCount = 0;
+    let stoneHouseCount = 0;
     let pegsCount = 0;
     let stage1Count = 0;
     let stage2Count = 0;
@@ -2119,7 +2228,7 @@ export class RCT3DRenderer {
       const isItem = !e.properties.life && (!!e.properties.edible || !!e.properties.resourceType || !!e.properties.germination || e.properties.species === "item");
       const isDoor = !!e.properties.door;
       const isHouse = !!e.properties.house || r.skin === "Overworld_House.png" || e.properties.name?.includes("Casa");
-      const isWall = !isDoor && !isHouse && (e.properties.structure || r.skin?.startsWith("Wall_") || e.properties.name?.includes("Muralha") || e.properties.name?.includes("Wall"));
+      const isWall = !isDoor && !isHouse && (e.properties.structure || r.skin?.startsWith("Wall_") || e.properties.name?.includes("Muralha") || e.properties.name?.includes("Paliçada") || e.properties.name?.includes("Muro") || e.properties.name?.includes("Wall"));
       const isCactus = e.properties.species === "cactus" || e.properties.name?.toLowerCase().includes("cactus") || e.properties.name?.toLowerCase().includes("cacto");
       const isTree = !isCactus && (e.properties.species === "oak" || e.properties.species === "pine" || e.properties.species === "willow" || e.properties.species === "tree" || !!e.properties.tree || (r.skin && r.skin.toLowerCase().includes("tree")));
       const isPine = isTree && (e.properties.species === "pine" || (r.skin && r.skin.toLowerCase().includes("pine")));
@@ -2155,7 +2264,7 @@ export class RCT3DRenderer {
         this.instCacti.setMatrixAt(cactusCount, mMatrix);
         cactusCount++;
       }
-      // --- 3D STONE WALLS (Slope/Ramp Adaptive & Progressive Construction) ---
+      // --- 3D WALLS (Stone, Wood, Mixed & Slope/Ramp Adaptive) ---
       else if (isWall) {
         const isCompleted = e.isConstructed !== false;
         const tx = Math.floor(e.x);
@@ -2172,12 +2281,17 @@ export class RCT3DRenderer {
         mMatrix.makeRotationFromEuler(rotEuler);
         mMatrix.setPosition(e.x + 0.5, surfaceH, e.y + 0.5);
 
-        if (isCompleted && wallCount < this.maxInstances) {
-          this.instWalls.setMatrixAt(wallCount, mMatrix);
-          wallCount++;
+        const wallStyle = e.wallStyle || e.properties?.wallStyle || "stone";
+        if (isCompleted) {
+          if (wallStyle === "wood" && woodWallCount < this.maxInstances) {
+            this.instWoodWalls.setMatrixAt(woodWallCount++, mMatrix);
+          } else if (wallStyle === "mixed" && mixedWallCount < this.maxInstances) {
+            this.instMixedWalls.setMatrixAt(mixedWallCount++, mMatrix);
+          } else if (wallCount < this.maxInstances) {
+            this.instWalls.setMatrixAt(wallCount++, mMatrix);
+          }
         } else if (!isCompleted && wallStage1Count < this.maxInstances) {
-          this.instWallsStage1.setMatrixAt(wallStage1Count, mMatrix);
-          wallStage1Count++;
+          this.instWallsStage1.setMatrixAt(wallStage1Count++, mMatrix);
         }
       }
       // --- 3D FORTIFIED GATES (Wood & Iron Archway + Open/Closed States) ---
@@ -2231,11 +2345,21 @@ export class RCT3DRenderer {
         mMatrix.multiply(scaleMatrix);
         mMatrix.setPosition(e.x + 0.5, surfaceH, e.y + 0.5);
 
-        if (isCompleted && houseCount < 400) {
-          // Stage 4: Finished stone house with terracotta roof & flagpole mast
-          this.instHouseWalls.setMatrixAt(houseCount, mMatrix);
-          this.instHouseRoofs.setMatrixAt(houseCount, mMatrix);
-          houseCount++;
+        if (isCompleted) {
+          const houseStyle = h?.style || "mixed";
+          if (houseStyle === "wood" && woodHouseCount < 400) {
+            this.instWoodHouseWalls.setMatrixAt(woodHouseCount, mMatrix);
+            this.instWoodHouseRoofs.setMatrixAt(woodHouseCount, mMatrix);
+            woodHouseCount++;
+          } else if (houseStyle === "stone" && stoneHouseCount < 400) {
+            this.instStoneHouseWalls.setMatrixAt(stoneHouseCount, mMatrix);
+            this.instStoneHouseRoofs.setMatrixAt(stoneHouseCount, mMatrix);
+            stoneHouseCount++;
+          } else if (houseCount < 400) {
+            this.instHouseWalls.setMatrixAt(houseCount, mMatrix);
+            this.instHouseRoofs.setMatrixAt(houseCount, mMatrix);
+            houseCount++;
+          }
 
           // Hoist Clan Flag Banner atop the Roof Apex
           let houseClan = e.properties.group;
@@ -2278,13 +2402,13 @@ export class RCT3DRenderer {
           flagMesh.rotation.y = this.fixedRotationY;
         } else if (!isCompleted) {
           if (progress < 0.32 && stage1Count < 400) {
-            // Stage 1 (1 - 15 materials): Stone slab foundation + 4 corner timber posts
+            // Stage 1: Foundation + 4 corner posts
             this.instHouseStage1.setMatrixAt(stage1Count++, mMatrix);
           } else if (progress < 0.68 && stage2Count < 400) {
-            // Stage 2 (16 - 34 materials): Foundation + posts + cross beams + half-height stone walls
+            // Stage 2: Foundation + posts + half walls
             this.instHouseStage2.setMatrixAt(stage2Count++, mMatrix);
           } else if (stage3Count < 400) {
-            // Stage 3 (35 - 49 materials): Full stone walls + roof timber rafters skeleton
+            // Stage 3: Full walls + roof rafters
             this.instHouseStage3.setMatrixAt(stage3Count++, mMatrix);
           }
         }
@@ -2320,15 +2444,25 @@ export class RCT3DRenderer {
           sprite.material.needsUpdate = true;
         }
 
+        const isSleeping = !!e.properties?.life?.isSleeping;
         if (isItem) {
           sprite.scale.set(0.48, 0.48, 0.48);
+          sprite.position.set(e.x, surfaceH, e.y);
+          sprite.rotation.y = this.fixedRotationY;
+          sprite.rotation.z = 0;
+        } else if (isSleeping) {
+          // Lying down flat on the ground while sleeping
+          sprite.scale.set(0.65, 0.65, 0.65);
+          sprite.position.set(e.x, surfaceH + 0.10, e.y);
+          sprite.rotation.y = this.fixedRotationY;
+          sprite.rotation.z = Math.PI / 2;
         } else {
           // Compact 2/3 scale for creatures
           sprite.scale.set(0.72, 0.72, 0.72);
+          sprite.position.set(e.x, surfaceH, e.y);
+          sprite.rotation.y = this.fixedRotationY;
+          sprite.rotation.z = 0;
         }
-
-        sprite.position.set(e.x, surfaceH, e.y);
-        sprite.rotation.y = this.fixedRotationY;
 
         // Dimming in Vision Mode outside current zone
         const inCurZone = !knownZones || (Math.floor(e.x / zoneSz) === curVisionZx && Math.floor(e.y / zoneSz) === curVisionZy);
@@ -2543,6 +2677,10 @@ export class RCT3DRenderer {
 
     this.instWalls.count = wallCount;
     this.instWalls.instanceMatrix.needsUpdate = true;
+    this.instWoodWalls.count = woodWallCount;
+    this.instWoodWalls.instanceMatrix.needsUpdate = true;
+    this.instMixedWalls.count = mixedWallCount;
+    this.instMixedWalls.instanceMatrix.needsUpdate = true;
     this.instWallsStage1.count = wallStage1Count;
     this.instWallsStage1.instanceMatrix.needsUpdate = true;
 
@@ -2557,6 +2695,16 @@ export class RCT3DRenderer {
     this.instHouseWalls.instanceMatrix.needsUpdate = true;
     this.instHouseRoofs.count = houseCount;
     this.instHouseRoofs.instanceMatrix.needsUpdate = true;
+
+    this.instWoodHouseWalls.count = woodHouseCount;
+    this.instWoodHouseWalls.instanceMatrix.needsUpdate = true;
+    this.instWoodHouseRoofs.count = woodHouseCount;
+    this.instWoodHouseRoofs.instanceMatrix.needsUpdate = true;
+
+    this.instStoneHouseWalls.count = stoneHouseCount;
+    this.instStoneHouseWalls.instanceMatrix.needsUpdate = true;
+    this.instStoneHouseRoofs.count = stoneHouseCount;
+    this.instStoneHouseRoofs.instanceMatrix.needsUpdate = true;
 
     this.instHousePegs.count = pegsCount;
     this.instHousePegs.instanceMatrix.needsUpdate = true;

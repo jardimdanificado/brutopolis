@@ -235,12 +235,12 @@ export function createLifeProp(energy = 8000, max = 8000, basalRate = 0.05, init
       // Collapse into deep sleep to recover energy exclusively through sleep
       if (this.energy <= 5 && !this.isSleeping) {
         this.isSleeping = true;
-        ent.emote = 7; // Zzz / Sleeping
+        ent.emote = 8; // Emote_Sleeping.png
       }
 
-      // Sleeping Restoration (Energy only regenerates while sleeping over a gradual resting duration)
+      // Sleeping Restoration (Energy only regenerates while sleeping over a sustained resting duration)
       if (this.isSleeping) {
-        ent.emote = 7; // Zzz
+        ent.emote = 8; // Emote_Sleeping.png
         this._sleepTimer = (this._sleepTimer || 0) + dt;
 
         const stomach = ent.properties.stomach;
@@ -248,11 +248,11 @@ export function createLifeProp(energy = 8000, max = 8000, basalRate = 0.05, init
 
         // Fonte 1: Comida no estômago (se tiver comida)
         if (stomach && stomach.items && stomach.items.length > 0) {
-          const sleepDigestionSpeed = inOwnHouse ? 5.0 : 3.0;
+          const sleepDigestionSpeed = inOwnHouse ? 3.0 : 2.0;
           for (let i = stomach.items.length - 1; i >= 0; i--) {
             const item = stomach.items[i];
             const efficiency = (stomach.diet && stomach.diet[item.foodType] !== undefined) ? stomach.diet[item.foodType] : 1.0;
-            const energyExtracted = ((item.nutrition / item.totalTurns) * efficiency) * sleepDigestionSpeed * dt * 2.5;
+            const energyExtracted = ((item.nutrition / item.totalTurns) * efficiency) * sleepDigestionSpeed * dt * 1.8;
             this.energy = Math.min(this.max, this.energy + energyExtracted);
 
             // Surplus converted to fat when near max energy
@@ -294,7 +294,7 @@ export function createLifeProp(energy = 8000, max = 8000, basalRate = 0.05, init
               location: { x: ent.x, y: ent.y }
             });
           }
-          const burnRate = (this.max * 0.50) / 8.0;
+          const burnRate = (this.max * 0.50) / 15.0;
           this.energy = Math.min(this.max, this.energy + burnRate * dt);
         }
         // Fonte 3: Condição Cerebral (se não tiver comida nem gordura, consome 10 de condição cerebral para restaurar energia dormindo)
@@ -319,10 +319,10 @@ export function createLifeProp(energy = 8000, max = 8000, basalRate = 0.05, init
             });
           }
 
-          const restoreRate = this.max / 10.0;
+          const restoreRate = this.max / 15.0;
           this.energy = Math.min(this.max, this.energy + restoreRate * dt);
         } else {
-          this.energy = Math.min(this.max, this.energy + (this.max / 10.0) * dt);
+          this.energy = Math.min(this.max, this.energy + (this.max / 15.0) * dt);
         }
 
         // Home healing benefit for brain when sleeping in own house (requires being fed)
@@ -331,8 +331,8 @@ export function createLifeProp(energy = 8000, max = 8000, basalRate = 0.05, init
           brain.condition = Math.min(brain.maxCondition, brain.condition + dt * 0.5);
         }
 
-        // Wake up naturally after becoming well-rested (minimum sleep duration of 5 seconds)
-        if (this.energy >= this.max * 0.95 && (this._sleepTimer || 0) >= 5.0) {
+        // Wake up naturally after becoming well-rested (minimum sustained sleep of 12 seconds)
+        if (this.energy >= this.max * 0.95 && (this._sleepTimer || 0) >= 12.0) {
           this.isSleeping = false;
           this._sleepTimer = 0;
           this._brainSacrificeDone = false;
@@ -596,33 +596,60 @@ export function createDoorEntity(x, y, ownerIds = []) {
   }, x, y);
 }
 
-export function createHouseEntity(x, y, ownerId = null, ownerName = null) {
-  const houseTitle = ownerName ? `Casa de ${ownerName}` : "Casa";
+export function createHouseEntity(x, y, ownerId = null, ownerName = null, style = "mixed") {
+  let condition = 3500;
+  let defense = 65;
+  let woodCost = 3;
+  let stoneCost = 2;
+  let color = 0xffe8d8c8;
+  let backcolor = 0xff402818;
+  let houseTypeLabel = "Casa";
+
+  if (style === "wood") {
+    condition = 2000;
+    defense = 40;
+    woodCost = 4;
+    stoneCost = 0;
+    color = 0xffd4a373;
+    backcolor = 0xff3b271a;
+    houseTypeLabel = "Casa de Madeira";
+  } else if (style === "stone") {
+    condition = 5500;
+    defense = 85;
+    woodCost = 0;
+    stoneCost = 5;
+    color = 0xffcbd5e1;
+    backcolor = 0xff1e293b;
+    houseTypeLabel = "Casa de Pedra";
+  }
+
+  const houseTitle = ownerName ? `${houseTypeLabel} de ${ownerName}` : houseTypeLabel;
   return createEntity({
     name: houseTitle,
     species: "structure",
     structure: {
-      condition: 3000,
-      maxCondition: 3000,
-      defense: 45
+      condition: condition,
+      maxCondition: condition,
+      defense: defense
     },
     house: {
+      style: style, // "wood" | "stone" | "mixed"
       ownerId: ownerId,
       ownerName: ownerName,
       partnerId: null,
       partnerName: null,
-      woodCost: 3,
-      stoneCost: 2,
-      woodCurrent: 3,
-      stoneCurrent: 2,
+      woodCost: woodCost,
+      stoneCost: stoneCost,
+      woodCurrent: woodCost,
+      stoneCurrent: stoneCost,
       isCompleted: true,
       pantry: [] // Stored food reserves (up to 2 foods)
     },
     blocking: true,
     render: {
       skin: "Overworld_House.png",
-      color: 0xffe8d8c8,
-      backcolor: 0xff402818
+      color: color,
+      backcolor: backcolor
     }
   }, x, y);
 }
@@ -3253,21 +3280,52 @@ export function dropHeldItem(ent, entities, world) {
 }
 
 /**
- * Stone Wall Entity (Defensive Fortification)
+ * Wall Entity with Material Variants (Stone, Wood, Mixed)
  */
-export function createStoneWallEntity(x, y, groupName = null) {
+export function createWallEntity(x, y, groupName = null, style = "stone") {
+  let name = groupName ? `Muralha de Pedra (${groupName})` : "Muralha de Pedra";
+  let condition = 6000;
+  let defense = 90;
+  let woodCost = 0;
+  let stoneCost = 2;
+  let color = 0xfff0f0f8;
+
+  if (style === "wood") {
+    name = groupName ? `Paliçada de Madeira (${groupName})` : "Paliçada de Madeira";
+    condition = 2200;
+    defense = 40;
+    woodCost = 2;
+    stoneCost = 0;
+    color = 0xffc8965a;
+  } else if (style === "mixed") {
+    name = groupName ? `Muro Misto (${groupName})` : "Muro Misto";
+    condition = 4000;
+    defense = 70;
+    woodCost = 1;
+    stoneCost = 1;
+    color = 0xffdfd0b0;
+  }
+
   return createEntity(
     {
-      name: groupName ? `Stone Wall (${groupName})` : "Stone Wall",
+      name: name,
       species: "structure",
-      render: { skin: "Wall_NESW.png", color: 0xfff0f0f8, backcolor: 0x00000000 },
-      structure: { condition: 5000, maxCondition: 5000, defense: 80 },
+      wallStyle: style, // "wood" | "stone" | "mixed"
+      render: { skin: "Wall_NESW.png", color: color, backcolor: 0x00000000 },
+      structure: { condition: condition, maxCondition: condition, defense: defense },
       blocking: true,
-      stoneCost: 2
+      woodCost: woodCost,
+      stoneCost: stoneCost,
+      woodCurrent: woodCost,
+      stoneCurrent: stoneCost
     },
     x,
     y
   );
+}
+
+export function createStoneWallEntity(x, y, groupName = null) {
+  return createWallEntity(x, y, groupName, "stone");
 }
 
 export function isTileInClaimedZones(x, y, claimedZones) {
@@ -3593,9 +3651,20 @@ export function createGroupMemberProp() {
               this.actionTimer = 0;
               const owner = getEntityById(bp.ownerId);
               const ownerName = owner?.properties?.name || `Membro #${bp.ownerId}`;
-              const newHouse = createHouseEntity(bp.x, bp.y, bp.ownerId, ownerName);
-              newHouse.properties.house.woodCost = 3;
-              newHouse.properties.house.stoneCost = 2;
+
+              // Select house style based on clan resource availability
+              const clanStock = getGroupStockpile(group, entities);
+              const woodAvail = (clanStock.items["wood"] || 0) + (clanStock.items["Wood"] || 0);
+              const stoneAvail = (clanStock.items["stone"] || 0) + (clanStock.items["Stone"] || 0);
+
+              let style = "mixed";
+              if (stoneAvail >= 4 && stoneAvail > woodAvail * 1.4) {
+                style = "stone";
+              } else if (woodAvail >= 4 && woodAvail > stoneAvail * 1.4) {
+                style = "wood";
+              }
+
+              const newHouse = createHouseEntity(bp.x, bp.y, bp.ownerId, ownerName, style);
               newHouse.properties.house.woodCurrent = resType === "wood" ? 1 : 0;
               newHouse.properties.house.stoneCurrent = resType === "stone" ? 1 : 0;
               newHouse.properties.house.isCompleted = (newHouse.properties.house.woodCurrent >= newHouse.properties.house.woodCost && newHouse.properties.house.stoneCurrent >= newHouse.properties.house.stoneCost);
@@ -3628,10 +3697,10 @@ export function createGroupMemberProp() {
                     type: "BUILD",
                     primaryEntityId: ent.id,
                     location: { x: bp.x, y: bp.y },
-                    description: `${ent.properties.name} concluiu a construção da Casa de ${h.ownerName || "Membro"} (${h.woodCost} madeiras e ${h.stoneCost} pedras)!`,
+                    description: `${ent.properties.name} concluiu a construção da ${houseEntity.properties.name || "Casa"} (${h.woodCost} madeiras e ${h.stoneCost} pedras)!`,
                     tick: currentTick,
                     timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
-                    metadata: { structureName: `Casa de ${h.ownerName || "Membro"}`, clan: group.name }
+                    metadata: { structureName: houseEntity.properties.name, clan: group.name }
                   });
                 }
                 return;
@@ -3649,35 +3718,55 @@ export function createGroupMemberProp() {
                 }
               }
               this.actionTimer = 0;
-              const wall = createStoneWallEntity(bp.x, bp.y, group.name);
+
+              // Select wall style based on clan resource availability
+              const clanStock = getGroupStockpile(group, entities);
+              const woodAvail = (clanStock.items["wood"] || 0) + (clanStock.items["Wood"] || 0);
+              const stoneAvail = (clanStock.items["stone"] || 0) + (clanStock.items["Stone"] || 0);
+
+              let wallStyle = "stone";
+              if (woodAvail > stoneAvail * 1.5) {
+                wallStyle = "wood";
+              } else if (woodAvail >= 1 && stoneAvail >= 1 && Math.abs(woodAvail - stoneAvail) <= 3) {
+                wallStyle = "mixed";
+              }
+
+              const wall = createWallEntity(bp.x, bp.y, group.name, wallStyle);
+              wall.woodCurrent = (resType === "wood" ? 1 : 0);
               wall.stoneCurrent = (resType === "stone" ? 1 : 0);
-              wall.stoneCost = 2;
-              wall.isConstructed = (wall.stoneCurrent >= wall.stoneCost);
+              wall.isConstructed = ((wall.woodCurrent || 0) >= (wall.woodCost || 0) && (wall.stoneCurrent || 0) >= (wall.stoneCost || 0));
               entities.push(wall);
               return;
             } else if (wallEntity && !wallEntity.isConstructed && dist <= 1 && this.actionTimer >= 0.5) {
               let contributed = false;
               for (const [k, p] of Object.entries(ent.properties)) {
-                if (k.startsWith("arm") && p && p.heldItem?.resourceType === "stone") {
-                  p.heldItem = null;
-                  wallEntity.stoneCurrent = (wallEntity.stoneCurrent || 1) + 1;
-                  contributed = true;
-                  break;
+                if (k.startsWith("arm") && p && p.heldItem) {
+                  if (p.heldItem.resourceType === "wood" && (wallEntity.woodCurrent || 0) < (wallEntity.woodCost || 0)) {
+                    wallEntity.woodCurrent = (wallEntity.woodCurrent || 0) + 1;
+                    p.heldItem = null;
+                    contributed = true;
+                    break;
+                  } else if (p.heldItem.resourceType === "stone" && (wallEntity.stoneCurrent || 0) < (wallEntity.stoneCost || 0)) {
+                    wallEntity.stoneCurrent = (wallEntity.stoneCurrent || 0) + 1;
+                    p.heldItem = null;
+                    contributed = true;
+                    break;
+                  }
                 }
               }
               if (contributed) {
                 this.actionTimer = 0;
-                if (wallEntity.stoneCurrent >= (wallEntity.stoneCost || 2)) {
+                if ((wallEntity.woodCurrent || 0) >= (wallEntity.woodCost || 0) && (wallEntity.stoneCurrent || 0) >= (wallEntity.stoneCost || 0)) {
                   wallEntity.isConstructed = true;
                   recordWorldEvent({
                     opcode: OP_BUILD,
                     type: "BUILD",
                     primaryEntityId: ent.id,
                     location: { x: bp.x, y: bp.y },
-                    description: `${ent.properties.name} ergueu uma Muralha de Pedra defensiva para o reino '${group.name}' (${wallEntity.stoneCost || 2} pedras)!`,
+                    description: `${ent.properties.name} ergueu um(a) ${wallEntity.properties.name || "Muralha"} para o reino '${group.name}'!`,
                     tick: currentTick,
                     timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
-                    metadata: { structureName: "Muralha de Pedra", clan: group.name }
+                    metadata: { structureName: wallEntity.properties.name, clan: group.name }
                   });
                 }
                 return;
@@ -4848,7 +4937,7 @@ export function createLocomotionProp() {
           } else if (isTired && distToHouse === 0 && energyRatio <= 0.25) {
             // Arrived home and tired: go to sleep safely!
             ent.properties.life.isSleeping = true;
-            ent.emote = 7; // Zzz
+            ent.emote = 8; // Emote_Sleeping.png
             return;
           }
         }

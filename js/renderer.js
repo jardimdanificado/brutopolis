@@ -672,7 +672,9 @@ export class Renderer {
 
         // Emote bubble & Held Items per hand
         let emoteTex = null;
-        if (e.emote >= 0 && e.emote < emoteTextures.length) {
+        if (e.properties?.life?.isSleeping) {
+          emoteTex = emoteTextures[8]; // Sleeping Zzz
+        } else if (e.emote >= 0 && e.emote < emoteTextures.length) {
           emoteTex = emoteTextures[e.emote];
         } else if (e.motor === 5) emoteTex = emoteTextures[0]; // Attack -> Angry
         else if (e.motor === 4) emoteTex = emoteTextures[8]; // Sleep -> Sleeping
@@ -696,20 +698,33 @@ export class Renderer {
           const iconY = sy - iconSize - 1;
 
           if (emoteTex) {
-            const tintFg = (e.emote === 12) ? rgba32(255, 60, 120) : (e.emote === 13) ? rgba32(255, 40, 40) : rgba32(255, 240, 100);
+            const isSleeping = !!e.properties?.life?.isSleeping;
+            const tintFg = isSleeping ? rgba32(100, 200, 255) : ((e.emote === 12) ? rgba32(255, 60, 120) : (e.emote === 13) ? rgba32(255, 40, 40) : rgba32(255, 240, 100));
             drawSpriteTinted32(buf32, width, height, emoteTex, iconX, iconY, iconSize, iconSize, tintFg, rgba32(0, 0, 0, 0), 1.0);
-            iconX -= (iconSize + 1);
+            iconX -= (iconSize + 2);
           }
 
           for (let h = 0; h < heldItems.length; h++) {
             const it = heldItems[h];
-            const skinName = it.skin || it.render?.skin || (typeof it === "string" ? it : it.name) || "Item_Nugget.png";
-            const itemTex = findTexture(skinName);
-            if (itemTex) {
-              drawSpriteTinted32(buf32, width, height, itemTex, iconX, iconY, iconSize, iconSize, rgba32(255, 255, 255), rgba32(0, 0, 0, 0), globalLight);
-              iconX -= (iconSize + 1);
+            const itSkin = it.skin || (it.resourceType === "stone" ? "Item_Stone.png" : it.resourceType === "wood" ? "Item_Wood.png" : "Item_Seed.png");
+            const itTex = findTexture(itSkin);
+            if (itTex) {
+              const itFg = it.color !== undefined ? it.color : 0xffffffff;
+              drawSpriteTinted32(buf32, width, height, itTex, iconX, iconY, iconSize, iconSize, itFg, rgba32(0, 0, 0, 0), 1.0);
+              iconX -= (iconSize + 2);
             }
           }
+        }
+
+        // Sleeping Energy Recovery Bar (Cyan/Blue bar below sleeping entity)
+        if (e.properties?.life?.isSleeping) {
+          const l = e.properties.life;
+          const sBarW = tileSize;
+          const sBarH = tileSize > 16 ? 3 : 2;
+          const sBarY = sy + tileSize + 1;
+          drawBox32(buf32, width, height, sx, sBarY, sBarW, sBarH, rgba32(10, 30, 50));
+          const sFillW = Math.max(1, Math.floor((l.energy / l.max) * sBarW));
+          drawBox32(buf32, width, height, sx, sBarY, sFillW, sBarH, rgba32(60, 180, 255));
         }
       }
     }
