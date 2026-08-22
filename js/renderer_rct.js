@@ -6,7 +6,7 @@ import * as THREE from "https://esm.sh/three@0.160.0";
 import { ASSET_DATA } from "./assets_data.js";
 import { MAP_WIDTH, MAP_HEIGHT, TILE_FLOOR, TILE_MOUNTAIN, TILE_WATER, TILE_SAND, TILE_STONE, TILE_VOID } from "./world_gen.js";
 import { globalWallCoords, resolveWallSkin, getEntitiesInViewport } from "./engine.js";
-import { getClanBlueprintTiles } from "./properties.js";
+import { getClanBlueprintTiles, currentZoneSize } from "./properties.js";
 
 // Cache for raw asset images
 const rawImages = new Map();
@@ -3336,7 +3336,9 @@ export class RCT3DRenderer {
         const e = visibleEntities[i];
         if (!e || e.destroyed) continue;
 
-        // 1. Standing Furniture Torches on Ground (Only when lit with fuel)
+        const sz = currentZoneSize || 8;
+
+        // 1. Standing Furniture Torches on Ground (1/4 Zone Radius, Soft Non-Blinding Glow)
         const isStandingTorch = !!e.properties?.torch;
         if (isStandingTorch && e.properties?.torch?.isLit !== false && (e.properties?.torch?.fuel || 0) > 0) {
           const sH = this.getSurfaceElevation(map, e.x + 0.5, e.y + 0.5);
@@ -3346,16 +3348,16 @@ export class RCT3DRenderer {
           c.x = e.x + 0.5;
           c.y = sH + 1.20;
           c.z = e.y + 0.5;
-          c.color = 0xffa033;
-          c.distance = 16.0;
-          c.decay = 1.3;
-          c.intensity = nightGlow * 3.5;
+          c.color = 0xffa040;
+          c.distance = Math.max(2.5, sz * 0.38); // 1/4 Zone Light Radius
+          c.decay = 1.4;
+          c.intensity = nightGlow * 1.8;
           c.priority = 1; // Top priority for placed torches
           c.distSq = dx * dx + dy * dy;
           continue;
         }
 
-        // 2. Wood Campfire (Only when lit with fuel at night - illuminates a full 1 zone radius)
+        // 2. Wood Campfire (1 Full Zone Radius, Warm Radiant Firelight)
         const isCampfire = !!e.properties?.campfire;
         if (isCampfire && e.properties?.campfire?.isLit && (e.properties?.campfire?.fuel || 0) > 0) {
           const sH = this.getSurfaceElevation(map, e.x + 0.5, e.y + 0.5);
@@ -3365,16 +3367,16 @@ export class RCT3DRenderer {
           c.x = e.x + 0.5;
           c.y = sH + 0.40;
           c.z = e.y + 0.5;
-          c.color = 0xff8822;
-          c.distance = 20.0; // 1 Zone Radius (8x8 tiles)
-          c.decay = 1.2;
-          c.intensity = nightGlow * 4.6;
-          c.priority = 1; // Top priority for campfires
+          c.color = 0xff7b18;
+          c.distance = Math.max(8.0, sz * 1.45); // 1 Full Zone Light Radius
+          c.decay = 1.0;
+          c.intensity = nightGlow * 6.5;
+          c.priority = 0; // Highest priority for central campfires
           c.distSq = dx * dx + dy * dy;
           continue;
         }
 
-        // 3. Torches Carried by Intelligent Creatures (MainHand or OffHand)
+        // 3. Torches Carried by Intelligent Creatures (MainHand or OffHand - 1/4 Zone Radius)
         const isIntelligent = !!e.properties?.brain || !!e.properties?.group_member;
         if (isIntelligent) {
           const leftTorch = e.properties.arm_left?.heldItem?.resourceType === "torch" && (e.properties.arm_left?.heldItem?.fuel || 0) > 0;
@@ -3389,9 +3391,9 @@ export class RCT3DRenderer {
             c.y = sH + 0.95;
             c.z = e.y;
             c.color = 0xffaa44;
-            c.distance = 12.0;
+            c.distance = Math.max(2.2, sz * 0.32);
             c.decay = 1.5;
-            c.intensity = nightGlow * 2.8;
+            c.intensity = nightGlow * 1.6;
             c.priority = e.id === this.selectedEntityId ? 0 : 2;
             c.distSq = dx * dx + dy * dy;
           }

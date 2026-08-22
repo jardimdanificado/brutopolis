@@ -21,6 +21,9 @@ export const entityRegistry = new Map();
 // Global persistent wall coordinates for zero-GC autotiling
 export const globalWallCoords = new Set();
 
+// Global persistent road coordinates for instant O(1) road tile lookup
+export const globalRoadCoords = new Set();
+
 // Spatial Hash Grid partitioning for ultra-fast O(1) zone and radius queries
 export const spatialGrid = new Map(); // zoneKey ("zx_zy") -> Set<Entity>
 export const tileEntityMap = new Map(); // tileKey ("x_y") -> Set<Entity>
@@ -65,6 +68,10 @@ export function registerEntitySpatial(entity, zoneSize = activeZoneSize) {
   }
   tileBucket.add(entity);
 
+  if (entity.properties?.road) {
+    globalRoadCoords.add(tk);
+  }
+
   const isWall = (entity.properties?.render?.skin?.startsWith("Wall_") || entity.properties?.name?.includes("Muralha") || entity.properties?.name?.includes("Wall") || (entity.properties?.structure && !entity.properties?.door && !entity.properties?.house));
   if (isWall) {
     globalWallCoords.add(`${entity.x},${entity.y}`);
@@ -87,6 +94,10 @@ export function unregisterEntitySpatial(entity, zoneSize = activeZoneSize) {
   if (tileBucket) {
     tileBucket.delete(entity);
     if (tileBucket.size === 0) tileEntityMap.delete(tk);
+  }
+
+  if (entity.properties?.road) {
+    globalRoadCoords.delete(tk);
   }
 
   const isWall = (entity.properties?.render?.skin?.startsWith("Wall_") || entity.properties?.name?.includes("Muralha") || entity.properties?.name?.includes("Wall") || (entity.properties?.structure && !entity.properties?.door && !entity.properties?.house));
@@ -217,6 +228,7 @@ export function rebuildSpatialGrid(entities, zoneSize = activeZoneSize) {
   spatialGrid.clear();
   tileEntityMap.clear();
   globalWallCoords.clear();
+  globalRoadCoords.clear();
   activeZoneSize = zoneSize;
   for (let i = 0; i < entities.length; i++) {
     const e = entities[i];
@@ -233,6 +245,7 @@ export function resetEngineTicks() {
   spatialGrid.clear();
   tileEntityMap.clear();
   globalWallCoords.clear();
+  globalRoadCoords.clear();
 }
 
 export function incrementEngineTick() {

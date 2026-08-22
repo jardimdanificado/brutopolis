@@ -1,4 +1,4 @@
-import { createEntity, getEntityById, entityRegistry, currentTick, getEntitiesInRadius, getEntityAtTile, setSpatialZoneSize, tileEntityMap, globalWallCoords } from "./engine.js";
+import { createEntity, getEntityById, entityRegistry, currentTick, getEntitiesInRadius, getEntityAtTile, setSpatialZoneSize, tileEntityMap, globalWallCoords, globalRoadCoords, getTileKey, registerEntitySpatial } from "./engine.js";
 import { MAP_WIDTH, MAP_HEIGHT, TILE_WATER, TILE_VOID } from "./world_gen.js";
 import {
   recordWorldEvent,
@@ -612,6 +612,8 @@ export function createTorchItem(ownerId = null) {
 }
 
 export function createTorchEntity(x, y, ownerId = null) {
+  const sz = currentZoneSize || 8;
+  const torchRadius = Math.max(2.0, sz * 0.25);
   return createEntity({
     name: "Standing Torch",
     structure: {
@@ -626,17 +628,17 @@ export function createTorchEntity(x, y, ownerId = null) {
     },
     torch: {
       isLit: true,
-      fuel: 240,
-      maxFuel: 240,
+      fuel: 480,
+      maxFuel: 480,
       ownerId: ownerId,
-      radius: 14.0
+      radius: torchRadius
     },
     effect(ent, dt, world, entities) {
       if (this.torch && this.torch.isLit) {
         const curHour = world?.clock ? (world.clock.hour + (world.clock.minute || 0) / 60) : 12;
         const isNight = (curHour >= 17.5 || curHour < 5.8);
         if (isNight) {
-          this.torch.fuel = Math.max(0, (this.torch.fuel || 240) - dt);
+          this.torch.fuel = Math.max(0, (this.torch.fuel || 480) - dt);
           if (this.torch.fuel <= 0) {
             this.torch.isLit = false;
           }
@@ -647,6 +649,8 @@ export function createTorchEntity(x, y, ownerId = null) {
 }
 
 export function createCampfireEntity(x, y, ownerId = null) {
+  const sz = currentZoneSize || 8;
+  const campfireRadius = sz; // 1 full zone coverage
   return createEntity({
     name: "Campfire",
     structure: {
@@ -665,7 +669,7 @@ export function createCampfireEntity(x, y, ownerId = null) {
       style: "wood",
       fuel: 480, // Lasts 480s of night burning time (~4 nights)
       maxFuel: 480,
-      radius: 20.0, // Equivalent to full 1 zone (8x8) coverage
+      radius: campfireRadius,
       ownerId: ownerId
     },
     effect(ent, dt, world, entities) {
@@ -813,8 +817,7 @@ export function createRoadEntity(x, y, group = null) {
 }
 
 export function isRoadTile(x, y) {
-  const occ = getEntityAtTile(x, y);
-  return !!occ && !occ.destroyed && !!occ.properties?.road;
+  return globalRoadCoords.has(getTileKey(x, y));
 }
 
 export function applyRandomPersonalityPerks(ent, isFemale = null) {
@@ -2479,15 +2482,22 @@ export function getClanRoadBlueprints(group, allGroups = null) {
   if (!group || !group.claimedZones || group.claimedZones.length === 0) return [];
   const sz = currentZoneSize || 8;
 
-  // Find clan warehouse
-  let warehouse = null;
+  // Base center calculation
+  const firstZone = group.claimedZones[0];
+  const zp = firstZone.includes("_") ? firstZone.split("_") : firstZone.split(",");
+  const baseZx = parseInt(zp[0], 10) || 32;
+  const baseZy = parseInt(zp[1], 10) || 32;
+  let baseX = baseZx * sz + Math.floor(sz / 2);
+  let baseY = baseZy * sz + Math.floor(sz / 2);
+
+  // Find clan warehouse if completed
   for (const e of entityRegistry.values()) {
-    if (!e.destroyed && e.properties?.warehouse?.isCompleted && isTileInClaimedZones(e.x, e.y, group.claimedZones)) {
-      warehouse = e;
+    if (!e.destroyed && e.properties?.warehouse && isTileInClaimedZones(e.x, e.y, group.claimedZones)) {
+      baseX = e.x;
+      baseY = e.y;
       break;
     }
   }
-  if (!warehouse) return []; // Roads are planned exclusively after warehouse is completed
 
   const roadTiles = new Map();
 
@@ -2499,9 +2509,9 @@ export function getClanRoadBlueprints(group, allGroups = null) {
     maxTx = Math.max(maxTx, (zx + 1) * sz - 2);
   }
 
-  const mainAvenueY = warehouse.y;
+  const mainAvenueY = baseY;
 
-  // 2. Main Avenue: Straight horizontal artery passing directly through the warehouse across territory
+  // 2. Main Avenue: Straight horizontal artery passing directly across base territory
   for (let tx = minTx; tx <= maxTx; tx++) {
     if (isLandTile(tx, mainAvenueY) && isTileInClaimedZones(tx, mainAvenueY, group.claimedZones)) {
       roadTiles.set(`${tx}_${mainAvenueY}`, { x: tx, y: mainAvenueY, type: "road", groupId: group.id });
@@ -2529,30 +2539,36 @@ export function getClanRoadBlueprints(group, allGroups = null) {
   if (allGroups && Array.isArray(allGroups)) {
     for (const otherGroup of allGroups) {
       if (otherGroup.id !== group.id && canBuildInterVillageRoad(group, otherGroup)) {
-        let otherWarehouse = null;
+        const otherFirstZone = otherGroup.claimedZones?.[0] || "32_32";
+        const otherZp = otherFirstZone.includes("_") ? otherFirstZone.split("_") : otherFirstZone.split(",");
+        const otherZx = parseInt(otherZp[0], 10) || 32;
+        const otherZy = parseInt(otherZp[1], 10) || 32;
+        let otherBaseX = otherZx * sz + Math.floor(sz / 2);
+        let otherBaseY = otherZy * sz + Math.floor(sz / 2);
+
         for (const e of entityRegistry.values()) {
-          if (!e.destroyed && e.properties?.warehouse?.isCompleted && isTileInClaimedZones(e.x, e.y, otherGroup.claimedZones)) {
-            otherWarehouse = e;
+          if (!e.destroyed && e.properties?.warehouse && isTileInClaimedZones(e.x, e.y, otherGroup.claimedZones)) {
+            otherBaseX = e.x;
+            otherBaseY = e.y;
             break;
           }
         }
-        if (otherWarehouse) {
-          let cx = warehouse.x;
-          let cy = warehouse.y;
-          const targetX = otherWarehouse.x;
-          const targetY = otherWarehouse.y;
 
-          while (cx !== targetX || cy !== targetY) {
-            if (cx !== targetX) cx += Math.sign(targetX - cx);
-            else if (cy !== targetY) cy += Math.sign(targetY - cy);
+        let cx = baseX;
+        let cy = baseY;
+        const targetX = otherBaseX;
+        const targetY = otherBaseY;
 
-            const inGroupA = isTileInClaimedZones(cx, cy, group.claimedZones);
-            const inGroupB = isTileInClaimedZones(cx, cy, otherGroup.claimedZones);
+        while (cx !== targetX || cy !== targetY) {
+          if (cx !== targetX) cx += Math.sign(targetX - cx);
+          else if (cy !== targetY) cy += Math.sign(targetY - cy);
 
-            // Group cannot build inside another group's zone, but CAN build in neutral territory!
-            if (!inGroupB && isLandTile(cx, cy)) {
-              roadTiles.set(`${cx}_${cy}`, { x: cx, y: cy, type: "road", groupId: inGroupA ? group.id : null, isHighway: true });
-            }
+          const inGroupA = isTileInClaimedZones(cx, cy, group.claimedZones);
+          const inGroupB = isTileInClaimedZones(cx, cy, otherGroup.claimedZones);
+
+          // Group cannot build inside another group's zone, but CAN build in neutral territory!
+          if (!inGroupB && isLandTile(cx, cy)) {
+            roadTiles.set(`${cx}_${cy}`, { x: cx, y: cy, type: "road", groupId: inGroupA ? group.id : null, isHighway: true });
           }
         }
       }
@@ -2752,18 +2768,62 @@ export function tryJoinGroup(candidate, group, entities) {
 /**
  * Communication & Social Gossip Behavior (Sporadic, Organic, and Meaningful)
  */
+/**
+ * Passive "Pass-By" Interaction (Full Real Interactions: Kisses, Hugs, Insults, Shoves, Praise, Rumors, Consolation)
+ * Occurs organically with a very small chance when creatures cross paths within <= 1 tile,
+ * triggering a full real interaction without interrupting the creature's active task priorities or locomotion goal.
+ */
+export function handlePassByInteraction(ent, other, world, entities) {
+  if (!ent || !other || ent.destroyed || other.destroyed) return;
+  if (!ent.properties?.brain || !other.properties?.brain) return;
+  if (ent.properties.life?.isSleeping || other.properties.life?.isSleeping) return;
+
+  if (!ent._lastSpokeWith) ent._lastSpokeWith = {};
+  if (!other._lastSpokeWith) other._lastSpokeWith = {};
+
+  // Pair cooldown of 60 ticks between interactions
+  if (ent._lastSpokeWith[other.id] && (currentTick - ent._lastSpokeWith[other.id] < 60)) return;
+
+  // Execute genuine interaction with full world events, mood impact, and dialogue/social consequences
+  gossipBetweenCreatures(ent, other, world, entities);
+}
+
+/**
+ * Communication & Social Gossip Behavior (Active Deliberate Conversations + Organic Passive Pass-By)
+ */
 export function createCommunicationProp(talkRate = 12.0) {
   const actualTalkRate = Math.max(8.0, (talkRate || 12.0));
   return {
     talkTimer: 0,
+    passByTimer: 0,
     talkRate: actualTalkRate,
     effect(ent, dt, world, entities) {
+      if (ent.properties.life?.isSleeping) return;
+
+      // --- A. PASSIVE "PASS-BY" MICRO-INTERACTIONS (Small organic chance per step within <= 1 tile) ---
+      this.passByTimer = (this.passByTimer || 0) + dt;
+      if (this.passByTimer >= 0.25) {
+        this.passByTimer = 0;
+        if (Math.random() < 0.035) {
+          const adjacentTalkers = getEntitiesInRadius(ent.x, ent.y, 1);
+          for (const other of adjacentTalkers) {
+            if (other !== ent && !other.destroyed && other.properties?.brain && !other.properties.life?.isSleeping) {
+              const dist = Math.abs(other.x - ent.x) + Math.abs(other.y - ent.y);
+              if (dist <= 1) {
+                handlePassByInteraction(ent, other, world, entities);
+                break;
+              }
+            }
+          }
+        }
+      }
+
+      // --- B. ACTIVE DELIBERATE CONVERSATIONS & GOSSIP ---
       this.talkTimer = (this.talkTimer || 0) + dt;
       if (this.talkTimer < this.talkRate) return;
       this.talkTimer = 0;
 
       if ((currentTick + ent.id) % 5 !== 0) return;
-      if (ent.properties.life?.isSleeping) return;
       const isCarryingWork = isCarryingItem(ent, "stone") || isCarryingItem(ent, "wood") || isCarryingItem(ent, "seed");
       if (isCarryingWork) return;
 
@@ -3768,96 +3828,141 @@ export function manageCreatureTorches(ent, group, world, entities, dt = 0.1) {
 
   const curHour = world?.clock ? (world.clock.hour + (world.clock.minute || 0) / 60) : 12;
   const isNight = (curHour >= 17.5 || curHour < 5.8);
+  const sz = currentZoneSize || 8;
+  const campfireRadius = sz; // 1 full zone coverage
+  const torchRadius = Math.max(2, Math.round(sz * 0.25)); // 1/4 zone coverage
 
-  // 1. Check if creature has a completed house and build a standing torch nearby
-  let houseEnt = null;
+  // 1. Gather all active light sources and completed houses in clan territory
+  const activeCampfires = [];
+  const activeTorches = [];
+  const groupHouses = [];
+
   for (const e of entityRegistry.values()) {
-    if (!e.destroyed && e.properties?.house && e.properties.house.isCompleted !== false && e.properties.house.ownerId === ent.id) {
-      houseEnt = e;
-      break;
+    if (e.destroyed) continue;
+    if (isTileInClaimedZones(e.x, e.y, group.claimedZones)) {
+      if (e.properties?.campfire && (e.properties.campfire.fuel || 0) > 0) {
+        activeCampfires.push(e);
+      } else if (e.properties?.torch && (e.properties.torch.fuel || 0) > 0) {
+        activeTorches.push(e);
+      } else if (e.properties?.house && e.properties.house.isCompleted !== false) {
+        groupHouses.push(e);
+      }
     }
   }
 
-  if (houseEnt) {
-    let standingTorch = null;
-    for (const e of entityRegistry.values()) {
-      if (!e.destroyed && e.properties?.torch && (e.properties.torch.ownerId === ent.id || (Math.abs(e.x - houseEnt.x) <= 2 && Math.abs(e.y - houseEnt.y) <= 2))) {
-        standingTorch = e;
-        break;
+  // Refuel nearby expired torches if creature is nearby
+  for (const t of activeTorches) {
+    if ((t.properties.torch.fuel || 0) <= 0 || !t.properties.torch.isLit) {
+      if (Math.abs(t.x - ent.x) <= 3 && Math.abs(t.y - ent.y) <= 3) {
+        t.properties.torch.fuel = t.properties.torch.maxFuel || 480;
+        t.properties.torch.isLit = true;
       }
     }
+  }
 
-    if (!standingTorch) {
-      const candidates = [];
-      for (let dx = -2; dx <= 2; dx++) {
-        for (let dy = -2; dy <= 2; dy++) {
-          if (dx === 0 && dy === 0) continue;
-          if (Math.abs(dx) + Math.abs(dy) > 3) continue;
-          const tx = houseEnt.x + dx;
-          const ty = houseEnt.y + dy;
+  // 2. Identify unlit houses (houses lacking light access from either campfire or standing torch)
+  const unlitHouses = groupHouses.filter(h => {
+    // Check if within campfire radius (1 full zone)
+    for (const cf of activeCampfires) {
+      const dist = Math.abs(cf.x - h.x) + Math.abs(cf.y - h.y);
+      if (dist <= campfireRadius) return false;
+    }
+    // Check if within existing torch radius (1/4 zone)
+    for (const st of activeTorches) {
+      const dist = Math.abs(st.x - h.x) + Math.abs(st.y - h.y);
+      if (dist <= torchRadius) return false;
+    }
+    return true;
+  });
+
+  // 3. If there are unlit houses, find an optimal placement that illuminates as many unlit houses as possible!
+  if (unlitHouses.length > 0 && Math.random() < 0.08) {
+    let bestCandidate = null;
+    let maxIlluminatedCount = 0;
+    let bestDistanceScore = 9999;
+
+    const evaluatedTiles = new Set();
+
+    for (const uh of unlitHouses) {
+      // Look for placement 2 to 4 blocks away (not glued to house walls)
+      for (let dx = -4; dx <= 4; dx++) {
+        for (let dy = -4; dy <= 4; dy++) {
+          const manhattan = Math.abs(dx) + Math.abs(dy);
+          if (manhattan < 2 || manhattan > 5) continue;
+
+          const tx = uh.x + dx;
+          const ty = uh.y + dy;
+          const key = `${tx}_${ty}`;
+          if (evaluatedTiles.has(key)) continue;
+          evaluatedTiles.add(key);
+
           if (tx < 0 || ty < 0 || (world && (tx >= world.width || ty >= world.height))) continue;
+          if (!isTileInClaimedZones(tx, ty, group.claimedZones)) continue;
           if (world && world.getTile(tx, ty) === TILE_WATER) continue;
 
+          // Check if tile is clear of obstacles
           let isOccupied = false;
           for (const e of entityRegistry.values()) {
-            if (!e.destroyed && e.x === tx && e.y === ty && (e.properties?.structure || e.properties?.house || e.properties?.tree || e.properties?.cactus || e.properties?.torch || e.properties?.campfire)) {
+            if (!e.destroyed && e.x === tx && e.y === ty && (e.properties?.structure || e.properties?.house || e.properties?.tree || e.properties?.cactus || e.properties?.torch || e.properties?.campfire || e.properties?.door)) {
               isOccupied = true;
               break;
             }
           }
-          if (!isOccupied) {
-            candidates.push({ x: tx, y: ty, dist: Math.abs(dx) + Math.abs(dy) });
+          if (isOccupied) continue;
+
+          // Count how many unlit houses this position would illuminate (within torchRadius)
+          let illuminatedCount = 0;
+          let totalDist = 0;
+          for (const targetHouse of unlitHouses) {
+            const d = Math.abs(targetHouse.x - tx) + Math.abs(targetHouse.y - ty);
+            if (d <= torchRadius) {
+              illuminatedCount++;
+              totalDist += d;
+            }
+          }
+
+          if (illuminatedCount > maxIlluminatedCount || (illuminatedCount === maxIlluminatedCount && totalDist < bestDistanceScore)) {
+            maxIlluminatedCount = illuminatedCount;
+            bestDistanceScore = totalDist;
+            bestCandidate = { x: tx, y: ty };
           }
         }
       }
+    }
 
-      if (candidates.length > 0) {
-        candidates.sort((a, b) => a.dist - b.dist);
-        const best = candidates[0];
-        const torchEnt = createTorchEntity(best.x, best.y, ent.id);
-        entities.push(torchEnt);
-        recordWorldEvent({
-          type: "BUILD",
-          primaryEntityId: ent.id,
-          location: { x: best.x, y: best.y },
-          description: `${ent.properties.name} fincou uma tocha de chão perto de sua casa para iluminar a vizinhança!`,
-          tick: currentTick,
-          timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
-        });
-      }
-    } else if (!standingTorch.properties.torch.isLit || (standingTorch.properties.torch.fuel || 0) <= 0) {
-      // Re-arm expired standing torch structure with a fresh torch!
-      standingTorch.properties.torch.fuel = standingTorch.properties.torch.maxFuel || 240;
-      standingTorch.properties.torch.isLit = true;
+    if (bestCandidate && maxIlluminatedCount > 0) {
+      const torchEnt = createTorchEntity(bestCandidate.x, bestCandidate.y, group.id);
+      entities.push(torchEnt);
+      registerEntitySpatial(torchEnt);
+      recordWorldEvent({
+        type: "BUILD",
+        primaryEntityId: ent.id,
+        location: { x: bestCandidate.x, y: bestCandidate.y },
+        description: `${ent.properties.name} fincou uma tocha de poste a alguns blocos das casas, iluminando ${maxIlluminatedCount} residências no distrito!`,
+        tick: currentTick,
+        timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
+      });
     }
   }
 
-  // 2. Campfire Placement (Strictly 1 campfire for every 4 territory zones)
+  // 4. Campfire Placement (Strictly 1 campfire for every 4 territory zones)
   const numZones = group.claimedZones?.length || 1;
   const maxCampfires = Math.max(1, Math.floor(numZones / 4));
 
-  let existingCampfires = 0;
-  for (const e of entityRegistry.values()) {
-    if (!e.destroyed && e.properties?.campfire && isTileInClaimedZones(e.x, e.y, group.claimedZones)) {
-      existingCampfires++;
-    }
-  }
-
-  if (existingCampfires < maxCampfires && Math.random() < 0.04 && group.claimedZones && group.claimedZones.length > 0) {
+  if (activeCampfires.length < maxCampfires && Math.random() < 0.04 && group.claimedZones && group.claimedZones.length > 0) {
     const randomZone = group.claimedZones[Math.floor(Math.random() * group.claimedZones.length)];
     const zp = randomZone.includes("_") ? randomZone.split("_") : randomZone.split(",");
     const zx = parseInt(zp[0], 10);
     const zy = parseInt(zp[1], 10);
-    const sz = currentZoneSize || 8;
-    const tx = zx * sz + Math.floor(Math.random() * (sz - 2)) + 1;
-    const ty = zy * sz + Math.floor(Math.random() * (sz - 2)) + 1;
+    const tx = zx * sz + Math.floor(sz / 2);
+    const ty = zy * sz + Math.floor(sz / 2);
 
     if (tx >= 0 && ty >= 0 && (!world || (tx < world.width && ty < world.height)) && (!world || world.getTile(tx, ty) !== TILE_WATER)) {
       let hasCampfireNearby = false;
       let isOccupied = false;
       for (const e of entityRegistry.values()) {
         if (!e.destroyed) {
-          if (e.properties?.campfire && Math.abs(e.x - tx) <= 8 && Math.abs(e.y - ty) <= 8) {
+          if (e.properties?.campfire && Math.abs(e.x - tx) <= sz && Math.abs(e.y - ty) <= sz) {
             hasCampfireNearby = true;
           }
           if (e.x === tx && e.y === ty && (e.properties?.structure || e.properties?.house || e.properties?.tree || e.properties?.cactus || e.properties?.torch || e.properties?.campfire)) {
@@ -3870,6 +3975,7 @@ export function manageCreatureTorches(ent, group, world, entities, dt = 0.1) {
       if (!hasCampfireNearby && !isOccupied) {
         const cf = createCampfireEntity(tx, ty, ent.id);
         entities.push(cf);
+        registerEntitySpatial(cf);
         recordWorldEvent({
           type: "BUILD",
           primaryEntityId: ent.id,
@@ -3882,20 +3988,15 @@ export function manageCreatureTorches(ent, group, world, entities, dt = 0.1) {
     }
   }
 
-  // 3. Campfire Refueling (Keep 24/7 active campfires replenished with wood)
-  let nearbyCampfire = null;
-  for (const e of entityRegistry.values()) {
-    if (!e.destroyed && e.properties?.campfire && Math.abs(e.x - ent.x) <= 4 && Math.abs(e.y - ent.y) <= 4 && ((e.properties.campfire.fuel || 0) < 250 || !e.properties.campfire.isLit)) {
-      nearbyCampfire = e;
+  // 5. Campfire Refueling (Keep active campfires replenished with wood)
+  for (const cf of activeCampfires) {
+    if (Math.abs(cf.x - ent.x) <= 4 && Math.abs(cf.y - ent.y) <= 4 && ((cf.properties.campfire.fuel || 0) < 250 || !cf.properties.campfire.isLit)) {
+      cf.properties.campfire.fuel = cf.properties.campfire.maxFuel || 480;
       break;
     }
   }
-  if (nearbyCampfire) {
-    nearbyCampfire.properties.campfire.fuel = nearbyCampfire.properties.campfire.maxFuel || 480;
-    nearbyCampfire.properties.campfire.isLit = true;
-  }
 
-  // 4. Offhand Handheld Torch Management for Night/Day & Fuel Burn Rate
+  // 6. Offhand Handheld Torch Management for Night/Day & Fuel Burn Rate
   const leftArm = ent.properties.arm_left;
   const rightArm = ent.properties.arm_right;
 
@@ -5667,12 +5768,22 @@ export function evaluateAndAssignClanRoles(group, entities, world) {
   );
   if (nearbyThreats.length > 0) threatLevel += nearbyThreats.length;
 
-  // 4. Determine Dynamic Role Quotas
+  // 4. Determine Dynamic Role Quotas with Flexible Multi-Role Support
   const totalPop = livingMembers.length;
-  let guardsNeeded = threatLevel > 0 ? Math.min(Math.ceil(totalPop * 0.4), threatLevel + 1) : 1;
-  let huntersFarmersNeeded = foodCount < totalPop * 2 ? Math.max(2, Math.ceil(totalPop * 0.45)) : 1;
-  let buildersNeeded = (unbuiltCount > 0) && (stoneCount + woodCount >= 1) ? Math.max(1, Math.ceil(totalPop * 0.35)) : 1;
-  let minersNeeded = (stoneCount + woodCount < 10) ? Math.max(1, Math.ceil(totalPop * 0.3)) : 1;
+
+  // Small group (<= 3 members) -> Everyone is a Pioneer / Multi-Role Generalist
+  if (totalPop <= 3) {
+    for (const m of livingMembers) {
+      m.properties.role = (m.id === group.leaderId) ? "Leader" : "Pioneer";
+    }
+    return;
+  }
+
+  // Larger groups (4+ members) -> Dynamic role distribution with fallbacks
+  let guardsNeeded = threatLevel > 0 ? Math.min(Math.ceil(totalPop * 0.35), threatLevel + 1) : (totalPop >= 6 ? 1 : 0);
+  let farmersNeeded = foodCount < totalPop * 2 ? Math.max(1, Math.ceil(totalPop * 0.30)) : 1;
+  let buildersNeeded = unbuiltCount > 0 ? Math.max(1, Math.ceil(totalPop * 0.35)) : 1;
+  let foragersNeeded = (stoneCount + woodCount < 8) ? Math.max(1, Math.ceil(totalPop * 0.25)) : 1;
 
   for (const m of livingMembers) {
     if (m.id === group.leaderId) {
@@ -5686,15 +5797,15 @@ export function evaluateAndAssignClanRoles(group, entities, world) {
     if (threatLevel > 0 && guardsNeeded > 0 && (hasWeapon || isViolent)) {
       m.properties.role = "Guard";
       guardsNeeded--;
-    } else if (foodCount < totalPop * 1.5 && huntersFarmersNeeded > 0) {
-      m.properties.role = (m.properties.species === "orc" || isViolent) ? "Hunter" : "Farmer";
-      huntersFarmersNeeded--;
     } else if (unbuiltCount > 0 && buildersNeeded > 0) {
       m.properties.role = "Builder";
       buildersNeeded--;
-    } else if ((stoneCount + woodCount < 10) && minersNeeded > 0) {
-      m.properties.role = "Miner";
-      minersNeeded--;
+    } else if (farmersNeeded > 0) {
+      m.properties.role = (m.properties.species === "orc" || isViolent) ? "Hunter" : "Farmer";
+      farmersNeeded--;
+    } else if (foragersNeeded > 0) {
+      m.properties.role = "Forager";
+      foragersNeeded--;
     } else {
       m.properties.role = "Crafter";
     }
@@ -6315,219 +6426,232 @@ export function createLocomotionProp() {
           }
         }
 
-        // 5. If hands are free: autonomously pick tasks based on hierarchy: Agriculture -> Houses -> Walls -> Gates
+        // 5. If hands are free: role-driven tasks with multi-role generalist fallbacks
         else if (!hasIntention) {
-          // A. Agriculture / Farming first: Check loose seeds in territory to plant
-          let seedTarget = null;
-          if (ent._taskGoal && ent._taskGoal.type === "get_seed") {
-            const lSeed = getEntityById(ent._taskGoal.id);
-            const lockedSeed = (lSeed && !lSeed.destroyed && !lSeed.properties.photosynthesis && !lSeed.properties.deep_root) ? lSeed : null;
-            if (lockedSeed) {
-              seedTarget = lockedSeed;
-            } else {
-              ent._taskGoal = null;
-            }
-          }
+          const myRole = ent.properties.role || "Pioneer";
+          const isFarmer = myRole === "Farmer" || myRole === "Hunter" || myRole === "Pioneer" || myRole === "Leader";
+          const isBuilder = myRole === "Builder" || myRole === "Pioneer" || myRole === "Leader";
+          const isForager = myRole === "Forager" || myRole === "Miner" || myRole === "Pioneer" || myRole === "Leader";
+          const isGuard = myRole === "Guard";
 
-          if (!seedTarget) {
-            let minSeedDist = 9999;
-            const nearbySeedCandidates = getEntitiesInRadius(ent.x, ent.y, 25);
-            for (const e of nearbySeedCandidates) {
-              if (!e.destroyed && !e.properties.photosynthesis && !e.properties.deep_root && (e.properties.germination || e.properties.resourceType === "seed" || e.properties.name?.includes("Seed") || e.properties.name?.includes("Semente"))) {
-                const sdist = Math.abs(e.x - ent.x) + Math.abs(e.y - ent.y);
-                if (sdist < minSeedDist) {
-                  minSeedDist = sdist;
-                  seedTarget = e;
-                }
+          // Calculate exact resource needs for Houses -> Walls -> Gates
+          const blueprint = getClanBlueprintTiles(group);
+          const livingClanMembers = (group.members || []).filter(mid => {
+            const m = getEntityById(mid);
+            return m && !m.destroyed;
+          });
+          const completedHousesCount = entities.filter(e => !e.destroyed && e.properties.house?.isCompleted && (group.members?.includes(e.properties.house.ownerId) || group.members?.includes(e.properties.house.partnerId))).length;
+          const allMembersHoused = completedHousesCount >= Math.max(1, livingClanMembers.length);
+
+          let needsWood = false;
+          let needsStone = false;
+
+          // Check warehouse & houses
+          for (const bp of blueprint) {
+            if (bp.type === "warehouse") {
+              const wh = entities.find(e => !e.destroyed && e.properties.warehouse && e.x === bp.x && e.y === bp.y);
+              if (!wh) {
+                needsWood = true;
+                needsStone = true;
+              } else if (!wh.properties.warehouse?.isCompleted) {
+                const w = wh.properties.warehouse;
+                const wCost = w.woodCost ?? 4;
+                const sCost = w.stoneCost ?? 4;
+                if ((w.woodCurrent || 0) < wCost) needsWood = true;
+                if ((w.stoneCurrent || 0) < sCost) needsStone = true;
               }
-            }
-            if (seedTarget) {
-              ent._taskGoal = { type: "get_seed", id: seedTarget.id };
-            }
-          }
-
-          if (seedTarget) {
-            chosenDx = Math.sign(seedTarget.x - ent.x);
-            chosenDy = Math.sign(seedTarget.y - ent.y);
-            hasIntention = true;
-          } else {
-            // B. Calculate exact resource needs for Houses -> Walls -> Gates
-            const blueprint = getClanBlueprintTiles(group);
-            const livingClanMembers = (group.members || []).filter(mid => {
-              const m = getEntityById(mid);
-              return m && !m.destroyed;
-            });
-            const completedHousesCount = entities.filter(e => !e.destroyed && e.properties.house?.isCompleted && (group.members?.includes(e.properties.house.ownerId) || group.members?.includes(e.properties.house.partnerId))).length;
-            const allMembersHoused = completedHousesCount >= Math.max(1, livingClanMembers.length);
-
-            let needsWood = false;
-            let needsStone = false;
-
-            // Check warehouse & houses
-            for (const bp of blueprint) {
-              if (bp.type === "warehouse") {
-                const wh = entities.find(e => !e.destroyed && e.properties.warehouse && e.x === bp.x && e.y === bp.y);
-                if (!wh) {
-                  needsWood = true;
-                  needsStone = true;
-                } else if (!wh.properties.warehouse?.isCompleted) {
-                  const w = wh.properties.warehouse;
-                  const wCost = w.woodCost ?? 4;
-                  const sCost = w.stoneCost ?? 4;
-                  if ((w.woodCurrent || 0) < wCost) needsWood = true;
-                  if ((w.stoneCurrent || 0) < sCost) needsStone = true;
-                }
-              } else if (bp.type === "house") {
-                const houseEnt = entities.find(e => !e.destroyed && e.properties.house && e.x === bp.x && e.y === bp.y);
-                if (!houseEnt) {
-                  needsWood = true;
-                  needsStone = true;
-                } else if (!houseEnt.properties.house?.isCompleted) {
-                  const h = houseEnt.properties.house;
-                  const wCost = h.woodCost ?? 3;
-                  const sCost = h.stoneCost ?? 2;
-                  if ((h.woodCurrent || 0) < wCost) needsWood = true;
-                  if ((h.stoneCurrent || 0) < sCost) needsStone = true;
-                }
-              }
-            }
-            for (const e of entities) {
-              if (!e.destroyed && e.properties.house && !e.properties.house.isCompleted && isTileInClaimedZones(e.x, e.y, group.claimedZones)) {
-                const h = e.properties.house;
+            } else if (bp.type === "house") {
+              const houseEnt = entities.find(e => !e.destroyed && e.properties.house && e.x === bp.x && e.y === bp.y);
+              if (!houseEnt) {
+                needsWood = true;
+                needsStone = true;
+              } else if (!houseEnt.properties.house?.isCompleted) {
+                const h = houseEnt.properties.house;
                 const wCost = h.woodCost ?? 3;
                 const sCost = h.stoneCost ?? 2;
                 if ((h.woodCurrent || 0) < wCost) needsWood = true;
                 if ((h.stoneCurrent || 0) < sCost) needsStone = true;
               }
             }
-
-            // If all houses are completed, check walls and gates
-            if (!needsWood && !needsStone && allMembersHoused) {
-              for (let i = 0; i < blueprint.length; i++) {
-                const bp = blueprint[i];
-                if (bp.type === "wall") {
-                  const wallAtTile = globalWallCoords.has(`${bp.x},${bp.y}`);
-                  if (!wallAtTile) {
-                    needsStone = true;
-                    break;
-                  }
-                } else if (bp.type === "gate" || bp.type === "door") {
-                  const hasGate = entities.some(e => !e.destroyed && e.properties.door && e.x === bp.x && e.y === bp.y);
-                  if (!hasGate) {
-                    needsWood = true;
-                    break;
-                  }
-                }
-              }
+          }
+          for (const e of entities) {
+            if (!e.destroyed && e.properties.house && !e.properties.house.isCompleted && isTileInClaimedZones(e.x, e.y, group.claimedZones)) {
+              const h = e.properties.house;
+              const wCost = h.woodCost ?? 3;
+              const sCost = h.stoneCost ?? 2;
+              if ((h.woodCurrent || 0) < wCost) needsWood = true;
+              if ((h.stoneCurrent || 0) < sCost) needsStone = true;
             }
+          }
 
-            hasUnbuiltStruct = needsWood || needsStone;
-
-            if (hasUnbuiltStruct) {
-              let nearestLooseMat = null;
-              let minMatDist = 9999;
-              const nearbyMats = getEntitiesInRadius(ent.x, ent.y, 35);
-              for (const e of nearbyMats) {
-                if (!e.destroyed) {
-                  if ((e.properties.resourceType === "wood" && needsWood) || (e.properties.resourceType === "stone" && needsStone)) {
-                    const dist = Math.abs(e.x - ent.x) + Math.abs(e.y - ent.y);
-                    if (dist < minMatDist) {
-                      minMatDist = dist;
-                      nearestLooseMat = e;
-                    }
-                  }
+          // If all houses are completed, check walls and gates
+          if (!needsWood && !needsStone && allMembersHoused) {
+            for (let i = 0; i < blueprint.length; i++) {
+              const bp = blueprint[i];
+              if (bp.type === "wall") {
+                const wallAtTile = globalWallCoords.has(`${bp.x},${bp.y}`);
+                if (!wallAtTile) {
+                  needsStone = true;
+                  break;
                 }
-              }
-
-              if (nearestLooseMat) {
-                chosenDx = Math.sign(nearestLooseMat.x - ent.x);
-                chosenDy = Math.sign(nearestLooseMat.y - ent.y);
-                hasIntention = true;
-              } else if (needsWood) {
-                const warehouse = entities.find(e => !e.destroyed && e.properties.warehouse?.isCompleted && (e.properties.warehouse.groupId === group.id || isTileInClaimedZones(e.x, e.y, group.claimedZones)));
-                const storedWood = (group.storage || []).filter(i => i === "wood").length + (warehouse?.properties?.warehouse?.items?.filter(i => i.resourceType === "wood" || i.name?.includes("Wood"))?.length || 0);
-                const shouldFellTrees = needsWood || storedWood < 4;
-
-                if (shouldFellTrees) {
-                  // Look for trees, prioritizing wild trees outside claimed territory
-                  const trees = getEntitiesInRadius(ent.x, ent.y, 75).filter(e => !e.destroyed && (e.properties.photosynthesis || e.properties.deep_root || e.properties.species === "oak" || e.properties.species === "willow" || e.properties.species === "pine" || e.properties.species === "tree"));
-                  let nearbyTree = trees.find(t => !isTileInClaimedZones(t.x, t.y, group.claimedZones)) || trees[0];
-
-                  if (nearbyTree) {
-                    chosenDx = Math.sign(nearbyTree.x - ent.x);
-                    chosenDy = Math.sign(nearbyTree.y - ent.y);
-                    hasIntention = true;
-                  }
-                }
-              } else if (needsStone && world) {
-                // Mine rock for house or walls
-                const currentTile = world.getTile(ent.x, ent.y);
-                let adjacentStone = (currentTile === 4 || currentTile === 1);
-                if (!adjacentStone) {
-                  for (const off of [{dx:1,dy:0}, {dx:-1,dy:0}, {dx:0,dy:1}, {dx:0,dy:-1}]) {
-                    const at = world.getTile(ent.x + off.dx, ent.y + off.dy);
-                    if (at === 4 || at === 1) {
-                      adjacentStone = true;
-                      break;
-                    }
-                  }
-                }
-
-                if (adjacentStone) {
-                  chosenDx = 0;
-                  chosenDy = 0;
-                  hasIntention = true;
-                  ent._taskGoal = null;
-                } else {
-                  let targetStone = null;
-                  if (ent._taskGoal && ent._taskGoal.type === "mine_stone") {
-                    const t = world.getTile(ent._taskGoal.x, ent._taskGoal.y);
-                    if (t === 4 || t === 1) {
-                      targetStone = { x: ent._taskGoal.x, y: ent._taskGoal.y };
-                    } else {
-                      ent._taskGoal = null;
-                    }
-                  }
-
-                  if (!targetStone) {
-                    let minDist = 9999;
-                    for (let r = 1; r <= 30; r++) {
-                      for (let dy = -r; dy <= r; dy++) {
-                        for (let dx = -r; dx <= r; dx++) {
-                          if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
-                          const tx = ent.x + dx;
-                          const ty = ent.y + dy;
-                          if (tx >= 0 && tx < (world.width || 512) && ty >= 0 && ty < (world.height || 512)) {
-                            const t = world.getTile(tx, ty);
-                            if (t === 4 || t === 1) {
-                              const dist = Math.abs(dx) + Math.abs(dy);
-                              if (dist < minDist) {
-                                minDist = dist;
-                                targetStone = { x: tx, y: ty };
-                              }
-                            }
-                          }
-                        }
-                      }
-                      if (targetStone) break;
-                    }
-                    if (targetStone) {
-                      ent._taskGoal = { type: "mine_stone", x: targetStone.x, y: targetStone.y };
-                    }
-                  }
-
-                  if (targetStone) {
-                    chosenDx = Math.sign(targetStone.x - ent.x);
-                    chosenDy = Math.sign(targetStone.y - ent.y);
-                    hasIntention = true;
-                  }
+              } else if (bp.type === "gate" || bp.type === "door") {
+                const hasGate = entities.some(e => !e.destroyed && e.properties.door && e.x === bp.x && e.y === bp.y);
+                if (!hasGate) {
+                  needsWood = true;
+                  break;
                 }
               }
             }
           }
 
-          if (!hasIntention) {
-            // B. Faxina: Check for closest feces inside territory to clean up with intent locking
+          hasUnbuiltStruct = needsWood || needsStone;
+
+          // --- 5.1 Guard Patrol Duty ---
+          if (isGuard && !hasIntention) {
+            const distToBase = Math.abs(ent.x - homeBaseX) + Math.abs(ent.y - homeBaseY);
+            if (distToBase > 14) {
+              chosenDx = Math.sign(homeBaseX - ent.x);
+              chosenDy = Math.sign(homeBaseY - ent.y);
+              hasIntention = true;
+            }
+          }
+
+          // --- 5.2 Agriculture / Farming (Farmers, Pioneers, Leaders) ---
+          if (isFarmer && !hasIntention) {
+            let seedTarget = null;
+            if (ent._taskGoal && ent._taskGoal.type === "get_seed") {
+              const lSeed = getEntityById(ent._taskGoal.id);
+              const lockedSeed = (lSeed && !lSeed.destroyed && !lSeed.properties.photosynthesis && !lSeed.properties.deep_root) ? lSeed : null;
+              if (lockedSeed) {
+                seedTarget = lockedSeed;
+              } else {
+                ent._taskGoal = null;
+              }
+            }
+
+            if (!seedTarget) {
+              let minSeedDist = 9999;
+              const nearbySeedCandidates = getEntitiesInRadius(ent.x, ent.y, 30);
+              for (const e of nearbySeedCandidates) {
+                if (!e.destroyed && !e.properties.photosynthesis && !e.properties.deep_root && (e.properties.germination || e.properties.resourceType === "seed" || e.properties.name?.includes("Seed") || e.properties.name?.includes("Semente"))) {
+                  const sdist = Math.abs(e.x - ent.x) + Math.abs(e.y - ent.y);
+                  if (sdist < minSeedDist) {
+                    minSeedDist = sdist;
+                    seedTarget = e;
+                  }
+                }
+              }
+              if (seedTarget) {
+                ent._taskGoal = { type: "get_seed", id: seedTarget.id };
+              }
+            }
+
+            if (seedTarget) {
+              chosenDx = Math.sign(seedTarget.x - ent.x);
+              chosenDy = Math.sign(seedTarget.y - ent.y);
+              hasIntention = true;
+            }
+          }
+
+          // --- 5.3 Construction & Resource Gathering (Builders, Foragers, Pioneers, Leaders, or any free member when structures need materials) ---
+          if ((isBuilder || isForager || hasUnbuiltStruct) && !hasIntention) {
+            let nearestLooseMat = null;
+            let minMatDist = 9999;
+            const nearbyMats = getEntitiesInRadius(ent.x, ent.y, 40);
+            for (const e of nearbyMats) {
+              if (!e.destroyed) {
+                if ((e.properties.resourceType === "wood" && (needsWood || isForager)) || (e.properties.resourceType === "stone" && (needsStone || isForager))) {
+                  const dist = Math.abs(e.x - ent.x) + Math.abs(e.y - ent.y);
+                  if (dist < minMatDist) {
+                    minMatDist = dist;
+                    nearestLooseMat = e;
+                  }
+                }
+              }
+            }
+
+            if (nearestLooseMat) {
+              chosenDx = Math.sign(nearestLooseMat.x - ent.x);
+              chosenDy = Math.sign(nearestLooseMat.y - ent.y);
+              hasIntention = true;
+            } else if (needsWood || (isForager && (group.storage || []).filter(i => i === "wood").length < 6)) {
+              // Felling wild trees
+              const trees = getEntitiesInRadius(ent.x, ent.y, 75).filter(e => !e.destroyed && (e.properties.photosynthesis || e.properties.deep_root || e.properties.species === "oak" || e.properties.species === "willow" || e.properties.species === "pine" || e.properties.species === "tree"));
+              let nearbyTree = trees.find(t => !isTileInClaimedZones(t.x, t.y, group.claimedZones)) || trees[0];
+
+              if (nearbyTree) {
+                chosenDx = Math.sign(nearbyTree.x - ent.x);
+                chosenDy = Math.sign(nearbyTree.y - ent.y);
+                hasIntention = true;
+              }
+            } else if (needsStone && world) {
+              // Mining stone
+              const currentTile = world.getTile(ent.x, ent.y);
+              let adjacentStone = (currentTile === 4 || currentTile === 1);
+              if (!adjacentStone) {
+                for (const off of [{dx:1,dy:0}, {dx:-1,dy:0}, {dx:0,dy:1}, {dx:0,dy:-1}]) {
+                  const at = world.getTile(ent.x + off.dx, ent.y + off.dy);
+                  if (at === 4 || at === 1) {
+                    adjacentStone = true;
+                    break;
+                  }
+                }
+              }
+
+              if (adjacentStone) {
+                chosenDx = 0;
+                chosenDy = 0;
+                hasIntention = true;
+                ent._taskGoal = null;
+              } else {
+                let targetStone = null;
+                if (ent._taskGoal && ent._taskGoal.type === "mine_stone") {
+                  const t = world.getTile(ent._taskGoal.x, ent._taskGoal.y);
+                  if (t === 4 || t === 1) {
+                    targetStone = { x: ent._taskGoal.x, y: ent._taskGoal.y };
+                  } else {
+                    ent._taskGoal = null;
+                  }
+                }
+
+                if (!targetStone) {
+                  let minDist = 9999;
+                  for (let r = 1; r <= 35; r++) {
+                    for (let dy = -r; dy <= r; dy++) {
+                      for (let dx = -r; dx <= r; dx++) {
+                        if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
+                        const tx = ent.x + dx;
+                        const ty = ent.y + dy;
+                        if (tx >= 0 && tx < (world.width || 512) && ty >= 0 && ty < (world.height || 512)) {
+                          const t = world.getTile(tx, ty);
+                          if (t === 4 || t === 1) {
+                            const dist = Math.abs(dx) + Math.abs(dy);
+                            if (dist < minDist) {
+                              minDist = dist;
+                              targetStone = { x: tx, y: ty };
+                            }
+                          }
+                        }
+                      }
+                    }
+                    if (targetStone) break;
+                  }
+                  if (targetStone) {
+                    ent._taskGoal = { type: "mine_stone", x: targetStone.x, y: targetStone.y };
+                  }
+                }
+
+                if (targetStone) {
+                  chosenDx = Math.sign(targetStone.x - ent.x);
+                  chosenDy = Math.sign(targetStone.y - ent.y);
+                  hasIntention = true;
+                }
+              }
+            }
+          }
+
+          // --- 5.4 Sanitation: Clean Feces Inside Territory ---
+          if (!hasIntention && energyRatio > 0.40) {
             let fecesTarget = null;
             if (ent._taskGoal && ent._taskGoal.type === "clean_feces") {
               const lFeces = getEntityById(ent._taskGoal.id);
@@ -6539,7 +6663,7 @@ export function createLocomotionProp() {
               }
             }
 
-            if (!fecesTarget && energyRatio > 0.40) {
+            if (!fecesTarget) {
               let minFecesDist = 9999;
               const nearbyFecesCandidates = getEntitiesInRadius(ent.x, ent.y, 20);
               for (const e of nearbyFecesCandidates) {
@@ -6560,166 +6684,136 @@ export function createLocomotionProp() {
               chosenDx = Math.sign(fecesTarget.x - ent.x);
               chosenDy = Math.sign(fecesTarget.y - ent.y);
               hasIntention = true;
-            } else {
-              // C. Check loose seeds to farm (find closest seed with intent locking)
-              let seedTarget = null;
-              if (ent._taskGoal && ent._taskGoal.type === "get_seed") {
-                const lSeed = getEntityById(ent._taskGoal.id);
-                const lockedSeed = (lSeed && !lSeed.destroyed && !lSeed.properties.photosynthesis && !lSeed.properties.deep_root) ? lSeed : null;
-                if (lockedSeed) {
-                  seedTarget = lockedSeed;
-                } else {
-                  ent._taskGoal = null;
-                }
-              }
+            }
+          }
 
-              if (!seedTarget) {
-                let minSeedDist = 9999;
-                const nearbySeedCandidates = getEntitiesInRadius(ent.x, ent.y, 24);
-                for (const e of nearbySeedCandidates) {
-                  if (!e.destroyed && !e.properties.photosynthesis && !e.properties.deep_root && (e.properties.germination || e.properties.resourceType === "seed" || e.properties.name?.includes("Seed") || e.properties.name?.includes("Semente"))) {
-                    const sdist = Math.abs(e.x - ent.x) + Math.abs(e.y - ent.y);
-                    if (sdist < minSeedDist) {
-                      minSeedDist = sdist;
-                      seedTarget = e;
+          // --- 5.5 Territory Ground Cleaning & Hauling to Stockpile ---
+          if (!hasIntention) {
+            const looseGroundItems = getEntitiesInRadius(ent.x, ent.y, 28).filter(e =>
+              !e.destroyed &&
+              !e.properties.photosynthesis &&
+              !e.properties.deep_root &&
+              !e.properties.structure &&
+              !e.properties.house &&
+              !e.properties.door &&
+              !e.properties.life &&
+              !e.properties.torch &&
+              !e.properties.campfire &&
+              isTileInClaimedZones(e.x, e.y, group.claimedZones) &&
+              (!!e.properties.edible || !!e.properties.resourceType || !!e.properties.germination || e.properties.species === "item" || !!e.properties.attackBonus || !!e.properties.isWeapon || !!e.properties.artifact)
+            );
+            if (looseGroundItems.length > 0) {
+              const targetHaul = looseGroundItems[0];
+              chosenDx = Math.sign(targetHaul.x - ent.x);
+              chosenDy = Math.sign(targetHaul.y - ent.y);
+              hasIntention = true;
+            }
+          }
+
+              // E. Civic & Idle Settler Tasks (ONLY when NO unbuilt warehouse, house or structure is pending!)
+              if (!hasIntention && !hasUnbuiltStruct && energyRatio > 0.40) {
+                // 1. Road & Street Construction (Main Avenue, Residential Lanes, Inter-Village Highways)
+                const allGroups = world?.groups || [];
+                const roadBlueprints = getClanRoadBlueprints(group, allGroups);
+                const unbuiltRoads = roadBlueprints.filter(bp => !isRoadTile(bp.x, bp.y));
+
+                if (unbuiltRoads.length > 0) {
+                  let closestRoad = null;
+                  let minRDist = 9999;
+                  for (const rbp of unbuiltRoads) {
+                    const rd = Math.abs(rbp.x - ent.x) + Math.abs(rbp.y - ent.y);
+                    if (rd < minRDist) {
+                      minRDist = rd;
+                      closestRoad = rbp;
+                    }
+                  }
+
+                  if (closestRoad) {
+                    if (minRDist <= 1) {
+                      const roadEnt = createRoadEntity(closestRoad.x, closestRoad.y, closestRoad.groupId ? group : null);
+                      entities.push(roadEnt);
+                      registerEntitySpatial(roadEnt);
+
+                      if (closestRoad.isHighway) {
+                        const nearbyAllies = getEntitiesInRadius(ent.x, ent.y, 3).filter(o =>
+                          o !== ent && !o.destroyed && o.properties?.group && o.properties.group.id !== group.id
+                        );
+                        for (const ally of nearbyAllies) {
+                          if (ent.properties?.brain?.affinities) {
+                            ent.properties.brain.affinities[ally.id] = (ent.properties.brain.affinities[ally.id] || 0) + 2;
+                          }
+                          if (ally.properties?.brain?.affinities) {
+                            ally.properties.brain.affinities[ent.id] = (ally.properties.brain.affinities[ent.id] || 0) + 2;
+                          }
+                          ent.emote = 2;
+                          ally.emote = 2;
+                        }
+                      }
+                    } else {
+                      chosenDx = Math.sign(closestRoad.x - ent.x);
+                      chosenDy = Math.sign(closestRoad.y - ent.y);
+                      hasIntention = true;
                     }
                   }
                 }
-                if (seedTarget) {
-                  ent._taskGoal = { type: "get_seed", id: seedTarget.id };
-                }
-              }
 
-              if (seedTarget) {
-                chosenDx = Math.sign(seedTarget.x - ent.x);
-                chosenDy = Math.sign(seedTarget.y - ent.y);
-                hasIntention = true;
-              } else {
-                // D. Hauling loose items and food on ground within territory into Warehouse / Pantry (Clean base & stock food)
-                const looseGroundItems = getEntitiesInRadius(ent.x, ent.y, 28).filter(e =>
-                  !e.destroyed &&
-                  !e.properties.photosynthesis &&
-                  !e.properties.deep_root &&
-                  !e.properties.structure &&
-                  !e.properties.house &&
-                  !e.properties.door &&
-                  !e.properties.life &&
-                  !e.properties.torch &&
-                  !e.properties.campfire &&
-                  isTileInClaimedZones(e.x, e.y, group.claimedZones) &&
-                  (!!e.properties.edible || !!e.properties.resourceType || !!e.properties.germination || e.properties.species === "item" || !!e.properties.attackBonus || !!e.properties.isWeapon || !!e.properties.artifact)
-                );
-                if (looseGroundItems.length > 0) {
-                  const targetHaul = looseGroundItems[0];
-                  chosenDx = Math.sign(targetHaul.x - ent.x);
-                  chosenDy = Math.sign(targetHaul.y - ent.y);
-                  hasIntention = true;
-                }
-              }
+                // 2. Torch Reserves Management (Balanced: House 2-3 torches, Warehouse 10 torches)
+                if (!hasIntention) {
+                  const ownHouse = entities.find(e => !e.destroyed && e.properties.house?.isCompleted && (e.properties.house.ownerId === ent.id || e.properties.house.partnerId === ent.id));
+                  const warehouse = entities.find(e => !e.destroyed && e.properties.warehouse?.isCompleted && (e.properties.warehouse.groupId === group.id || isTileInClaimedZones(e.x, e.y, group.claimedZones)));
 
-              // E. Idle Settler Tasks (ONLY when NO unbuilt warehouse, house or structure is pending!)
-              if (!hasIntention && !hasUnbuiltStruct && energyRatio > 0.45) {
-                // 1. Torch Reserves Management (House: 2-3 torches, Warehouse: 10 torches)
-                const ownHouse = entities.find(e => !e.destroyed && e.properties.house?.isCompleted && (e.properties.house.ownerId === ent.id || e.properties.house.partnerId === ent.id));
-                const warehouse = entities.find(e => !e.destroyed && e.properties.warehouse?.isCompleted && (e.properties.warehouse.groupId === group.id || isTileInClaimedZones(e.x, e.y, group.claimedZones)));
+                  const houseTorchCount = ownHouse ? (ownHouse.properties.house.foodStorage || []).filter(i => i.resourceType === "torch" || i.name?.includes("Tocha")).length : 99;
+                  const warehouseTorchCount = warehouse ? (warehouse.properties.warehouse.items || []).filter(i => i.resourceType === "torch" || i.name?.includes("Tocha")).length : 99;
 
-                const houseTorchCount = ownHouse ? (ownHouse.properties.house.foodStorage || []).filter(i => i.resourceType === "torch" || i.name?.includes("Tocha")).length : 99;
-                const warehouseTorchCount = warehouse ? (warehouse.properties.warehouse.items || []).filter(i => i.resourceType === "torch" || i.name?.includes("Tocha")).length : 99;
-
-                if (houseTorchCount < 2 && ownHouse) {
-                  let hasTorch = false;
-                  for (const [k, p] of Object.entries(ent.properties)) {
-                    if (k.startsWith("arm") && p && p.heldItem?.resourceType === "torch") {
-                      hasTorch = true;
-                      break;
+                  if (houseTorchCount < 2 && ownHouse) {
+                    let hasTorch = false;
+                    for (const [k, p] of Object.entries(ent.properties)) {
+                      if (k.startsWith("arm") && p && p.heldItem?.resourceType === "torch") {
+                        hasTorch = true;
+                        break;
+                      }
                     }
-                  }
-                  if (hasTorch) {
-                    chosenDx = Math.sign(ownHouse.x - ent.x);
-                    chosenDy = Math.sign(ownHouse.y - ent.y);
-                    hasIntention = true;
-                  } else {
-                    const freeArm = getFreeArm(ent);
-                    if (freeArm) {
-                      freeArm.heldItem = {
-                        name: "Tocha de Madeira",
-                        resourceType: "torch",
-                        fuel: 1440,
-                        maxFuel: 1440
-                      };
+                    if (hasTorch) {
                       chosenDx = Math.sign(ownHouse.x - ent.x);
                       chosenDy = Math.sign(ownHouse.y - ent.y);
                       hasIntention = true;
+                    } else {
+                      const freeArm = getFreeArm(ent);
+                      if (freeArm) {
+                        freeArm.heldItem = {
+                          name: "Tocha de Madeira",
+                          resourceType: "torch",
+                          fuel: 1440,
+                          maxFuel: 1440
+                        };
+                        chosenDx = Math.sign(ownHouse.x - ent.x);
+                        chosenDy = Math.sign(ownHouse.y - ent.y);
+                        hasIntention = true;
+                      }
                     }
-                  }
-                } else if (warehouseTorchCount < 10 && warehouse) {
-                  let hasTorch = false;
-                  for (const [k, p] of Object.entries(ent.properties)) {
-                    if (k.startsWith("arm") && p && p.heldItem?.resourceType === "torch") {
-                      hasTorch = true;
-                      break;
+                  } else if (warehouse && (warehouseTorchCount < 3 || (warehouseTorchCount < 10 && Math.random() < 0.15))) {
+                    let hasTorch = false;
+                    for (const [k, p] of Object.entries(ent.properties)) {
+                      if (k.startsWith("arm") && p && p.heldItem?.resourceType === "torch") {
+                        hasTorch = true;
+                        break;
+                      }
                     }
-                  }
-                  if (hasTorch) {
-                    chosenDx = Math.sign(warehouse.x - ent.x);
-                    chosenDy = Math.sign(warehouse.y - ent.y);
-                    hasIntention = true;
-                  } else {
-                    const freeArm = getFreeArm(ent);
-                    if (freeArm) {
-                      freeArm.heldItem = {
-                        name: "Tocha de Madeira",
-                        resourceType: "torch",
-                        fuel: 1440,
-                        maxFuel: 1440
-                      };
+                    if (hasTorch) {
                       chosenDx = Math.sign(warehouse.x - ent.x);
                       chosenDy = Math.sign(warehouse.y - ent.y);
                       hasIntention = true;
-                    }
-                  }
-                }
-
-                // 2. Idle Road & Street Construction (Only when idle)
-                if (!hasIntention && warehouse) {
-                  const allGroups = world?.groups || [];
-                  const roadBlueprints = getClanRoadBlueprints(group, allGroups);
-                  const unbuiltRoads = roadBlueprints.filter(bp => !isRoadTile(bp.x, bp.y));
-
-                  if (unbuiltRoads.length > 0) {
-                    let closestRoad = null;
-                    let minRDist = 9999;
-                    for (const rbp of unbuiltRoads) {
-                      const rd = Math.abs(rbp.x - ent.x) + Math.abs(rbp.y - ent.y);
-                      if (rd < minRDist) {
-                        minRDist = rd;
-                        closestRoad = rbp;
-                      }
-                    }
-
-                    if (closestRoad) {
-                      if (minRDist <= 1) {
-                        const roadEnt = createRoadEntity(closestRoad.x, closestRoad.y, closestRoad.groupId ? group : null);
-                        entities.push(roadEnt);
-
-                        if (closestRoad.isHighway) {
-                          const nearbyAllies = getEntitiesInRadius(ent.x, ent.y, 3).filter(o =>
-                            o !== ent && !o.destroyed && o.properties?.group && o.properties.group.id !== group.id
-                          );
-                          for (const ally of nearbyAllies) {
-                            if (ent.properties?.brain?.affinities) {
-                              ent.properties.brain.affinities[ally.id] = (ent.properties.brain.affinities[ally.id] || 0) + 2;
-                            }
-                            if (ally.properties?.brain?.affinities) {
-                              ally.properties.brain.affinities[ent.id] = (ally.properties.brain.affinities[ent.id] || 0) + 2;
-                            }
-                            ent.emote = 2;
-                            ally.emote = 2;
-                          }
-                        }
-                      } else {
-                        chosenDx = Math.sign(closestRoad.x - ent.x);
-                        chosenDy = Math.sign(closestRoad.y - ent.y);
+                    } else {
+                      const freeArm = getFreeArm(ent);
+                      if (freeArm) {
+                        freeArm.heldItem = {
+                          name: "Tocha de Madeira",
+                          resourceType: "torch",
+                          fuel: 1440,
+                          maxFuel: 1440
+                        };
+                        chosenDx = Math.sign(warehouse.x - ent.x);
+                        chosenDy = Math.sign(warehouse.y - ent.y);
                         hasIntention = true;
                       }
                     }
@@ -6805,8 +6899,6 @@ export function createLocomotionProp() {
               }
             }
           }
-        }
-      }
 
       // -----------------------------------------------------------------------
       // Priority 7: Clan Base Cohesion & Territory Tether (With Hysteresis)
