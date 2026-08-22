@@ -3776,29 +3776,48 @@ export function createGroupMemberProp() {
               const owner = getEntityById(bp.ownerId);
               const ownerName = owner?.properties?.name || `Membro #${bp.ownerId}`;
 
-              // Select house style based on clan culture and resource availability
+              // Select house style: Mixed houses are PREFERRED whenever both wood and stone are accessible!
               const clanStock = getGroupStockpile(group, entities);
               const woodAvail = (clanStock.items["wood"] || 0) + (clanStock.items["Wood"] || 0);
               const stoneAvail = (clanStock.items["stone"] || 0) + (clanStock.items["Stone"] || 0);
               const boneAvail = (clanStock.items["bone"] || 0) + (clanStock.items["Bone"] || 0);
 
-              let style = "mixed";
-              const isDwarfOrOrc = (group.name?.includes("Anão") || group.name?.includes("Orc") || group.name?.includes("Fortaleza") || ent.properties?.species === "dwarf" || ent.properties?.species === "orc");
-              const isElfOrWild = (group.name?.includes("Élfico") || group.name?.includes("Felino") || group.name?.includes("Centauro") || group.name?.includes("Goblin") || ent.properties?.species === "elf" || ent.properties?.species === "catfolk");
+              const hasWoodAccess = (woodAvail > 0) || getEntitiesInRadius(bp.x, bp.y, 45).some(e => !e.destroyed && (e.properties.photosynthesis || e.properties.deep_root || e.properties.species === "oak" || e.properties.species === "willow" || e.properties.species === "pine" || e.properties.species === "tree"));
+              let hasStoneAccess = (stoneAvail > 0);
+              if (!hasStoneAccess && world) {
+                for (let r = 1; r <= 35; r += 2) {
+                  for (const off of [{dx: r, dy: 0}, {dx: -r, dy: 0}, {dx: 0, dy: r}, {dx: 0, dy: -r}, {dx: r, dy: r}, {dx: -r, dy: -r}]) {
+                    const tx = Math.max(0, Math.min((world.width || 512) - 1, bp.x + off.dx));
+                    const ty = Math.max(0, Math.min((world.height || 512) - 1, bp.y + off.dy));
+                    const t = world.getTile(tx, ty);
+                    if (t === 4 || t === 1) {
+                      hasStoneAccess = true;
+                      break;
+                    }
+                  }
+                  if (hasStoneAccess) break;
+                }
+              }
 
-              if (resType === "bone" || boneAvail >= 3) {
+              let style = "mixed";
+              if (resType === "bone" && boneAvail >= 6) {
                 style = "bone";
-              } else if (isDwarfOrOrc || resType === "stone" || (stoneAvail > woodAvail)) {
+              } else if (hasWoodAccess && hasStoneAccess) {
+                // Preferred style: Mixed Wood & Stone House!
+                style = "mixed";
+              } else if (hasStoneAccess && !hasWoodAccess) {
                 style = "stone";
-              } else if (isElfOrWild || resType === "wood" || (woodAvail > stoneAvail)) {
+              } else if (hasWoodAccess && !hasStoneAccess) {
                 style = "wood";
+              } else {
+                style = "mixed";
               }
 
               const newHouse = createHouseEntity(bp.x, bp.y, bp.ownerId, ownerName, style, boneOwner);
               newHouse.properties.house.woodCurrent = resType === "wood" ? 1 : 0;
               newHouse.properties.house.stoneCurrent = resType === "stone" ? 1 : 0;
               newHouse.properties.house.boneCurrent = resType === "bone" ? 1 : 0;
-              newHouse.properties.house.isCompleted = (newHouse.properties.house.woodCurrent >= (newHouse.properties.house.woodCost ?? 3) && newHouse.properties.house.stoneCurrent >= (newHouse.properties.house.stoneCost ?? 2) && (newHouse.properties.house.boneCurrent || 0) >= (newHouse.properties.house.boneCost ?? 0));
+              newHouse.properties.house.isCompleted = (newHouse.properties.house.woodCurrent >= (newHouse.properties.house.woodCost ?? 6) && newHouse.properties.house.stoneCurrent >= (newHouse.properties.house.stoneCost ?? 6) && (newHouse.properties.house.boneCurrent || 0) >= (newHouse.properties.house.boneCost ?? 0));
               entities.push(newHouse);
               return;
             } else if (houseEntity && !houseEntity.properties.house?.isCompleted && dist <= 1 && this.actionTimer >= 0.5) {
