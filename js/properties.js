@@ -605,6 +605,8 @@ export function createTorchItem(ownerId = null) {
     resourceType: "torch",
     skin: "Item_Torch.png",
     isLit: true,
+    fuel: 240, // Lasts 240s = 24 in-game night hours (~2 full nights)
+    maxFuel: 240,
     ownerId: ownerId
   };
 }
@@ -624,8 +626,57 @@ export function createTorchEntity(x, y, ownerId = null) {
     },
     torch: {
       isLit: true,
+      fuel: 240,
+      maxFuel: 240,
       ownerId: ownerId,
-      radius: 13.0
+      radius: 14.0
+    },
+    effect(ent, dt, world, entities) {
+      if (this.torch && this.torch.isLit) {
+        const curHour = world?.clock ? (world.clock.hour + (world.clock.minute || 0) / 60) : 12;
+        const isNight = (curHour >= 17.5 || curHour < 5.8);
+        if (isNight) {
+          this.torch.fuel = Math.max(0, (this.torch.fuel || 240) - dt);
+          if (this.torch.fuel <= 0) {
+            this.torch.isLit = false;
+          }
+        }
+      }
+    }
+  }, x, y);
+}
+
+export function createCampfireEntity(x, y, style = "wood", ownerId = null) {
+  const isStone = style === "stone";
+  return createEntity({
+    name: isStone ? "Stone Firepit" : "Campfire",
+    structure: {
+      condition: isStone ? 3200 : 1200,
+      maxCondition: isStone ? 3200 : 1200,
+      defense: isStone ? 35 : 10
+    },
+    woodCost: isStone ? 2 : 3,
+    stoneCost: isStone ? 2 : 0,
+    render: {
+      skin: "Feature_Campfire.png",
+      color: 0xffffffff,
+      backcolor: 0x00000000
+    },
+    campfire: {
+      isLit: true,
+      style: isStone ? "stone" : "wood",
+      fuel: 480, // Burns 24/7 for 480s (1 in-game day/night cycle)
+      maxFuel: 480,
+      radius: 16.0,
+      ownerId: ownerId
+    },
+    effect(ent, dt, world, entities) {
+      if (this.campfire && this.campfire.isLit) {
+        this.campfire.fuel = Math.max(0, (this.campfire.fuel || 480) - dt);
+        if (this.campfire.fuel <= 0) {
+          this.campfire.isLit = false;
+        }
+      }
     }
   }, x, y);
 }
@@ -3456,8 +3507,11 @@ export function isPerimeterEdge(zx, zy, ox, oy, claimedZones) {
 // Creature Torch Management (Standing Furniture Torch & Night Offhand Torch)
 // ---------------------------------------------------------------------------
 
-export function manageCreatureTorches(ent, group, world, entities) {
+export function manageCreatureTorches(ent, group, world, entities, dt = 0.1) {
   if (!ent || ent.destroyed || !ent.properties?.life || !group) return;
+
+  const curHour = world?.clock ? (world.clock.hour + (world.clock.minute || 0) / 60) : 12;
+  const isNight = (curHour >= 17.5 || curHour < 5.8);
 
   // 1. Check if creature has a completed house and build a standing torch nearby
   const houseEnt = Array.from(entityRegistry.values()).find(e =>
@@ -3468,13 +3522,13 @@ export function manageCreatureTorches(ent, group, world, entities) {
   );
 
   if (houseEnt) {
-    const hasStandingTorch = Array.from(entityRegistry.values()).some(e =>
+    const standingTorch = Array.from(entityRegistry.values()).find(e =>
       !e.destroyed &&
       e.properties?.torch &&
       (e.properties.torch.ownerId === ent.id || (Math.abs(e.x - houseEnt.x) <= 2 && Math.abs(e.y - houseEnt.y) <= 2))
     );
 
-    if (!hasStandingTorch) {
+    if (!standingTorch) {
       const candidates = [];
       for (let dx = -2; dx <= 2; dx++) {
         for (let dy = -2; dy <= 2; dy++) {
@@ -3488,7 +3542,7 @@ export function manageCreatureTorches(ent, group, world, entities) {
           const isOccupied = Array.from(entityRegistry.values()).some(e =>
             !e.destroyed &&
             e.x === tx && e.y === ty &&
-            (e.properties?.structure || e.properties?.house || e.properties?.tree || e.properties?.cactus || e.properties?.torch)
+            (e.properties?.structure || e.properties?.house || e.properties?.tree || e.properties?.cactus || e.properties?.torch || e.properties?.campfire)
           );
           if (!isOccupied) {
             candidates.push({ x: tx, y: ty, dist: Math.abs(dx) + Math.abs(dy) });
@@ -3510,13 +3564,73 @@ export function manageCreatureTorches(ent, group, world, entities) {
           timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
         });
       }
+    } else if (!standingTorch.properties.torch.isLit || (standingTorch.properties.torch.fuel || 0) <= 0) {
+      // Re-arm expired standing torch structure with a fresh torch!
+      standingTorch.properties.torch.fuel = standingTorch.properties.torch.maxFuel || 240;
+      standingTorch.properties.torch.isLit = true;
     }
   }
 
-  // 2. Offhand Handheld Torch Management for Night/Day
-  const curHour = world?.clock ? (world.clock.hour + (world.clock.minute || 0) / 60) : 12;
-  const isNight = (curHour >= 17.5 || curHour < 5.8);
+  // 2. Campfire Placement (Strictly 1 campfire for every 2 or 3 territory zones)
+  const numZones = group.claimedZones?.length || 1;
+  const maxCampfires = Math.max(1, Math.floor(numZones / 2.5));
 
+  const existingCampfires = Array.from(entityRegistry.values()).filter(e =>
+    !e.destroyed &&
+    e.properties?.campfire &&
+    isTileInClaimedZones(e.x, e.y, group.claimedZones)
+  ).length;
+
+  if (existingCampfires < maxCampfires && Math.random() < 0.05 && group.claimedZones && group.claimedZones.length > 0) {
+    const randomZone = group.claimedZones[Math.floor(Math.random() * group.claimedZones.length)];
+    const zp = randomZone.includes("_") ? randomZone.split("_") : randomZone.split(",");
+    const zx = parseInt(zp[0], 10);
+    const zy = parseInt(zp[1], 10);
+    const sz = currentZoneSize || 8;
+    const tx = zx * sz + Math.floor(Math.random() * (sz - 2)) + 1;
+    const ty = zy * sz + Math.floor(Math.random() * (sz - 2)) + 1;
+
+    if (tx >= 0 && ty >= 0 && (!world || (tx < world.width && ty < world.height)) && (!world || world.getTile(tx, ty) !== TILE_WATER)) {
+      const hasCampfireNearby = Array.from(entityRegistry.values()).some(e =>
+        !e.destroyed &&
+        e.properties?.campfire &&
+        Math.abs(e.x - tx) <= 5 && Math.abs(e.y - ty) <= 5
+      );
+      const isOccupied = Array.from(entityRegistry.values()).some(e =>
+        !e.destroyed &&
+        e.x === tx && e.y === ty &&
+        (e.properties?.structure || e.properties?.house || e.properties?.tree || e.properties?.cactus || e.properties?.torch || e.properties?.campfire)
+      );
+
+      if (!hasCampfireNearby && !isOccupied) {
+        const style = Math.random() > 0.5 ? "stone" : "wood";
+        const cf = createCampfireEntity(tx, ty, style, ent.id);
+        entities.push(cf);
+        recordWorldEvent({
+          type: "BUILD",
+          primaryEntityId: ent.id,
+          location: { x: tx, y: ty },
+          description: `${ent.properties.name} construiu uma ${style === "stone" ? "fogueira de pedras" : "fogueira de madeira"} para iluminar a aldeia!`,
+          tick: currentTick,
+          timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
+        });
+      }
+    }
+  }
+
+  // 3. Campfire Refueling (Keep 24/7 active campfires replenished with wood)
+  const nearbyCampfire = Array.from(entityRegistry.values()).find(e =>
+    !e.destroyed &&
+    e.properties?.campfire &&
+    Math.abs(e.x - ent.x) <= 4 && Math.abs(e.y - ent.y) <= 4 &&
+    ((e.properties.campfire.fuel || 0) < 250 || !e.properties.campfire.isLit)
+  );
+  if (nearbyCampfire) {
+    nearbyCampfire.properties.campfire.fuel = nearbyCampfire.properties.campfire.maxFuel || 480;
+    nearbyCampfire.properties.campfire.isLit = true;
+  }
+
+  // 4. Offhand Handheld Torch Management for Night/Day & Fuel Burn Rate
   const leftArm = ent.properties.arm_left;
   const rightArm = ent.properties.arm_right;
 
@@ -3532,6 +3646,20 @@ export function manageCreatureTorches(ent, group, world, entities) {
         leftArm.heldItem = createTorchItem(ent.id);
       } else if (rightArm && !rightArm.heldItem) {
         rightArm.heldItem = createTorchItem(ent.id);
+      }
+    } else {
+      // Burn torch fuel while equipped and lit at night
+      if (leftArm?.heldItem?.resourceType === "torch") {
+        leftArm.heldItem.fuel = Math.max(0, (leftArm.heldItem.fuel || 240) - dt);
+        if (leftArm.heldItem.fuel <= 0) {
+          leftArm.heldItem = null; // Depleted torch breaks/destroyed
+        }
+      }
+      if (rightArm?.heldItem?.resourceType === "torch") {
+        rightArm.heldItem.fuel = Math.max(0, (rightArm.heldItem.fuel || 240) - dt);
+        if (rightArm.heldItem.fuel <= 0) {
+          rightArm.heldItem = null; // Depleted torch breaks/destroyed
+        }
       }
     }
   } else {
@@ -3558,7 +3686,7 @@ export function createGroupMemberProp() {
       if (!ent.properties.group || !world || !entities) return;
 
       const group = ent.properties.group;
-      manageCreatureTorches(ent, group, world, entities);
+      manageCreatureTorches(ent, group, world, entities, dt);
 
       const freeArm = getFreeArm(ent);
       const isCarryingMat = isCarryingItem(ent, "stone") || isCarryingItem(ent, "wood") || isCarryingItem(ent, "bone");
