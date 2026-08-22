@@ -1840,8 +1840,14 @@ function renderTopHudBar() {
     if (is3DMode && rctRenderer) {
       const fullWorldActive = rctRenderer.isFullWorldMode ? rctRenderer.isFullWorldMode() : false;
       const fullTxt = fullWorldActive ? "FULL 3D" : "CHUNK 3D";
-      drawNESButton(CANVAS_WIDTH - 460, 5, 80, 24, fullTxt, fullWorldActive, false);
-      registerClickableRegion(CANVAS_WIDTH - 460, 5, 80, 24, () => rctRenderer.toggleFullWorld());
+      drawNESButton(CANVAS_WIDTH - 530, 5, 78, 24, fullTxt, fullWorldActive, false);
+      registerClickableRegion(CANVAS_WIDTH - 530, 5, 78, 24, () => rctRenderer.toggleFullWorld());
+
+      const shdMode = rctRenderer.getShadowsModeName ? rctRenderer.getShadowsModeName() : (rctRenderer.shadowsEnabled ? "ON" : "OFF");
+      const shdTxt = "SHD:" + shdMode;
+      const isShdActive = shdMode === "ON";
+      drawNESButton(CANVAS_WIDTH - 446, 5, 68, 24, shdTxt, isShdActive, false);
+      registerClickableRegion(CANVAS_WIDTH - 446, 5, 68, 24, () => rctRenderer.toggleShadows());
 
       const resMode = rctRenderer.getResolutionName ? rctRenderer.getResolutionName() : "100%";
       const resTxt = "RES:" + resMode;

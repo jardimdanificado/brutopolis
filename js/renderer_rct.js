@@ -265,8 +265,8 @@ function mergeBufferGeometries(geometries) {
 function createSaguaroCactusGeometry() {
   const geos = [];
 
-  const trunk = new THREE.CylinderGeometry(0.18, 0.22, 1.75, 8);
-  trunk.translate(0, 0.875, 0);
+  const trunk = new THREE.CylinderGeometry(0.18, 0.24, 2.05, 8);
+  trunk.translate(0, 0.775, 0);
   geos.push(trunk);
 
   const armLH = new THREE.CylinderGeometry(0.11, 0.11, 0.38, 6);
@@ -888,6 +888,8 @@ export class RCT3DRenderer {
 
     // 3. WebGL Renderer with Optional Downscaling
     this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
+    this.renderer.shadowMap.enabled = this.shadowsEnabled;
+    this.renderer.shadowMap.type = THREE.BasicShadowMap; // Pixel-crisp hard unfiltered retro shadows
     this.renderer.setClearColor(0x000000, 1.0);
     this.updateRendererResolution();
 
@@ -905,22 +907,35 @@ export class RCT3DRenderer {
     this.sunLight.castShadow = true;
     this.sunLight.shadow.mapSize.width = 1024;
     this.sunLight.shadow.mapSize.height = 1024;
-    this.sunLight.shadow.camera.near = 10;
-    this.sunLight.shadow.camera.far = 250;
+    this.sunLight.shadow.camera.near = 1;
+    this.sunLight.shadow.camera.far = 350;
     const sd = 60;
     this.sunLight.shadow.camera.left = -sd;
     this.sunLight.shadow.camera.right = sd;
     this.sunLight.shadow.camera.top = sd;
     this.sunLight.shadow.camera.bottom = -sd;
-    this.sunLight.shadow.bias = -0.0008;
+    this.sunLight.shadow.bias = -0.0001;
+    this.sunLight.shadow.normalBias = 0.05;
     this.scene.add(this.sunLight);
+    this.scene.add(this.sunLight.target);
 
     // Dynamic Night Point Light Pool (Placed strictly at intelligent creatures, houses, and walls)
     this.maxNightLights = 28;
+    this.maxShadowPointLights = 16;
     this.nightLightPool = [];
     for (let i = 0; i < this.maxNightLights; i++) {
-      const pl = new THREE.PointLight(0xffaa44, 0, 10, 1.8);
-      pl.castShadow = false;
+      const pl = new THREE.PointLight(0xffaa44, 0, 12, 1.8);
+      if (i < this.maxShadowPointLights) {
+        pl.castShadow = true;
+        pl.shadow.mapSize.width = 512;
+        pl.shadow.mapSize.height = 512;
+        pl.shadow.camera.near = 0.2;
+        pl.shadow.camera.far = 16.0;
+        pl.shadow.bias = -0.0002;
+        pl.shadow.normalBias = 0.06;
+      } else {
+        pl.castShadow = false;
+      }
       this.scene.add(pl);
       this.nightLightPool.push(pl);
     }
@@ -1067,8 +1082,8 @@ export class RCT3DRenderer {
     this.maxInstances = 1200;
 
     // Oak Trees
-    const oakTrunkGeo = new THREE.CylinderGeometry(0.18, 0.25, 1.2, 6);
-    oakTrunkGeo.translate(0, 0.6, 0);
+    const oakTrunkGeo = new THREE.CylinderGeometry(0.18, 0.28, 1.5, 6);
+    oakTrunkGeo.translate(0, 0.55, 0);
     this.instOakTrunks = new THREE.InstancedMesh(oakTrunkGeo, this.materials.treeTrunk, this.maxInstances);
     this.instOakTrunks.castShadow = true;
     this.instOakTrunks.receiveShadow = true;
@@ -1080,8 +1095,8 @@ export class RCT3DRenderer {
     this.instOakLeaves.receiveShadow = true;
 
     // Pine Trees
-    const pineTrunkGeo = new THREE.CylinderGeometry(0.12, 0.18, 0.9, 5);
-    pineTrunkGeo.translate(0, 0.45, 0);
+    const pineTrunkGeo = new THREE.CylinderGeometry(0.12, 0.20, 1.25, 5);
+    pineTrunkGeo.translate(0, 0.425, 0);
     this.instPineTrunks = new THREE.InstancedMesh(pineTrunkGeo, this.materials.treeTrunk, this.maxInstances);
     this.instPineTrunks.castShadow = true;
     this.instPineTrunks.receiveShadow = true;
@@ -1447,6 +1462,32 @@ export class RCT3DRenderer {
     if (this.wireframeMode === 1) return "GRID";
     if (this.wireframeMode === 2) return "FULL";
     return "OFF";
+  }
+
+  toggleShadows() {
+    this.shadowsEnabled = !this.shadowsEnabled;
+    this.renderer.shadowMap.enabled = this.shadowsEnabled;
+    this.sunLight.castShadow = this.shadowsEnabled;
+    for (let i = 0; i < this.nightLightPool.length; i++) {
+      if (i < this.maxShadowPointLights) {
+        this.nightLightPool[i].castShadow = this.shadowsEnabled;
+      }
+    }
+    this.scene.traverse((obj) => {
+      if (obj.material) {
+        if (Array.isArray(obj.material)) obj.material.forEach(m => m.needsUpdate = true);
+        else obj.material.needsUpdate = true;
+      }
+    });
+    return this.getShadowsModeName();
+  }
+
+  getShadowsModeName() {
+    return this.shadowsEnabled ? "ON" : "OFF";
+  }
+
+  isShadowsActive() {
+    return this.shadowsEnabled;
   }
 
   toggleFullWorld() {
@@ -1921,9 +1962,6 @@ export class RCT3DRenderer {
       this.camY + distance * cosY * cosX
     );
     this.camera.lookAt(this.camX, 1.0, this.camY);
-
-    this.sunLight.position.set(this.camX + 35, 75, this.camY + 45);
-    this.sunLight.target.position.set(this.camX, 0, this.camY);
   }
 
   // ---------------------------------------------------------------------------
@@ -1972,6 +2010,44 @@ export class RCT3DRenderer {
 
     this.sunLight.intensity = sunIntensity;
     this.ambientLight.intensity = ambIntensity;
+
+    // --- Dynamic 24-Hour Solar / Lunar Celestial Orbit ---
+    // Sunrise at 5.5h (East: +X), Noon at 12.0h (Zenith: high +Y), Sunset at 18.5h (West: -X)
+    const isDaytime = timeOfDay >= 5.0 && timeOfDay <= 19.5;
+    let lightOrbitX, lightOrbitY, lightOrbitZ;
+
+    if (isDaytime) {
+      const dayProgress = (timeOfDay - 5.0) / 14.5; // 0.0 at dawn -> 0.5 at noon -> 1.0 at dusk
+      const sunAngle = dayProgress * Math.PI; // 0 (East) to PI (West)
+
+      const sunRadius = 80.0;
+      lightOrbitX = Math.cos(sunAngle) * sunRadius; // +80 (East) -> 0 -> -80 (West)
+      lightOrbitY = Math.max(16.0, Math.sin(sunAngle) * 85.0 + 12.0); // 16 -> 97 -> 16
+      lightOrbitZ = Math.sin(sunAngle) * 22.0 + 36.0;
+    } else {
+      const nightHours = timeOfDay >= 19.5 ? timeOfDay - 19.5 : timeOfDay + 4.5;
+      const nightProgress = nightHours / 9.5;
+      const moonAngle = nightProgress * Math.PI;
+
+      const moonRadius = 70.0;
+      lightOrbitX = -Math.cos(moonAngle) * moonRadius;
+      lightOrbitY = Math.max(22.0, Math.sin(moonAngle) * 65.0 + 16.0);
+      lightOrbitZ = Math.sin(moonAngle) * 16.0 + 36.0;
+    }
+
+    this.sunLight.position.set(this.camX + lightOrbitX, lightOrbitY, this.camY + lightOrbitZ);
+    this.sunLight.target.position.set(this.camX, 0, this.camY);
+    this.sunLight.target.updateMatrixWorld();
+
+    // Update directional shadow camera frustum to encompass viewport
+    const aspect = this.width / this.height;
+    const viewSize = (28 / this.zoom);
+    const maxSd = Math.max(55, viewSize * Math.max(aspect, 1.0) * 1.5);
+    this.sunLight.shadow.camera.left = -maxSd;
+    this.sunLight.shadow.camera.right = maxSd;
+    this.sunLight.shadow.camera.top = maxSd;
+    this.sunLight.shadow.camera.bottom = -maxSd;
+    this.sunLight.shadow.camera.updateProjectionMatrix();
 
     // Calculate Night Darkness Factor (0.0 = daytime, 1.0 = deep night)
     let nightGlow = 0.0;
@@ -2240,6 +2316,7 @@ export class RCT3DRenderer {
       const mesh = new THREE.Mesh(geom, mat);
 
       if (matKey === String(TILE_WATER)) {
+        mesh.receiveShadow = true;
         this.waterGroup.add(mesh);
       } else {
         mesh.receiveShadow = true;
@@ -2550,10 +2627,11 @@ export class RCT3DRenderer {
       const isStoneItem = !e.properties.life && (e.properties.resourceType === "stone" || e.properties.name?.includes("Stone Block") || e.properties.name?.includes("Pedra")) && !isHouse && !isWall && !isDoor && !isWarehouse;
       const isItem = !e.properties.life && (!!e.properties.edible || !!e.properties.resourceType || !!e.properties.germination || e.properties.species === "item");
 
-      const isStructureOrPlant = isTree || isHouse || isWall || isDoor || isCactus || isWoodLog || isStoneItem || isWarehouse;
-      const surfaceH = isStructureOrPlant
+      const isPlantOrItem = isTree || isCactus || isWoodLog || isStoneItem;
+      const isBuilding = isHouse || isWall || isDoor || isWarehouse;
+      const surfaceH = isBuilding
         ? this.getTileSurfaceHeight(map, Math.floor(e.x), Math.floor(e.y))
-        : this.getSurfaceElevation(map, e.x, e.y);
+        : this.getSurfaceElevation(map, isPlantOrItem ? e.x + 0.5 : e.x, isPlantOrItem ? e.y + 0.5 : e.y);
 
       // --- 3D WOOD LOGS (Volumetric Stacked Timber Logs) ---
       if (isWoodLog && woodLogCount < this.maxInstances) {
@@ -2785,7 +2863,12 @@ export class RCT3DRenderer {
           });
           sprite = new THREE.Mesh(this.billboardGeo, mat);
           sprite.castShadow = true;
-          sprite.receiveShadow = false;
+          sprite.receiveShadow = true;
+          sprite.customDepthMaterial = new THREE.MeshDepthMaterial({
+            depthPacking: THREE.RGBADepthPacking,
+            map: tex,
+            alphaTest: 0.08
+          });
           sprite.renderOrder = 10;
           sprite.userData = { entityId: e.id };
           this.entityGroup.add(sprite);
@@ -2793,6 +2876,10 @@ export class RCT3DRenderer {
         } else if (sprite.material.map !== tex) {
           sprite.material.map = tex;
           sprite.material.needsUpdate = true;
+          if (sprite.customDepthMaterial) {
+            sprite.customDepthMaterial.map = tex;
+            sprite.customDepthMaterial.needsUpdate = true;
+          }
         }
 
         const isSleeping = !!e.properties?.life?.isSleeping;
@@ -2957,59 +3044,101 @@ export class RCT3DRenderer {
 
     // --- REAL MULTI-POINT DYNAMIC NIGHT LIGHTS (Placed directly at entities) ---
     let lightIdx = 0;
-    if (nightGlow > 0.05) {
-      // 1. Finished Houses (Larger warm lantern/hearth glow)
-      for (let i = 0; i < visibleEntities.length && lightIdx < this.maxNightLights; i++) {
+    if (nightGlow > 0.02) {
+      const candidates = [];
+      const focusX = (this.selectedEntityId > 0 && selectedPos) ? selectedPos.x : this.camX;
+      const focusY = (this.selectedEntityId > 0 && selectedPos) ? selectedPos.z : this.camY;
+
+      for (let i = 0; i < visibleEntities.length; i++) {
         const e = visibleEntities[i];
         if (!e || e.destroyed) continue;
+
         const isHouse = !!e.properties?.house || e.properties?.render?.skin === "Overworld_House.png";
         if (isHouse && e.properties?.house?.isCompleted !== false) {
           const sH = this.getTileSurfaceHeight(map, Math.floor(e.x), Math.floor(e.y));
-          const pl = this.nightLightPool[lightIdx++];
-          pl.color.setHex(0xff9e3b);
-          pl.distance = 11.0;
-          pl.decay = 1.6;
-          pl.intensity = nightGlow * 2.2;
-          pl.position.set(e.x + 0.5, sH + 1.3, e.y + 0.5);
+          // Place lantern on exterior front porch / veranda outside the walls so light radiates unobstructed
+          const dx = (e.x + 0.5) - focusX;
+          const dy = (e.y + 1.25) - focusY;
+          candidates.push({
+            x: e.x + 0.5,
+            y: sH + 1.15,
+            z: e.y + 1.25,
+            color: 0xffa040,
+            distance: 14.0,
+            decay: 1.5,
+            intensity: nightGlow * 2.8,
+            priority: 2, // High priority
+            distSq: dx * dx + dy * dy
+          });
+          continue;
         }
-      }
 
-      // 2. Intelligent Humanoids & Members (Small individual torchlight)
-      for (let i = 0; i < visibleEntities.length && lightIdx < this.maxNightLights; i++) {
-        const e = visibleEntities[i];
-        if (!e || e.destroyed) continue;
         const isIntelligent = !!e.properties?.brain || !!e.properties?.group_member;
         if (isIntelligent) {
           const sH = this.getSurfaceElevation(map, e.x, e.y);
-          const pl = this.nightLightPool[lightIdx++];
-          pl.color.setHex(0xffaa44);
-          pl.distance = 7.0;
-          pl.decay = 1.8;
-          pl.intensity = nightGlow * 1.5;
-          pl.position.set(e.x, sH + 0.85, e.y);
+          const dx = e.x - focusX;
+          const dy = e.y - focusY;
+          candidates.push({
+            x: e.x,
+            y: sH + 0.95,
+            z: e.y,
+            color: 0xffaa44,
+            distance: 9.0,
+            decay: 1.6,
+            intensity: nightGlow * 2.0,
+            priority: e.id === this.selectedEntityId ? 0 : 3, // Selected character is top priority
+            distSq: dx * dx + dy * dy
+          });
+          continue;
         }
-      }
 
-      // 3. Stone Walls / Fortresses (Watch torch along perimeter)
-      for (let i = 0; i < visibleEntities.length && lightIdx < this.maxNightLights; i++) {
-        const e = visibleEntities[i];
-        if (!e || e.destroyed) continue;
         const isWall = e.properties?.structure && !e.properties?.house && !e.properties?.door;
         if (isWall) {
           const sH = this.getTileSurfaceHeight(map, Math.floor(e.x), Math.floor(e.y));
-          const pl = this.nightLightPool[lightIdx++];
-          pl.color.setHex(0xffb555);
-          pl.distance = 8.5;
-          pl.decay = 1.7;
-          pl.intensity = nightGlow * 1.8;
-          pl.position.set(e.x + 0.5, sH + 1.4, e.y + 0.5);
+          const dx = (e.x + 0.5) - focusX;
+          const dy = (e.y + 0.5) - focusY;
+          candidates.push({
+            x: e.x + 0.5,
+            y: sH + 1.60,
+            z: e.y + 0.5,
+            color: 0xffb555,
+            distance: 10.0,
+            decay: 1.6,
+            intensity: nightGlow * 2.0,
+            priority: 4,
+            distSq: dx * dx + dy * dy
+          });
         }
+      }
+
+      // Sort candidate lights by priority then distance to camera/selected creature
+      candidates.sort((a, b) => {
+        if (a.priority !== b.priority) return a.priority - b.priority;
+        return a.distSq - b.distSq;
+      });
+
+      for (let i = 0; i < candidates.length && lightIdx < this.maxNightLights; i++) {
+        const c = candidates[i];
+        const pl = this.nightLightPool[lightIdx];
+        pl.color.setHex(c.color);
+        pl.distance = c.distance;
+        pl.decay = c.decay;
+        pl.intensity = c.intensity;
+        pl.position.set(c.x, c.y, c.z);
+        if (lightIdx < this.maxShadowPointLights) {
+          pl.castShadow = this.shadowsEnabled;
+        } else {
+          pl.castShadow = false;
+        }
+        lightIdx++;
       }
     }
 
     // Turn off unused lights in pool
     while (lightIdx < this.maxNightLights) {
-      this.nightLightPool[lightIdx++].intensity = 0;
+      const pl = this.nightLightPool[lightIdx++];
+      pl.intensity = 0;
+      pl.castShadow = false;
     }
 
     // Flush Instanced Counts to GPU
