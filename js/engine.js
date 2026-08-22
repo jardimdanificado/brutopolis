@@ -270,6 +270,7 @@ export function destroyEntity(entity, entitiesArray = null) {
  */
 export function amputateLimb(entity, propKey, prop, entitiesArray, world) {
   if (!entity || !entity.properties[propKey]) return;
+  if (propKey === "brain" || propKey.includes("brain") || prop?.cannotAmputate || prop?.isBrain) return;
 
   const partName = prop.name || propKey;
   delete entity.properties[propKey];
@@ -632,7 +633,11 @@ export function tickEntities(entities, dt, world) {
       if (
         typeof prop.condition === "number" &&
         typeof prop.maxCondition === "number" &&
-        !key.startsWith("amputated_")
+        !key.startsWith("amputated_") &&
+        key !== "brain" &&
+        !key.includes("brain") &&
+        !prop.cannotAmputate &&
+        !prop.isBrain
       ) {
         if (prop.condition <= 0) {
           amputateLimb(entity, key, prop, entities, world);
@@ -645,8 +650,10 @@ export function tickEntities(entities, dt, world) {
 
     // 3. Check Vital HP (Death Condition: Brain condition <= 0, or plant life with no roots/energy)
     let isDead = false;
+    let explosionReason = null;
     if (props.brain && props.brain.condition <= 0) {
       isDead = true;
+      explosionReason = "BRAIN_COLLAPSE";
     } else if (!props.brain && props.life && props.life.energy <= 0) {
       // Plants/Flora without brains die when energy runs out
       isDead = true;
@@ -657,6 +664,16 @@ export function tickEntities(entities, dt, world) {
     if (isDead) {
       entity.destroyed = true;
       entity.deathTick = currentTick;
+      if (explosionReason === "BRAIN_COLLAPSE") {
+        recordWorldEvent({
+          type: "EXPLOSION",
+          primaryEntityId: entity.id,
+          location: { x: entity.x, y: entity.y },
+          description: `${entity.properties.name || `Entity #${entity.id}`} suffered total brain collapse (condition 0) and violently exploded!`,
+          tick: currentTick,
+          timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
+        });
+      }
       explodeEntityOnDeath(entity, entities, world);
       entities.splice(i, 1);
       unregisterEntitySpatial(entity);

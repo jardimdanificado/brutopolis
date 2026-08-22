@@ -642,7 +642,7 @@ export class Renderer {
         if (e.properties.house && !e.properties.house.isCompleted) {
           const h = e.properties.house;
           const cur = (h.woodCurrent || 0) + (h.stoneCurrent || 0);
-          const total = (h.woodCost || 50) + (h.stoneCost || 50);
+          const total = (h.woodCost || 3) + (h.stoneCost || 2);
           buildProgress = Math.min(1.0, Math.max(0.0, cur / total));
         } else if (e.isConstructed === false) {
           if (e.woodCost) {

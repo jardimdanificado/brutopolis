@@ -232,34 +232,94 @@ export function createLifeProp(energy = 8000, max = 8000, basalRate = 0.05, init
       }
 
       // If creature runs out of energy (energy <= 5):
-      // 1. Try burning fat reserve to stay awake
-      // 2. If no fat available or failed, collapse into deep helpless sleep until 100% full
+      // Collapse into deep sleep to recover energy exclusively through sleep
       if (this.energy <= 5 && !this.isSleeping) {
-        const stomach = ent.properties.stomach;
-        if (stomach && (stomach.fatUnits || 0) > 0) {
-          stomach.fatUnits--;
-          this.energy = this.max * 0.40;
-          ent.properties.brain?.addShortTerm({
-            type: "FAT_BURN",
-            desc: "Burned body fat to stay awake and stave off collapse!",
-            location: { x: ent.x, y: ent.y }
-          });
-        } else {
-          this.isSleeping = true;
-          ent.emote = 7; // Zzz / Sleeping
-        }
+        this.isSleeping = true;
+        ent.emote = 7; // Zzz / Sleeping
       }
 
-      // Sleeping Restoration
+      // Sleeping Restoration (Energy only regenerates while sleeping)
       if (this.isSleeping) {
-        // Safe home sleep gives 4x faster energy recharge and heals brain/organs
-        const sleepRechargeRate = inOwnHouse ? (this.max * 0.08) : (this.max * 0.025);
-        this.energy = Math.min(this.max, this.energy + sleepRechargeRate * dt);
         ent.emote = 7; // Zzz
 
-        // Home healing benefit
-        if (inOwnHouse && ent.properties.brain && ent.properties.brain.condition < ent.properties.brain.maxCondition) {
-          ent.properties.brain.condition = Math.min(ent.properties.brain.maxCondition, ent.properties.brain.condition + dt * 0.5);
+        const stomach = ent.properties.stomach;
+        const brain = ent.properties.brain;
+
+        // Fonte 1: Comida no estômago (se tiver comida)
+        if (stomach && stomach.items && stomach.items.length > 0) {
+          const sleepDigestionSpeed = inOwnHouse ? 6.0 : 3.5;
+          for (let i = stomach.items.length - 1; i >= 0; i--) {
+            const item = stomach.items[i];
+            const efficiency = (stomach.diet && stomach.diet[item.foodType] !== undefined) ? stomach.diet[item.foodType] : 1.0;
+            const energyExtracted = ((item.nutrition / item.totalTurns) * efficiency) * sleepDigestionSpeed * dt * 4.5;
+            this.energy = Math.min(this.max, this.energy + energyExtracted);
+
+            // Surplus converted to fat when near max energy
+            if (this.energy >= this.max * 0.90) {
+              stomach.fatSurplus = (stomach.fatSurplus || 0) + energyExtracted * 0.3;
+              if (stomach.fatSurplus >= 1500 && (stomach.fatUnits || 0) < (stomach.maxFatUnits || 6)) {
+                stomach.fatSurplus -= 1500;
+                stomach.fatUnits = (stomach.fatUnits || 0) + 1;
+              }
+            }
+
+            item.remainingTurns -= dt * sleepDigestionSpeed;
+            if (item.remainingTurns <= 0) {
+              const finishedItem = stomach.items.splice(i, 1)[0];
+              stomach.waste = (stomach.waste || 0) + (finishedItem.nutrition || 1000);
+              if (finishedItem.seed) {
+                if (!stomach.pendingSeeds) stomach.pendingSeeds = [];
+                stomach.pendingSeeds.push(finishedItem.seed);
+              }
+              if (stomach.waste >= (stomach.wasteThreshold || 4500)) {
+                stomach.waste -= (stomach.wasteThreshold || 4500);
+                if (entities && world) {
+                  const seedToPass = stomach.pendingSeeds && stomach.pendingSeeds.length > 0 ? stomach.pendingSeeds.shift() : null;
+                  const poop = createPoopEntity(ent.x, ent.y, seedToPass);
+                  entities.push(poop);
+                }
+              }
+            }
+          }
+        }
+        // Fonte 2: Gordura (se não tiver comida)
+        else if (stomach && (stomach.fatUnits || 0) > 0) {
+          stomach.fatUnits--;
+          const restored = this.max * 0.50;
+          this.energy = Math.min(this.max, this.energy + restored);
+          ent.properties.brain?.addShortTerm({
+            type: "FAT_BURN",
+            desc: "Burned stored body fat while sleeping to replenish energy!",
+            location: { x: ent.x, y: ent.y }
+          });
+        }
+        // Fonte 3: Condição Cerebral (se não tiver comida nem gordura, usa 10 de condição cerebral pra restaurar toda a energia dormindo)
+        else if (brain) {
+          const cost = 10;
+          brain.condition = Math.max(0, brain.condition - cost);
+          this.energy = this.max; // restaura toda a energia dormindo
+
+          brain.addShortTerm({
+            type: "BRAIN_ENERGY_SACRIFICE",
+            desc: "Consumed 10 brain condition during sleep to completely restore energy!",
+            location: { x: ent.x, y: ent.y }
+          });
+          recordWorldEvent({
+            type: "BRAIN_STRAIN",
+            primaryEntityId: ent.id,
+            location: { x: ent.x, y: ent.y },
+            description: `${ent.properties.name || `Entity #${ent.id}`} consumed 10 brain condition (-10 cond, remaining: ${Math.round(brain.condition)}) during sleep to fully restore energy!`,
+            tick: currentTick,
+            timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
+          });
+        } else {
+          this.energy = this.max;
+        }
+
+        // Home healing benefit for brain when sleeping in own house (requires being fed)
+        const isFed = (stomach && stomach.items && stomach.items.length > 0) || this.energy > this.max * 0.50;
+        if (inOwnHouse && brain && isFed && brain.condition < brain.maxCondition) {
+          brain.condition = Math.min(brain.maxCondition, brain.condition + dt * 0.5);
         }
 
         // Wake up fully revitalized!
@@ -268,7 +328,7 @@ export function createLifeProp(energy = 8000, max = 8000, basalRate = 0.05, init
           ent.emote = 2; // Happy
         }
       } else {
-        // Normal awake basal metabolic drain
+        // Normal awake basal metabolic drain (criatura NÃO regenera energia acordada)
         this.energy = Math.max(0, this.energy - (dt !== undefined ? dt : 1.0) * this.basalRate);
       }
     }
@@ -538,10 +598,10 @@ export function createHouseEntity(x, y, ownerId = null, ownerName = null) {
       ownerName: ownerName,
       partnerId: null,
       partnerName: null,
-      woodCost: 25,
-      stoneCost: 25,
-      woodCurrent: 25,
-      stoneCurrent: 25,
+      woodCost: 3,
+      stoneCost: 2,
+      woodCurrent: 3,
+      stoneCurrent: 2,
       isCompleted: true,
       pantry: [] // Stored food reserves (up to 2 foods)
     },
@@ -623,71 +683,8 @@ export function createStomachProp(capacity = 4, diet = { meat: 1.0, plant: 0.8, 
     maxFatUnits: 6,
     fatSurplus: 0,
     effect(ent, dt, world, entities) {
-      if (ent.properties.life) {
-        // Emergency Fat Reserve Burning:
-        // When energy is critically low (<= 20% max), try to burn 1 fat unit to replenish 50% max energy immediately.
-        // Each unit has a 25% failure chance to mobilize in time.
-        if (ent.properties.life.energy <= ent.properties.life.max * 0.20 && (this.fatUnits || 0) > 0) {
-          const failureChance = 0.25;
-          if (Math.random() >= failureChance) {
-            this.fatUnits--;
-            const restored = ent.properties.life.max * 0.50;
-            ent.properties.life.energy = Math.min(ent.properties.life.max, ent.properties.life.energy + restored);
-            ent.properties.brain?.addShortTerm({
-              type: "FAT_BURN",
-              desc: "Burned body fat reserve to replenish emergency vitality during starvation!",
-              location: { x: ent.x, y: ent.y }
-            });
-          }
-        }
-      }
-
-      if (!this.items || this.items.length === 0) return;
-
-      for (let i = this.items.length - 1; i >= 0; i--) {
-        const item = this.items[i];
-        const efficiency = this.diet[item.foodType] !== undefined ? this.diet[item.foodType] : 0.5;
-        const energyExtracted = (item.nutrition / item.totalTurns) * efficiency;
-
-        if (ent.properties.life) {
-          const maxEnergy = ent.properties.life.max;
-          const curEnergy = ent.properties.life.energy;
-
-          // If creature eats while having plenty of energy (>= 85% max), surplus nutrition creates fat units!
-          if (curEnergy >= maxEnergy * 0.85) {
-            this.fatSurplus = (this.fatSurplus || 0) + energyExtracted * dt;
-            if (this.fatSurplus >= 1500 && (this.fatUnits || 0) < (this.maxFatUnits || 6)) {
-              this.fatSurplus -= 1500;
-              this.fatUnits = (this.fatUnits || 0) + 1;
-            }
-          }
-
-          ent.properties.life.energy = Math.min(
-            maxEnergy,
-            curEnergy + energyExtracted * dt
-          );
-        }
-
-        item.remainingTurns -= dt;
-
-        if (item.remainingTurns <= 0) {
-          const finishedItem = this.items.splice(i, 1)[0];
-          this.waste = (this.waste || 0) + (finishedItem.nutrition || 1000);
-          if (finishedItem.seed) {
-            if (!this.pendingSeeds) this.pendingSeeds = [];
-            this.pendingSeeds.push(finishedItem.seed);
-          }
-
-          if (this.waste >= (this.wasteThreshold || 4500)) {
-            this.waste -= (this.wasteThreshold || 4500);
-            if (entities && world) {
-              const seedToPass = this.pendingSeeds && this.pendingSeeds.length > 0 ? this.pendingSeeds.shift() : null;
-              const poop = createPoopEntity(ent.x, ent.y, seedToPass);
-              entities.push(poop);
-            }
-          }
-        }
-      }
+      // Note: Energy restoration and fat burning are strictly handled during sleep in createLifeProp.
+      // The stomach holds food items in storage until the creature sleeps to digest them.
     }
   };
 }
@@ -756,9 +753,11 @@ export function createLiverProp() {
     nutrition: 800,
     foodType: "organ",
     effect(ent, dt) {
-      // Intact liver passively cleanses and stabilizes body condition
-      if (this.condition >= 50 && ent.properties.brain && ent.properties.brain.condition < ent.properties.brain.maxCondition) {
-        ent.properties.brain.condition = Math.min(ent.properties.brain.maxCondition, ent.properties.brain.condition + dt * 0.15);
+      // Intact liver passively cleanses and stabilizes body condition only when creature is nourished
+      const hasFood = ent.properties.stomach && ent.properties.stomach.items && ent.properties.stomach.items.length > 0;
+      const isFed = hasFood || (ent.properties.life && ent.properties.life.energy > ent.properties.life.max * 0.40);
+      if (this.condition >= 50 && isFed && ent.properties.brain && ent.properties.brain.condition < ent.properties.brain.maxCondition) {
+        ent.properties.brain.condition = Math.min(ent.properties.brain.maxCondition, ent.properties.brain.condition + dt * 0.10);
       }
     }
   };
@@ -807,6 +806,9 @@ export function createBrainProp(maxPath = 16, personality = { bravery: 0.7, curi
   const objCap = isExplorer ? Infinity : Math.max(4, Math.floor(quality * 8));
 
   return {
+    name: "Cérebro",
+    isBrain: true,
+    cannotAmputate: true,
     quality,
     maxPath,
     path: [],
@@ -1065,8 +1067,8 @@ export function createBrainProp(maxPath = 16, personality = { bravery: 0.7, curi
 
         // Inside/At Home Perks (Cura acelerada e proteção dentro de casa)
         if (hasCompletedHome && Math.abs(ownHouse.x - ent.x) + Math.abs(ownHouse.y - ent.y) <= 1) {
-          // Rapid Healing: Restaura vida e regenera partes feridas 3x mais rápido dentro do próprio teto
-          if (ent.properties.life && ent.properties.life.energy < ent.properties.life.max) {
+          // Rapid Healing: Regenera partes feridas 3x mais rápido dentro do próprio teto
+          if (ent.properties.life && ent.properties.life.isSleeping && ent.properties.life.energy < ent.properties.life.max) {
             ent.properties.life.energy = Math.min(ent.properties.life.max, ent.properties.life.energy + 2.5);
           }
           for (const [k, p] of Object.entries(ent.properties)) {
@@ -2021,27 +2023,47 @@ export function getClanBlueprintTiles(group) {
 
   // Assign houses organically to members
   const occupiedHouseTiles = new Set();
-  // Keep existing completed or active house locations pinned first!
   const memberSet = new Set(members);
+
+  // 1. Keep all existing house entities in territory pinned first!
   for (const ent of entityRegistry.values()) {
-    if (!ent.destroyed && ent.properties.house && (memberSet.has(ent.properties.house.ownerId) || memberSet.has(ent.properties.house.partnerId))) {
+    if (!ent.destroyed && ent.properties.house && isTileInClaimedZones(ent.x, ent.y, group.claimedZones)) {
       tiles.push({ x: ent.x, y: ent.y, type: "house", ownerId: ent.properties.house.ownerId });
       occupiedHouseTiles.add(`${ent.x}_${ent.y}`);
     }
   }
 
+  // 2. Pair homeless members with unowned/vacant houses in territory first
+  if (!group._housePlots) group._housePlots = {};
   for (let mIdx = 0; mIdx < members.length; mIdx++) {
     const ownerId = members[mIdx];
-    // If member already has a registered house entity on map, skip generating duplicate blueprint
-    if (tiles.some(t => t.type === "house" && t.ownerId === ownerId)) continue;
+    const hasHouse = tiles.some(t => t.type === "house" && t.ownerId === ownerId);
+    if (!hasHouse) {
+      const vacantTile = tiles.find(t => t.type === "house" && (!t.ownerId || !memberSet.has(t.ownerId)));
+      if (vacantTile) {
+        vacantTile.ownerId = ownerId;
+        continue;
+      }
 
-    // Filter available candidates not yet occupied
-    const available = candidateInteriorTiles.filter(c => !occupiedHouseTiles.has(`${c.x}_${c.y}`));
-    if (available.length > 0) {
-      const pickIdx = pseudoRandomPos(group.id, ownerId, available.length);
-      const chosen = available[pickIdx];
-      tiles.push({ x: chosen.x, y: chosen.y, type: "house", ownerId });
-      occupiedHouseTiles.add(`${chosen.x}_${chosen.y}`);
+      // Check persistent assigned plot
+      if (group._housePlots[ownerId]) {
+        const p = group._housePlots[ownerId];
+        if (isLandTile(p.x, p.y) && isTileInClaimedZones(p.x, p.y, group.claimedZones)) {
+          tiles.push({ x: p.x, y: p.y, type: "house", ownerId });
+          occupiedHouseTiles.add(`${p.x}_${p.y}`);
+          continue;
+        }
+      }
+
+      // Filter available candidates not yet occupied
+      const available = candidateInteriorTiles.filter(c => !occupiedHouseTiles.has(`${c.x}_${c.y}`));
+      if (available.length > 0) {
+        const pickIdx = pseudoRandomPos(group.id, ownerId, available.length);
+        const chosen = available[pickIdx];
+        group._housePlots[ownerId] = { x: chosen.x, y: chosen.y };
+        tiles.push({ x: chosen.x, y: chosen.y, type: "house", ownerId });
+        occupiedHouseTiles.add(`${chosen.x}_${chosen.y}`);
+      }
     }
   }
 
@@ -3180,7 +3202,7 @@ export function createStoneWallEntity(x, y, groupName = null) {
       render: { skin: "Wall_NESW.png", color: 0xffdcdce6, backcolor: 0xff282832 },
       structure: { condition: 5000, maxCondition: 5000, defense: 80 },
       blocking: true,
-      stoneCost: 12
+      stoneCost: 2
     },
     x,
     y
@@ -3494,9 +3516,11 @@ export function createGroupMemberProp() {
               const owner = getEntityById(bp.ownerId);
               const ownerName = owner?.properties?.name || `Membro #${bp.ownerId}`;
               const newHouse = createHouseEntity(bp.x, bp.y, bp.ownerId, ownerName);
+              newHouse.properties.house.woodCost = 3;
+              newHouse.properties.house.stoneCost = 2;
               newHouse.properties.house.woodCurrent = resType === "wood" ? 1 : 0;
               newHouse.properties.house.stoneCurrent = resType === "stone" ? 1 : 0;
-              newHouse.properties.house.isCompleted = (newHouse.properties.house.woodCurrent >= 25 && newHouse.properties.house.stoneCurrent >= 25);
+              newHouse.properties.house.isCompleted = (newHouse.properties.house.woodCurrent >= newHouse.properties.house.woodCost && newHouse.properties.house.stoneCurrent >= newHouse.properties.house.stoneCost);
               entities.push(newHouse);
               return;
             } else if (houseEntity && !houseEntity.properties.house?.isCompleted && dist <= 1 && this.actionTimer >= 0.5) {
@@ -3526,7 +3550,7 @@ export function createGroupMemberProp() {
                     type: "BUILD",
                     primaryEntityId: ent.id,
                     location: { x: bp.x, y: bp.y },
-                    description: `${ent.properties.name} concluiu a construção da Casa de ${h.ownerName || "Membro"} (25 madeiras e 25 pedras)!`,
+                    description: `${ent.properties.name} concluiu a construção da Casa de ${h.ownerName || "Membro"} (${h.woodCost} madeiras e ${h.stoneCost} pedras)!`,
                     tick: currentTick,
                     timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
                     metadata: { structureName: `Casa de ${h.ownerName || "Membro"}`, clan: group.name }
@@ -3549,7 +3573,7 @@ export function createGroupMemberProp() {
               this.actionTimer = 0;
               const wall = createStoneWallEntity(bp.x, bp.y, group.name);
               wall.stoneCurrent = (resType === "stone" ? 1 : 0);
-              wall.stoneCost = 12;
+              wall.stoneCost = 2;
               wall.isConstructed = (wall.stoneCurrent >= wall.stoneCost);
               entities.push(wall);
               return;
@@ -3565,14 +3589,14 @@ export function createGroupMemberProp() {
               }
               if (contributed) {
                 this.actionTimer = 0;
-                if (wallEntity.stoneCurrent >= (wallEntity.stoneCost || 12)) {
+                if (wallEntity.stoneCurrent >= (wallEntity.stoneCost || 2)) {
                   wallEntity.isConstructed = true;
                   recordWorldEvent({
                     opcode: OP_BUILD,
                     type: "BUILD",
                     primaryEntityId: ent.id,
                     location: { x: bp.x, y: bp.y },
-                    description: `${ent.properties.name} ergueu uma Muralha de Pedra defensiva para o reino '${group.name}' (12 pedras)!`,
+                    description: `${ent.properties.name} ergueu uma Muralha de Pedra defensiva para o reino '${group.name}' (${wallEntity.stoneCost || 2} pedras)!`,
                     tick: currentTick,
                     timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
                     metadata: { structureName: "Muralha de Pedra", clan: group.name }
@@ -4127,12 +4151,22 @@ export function createCombatProp(attackInterval = 1.2, aggroRange = 3) {
       }
 
       if (defendingLimb && !defendingLimb.heldItem?.defense) {
-        defendingLimb.condition = Math.max(0, defendingLimb.condition - Math.round(absorbedDamage * 0.6));
+        const defDmg = Math.round(absorbedDamage * 0.6);
+        defendingLimb.condition = Math.max(0, defendingLimb.condition - defDmg);
+        if (target.properties.brain) {
+          target.properties.brain.condition = Math.max(0, target.properties.brain.condition - Math.max(1, Math.round(defDmg * 0.25)));
+        }
       }
 
       // 3. Apply Damage to Target's Physical Body Parts
       const netDamage = Math.max(8, attackPower - absorbedDamage);
       target.combatFlash = 6;
+
+      // Every damage received affects the brain condition as well
+      if (target.properties.brain) {
+        const brainDirectDmg = Math.max(2, Math.round(netDamage * 0.35));
+        target.properties.brain.condition = Math.max(0, target.properties.brain.condition - brainDirectDmg);
+      }
 
       const physicalParts = [];
       for (const [pk, p] of Object.entries(target.properties)) {
@@ -4207,8 +4241,14 @@ export function createCombatProp(attackInterval = 1.2, aggroRange = 3) {
           target.properties.scar = createScarProp(primaryTarget.key, `Scar on ${primaryTarget.key}`);
         }
 
-        // Limb Amputation if Condition drops <= 0
-        if (primaryTarget.prop.condition <= 0) {
+        // Limb Amputation if Condition drops <= 0 (Brains CANNOT be amputated!)
+        if (
+          primaryTarget.prop.condition <= 0 &&
+          primaryTarget.key !== "brain" &&
+          !primaryTarget.key.includes("brain") &&
+          !primaryTarget.prop.cannotAmputate &&
+          !primaryTarget.prop.isBrain
+        ) {
           let limbSkin = "Item_Steak.png";
           let limbColor = 0xffdc5050;
           if (primaryTarget.key.startsWith("wing")) {
@@ -4242,6 +4282,9 @@ export function createCombatProp(attackInterval = 1.2, aggroRange = 3) {
             effect(e, dt) {
               if (e.properties.life) {
                 e.properties.life.energy = Math.max(0, e.properties.life.energy - dt * this.bleedRate);
+              }
+              if (e.properties.brain) {
+                e.properties.brain.condition = Math.max(0, e.properties.brain.condition - dt * (this.bleedRate * 0.2));
               }
             }
           };
@@ -5045,29 +5088,45 @@ export function createLocomotionProp() {
           }
         }
 
-        // 2. If carrying building materials (stone or wood): build priority in order -> Houses -> Walls -> Gates
+        // 2. If carrying building materials (stone or wood): deliver strictly to structures that need that resource!
         else if (!hasIntention && isCarryingMat) {
           const blueprint = getClanBlueprintTiles(group);
           let targetBuild = null;
           let minBuildDist = 9999;
+
+          let heldResType = null;
+          for (const [k, p] of Object.entries(ent.properties)) {
+            if (k.startsWith("arm") && p && (p.heldItem?.resourceType === "stone" || p.heldItem?.resourceType === "wood")) {
+              heldResType = p.heldItem.resourceType;
+              break;
+            }
+          }
 
           const livingClanMembers = (group.members || []).filter(mid => {
             const m = getEntityById(mid);
             return m && !m.destroyed;
           });
 
-          // Count completed houses owned by members of this group
           const completedHousesCount = entities.filter(e => !e.destroyed && e.properties.house?.isCompleted && (group.members?.includes(e.properties.house.ownerId) || group.members?.includes(e.properties.house.partnerId))).length;
           const allMembersHoused = completedHousesCount >= Math.max(1, livingClanMembers.length);
 
-          // Priority 2.1: Clan Houses First
+          // Priority 2.1: Clan Houses First (Check Blueprint and Territory)
           for (const bp of blueprint) {
             if (bp.type === "house") {
               const houseEnt = entities.find(e => !e.destroyed && e.properties.house && e.x === bp.x && e.y === bp.y);
-              if (!houseEnt || !houseEnt.properties.house?.isCompleted) {
+              let needsThisMat = false;
+              if (!houseEnt) {
+                needsThisMat = true;
+              } else if (!houseEnt.properties.house?.isCompleted) {
+                const h = houseEnt.properties.house;
+                if (heldResType === "wood" && (h.woodCurrent || 0) < (h.woodCost || 3)) needsThisMat = true;
+                if (heldResType === "stone" && (h.stoneCurrent || 0) < (h.stoneCost || 2)) needsThisMat = true;
+              }
+
+              if (needsThisMat) {
                 const dist = Math.abs(bp.x - ent.x) + Math.abs(bp.y - ent.y);
                 const isOwnHouse = bp.ownerId === ent.id;
-                const weightDist = isOwnHouse ? dist * 0.5 : dist;
+                const weightDist = isOwnHouse ? dist * 0.4 : dist;
                 if (weightDist < minBuildDist) {
                   minBuildDist = weightDist;
                   targetBuild = { x: bp.x, y: bp.y, type: "house" };
@@ -5076,8 +5135,28 @@ export function createLocomotionProp() {
             }
           }
 
-          // Priority 2.2: Defensive Walls ONLY after every member has a completed house
-          if (!targetBuild && allMembersHoused) {
+          // Check any existing unfinished house in territory
+          for (const e of entities) {
+            if (!e.destroyed && e.properties.house && !e.properties.house.isCompleted && isTileInClaimedZones(e.x, e.y, group.claimedZones)) {
+              const h = e.properties.house;
+              let needsThisMat = false;
+              if (heldResType === "wood" && (h.woodCurrent || 0) < (h.woodCost || 3)) needsThisMat = true;
+              if (heldResType === "stone" && (h.stoneCurrent || 0) < (h.stoneCost || 2)) needsThisMat = true;
+
+              if (needsThisMat) {
+                const dist = Math.abs(e.x - ent.x) + Math.abs(e.y - ent.y);
+                const isOwn = (h.ownerId === ent.id || h.partnerId === ent.id);
+                const weightDist = isOwn ? dist * 0.4 : dist;
+                if (weightDist < minBuildDist) {
+                  minBuildDist = weightDist;
+                  targetBuild = { x: e.x, y: e.y, type: "house" };
+                }
+              }
+            }
+          }
+
+          // Priority 2.2: Defensive Walls (Stone only, after all members have completed houses)
+          if (!targetBuild && allMembersHoused && heldResType === "stone") {
             for (const bp of blueprint) {
               if (bp.type === "wall") {
                 const wallAtTile = globalWallCoords.has(`${bp.x},${bp.y}`) || (tileEntityMap.get(`${bp.x}_${bp.y}`) && Array.from(tileEntityMap.get(`${bp.x}_${bp.y}`)).some(e => !e.destroyed && (e.properties.structure && !e.properties.house)));
@@ -5092,8 +5171,8 @@ export function createLocomotionProp() {
             }
           }
 
-          // Priority 2.3: Gates Last (after houses and walls, only if all members are housed)
-          if (!targetBuild && allMembersHoused) {
+          // Priority 2.3: Gates (Wood only, after houses and walls)
+          if (!targetBuild && allMembersHoused && heldResType === "wood") {
             for (const bp of blueprint) {
               if (bp.type === "gate" || bp.type === "door") {
                 const hasGate = entities.some(e => !e.destroyed && e.properties.door && e.x === bp.x && e.y === bp.y);
@@ -5119,7 +5198,7 @@ export function createLocomotionProp() {
               hasIntention = true;
             }
           } else {
-            // All active blueprint structures are complete: drop material to free hands!
+            // Held material is not needed by any active construction site: drop it to free hands!
             dropHeldItem(ent, entities, world);
           }
         }
@@ -5183,7 +5262,7 @@ export function createLocomotionProp() {
             chosenDy = Math.sign(seedTarget.y - ent.y);
             hasIntention = true;
           } else {
-            // B. Check if blueprint has pending Houses -> then Walls -> then Gates (only if all members have houses)
+            // B. Calculate exact resource needs for Houses -> Walls -> Gates
             const blueprint = getClanBlueprintTiles(group);
             const livingClanMembers = (group.members || []).filter(mid => {
               const m = getEntityById(mid);
@@ -5192,22 +5271,58 @@ export function createLocomotionProp() {
             const completedHousesCount = entities.filter(e => !e.destroyed && e.properties.house?.isCompleted && (group.members?.includes(e.properties.house.ownerId) || group.members?.includes(e.properties.house.partnerId))).length;
             const allMembersHoused = completedHousesCount >= Math.max(1, livingClanMembers.length);
 
-            let hasUnbuiltHouse = blueprint.some(bp => bp.type === "house" && (!entities.find(e => !e.destroyed && e.properties.house && e.x === bp.x && e.y === bp.y)?.properties.house?.isCompleted));
-            let hasUnbuiltWall = allMembersHoused && !hasUnbuiltHouse && blueprint.some(bp => bp.type === "wall" && (!globalWallCoords.has(`${bp.x},${bp.y}`) && !entities.some(e => !e.destroyed && e.properties.structure && !e.properties.house && e.x === bp.x && e.y === bp.y)));
-            let hasUnbuiltGate = allMembersHoused && !hasUnbuiltHouse && !hasUnbuiltWall && blueprint.some(bp => (bp.type === "gate" || bp.type === "door") && !entities.some(e => !e.destroyed && e.properties.door && e.x === bp.x && e.y === bp.y));
+            let needsWood = false;
+            let needsStone = false;
 
-            const hasUnbuiltStruct = hasUnbuiltHouse || hasUnbuiltWall || hasUnbuiltGate;
+            // Check houses
+            for (const bp of blueprint) {
+              if (bp.type === "house") {
+                const houseEnt = entities.find(e => !e.destroyed && e.properties.house && e.x === bp.x && e.y === bp.y);
+                if (!houseEnt) {
+                  needsWood = true;
+                  needsStone = true;
+                } else if (!houseEnt.properties.house?.isCompleted) {
+                  const h = houseEnt.properties.house;
+                  if ((h.woodCurrent || 0) < (h.woodCost || 3)) needsWood = true;
+                  if ((h.stoneCurrent || 0) < (h.stoneCost || 2)) needsStone = true;
+                }
+              }
+            }
+            for (const e of entities) {
+              if (!e.destroyed && e.properties.house && !e.properties.house.isCompleted && isTileInClaimedZones(e.x, e.y, group.claimedZones)) {
+                const h = e.properties.house;
+                if ((h.woodCurrent || 0) < (h.woodCost || 3)) needsWood = true;
+                if ((h.stoneCurrent || 0) < (h.stoneCost || 2)) needsStone = true;
+              }
+            }
+
+            // If all houses are completed, check walls and gates
+            if (!needsWood && !needsStone && allMembersHoused) {
+              for (const bp of blueprint) {
+                if (bp.type === "wall") {
+                  const wallAtTile = globalWallCoords.has(`${bp.x},${bp.y}`) || (tileEntityMap.get(`${bp.x}_${bp.y}`) && Array.from(tileEntityMap.get(`${bp.x}_${bp.y}`)).some(e => !e.destroyed && (e.properties.structure && !e.properties.house)));
+                  if (!wallAtTile) needsStone = true;
+                } else if (bp.type === "gate" || bp.type === "door") {
+                  const hasGate = entities.some(e => !e.destroyed && e.properties.door && e.x === bp.x && e.y === bp.y);
+                  if (!hasGate) needsWood = true;
+                }
+              }
+            }
+
+            const hasUnbuiltStruct = needsWood || needsStone;
 
             if (hasUnbuiltStruct) {
               let nearestLooseMat = null;
               let minMatDist = 9999;
               const nearbyMats = getEntitiesInRadius(ent.x, ent.y, 35);
               for (const e of nearbyMats) {
-                if (!e.destroyed && (e.properties.resourceType === "stone" || e.properties.resourceType === "wood")) {
-                  const dist = Math.abs(e.x - ent.x) + Math.abs(e.y - ent.y);
-                  if (dist < minMatDist) {
-                    minMatDist = dist;
-                    nearestLooseMat = e;
+                if (!e.destroyed) {
+                  if ((e.properties.resourceType === "wood" && needsWood) || (e.properties.resourceType === "stone" && needsStone)) {
+                    const dist = Math.abs(e.x - ent.x) + Math.abs(e.y - ent.y);
+                    if (dist < minMatDist) {
+                      minMatDist = dist;
+                      nearestLooseMat = e;
+                    }
                   }
                 }
               }
@@ -5216,89 +5331,81 @@ export function createLocomotionProp() {
                 chosenDx = Math.sign(nearestLooseMat.x - ent.x);
                 chosenDy = Math.sign(nearestLooseMat.y - ent.y);
                 hasIntention = true;
-              } else {
-                // Look for trees, strictly prioritizing trees inside own claimed clan territory first!
-                const needsWood = hasUnbuiltHouse || hasUnbuiltGate;
-                let nearbyTree = null;
-
-                if (needsWood) {
-                  const trees = getEntitiesInRadius(ent.x, ent.y, 35).filter(e => !e.destroyed && (e.properties.photosynthesis || e.properties.deep_root || e.properties.species === "oak" || e.properties.species === "willow" || e.properties.species === "pine" || e.properties.species === "tree"));
-                  
-                  // Pass 1: Tree within claimed clan zone
-                  nearbyTree = trees.find(t => isTileInClaimedZones(t.x, t.y, group.claimedZones));
-                  
-                  // Pass 2: Nearest tree outside if no trees in territory
-                  if (!nearbyTree && trees.length > 0) {
-                    nearbyTree = trees[0];
-                  }
+              } else if (needsWood) {
+                // Look for trees, prioritizing territory trees first!
+                const trees = getEntitiesInRadius(ent.x, ent.y, 35).filter(e => !e.destroyed && (e.properties.photosynthesis || e.properties.deep_root || e.properties.species === "oak" || e.properties.species === "willow" || e.properties.species === "pine" || e.properties.species === "tree"));
+                
+                let nearbyTree = trees.find(t => isTileInClaimedZones(t.x, t.y, group.claimedZones));
+                if (!nearbyTree && trees.length > 0) {
+                  nearbyTree = trees[0];
                 }
 
                 if (nearbyTree) {
                   chosenDx = Math.sign(nearbyTree.x - ent.x);
                   chosenDy = Math.sign(nearbyTree.y - ent.y);
                   hasIntention = true;
-                } else if (world) {
-                  // Mine rock for house or walls
-                  const currentTile = world.getTile(ent.x, ent.y);
-                  let adjacentStone = (currentTile === 4 || currentTile === 1);
-                  if (!adjacentStone) {
-                    for (const off of [{dx:1,dy:0}, {dx:-1,dy:0}, {dx:0,dy:1}, {dx:0,dy:-1}]) {
-                      const at = world.getTile(ent.x + off.dx, ent.y + off.dy);
-                      if (at === 4 || at === 1) {
-                        adjacentStone = true;
-                        break;
-                      }
+                }
+              } else if (needsStone && world) {
+                // Mine rock for house or walls
+                const currentTile = world.getTile(ent.x, ent.y);
+                let adjacentStone = (currentTile === 4 || currentTile === 1);
+                if (!adjacentStone) {
+                  for (const off of [{dx:1,dy:0}, {dx:-1,dy:0}, {dx:0,dy:1}, {dx:0,dy:-1}]) {
+                    const at = world.getTile(ent.x + off.dx, ent.y + off.dy);
+                    if (at === 4 || at === 1) {
+                      adjacentStone = true;
+                      break;
+                    }
+                  }
+                }
+
+                if (adjacentStone) {
+                  chosenDx = 0;
+                  chosenDy = 0;
+                  hasIntention = true;
+                  ent._taskGoal = null;
+                } else {
+                  let targetStone = null;
+                  if (ent._taskGoal && ent._taskGoal.type === "mine_stone") {
+                    const t = world.getTile(ent._taskGoal.x, ent._taskGoal.y);
+                    if (t === 4 || t === 1) {
+                      targetStone = { x: ent._taskGoal.x, y: ent._taskGoal.y };
+                    } else {
+                      ent._taskGoal = null;
                     }
                   }
 
-                  if (adjacentStone) {
-                    chosenDx = 0;
-                    chosenDy = 0;
-                    hasIntention = true;
-                    ent._taskGoal = null;
-                  } else {
-                    let targetStone = null;
-                    if (ent._taskGoal && ent._taskGoal.type === "mine_stone") {
-                      const t = world.getTile(ent._taskGoal.x, ent._taskGoal.y);
-                      if (t === 4 || t === 1) {
-                        targetStone = { x: ent._taskGoal.x, y: ent._taskGoal.y };
-                      } else {
-                        ent._taskGoal = null;
-                      }
-                    }
-
-                    if (!targetStone) {
-                      let minDist = 9999;
-                      for (let r = 1; r <= 30; r++) {
-                        for (let dy = -r; dy <= r; dy++) {
-                          for (let dx = -r; dx <= r; dx++) {
-                            if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
-                            const tx = ent.x + dx;
-                            const ty = ent.y + dy;
-                            if (tx >= 0 && tx < (world.width || 512) && ty >= 0 && ty < (world.height || 512)) {
-                              const t = world.getTile(tx, ty);
-                              if (t === 4 || t === 1) {
-                                const dist = Math.abs(dx) + Math.abs(dy);
-                                if (dist < minDist) {
-                                  minDist = dist;
-                                  targetStone = { x: tx, y: ty };
-                                }
+                  if (!targetStone) {
+                    let minDist = 9999;
+                    for (let r = 1; r <= 30; r++) {
+                      for (let dy = -r; dy <= r; dy++) {
+                        for (let dx = -r; dx <= r; dx++) {
+                          if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
+                          const tx = ent.x + dx;
+                          const ty = ent.y + dy;
+                          if (tx >= 0 && tx < (world.width || 512) && ty >= 0 && ty < (world.height || 512)) {
+                            const t = world.getTile(tx, ty);
+                            if (t === 4 || t === 1) {
+                              const dist = Math.abs(dx) + Math.abs(dy);
+                              if (dist < minDist) {
+                                minDist = dist;
+                                targetStone = { x: tx, y: ty };
                               }
                             }
                           }
                         }
-                        if (targetStone) break;
                       }
-                      if (targetStone) {
-                        ent._taskGoal = { type: "mine_stone", x: targetStone.x, y: targetStone.y };
-                      }
+                      if (targetStone) break;
                     }
-
                     if (targetStone) {
-                      chosenDx = Math.sign(targetStone.x - ent.x);
-                      chosenDy = Math.sign(targetStone.y - ent.y);
-                      hasIntention = true;
+                      ent._taskGoal = { type: "mine_stone", x: targetStone.x, y: targetStone.y };
                     }
+                  }
+
+                  if (targetStone) {
+                    chosenDx = Math.sign(targetStone.x - ent.x);
+                    chosenDy = Math.sign(targetStone.y - ent.y);
+                    hasIntention = true;
                   }
                 }
               }
@@ -6212,6 +6319,9 @@ export function createParasitesProp(rate = 1.5, stomachDrain = 300, energyDrain 
       if (ent.properties.life) {
         ent.properties.life.energy = Math.max(0, ent.properties.life.energy - energyDrain);
       }
+      if (ent.properties.brain) {
+        ent.properties.brain.condition = Math.max(0, ent.properties.brain.condition - Math.round(energyDrain * 0.3));
+      }
     }
   };
 }
@@ -6236,6 +6346,9 @@ export function createBurnProp(rate = 0.5, damage = 40) {
     effect(ent) {
       if (ent.properties.life) {
         ent.properties.life.energy = Math.max(0, ent.properties.life.energy - damage);
+      }
+      if (ent.properties.brain) {
+        ent.properties.brain.condition = Math.max(0, ent.properties.brain.condition - Math.round(damage * 0.35));
       }
     }
   };
@@ -7356,6 +7469,9 @@ export function rebindEntityMethods(ent) {
       v.effect = function(e, dt) {
         if (e.properties.life) {
           e.properties.life.energy = Math.max(0, e.properties.life.energy - dt * (this.bleedRate || 18.0));
+        }
+        if (e.properties.brain) {
+          e.properties.brain.condition = Math.max(0, e.properties.brain.condition - dt * ((this.bleedRate || 18.0) * 0.2));
         }
       };
     }

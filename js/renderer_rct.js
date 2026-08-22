@@ -2021,7 +2021,7 @@ export class RCT3DRenderer {
         occupiedHouseTiles.add(`${Math.floor(e.x)}_${Math.floor(e.y)}`);
         const h = e.properties.house;
         const isCompleted = h ? (h.isCompleted !== false) : true;
-        const totalCost = (h?.woodCost || 25) + (h?.stoneCost || 25);
+        const totalCost = (h?.woodCost || 3) + (h?.stoneCost || 2);
         const curMaterials = (h?.woodCurrent || 0) + (h?.stoneCurrent || 0);
         const progress = isCompleted ? 1.0 : (curMaterials / Math.max(1, totalCost));
 
