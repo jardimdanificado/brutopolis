@@ -136,6 +136,15 @@ export function updateEntitySpatial(entity, zoneSize = activeZoneSize) {
 }
 
 export function getEntitiesInRadius(centerX, centerY, radiusTiles, zoneSize = activeZoneSize) {
+  if (radiusTiles === 0) {
+    const bucket = tileEntityMap.get(`${centerX}_${centerY}`);
+    if (!bucket) return [];
+    const res = [];
+    for (const ent of bucket) {
+      if (!ent.destroyed) res.push(ent);
+    }
+    return res;
+  }
   const minZx = Math.floor((centerX - radiusTiles) / zoneSize);
   const maxZx = Math.floor((centerX + radiusTiles) / zoneSize);
   const minZy = Math.floor((centerY - radiusTiles) / zoneSize);

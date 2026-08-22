@@ -238,20 +238,21 @@ export function createLifeProp(energy = 8000, max = 8000, basalRate = 0.05, init
         ent.emote = 7; // Zzz / Sleeping
       }
 
-      // Sleeping Restoration (Energy only regenerates while sleeping)
+      // Sleeping Restoration (Energy only regenerates while sleeping over a gradual resting duration)
       if (this.isSleeping) {
         ent.emote = 7; // Zzz
+        this._sleepTimer = (this._sleepTimer || 0) + dt;
 
         const stomach = ent.properties.stomach;
         const brain = ent.properties.brain;
 
         // Fonte 1: Comida no estômago (se tiver comida)
         if (stomach && stomach.items && stomach.items.length > 0) {
-          const sleepDigestionSpeed = inOwnHouse ? 6.0 : 3.5;
+          const sleepDigestionSpeed = inOwnHouse ? 5.0 : 3.0;
           for (let i = stomach.items.length - 1; i >= 0; i--) {
             const item = stomach.items[i];
             const efficiency = (stomach.diet && stomach.diet[item.foodType] !== undefined) ? stomach.diet[item.foodType] : 1.0;
-            const energyExtracted = ((item.nutrition / item.totalTurns) * efficiency) * sleepDigestionSpeed * dt * 4.5;
+            const energyExtracted = ((item.nutrition / item.totalTurns) * efficiency) * sleepDigestionSpeed * dt * 2.5;
             this.energy = Math.min(this.max, this.energy + energyExtracted);
 
             // Surplus converted to fat when near max energy
@@ -284,36 +285,44 @@ export function createLifeProp(energy = 8000, max = 8000, basalRate = 0.05, init
         }
         // Fonte 2: Gordura (se não tiver comida)
         else if (stomach && (stomach.fatUnits || 0) > 0) {
-          stomach.fatUnits--;
-          const restored = this.max * 0.50;
-          this.energy = Math.min(this.max, this.energy + restored);
-          ent.properties.brain?.addShortTerm({
-            type: "FAT_BURN",
-            desc: "Burned stored body fat while sleeping to replenish energy!",
-            location: { x: ent.x, y: ent.y }
-          });
+          if (!this._fatBurnTick || currentTick - this._fatBurnTick > 60) {
+            stomach.fatUnits--;
+            this._fatBurnTick = currentTick;
+            ent.properties.brain?.addShortTerm({
+              type: "FAT_BURN",
+              desc: "Burned stored body fat while sleeping to replenish energy!",
+              location: { x: ent.x, y: ent.y }
+            });
+          }
+          const burnRate = (this.max * 0.50) / 8.0;
+          this.energy = Math.min(this.max, this.energy + burnRate * dt);
         }
-        // Fonte 3: Condição Cerebral (se não tiver comida nem gordura, usa 10 de condição cerebral pra restaurar toda a energia dormindo)
+        // Fonte 3: Condição Cerebral (se não tiver comida nem gordura, consome 10 de condição cerebral para restaurar energia dormindo)
         else if (brain) {
-          const cost = 10;
-          brain.condition = Math.max(0, brain.condition - cost);
-          this.energy = this.max; // restaura toda a energia dormindo
+          if (!this._brainSacrificeDone) {
+            const cost = 10;
+            brain.condition = Math.max(0, brain.condition - cost);
+            this._brainSacrificeDone = true;
 
-          brain.addShortTerm({
-            type: "BRAIN_ENERGY_SACRIFICE",
-            desc: "Consumed 10 brain condition during sleep to completely restore energy!",
-            location: { x: ent.x, y: ent.y }
-          });
-          recordWorldEvent({
-            type: "BRAIN_STRAIN",
-            primaryEntityId: ent.id,
-            location: { x: ent.x, y: ent.y },
-            description: `${ent.properties.name || `Entity #${ent.id}`} consumed 10 brain condition (-10 cond, remaining: ${Math.round(brain.condition)}) during sleep to fully restore energy!`,
-            tick: currentTick,
-            timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
-          });
+            brain.addShortTerm({
+              type: "BRAIN_ENERGY_SACRIFICE",
+              desc: "Consumed 10 brain condition during sleep to sustain survival!",
+              location: { x: ent.x, y: ent.y }
+            });
+            recordWorldEvent({
+              type: "BRAIN_STRAIN",
+              primaryEntityId: ent.id,
+              location: { x: ent.x, y: ent.y },
+              description: `${ent.properties.name || `Entity #${ent.id}`} consumed 10 brain condition (-10 cond, remaining: ${Math.round(brain.condition)}) during emergency sleep!`,
+              tick: currentTick,
+              timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
+            });
+          }
+
+          const restoreRate = this.max / 10.0;
+          this.energy = Math.min(this.max, this.energy + restoreRate * dt);
         } else {
-          this.energy = this.max;
+          this.energy = Math.min(this.max, this.energy + (this.max / 10.0) * dt);
         }
 
         // Home healing benefit for brain when sleeping in own house (requires being fed)
@@ -322,12 +331,16 @@ export function createLifeProp(energy = 8000, max = 8000, basalRate = 0.05, init
           brain.condition = Math.min(brain.maxCondition, brain.condition + dt * 0.5);
         }
 
-        // Wake up fully revitalized!
-        if (this.energy >= this.max) {
+        // Wake up naturally after becoming well-rested (minimum sleep duration of 5 seconds)
+        if (this.energy >= this.max * 0.95 && (this._sleepTimer || 0) >= 5.0) {
           this.isSleeping = false;
+          this._sleepTimer = 0;
+          this._brainSacrificeDone = false;
           ent.emote = 2; // Happy
         }
       } else {
+        this._sleepTimer = 0;
+        this._brainSacrificeDone = false;
         // Normal awake basal metabolic drain (criatura NÃO regenera energia acordada)
         this.energy = Math.max(0, this.energy - (dt !== undefined ? dt : 1.0) * this.basalRate);
       }
@@ -906,47 +919,52 @@ export function createBrainProp(maxPath = 16, personality = { bravery: 0.7, curi
       const mySpecies = ent.properties.species || "creature";
       const myColor = ent.properties.render?.color;
 
-      // 2. Scan Entities in Perception Range for Affinity, Memory & Object Memorization
+      // 2. Scan Entities in Perception Range for Affinity, Memory & Object Memorization (Staggered every 3 ticks)
       let allyAffinitySumInZone = 0;
-      const nearbyVisible = getEntitiesInRadius(ent.x, ent.y, viewRange);
+      if ((currentTick + ent.id) % 3 === 0) {
+        const nearbyVisible = getEntitiesInRadius(ent.x, ent.y, viewRange);
 
-      for (const other of nearbyVisible) {
-        if (other === ent || other.destroyed) continue;
+        for (let i = 0; i < nearbyVisible.length; i++) {
+          const other = nearbyVisible[i];
+          if (other === ent || other.destroyed) continue;
 
-        const dist = Math.abs(other.x - ent.x) + Math.abs(other.y - ent.y);
-        if (dist > viewRange) continue;
+          const dist = Math.abs(other.x - ent.x) + Math.abs(other.y - ent.y);
+          if (dist > viewRange) continue;
 
-        // Remember visible food items in Object Memory
-        if (other.properties.edible) {
-          this.rememberObject(other);
-        }
-
-        // Process Living Creatures: Species & Color Affinity
-        if (other.properties.life) {
-          const otherSpecies = other.properties.species || "creature";
-          const isSameSpecies = otherSpecies === mySpecies;
-          const otherColor = other.properties.render?.color;
-
-          // Initial Encounter Affinity
-          if (this.affinities[other.id] === undefined) {
-            this.affinities[other.id] = isSameSpecies ? 15 : 0;
+          // Remember visible food items in Object Memory
+          if (other.properties.edible) {
+            this.rememberObject(other);
           }
 
-          let currentAff = this.affinities[other.id];
-          // Passive presence only builds mild initial familiarity (capped at 40)
-          if (currentAff >= -40 && currentAff < 40) {
-            let gainRate = isSameSpecies ? (dt * 0.10) : (dt * 0.04);
+          // Process Living Creatures: Species & Color Affinity
+          if (other.properties.life) {
+            const otherSpecies = other.properties.species || "creature";
+            const isSameSpecies = otherSpecies === mySpecies;
+            const otherColor = other.properties.render?.color;
 
-            if (!isSameSpecies) {
-              const colorBoost = getColorSimilarityBoost(myColor, otherColor);
-              gainRate *= colorBoost;
+            // Initial Encounter Affinity
+            if (this.affinities[other.id] === undefined) {
+              this.affinities[other.id] = isSameSpecies ? 15 : 0;
             }
 
-            this.affinities[other.id] = Math.min(40, currentAff + gainRate);
-          }
+            let currentAff = this.affinities[other.id];
+            const isSameClan = ent.properties.group && other.properties.group && ent.properties.group === other.properties.group;
+            const maxPassiveCap = isSameClan ? 75 : (isSameSpecies ? 55 : 40);
 
-          if (this.affinities[other.id] >= 20) {
-            allyAffinitySumInZone += this.affinities[other.id];
+            if (currentAff >= -40 && currentAff < maxPassiveCap) {
+              let gainRate = isSameClan ? (dt * 0.35) : (isSameSpecies ? (dt * 0.25) : (dt * 0.10));
+
+              if (!isSameSpecies) {
+                const colorBoost = getColorSimilarityBoost(myColor, otherColor);
+                gainRate *= colorBoost;
+              }
+
+              this.affinities[other.id] = Math.min(maxPassiveCap, currentAff + gainRate);
+            }
+
+            if (this.affinities[other.id] >= 20) {
+              allyAffinitySumInZone += this.affinities[other.id];
+            }
           }
         }
       }
@@ -1649,8 +1667,8 @@ export function createGenitaliaProp(type = "penis", isPregnant = false) {
           let causesPregnancy = false;
 
           if (isMonogamous) {
-            // Monogamous creatures ONLY mate with their bonded partner with very high mutual affinity (>= 80)
-            if (partnerId === mate.id && aff >= 80 && mateAff >= 80) {
+            // Monogamous creatures mate with their bonded partner
+            if (partnerId === mate.id && aff >= 40 && mateAff >= 40) {
               canMate = true;
               const isFemale = (this.type === "vagina" || this.type === "female");
               const isMateMale = (mate.properties.genitalia?.type === "penis" || mate.properties.genitalia?.type === "male");
@@ -2318,7 +2336,7 @@ export function createCommunicationProp(talkRate = 12.0) {
       if (this.talkTimer < this.talkRate) return;
       this.talkTimer = 0;
 
-      // Sleeping creatures or creatures actively carrying building materials / seeds do not stop to chat
+      if ((currentTick + ent.id) % 5 !== 0) return;
       if (ent.properties.life?.isSleeping) return;
       const isCarryingWork = isCarryingItem(ent, "stone") || isCarryingItem(ent, "wood") || isCarryingItem(ent, "seed");
       if (isCarryingWork) return;
@@ -2326,8 +2344,8 @@ export function createCommunicationProp(talkRate = 12.0) {
       // General talking cooldown: creature only engages in conversation once per 45 ticks
       if (ent._lastTalkTick && (currentTick - ent._lastTalkTick < 45)) return;
 
-      // Spontaneity check: 35% chance to initiate a conversation when near someone
-      if (Math.random() > 0.35) return;
+      // Spontaneity check: 50% chance to initiate a conversation when near someone
+      if (Math.random() > 0.50) return;
 
       const mouth = ent.properties.mouth;
       const talkRange = mouth ? (mouth.talkRadius || 6) : 4;
@@ -2373,9 +2391,9 @@ export function gossipBetweenCreatures(speaker, listener, world, entities) {
   const lisMono = listener.properties.monogamy;
   if (spkMono && lisMono && !spkMono.partnerId && !lisMono.partnerId && dist <= 2) {
     const isCompatible = isSexuallyCompatible(speaker, listener);
-    if (isCompatible && spkAffToLis >= 75 && spkMono.proposalCooldown <= 0 && Math.random() < 0.12) {
-      const acceptProb = Math.max(0.0, Math.min(1.0, (lisAffToSpk - 35) / 40));
-      if (Math.random() < acceptProb && lisAffToSpk >= 50) {
+    if (isCompatible && spkAffToLis >= 45 && spkMono.proposalCooldown <= 0 && Math.random() < 0.20) {
+      const acceptProb = Math.max(0.0, Math.min(1.0, (lisAffToSpk - 20) / 35));
+      if (Math.random() < acceptProb && lisAffToSpk >= 30) {
         // ACCEPTED!
         spkMono.partnerId = listener.id;
         lisMono.partnerId = speaker.id;
@@ -3242,7 +3260,7 @@ export function createStoneWallEntity(x, y, groupName = null) {
     {
       name: groupName ? `Stone Wall (${groupName})` : "Stone Wall",
       species: "structure",
-      render: { skin: "Wall_NESW.png", color: 0xffdcdce6, backcolor: 0xff282832 },
+      render: { skin: "Wall_NESW.png", color: 0xfff0f0f8, backcolor: 0x00000000 },
       structure: { condition: 5000, maxCondition: 5000, defense: 80 },
       blocking: true,
       stoneCost: 2
@@ -3253,10 +3271,16 @@ export function createStoneWallEntity(x, y, groupName = null) {
 }
 
 export function isTileInClaimedZones(x, y, claimedZones) {
-  if (!claimedZones || !Array.isArray(claimedZones)) return false;
+  if (!claimedZones || !Array.isArray(claimedZones) || claimedZones.length === 0) return false;
   const zx = Math.floor(x / currentZoneSize);
   const zy = Math.floor(y / currentZoneSize);
-  return claimedZones.includes(`${zx}_${zy}`) || claimedZones.includes(`${zx},${zy}`);
+  const key1 = `${zx}_${zy}`;
+  const key2 = `${zx},${zy}`;
+  for (let i = 0; i < claimedZones.length; i++) {
+    const k = claimedZones[i];
+    if (k === key1 || k === key2) return true;
+  }
+  return false;
 }
 
 export function isPerimeterEdge(zx, zy, ox, oy, claimedZones) {
@@ -4965,9 +4989,9 @@ export function createLocomotionProp() {
       }
 
       // -----------------------------------------------------------------------
-      // Priority 5: Hunger (Energy <= 40%) -> Seek Food from Environment or Stockpile
+      // Priority 5: Hunger (Energy <= 60% or empty stomach) -> Seek Food from Environment or Stockpile
       // -----------------------------------------------------------------------
-      if (!hasIntention && (energyRatio <= 0.40 || (ent.properties.stomach && ent.properties.stomach.items.length === 0 && energyRatio <= 0.65))) {
+      if (!hasIntention && (energyRatio <= 0.60 || (ent.properties.stomach && ent.properties.stomach.items.length === 0 && energyRatio <= 0.80))) {
         if (ent.properties.group && ent.properties.group.storage && ent.properties.group.storage.some(it => it === "meat" || it === "fruit" || it === "food")) {
           const firstZone = ent.properties.group.claimedZones?.[0] || "32_32";
           const parts = firstZone.includes("_") ? firstZone.split("_") : firstZone.split(",");
@@ -4984,7 +5008,7 @@ export function createLocomotionProp() {
           if (ent._foodGoalTargetId) {
             const lFood = getEntityById(ent._foodGoalTargetId);
             const locked = (lFood && !lFood.destroyed && lFood.properties.edible) ? lFood : null;
-            if (locked && (Math.abs(locked.x - ent.x) + Math.abs(locked.y - ent.y)) <= 40) {
+            if (locked && (Math.abs(locked.x - ent.x) + Math.abs(locked.y - ent.y)) <= 55) {
               foodTarget = locked;
             } else {
               ent._foodGoalTargetId = null;
@@ -4993,11 +5017,11 @@ export function createLocomotionProp() {
 
           if (!foodTarget) {
             let highestFoodScore = -Infinity;
-            const nearbyEdibles = getEntitiesInRadius(ent.x, ent.y, 35);
+            const nearbyEdibles = getEntitiesInRadius(ent.x, ent.y, 50);
             for (const item of nearbyEdibles) {
               if (!item.destroyed && item.properties.edible) {
                 const dist = Math.abs(item.x - ent.x) + Math.abs(item.y - ent.y);
-                let score = 100 - dist * 3;
+                let score = 100 - dist * 2;
                 const ed = item.properties.edible;
 
                 if (ed.foodType === "feces" && !ent.properties.scatological) {
@@ -5222,9 +5246,10 @@ export function createLocomotionProp() {
 
           // Priority 2.2: Defensive Walls (Stone only, after all members have completed houses)
           if (!targetBuild && allMembersHoused && heldResType === "stone") {
-            for (const bp of blueprint) {
+            for (let i = 0; i < blueprint.length; i++) {
+              const bp = blueprint[i];
               if (bp.type === "wall") {
-                const wallAtTile = globalWallCoords.has(`${bp.x},${bp.y}`) || (tileEntityMap.get(`${bp.x}_${bp.y}`) && Array.from(tileEntityMap.get(`${bp.x}_${bp.y}`)).some(e => !e.destroyed && (e.properties.structure && !e.properties.house)));
+                const wallAtTile = globalWallCoords.has(`${bp.x},${bp.y}`);
                 if (!wallAtTile) {
                   const dist = Math.abs(bp.x - ent.x) + Math.abs(bp.y - ent.y);
                   if (dist < minBuildDist) {
@@ -5363,13 +5388,20 @@ export function createLocomotionProp() {
 
             // If all houses are completed, check walls and gates
             if (!needsWood && !needsStone && allMembersHoused) {
-              for (const bp of blueprint) {
+              for (let i = 0; i < blueprint.length; i++) {
+                const bp = blueprint[i];
                 if (bp.type === "wall") {
-                  const wallAtTile = globalWallCoords.has(`${bp.x},${bp.y}`) || (tileEntityMap.get(`${bp.x}_${bp.y}`) && Array.from(tileEntityMap.get(`${bp.x}_${bp.y}`)).some(e => !e.destroyed && (e.properties.structure && !e.properties.house)));
-                  if (!wallAtTile) needsStone = true;
+                  const wallAtTile = globalWallCoords.has(`${bp.x},${bp.y}`);
+                  if (!wallAtTile) {
+                    needsStone = true;
+                    break;
+                  }
                 } else if (bp.type === "gate" || bp.type === "door") {
                   const hasGate = entities.some(e => !e.destroyed && e.properties.door && e.x === bp.x && e.y === bp.y);
-                  if (!hasGate) needsWood = true;
+                  if (!hasGate) {
+                    needsWood = true;
+                    break;
+                  }
                 }
               }
             }
@@ -5908,6 +5940,21 @@ export function createLocomotionProp() {
         ent._locoTracker.lastX = ent.x;
         ent._locoTracker.lastY = ent.y;
         ent._locoTracker.stuckTicks = 0;
+      }
+
+      // Opportunistic Hydration: drink whenever adjacent to water
+      if (ent.properties.bladder && ent.properties.bladder.water < ent.properties.bladder.maxWater * 0.85 && world) {
+        let isNearWater = false;
+        for (const off of [{dx:0,dy:0}, {dx:1,dy:0}, {dx:-1,dy:0}, {dx:0,dy:1}, {dx:0,dy:-1}]) {
+          if (world.getTile(ent.x + off.dx, ent.y + off.dy) === 2) {
+            isNearWater = true;
+            break;
+          }
+        }
+        if (isNearWater) {
+          ent.properties.bladder.water = ent.properties.bladder.maxWater;
+          ent._waterGoal = null;
+        }
       }
 
       // -----------------------------------------------------------------------
@@ -7392,11 +7439,7 @@ export function createEmbarkParty(centerX, centerY, world, entities) {
   const founder = members[0];
   const zx0 = Math.floor(centerX / currentZoneSize);
   const zy0 = Math.floor(centerY / currentZoneSize);
-  const clan = createGroup(clanName, founder, [zx0, zy0], [
-    `${zx0}_${zy0}`,
-    `${zx0 + 1}_${zy0}`,
-    `${zx0}_${zy0 + 1}`
-  ]);
+  const clan = createGroup(clanName, founder, [zx0, zy0]);
   clan.members = members.map(m => m.id);
 
   for (const m of members) {

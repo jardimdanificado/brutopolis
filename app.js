@@ -4166,8 +4166,8 @@ function frame(time) {
     // 1. Tick Simulation if not paused
     if (!isPaused) {
       if (typeof simSpeed === "number" && simSpeed > 1.0) {
-        const subTicks = Math.round(simSpeed);
-        const subDt = 0.05;
+        const subTicks = Math.min(Math.round(simSpeed), 6);
+        const subDt = (0.05 * simSpeed) / subTicks;
         for (let s = 0; s < subTicks; s++) {
           world.clock.tick(subDt);
           incrementEngineTick();
