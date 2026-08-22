@@ -2697,20 +2697,24 @@ export function gossipBetweenCreatures(speaker, listener, world, entities) {
     lisBrain.affinities[speaker.id] = Math.min(100, (lisBrain.affinities[speaker.id] || 0) + 0.2);
   }
 
-  // 3. Group Formation: If both have mutual affinity >= 70 and neither has a group
-  if (spkAffToLis >= 70 && lisAffToSpk >= 70 && Math.random() < 0.10) {
+  // 3. Group Formation: If both have mutual affinity >= 45 and neither has a group
+  if (spkAffToLis >= 45 && lisAffToSpk >= 45 && Math.random() < 0.20) {
     if (!speaker.properties.group && !listener.properties.group) {
-      const newGrp = createGroup(gerarNomeGrupo(speaker.properties.name), speaker);
+      const zx0 = Math.floor(speaker.x / currentZoneSize);
+      const zy0 = Math.floor(speaker.y / currentZoneSize);
+      const newGrp = createGroup(gerarNomeGrupo(speaker.properties.name), speaker, [zx0, zy0]);
       newGrp.members.push(listener.id);
       speaker.properties.group = newGrp;
+      speaker.properties.group_member = createGroupMemberProp();
       listener.properties.group = newGrp;
+      listener.properties.group_member = createGroupMemberProp();
 
       recordWorldEvent({
         opcode: OP_RELATION,
         primaryEntityId: speaker.id,
         secondaryEntityId: listener.id,
         location: { x: speaker.x, y: speaker.y },
-        description: `${speaker.properties.name} e ${listener.properties.name} fundaram a facção '${newGrp.name}'!`,
+        description: `${speaker.properties.name} e ${listener.properties.name} uniram laços e fundaram a facção '${newGrp.name}'!`,
         tick: currentTick,
         timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
         metadata: { primaryName: speaker.properties.name, secondaryName: listener.properties.name }
@@ -6572,8 +6576,8 @@ export function createCreatureFromArchetype(speciesKey, x, y, customOpts = {}) {
   let entProps = {};
   let naming = null;
 
-  // 1. HUMANOID SPECIES (Human, Elf, Dwarf, Orc, Goblin)
-  if (normKey === "human" || normKey === "elf" || normKey === "dwarf" || normKey === "orc" || normKey === "goblin") {
+  // 1. HUMANOID SPECIES (Human, Elf, Dwarf, Orc, Goblin, Kobold, Lizardfolk, Catfolk, Centaur)
+  if (normKey === "human" || normKey === "elf" || normKey === "dwarf" || normKey === "orc" || normKey === "goblin" || normKey === "kobold" || normKey === "lizardfolk" || normKey === "catfolk" || normKey === "centaur") {
     const roles = ["Builder", "Miner", "Farmer", "Crafter", "Hunter", "Explorer", "Guard", "Scholar"];
     const chosenRole = customOpts.role || roles[Math.floor(Math.random() * roles.length)];
     const customName = customOpts.name;
@@ -6621,6 +6625,38 @@ export function createCreatureFromArchetype(speciesKey, x, y, customOpts = {}) {
       iq = 13;
       viewRange = 10;
       heldWeapon = { name: generateUniqueWeaponName("Scavenger Dagger"), damage: 24, isWeapon: true };
+    } else if (normKey === "kobold") {
+      skin = "Creature_Goblin_U.png";
+      color = 0xffe66446;
+      backcolor = 0xff3c140a;
+      maxLife = 3200;
+      iq = 14;
+      viewRange = 10;
+      heldWeapon = { name: generateUniqueWeaponName("Kobold Mining Pick"), damage: 26, isTool: true };
+    } else if (normKey === "lizardfolk") {
+      skin = "Creature_Snake_U.png";
+      color = 0xff46a064;
+      backcolor = 0xff0a3219;
+      maxLife = 7500;
+      iq = 15;
+      viewRange = 11;
+      heldWeapon = { name: generateUniqueWeaponName("Tribal Trident Spear"), damage: 40, isWeapon: true };
+    } else if (normKey === "catfolk") {
+      skin = isFemale ? "Creature_Cat_U.png" : "Creature_Cat_U.png";
+      color = 0xfff0be64;
+      backcolor = 0xff3c280a;
+      maxLife = 5200;
+      iq = 18;
+      viewRange = 12;
+      heldWeapon = { name: generateUniqueWeaponName("Feline Curved Dagger"), damage: 32, isWeapon: true };
+    } else if (normKey === "centaur") {
+      skin = "Creature_Horse_U.png";
+      color = 0xffb47846;
+      backcolor = 0xff28190a;
+      maxLife = 9000;
+      iq = 19;
+      viewRange = 13;
+      heldWeapon = { name: generateUniqueWeaponName("Centaur Heavy Composite Bow"), damage: 44, isWeapon: true };
     } else {
       // Human role gear
       if (chosenRole === "Miner") {
@@ -6952,6 +6988,162 @@ export function createCreatureFromArchetype(speciesKey, x, y, customOpts = {}) {
       locomotion: createLocomotionProp(),
       dragon_flesh: { condition: 100, maxCondition: 100, nutrition: 10000, foodType: "meat" }
     };
+  } else if (normKey === "capybara") {
+    naming = generateUniqueCreatureName("Capivara Mansa", "capybara");
+    entProps = {
+      name: naming.fullName,
+      surname: naming.surname,
+      species: "capybara",
+      birthDate,
+      render: { skin: "Creature_Horse_U.png", color: 0xffa57846, backcolor: 0xff28190a },
+      life: createLifeProp(3800, 3800),
+      terrestrial: createTerrestrialProp(),
+      aquatic: createAquaticProp(),
+      mouth: createMouthProp(28, 28),
+      communication: createCommunicationProp(4.0),
+      brain: createBrainProp(8, { bravery: 0.2, curiosity: 0.9, aggression: 0.02 }, 1.0),
+      stomach: createStomachProp(4, { plant: 1.6, fruit: 1.4, meat: 0.0 }),
+      bladder: createBladderProp(3000, 3000),
+      kidney: createKidneyProp(0.7),
+      paw_front_left: createPawProp("front_left", 1.0, 100, 100, 0, 0, 0),
+      paw_front_right: createPawProp("front_right", 1.0, 100, 100, 0, 0, 0),
+      paw_back_left: createPawProp("back_left", 1.0, 100, 100, 0, 0, 0),
+      paw_back_right: createPawProp("back_right", 1.0, 100, 100, 0, 0, 0),
+      eye_left: createEyeProp("left", 9),
+      eye_right: createEyeProp("right", 9),
+      genitalia: createGenitaliaProp(genitaliaType),
+      locomotion: createLocomotionProp(),
+      flesh: { condition: 100, maxCondition: 100, nutrition: 3200, foodType: "meat" }
+    };
+  } else if (normKey === "cow") {
+    naming = generateUniqueCreatureName("Vaca Leiteira", "cow");
+    entProps = {
+      name: naming.fullName,
+      surname: naming.surname,
+      species: "cow",
+      birthDate,
+      render: { skin: "Creature_Horse_U.png", color: 0xffe6e6dc, backcolor: 0xff1e1e28 },
+      life: createLifeProp(6000, 6000),
+      terrestrial: createTerrestrialProp(),
+      mouth: createMouthProp(32, 32),
+      communication: createCommunicationProp(3.5),
+      brain: createBrainProp(7, { bravery: 0.2, curiosity: 0.4, aggression: 0.05 }, 0.9),
+      stomach: createStomachProp(6, { plant: 1.8, fruit: 1.2, meat: 0.0 }),
+      bladder: createBladderProp(4500, 4500),
+      kidney: createKidneyProp(0.7),
+      paw_front_left: createPawProp("front_left", 1.2, 100, 100, 0, 0, 0),
+      paw_front_right: createPawProp("front_right", 1.2, 100, 100, 0, 0, 0),
+      paw_back_left: createPawProp("back_left", 1.2, 100, 100, 0, 0, 0),
+      paw_back_right: createPawProp("back_right", 1.2, 100, 100, 0, 0, 0),
+      eye_left: createEyeProp("left", 8),
+      eye_right: createEyeProp("right", 8),
+      genitalia: createGenitaliaProp(genitaliaType),
+      locomotion: createLocomotionProp(),
+      flesh: { condition: 100, maxCondition: 100, nutrition: 4500, foodType: "meat" }
+    };
+  } else if (normKey === "chicken") {
+    naming = generateUniqueCreatureName("Galinha Caipira", "chicken");
+    entProps = {
+      name: naming.fullName,
+      surname: naming.surname,
+      species: "chicken",
+      birthDate,
+      render: { skin: "Creature_Bat_U.png", color: 0xfff0c832, backcolor: 0xff64280a },
+      life: createLifeProp(1200, 1200),
+      terrestrial: createTerrestrialProp(),
+      mouth: createMouthProp(16, 16),
+      communication: createCommunicationProp(2.0),
+      brain: createBrainProp(6, { bravery: 0.1, curiosity: 0.9, aggression: 0.05 }, 0.8),
+      stomach: createStomachProp(2, { plant: 1.4, fruit: 1.5, meat: 0.2 }),
+      bladder: createBladderProp(600, 600),
+      kidney: createKidneyProp(0.5),
+      beak: createArmProp("beak", 0.6, 100, 100, { name: "Bico", damage: 6 }),
+      paw_back_left: createPawProp("back_left", 0.7, 100, 100, 2, 2, 6),
+      paw_back_right: createPawProp("back_right", 0.7, 100, 100, 2, 2, 6),
+      eye_left: createEyeProp("left", 9),
+      eye_right: createEyeProp("right", 9),
+      genitalia: createGenitaliaProp(genitaliaType),
+      locomotion: createLocomotionProp(),
+      flesh: { condition: 100, maxCondition: 100, nutrition: 800, foodType: "meat" }
+    };
+  } else if (normKey === "duck") {
+    naming = generateUniqueCreatureName("Pato Selvagem", "duck");
+    entProps = {
+      name: naming.fullName,
+      surname: naming.surname,
+      species: "duck",
+      birthDate,
+      render: { skin: "Creature_Bat_U.png", color: 0xff46aa78, backcolor: 0xff143c28 },
+      life: createLifeProp(1500, 1500),
+      terrestrial: createTerrestrialProp(),
+      aquatic: createAquaticProp(),
+      mouth: createMouthProp(16, 16),
+      communication: createCommunicationProp(2.5),
+      brain: createBrainProp(6, { bravery: 0.2, curiosity: 0.9, aggression: 0.02 }, 0.9),
+      stomach: createStomachProp(2, { plant: 1.5, fruit: 1.4, meat: 0.4 }),
+      bladder: createBladderProp(800, 800),
+      kidney: createKidneyProp(0.5),
+      paw_back_left: createPawProp("back_left", 0.7, 100, 100, 2, 2, 6),
+      paw_back_right: createPawProp("back_right", 0.7, 100, 100, 2, 2, 6),
+      eye_left: createEyeProp("left", 10),
+      eye_right: createEyeProp("right", 10),
+      genitalia: createGenitaliaProp(genitaliaType),
+      locomotion: createLocomotionProp(),
+      flesh: { condition: 100, maxCondition: 100, nutrition: 900, foodType: "meat" }
+    };
+  } else if (normKey === "frog") {
+    naming = generateUniqueCreatureName("Sapo Cururu", "frog");
+    entProps = {
+      name: naming.fullName,
+      surname: naming.surname,
+      species: "frog",
+      birthDate,
+      render: { skin: "Creature_Snake_U.png", color: 0xff50c850, backcolor: 0xff143c14 },
+      life: createLifeProp(1400, 1400),
+      terrestrial: createTerrestrialProp(),
+      aquatic: createAquaticProp(),
+      mouth: createMouthProp(18, 18),
+      communication: createCommunicationProp(3.0),
+      brain: createBrainProp(6, { bravery: 0.1, curiosity: 0.8, aggression: 0.05 }, 0.8),
+      stomach: createStomachProp(2, { meat: 1.2, plant: 0.8, fruit: 0.5 }),
+      bladder: createBladderProp(700, 700),
+      kidney: createKidneyProp(0.5),
+      paw_front_left: createPawProp("front_left", 0.7, 100, 100, 0, 0, 0),
+      paw_front_right: createPawProp("front_right", 0.7, 100, 100, 0, 0, 0),
+      paw_back_left: createPawProp("back_left", 1.0, 100, 100, 0, 0, 0),
+      paw_back_right: createPawProp("back_right", 1.0, 100, 100, 0, 0, 0),
+      eye_left: createEyeProp("left", 10),
+      eye_right: createEyeProp("right", 10),
+      genitalia: createGenitaliaProp(genitaliaType),
+      locomotion: createLocomotionProp(),
+      flesh: { condition: 100, maxCondition: 100, nutrition: 600, foodType: "meat" }
+    };
+  } else if (normKey === "rabbit") {
+    naming = generateUniqueCreatureName("Coelho Veloz", "rabbit");
+    entProps = {
+      name: naming.fullName,
+      surname: naming.surname,
+      species: "rabbit",
+      birthDate,
+      render: { skin: "Creature_Cat_U.png", color: 0xffeae0d0, backcolor: 0xff3c281e },
+      life: createLifeProp(1800, 1800),
+      terrestrial: createTerrestrialProp(),
+      mouth: createMouthProp(20, 20),
+      communication: createCommunicationProp(3.5),
+      brain: createBrainProp(8, { bravery: 0.1, curiosity: 0.95, aggression: 0.01 }, 1.3),
+      stomach: createStomachProp(2, { plant: 1.6, fruit: 1.5, meat: 0.0 }),
+      bladder: createBladderProp(1000, 1000),
+      kidney: createKidneyProp(0.6),
+      paw_front_left: createPawProp("front_left", 0.8, 100, 100, 0, 0, 0),
+      paw_front_right: createPawProp("front_right", 0.8, 100, 100, 0, 0, 0),
+      paw_back_left: createPawProp("back_left", 1.2, 100, 100, 0, 0, 0),
+      paw_back_right: createPawProp("back_right", 1.2, 100, 100, 0, 0, 0),
+      eye_left: createEyeProp("left", 11),
+      eye_right: createEyeProp("right", 11),
+      genitalia: createGenitaliaProp(genitaliaType),
+      locomotion: createLocomotionProp(),
+      flesh: { condition: 100, maxCondition: 100, nutrition: 1100, foodType: "meat" }
+    };
   } else {
     naming = generateUniqueCreatureName("Creature", normKey);
     entProps = {
@@ -7055,6 +7247,46 @@ export function createSeaSerpent(x, y) {
 
 export function createDragon(x, y) {
   return createCreatureFromArchetype("dragon", x, y);
+}
+
+export function createCapybara(x, y, opts = {}) {
+  return createCreatureFromArchetype("capybara", x, y, opts);
+}
+
+export function createCow(x, y, opts = {}) {
+  return createCreatureFromArchetype("cow", x, y, opts);
+}
+
+export function createChicken(x, y, opts = {}) {
+  return createCreatureFromArchetype("chicken", x, y, opts);
+}
+
+export function createDuck(x, y, opts = {}) {
+  return createCreatureFromArchetype("duck", x, y, opts);
+}
+
+export function createFrog(x, y, opts = {}) {
+  return createCreatureFromArchetype("frog", x, y, opts);
+}
+
+export function createRabbit(x, y, opts = {}) {
+  return createCreatureFromArchetype("rabbit", x, y, opts);
+}
+
+export function createKobold(x, y, opts = {}) {
+  return createCreatureFromArchetype("kobold", x, y, opts);
+}
+
+export function createLizardfolk(x, y, opts = {}) {
+  return createCreatureFromArchetype("lizardfolk", x, y, opts);
+}
+
+export function createCatfolk(x, y, opts = {}) {
+  return createCreatureFromArchetype("catfolk", x, y, opts);
+}
+
+export function createCentaur(x, y, opts = {}) {
+  return createCreatureFromArchetype("centaur", x, y, opts);
 }
 
 /**
@@ -7481,21 +7713,118 @@ export function createHumanExplorer(x, y, name = null) {
 /**
  * Spawns an Embark Party of 7 intelligent settlers belonging to a newly formed Clan,
  * equipped with starter supplies, mutual clan affinity, and claims.
+ * Supports diverse species themes: Dwarven, Elven, Orcish, Goblin, Lizardfolk, Multi-Species, etc.
  */
-export function createEmbarkParty(centerX, centerY, world, entities) {
-  const clanName = gerarNomeGrupo();
-
-  const partyPlan = [
-    { species: "human", role: "Builder" },
-    { species: "dwarf", role: "Miner" },
-    { species: "elf", role: "Farmer" },
-    { species: "human", role: "Crafter" },
-    { species: "orc", role: "Hunter" },
-    { species: "human", role: "Matriarch", gender: "female" },
-    { species: "elf", role: "Guard" }
+export function createEmbarkParty(centerX, centerY, world, entities, customOpts = {}) {
+  const THEMES = [
+    "diverse", "dwarf", "elf", "orc", "goblin", "lizardfolk", "human", "catfolk", "centaur", "random"
   ];
+  const theme = customOpts.theme || THEMES[Math.floor(Math.random() * THEMES.length)];
+  let clanName = customOpts.name || gerarNomeGrupo();
 
-  const SURNAMES = ["Silveira", "Rocha", "Barros", "Prado", "Montes", "Ramos", "Torres", "Valente", "Carvalho", "Alba", "Ferreira", "Macedo", "Gouveia", "Freitas", "Machado", "Fontes"];
+  const allSpecies = ["human", "dwarf", "elf", "orc", "goblin", "kobold", "lizardfolk", "catfolk", "centaur"];
+  const roles = ["Builder", "Miner", "Farmer", "Crafter", "Hunter", "Matriarch", "Guard"];
+
+  let partyPlan = [];
+
+  if (theme === "dwarf") {
+    clanName = clanName.replace(/Clã|Tribo/g, "Clã Anão").replace(/Reino/g, "Bastião dos Anões");
+    partyPlan = [
+      { species: "dwarf", role: "Miner" },
+      { species: "dwarf", role: "Builder" },
+      { species: "dwarf", role: "Crafter" },
+      { species: "dwarf", role: "Guard" },
+      { species: "dwarf", role: "Farmer" },
+      { species: "dwarf", role: "Matriarch", gender: "female" },
+      { species: "dwarf", role: "Hunter" }
+    ];
+  } else if (theme === "elf") {
+    clanName = clanName.replace(/Clã|Tribo/g, "Bosque Élfico").replace(/Reino/g, "Santuário Élfico");
+    partyPlan = [
+      { species: "elf", role: "Farmer" },
+      { species: "elf", role: "Hunter" },
+      { species: "elf", role: "Builder" },
+      { species: "elf", role: "Guard" },
+      { species: "elf", role: "Crafter" },
+      { species: "elf", role: "Matriarch", gender: "female" },
+      { species: "elf", role: "Explorer" }
+    ];
+  } else if (theme === "orc") {
+    clanName = clanName.replace(/Clã|Tribo/g, "Horda Orc").replace(/Reino/g, "Fortaleza Orc");
+    partyPlan = [
+      { species: "orc", role: "Hunter" },
+      { species: "orc", role: "Guard" },
+      { species: "orc", role: "Builder" },
+      { species: "orc", role: "Miner" },
+      { species: "orc", role: "Crafter" },
+      { species: "orc", role: "Matriarch", gender: "female" },
+      { species: "orc", role: "Farmer" }
+    ];
+  } else if (theme === "goblin") {
+    clanName = clanName.replace(/Clã|Tribo/g, "Bando Goblin").replace(/Reino/g, "Toca Goblin");
+    partyPlan = [
+      { species: "goblin", role: "Crafter" },
+      { species: "kobold", role: "Miner" },
+      { species: "goblin", role: "Builder" },
+      { species: "goblin", role: "Hunter" },
+      { species: "kobold", role: "Farmer" },
+      { species: "goblin", role: "Matriarch", gender: "female" },
+      { species: "goblin", role: "Guard" }
+    ];
+  } else if (theme === "lizardfolk") {
+    clanName = clanName.replace(/Clã|Tribo/g, "Tribo dos Homens-Lagarto");
+    partyPlan = [
+      { species: "lizardfolk", role: "Hunter" },
+      { species: "lizardfolk", role: "Farmer" },
+      { species: "lizardfolk", role: "Builder" },
+      { species: "lizardfolk", role: "Guard" },
+      { species: "lizardfolk", role: "Crafter" },
+      { species: "lizardfolk", role: "Matriarch", gender: "female" },
+      { species: "lizardfolk", role: "Miner" }
+    ];
+  } else if (theme === "catfolk") {
+    clanName = clanName.replace(/Clã|Tribo/g, "Orgulho Felino");
+    partyPlan = [
+      { species: "catfolk", role: "Hunter" },
+      { species: "catfolk", role: "Explorer" },
+      { species: "catfolk", role: "Builder" },
+      { species: "catfolk", role: "Crafter" },
+      { species: "catfolk", role: "Farmer" },
+      { species: "catfolk", role: "Matriarch", gender: "female" },
+      { species: "catfolk", role: "Guard" }
+    ];
+  } else if (theme === "centaur") {
+    clanName = clanName.replace(/Clã|Tribo/g, "Nômades Centauros");
+    partyPlan = [
+      { species: "centaur", role: "Hunter" },
+      { species: "centaur", role: "Explorer" },
+      { species: "centaur", role: "Builder" },
+      { species: "elf", role: "Farmer" },
+      { species: "centaur", role: "Guard" },
+      { species: "centaur", role: "Matriarch", gender: "female" },
+      { species: "elf", role: "Crafter" }
+    ];
+  } else if (theme === "random") {
+    clanName = `Expedição ${gerarNomeGrupo()}`;
+    partyPlan = roles.map(r => ({
+      species: allSpecies[Math.floor(Math.random() * allSpecies.length)],
+      role: r,
+      gender: r === "Matriarch" ? "female" : (Math.random() < 0.5 ? "male" : "female")
+    }));
+  } else {
+    // Multi-Species Cosmopolitan Expedition
+    partyPlan = [
+      { species: "human", role: "Builder" },
+      { species: "dwarf", role: "Miner" },
+      { species: "elf", role: "Farmer" },
+      { species: "catfolk", role: "Crafter" },
+      { species: "orc", role: "Hunter" },
+      { species: "human", role: "Matriarch", gender: "female" },
+      { species: "lizardfolk", role: "Guard" }
+    ];
+  }
+
+  const SURNAMES = ["Silveira", "Rocha", "Barros", "Prado", "Montes", "Ramos", "Torres", "Valente", "Carvalho", "Alba", "Ferreira", "Macedo", "Gouveia", "Freitas", "Machado", "Fontes", "Martelo-de-Ferro", "Folha-Verde", "Presa-de-Lobo", "Canto-da-Lua", "Pedra-Funda"];
   const surname = SURNAMES[Math.floor(Math.random() * SURNAMES.length)];
 
   const members = [];

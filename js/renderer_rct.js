@@ -588,6 +588,44 @@ function createGateStage1Geometry() {
   return mergeBufferGeometries(parts);
 }
 
+// Volumetric Felled Wood Log Pile 3D Geometry
+function createWoodLogGeometry() {
+  const parts = [];
+  // Bottom log 1
+  const log1 = new THREE.CylinderGeometry(0.12, 0.12, 0.68, 6);
+  log1.rotateZ(Math.PI / 2);
+  log1.translate(0, 0.12, -0.10);
+  parts.push(log1);
+
+  // Bottom log 2
+  const log2 = new THREE.CylinderGeometry(0.11, 0.11, 0.64, 6);
+  log2.rotateZ(Math.PI / 2);
+  log2.translate(0.02, 0.11, 0.11);
+  parts.push(log2);
+
+  // Top stacked log 3
+  const log3 = new THREE.CylinderGeometry(0.10, 0.10, 0.60, 6);
+  log3.rotateZ(Math.PI / 2);
+  log3.translate(-0.01, 0.28, 0.01);
+  parts.push(log3);
+
+  return mergeBufferGeometries(parts);
+}
+
+// Volumetric Chiseled Stone Block / Rubble 3D Geometry
+function createStoneItemGeometry() {
+  const parts = [];
+  const b1 = new THREE.BoxGeometry(0.38, 0.22, 0.32);
+  b1.translate(0, 0.11, 0);
+  parts.push(b1);
+
+  const b2 = new THREE.BoxGeometry(0.24, 0.16, 0.20);
+  b2.translate(0.15, 0.24, -0.05);
+  parts.push(b2);
+
+  return mergeBufferGeometries(parts);
+}
+
 // ---------------------------------------------------------------------------
 // Main RCT 3D Renderer Class (Volumetric 3D Models + Shaded Terrain)
 // ---------------------------------------------------------------------------
@@ -784,6 +822,14 @@ export class RCT3DRenderer {
         map: createTintedTexture("Feature_Stone_A.png", 0x9a8f82, 0x3d3024, 1.0),
         side: THREE.DoubleSide
       }),
+      woodLog: new THREE.MeshLambertMaterial({
+        map: createTintedTexture("Feature_Wood.png", 0xc89858, 0x3d2210, 1.0),
+        side: THREE.DoubleSide
+      }),
+      stoneItem: new THREE.MeshLambertMaterial({
+        map: createTintedTexture("Feature_Stone_B.png", 0xd8d8e6, 0x3c3c46, 1.0),
+        side: THREE.DoubleSide
+      }),
       gate: new THREE.MeshLambertMaterial({
         map: createTintedTexture("Feature_Wood.png", 0xad7842, 0x3a2214, 1.0),
         side: THREE.DoubleSide
@@ -940,6 +986,17 @@ export class RCT3DRenderer {
     const grassGeo = createNaturalGrassGeometry(0.72, 0.58);
     this.instGrassTufts = new THREE.InstancedMesh(grassGeo, this.materials.grassFoliage, 1200);
 
+    // 3D Volumetric Resource Items (Wood Logs and Stone Blocks)
+    const woodLogGeo = createWoodLogGeometry();
+    this.instWoodLogs = new THREE.InstancedMesh(woodLogGeo, this.materials.woodLog, this.maxInstances);
+    this.instWoodLogs.castShadow = true;
+    this.instWoodLogs.receiveShadow = true;
+
+    const stoneItemGeo = createStoneItemGeometry();
+    this.instStoneItems = new THREE.InstancedMesh(stoneItemGeo, this.materials.stoneItem, this.maxInstances);
+    this.instStoneItems.castShadow = true;
+    this.instStoneItems.receiveShadow = true;
+
     // Disable Frustum Culling on Instanced Meshes (Manual Viewport Spatial Grid Culling is active)
     this.instOakTrunks.frustumCulled = false;
     this.instOakLeaves.frustumCulled = false;
@@ -964,6 +1021,8 @@ export class RCT3DRenderer {
     this.instHouseStage2.frustumCulled = false;
     this.instHouseStage3.frustumCulled = false;
     this.instGrassTufts.frustumCulled = false;
+    this.instWoodLogs.frustumCulled = false;
+    this.instStoneItems.frustumCulled = false;
 
     this.instancedGroup = new THREE.Group();
     this.instancedGroup.add(
@@ -976,7 +1035,8 @@ export class RCT3DRenderer {
       this.instStoneHouseWalls, this.instStoneHouseRoofs,
       this.instHousePegs, this.instHouseStage1,
       this.instHouseStage2, this.instHouseStage3,
-      this.instGrassTufts
+      this.instGrassTufts,
+      this.instWoodLogs, this.instStoneItems
     );
     this.scene.add(this.instancedGroup);
 
@@ -2175,6 +2235,8 @@ export class RCT3DRenderer {
     let oakCount = 0;
     let pineCount = 0;
     let cactusCount = 0;
+    let woodLogCount = 0;
+    let stoneItemCount = 0;
     let wallCount = 0;
     let woodWallCount = 0;
     let mixedWallCount = 0;
@@ -2225,21 +2287,38 @@ export class RCT3DRenderer {
       }
 
       const r = e.properties.render;
-      const isItem = !e.properties.life && (!!e.properties.edible || !!e.properties.resourceType || !!e.properties.germination || e.properties.species === "item");
-      const isDoor = !!e.properties.door;
-      const isHouse = !!e.properties.house || r.skin === "Overworld_House.png" || e.properties.name?.includes("Casa");
-      const isWall = !isDoor && !isHouse && (e.properties.structure || r.skin?.startsWith("Wall_") || e.properties.name?.includes("Muralha") || e.properties.name?.includes("Paliçada") || e.properties.name?.includes("Muro") || e.properties.name?.includes("Wall"));
+      const isDoor = !e.properties.life && !!e.properties.door;
+      const isHouse = !e.properties.life && (!!e.properties.house || r.skin === "Overworld_House.png" || e.properties.name?.includes("Casa"));
+      const isWall = !e.properties.life && !isDoor && !isHouse && (e.properties.structure || r.skin?.startsWith("Wall_") || e.properties.name?.includes("Muralha") || e.properties.name?.includes("Paliçada") || e.properties.name?.includes("Muro") || e.properties.name?.includes("Wall"));
       const isCactus = e.properties.species === "cactus" || e.properties.name?.toLowerCase().includes("cactus") || e.properties.name?.toLowerCase().includes("cacto");
       const isTree = !isCactus && (e.properties.species === "oak" || e.properties.species === "pine" || e.properties.species === "willow" || e.properties.species === "tree" || !!e.properties.tree || (r.skin && r.skin.toLowerCase().includes("tree")));
       const isPine = isTree && (e.properties.species === "pine" || (r.skin && r.skin.toLowerCase().includes("pine")));
 
-      const isStructureOrPlant = isTree || isHouse || isWall || isDoor || isCactus;
+      const isWoodLog = !e.properties.life && (e.properties.resourceType === "wood" || e.properties.name?.includes("Wood Log") || e.properties.name?.includes("Madeira") || r.skin === "Item_Wood.png") && !isHouse && !isWall && !isDoor && !isTree;
+      const isStoneItem = !e.properties.life && (e.properties.resourceType === "stone" || e.properties.name?.includes("Stone Block") || e.properties.name?.includes("Pedra")) && !isHouse && !isWall && !isDoor;
+      const isItem = !e.properties.life && (!!e.properties.edible || !!e.properties.resourceType || !!e.properties.germination || e.properties.species === "item");
+
+      const isStructureOrPlant = isTree || isHouse || isWall || isDoor || isCactus || isWoodLog || isStoneItem;
       const surfaceH = isStructureOrPlant
         ? this.getTileSurfaceHeight(map, Math.floor(e.x), Math.floor(e.y))
         : this.getSurfaceElevation(map, e.x, e.y);
 
+      // --- 3D WOOD LOGS (Volumetric Stacked Timber Logs) ---
+      if (isWoodLog && woodLogCount < this.maxInstances) {
+        const rotY = (((Math.imul(Math.floor(e.x * 10) ^ Math.imul(Math.floor(e.y * 10), 12345), 987654321) >>> 0) % 628) / 100.0);
+        mMatrix.makeRotationY(rotY);
+        mMatrix.setPosition(e.x + 0.5, surfaceH, e.y + 0.5);
+        this.instWoodLogs.setMatrixAt(woodLogCount++, mMatrix);
+      }
+      // --- 3D STONE BLOCKS (Volumetric Chiseled Blocks) ---
+      else if (isStoneItem && stoneItemCount < this.maxInstances) {
+        const rotY = (((Math.imul(Math.floor(e.x * 10) ^ Math.imul(Math.floor(e.y * 10), 54321), 123456789) >>> 0) % 628) / 100.0);
+        mMatrix.makeRotationY(rotY);
+        mMatrix.setPosition(e.x + 0.5, surfaceH, e.y + 0.5);
+        this.instStoneItems.setMatrixAt(stoneItemCount++, mMatrix);
+      }
       // --- 3D OAK TREES (Natural Random Rotation) ---
-      if (isTree && !isPine && oakCount < this.maxInstances) {
+      else if (isTree && !isPine && oakCount < this.maxInstances) {
         const rotY = (((Math.imul(Math.floor(e.x) ^ Math.imul(Math.floor(e.y), 45211), 982451653) >>> 0) % 628) / 100.0);
         mMatrix.makeRotationY(rotY);
         mMatrix.setPosition(e.x + 0.5, surfaceH, e.y + 0.5);
@@ -2674,6 +2753,12 @@ export class RCT3DRenderer {
 
     this.instCacti.count = cactusCount;
     this.instCacti.instanceMatrix.needsUpdate = true;
+
+    this.instWoodLogs.count = woodLogCount;
+    this.instWoodLogs.instanceMatrix.needsUpdate = true;
+
+    this.instStoneItems.count = stoneItemCount;
+    this.instStoneItems.instanceMatrix.needsUpdate = true;
 
     this.instWalls.count = wallCount;
     this.instWalls.instanceMatrix.needsUpdate = true;

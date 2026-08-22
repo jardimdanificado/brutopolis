@@ -69,17 +69,26 @@ import {
   createKnight,
   createArcher,
   createCat,
+  createBat,
+  createDragon,
   createWolf,
   createBear,
   createGoblin,
-  createBat,
   createSeaSerpent,
-  createDragon,
-  createCactus,
   createScorpion,
   createLizard,
   createAlpineShrub,
   createMountainGoat,
+  createCapybara,
+  createCow,
+  createChicken,
+  createDuck,
+  createFrog,
+  createRabbit,
+  createKobold,
+  createLizardfolk,
+  createCatfolk,
+  createCentaur,
   createWoodItem,
   createStoneItem,
   createMouthProp,
@@ -96,6 +105,7 @@ import {
   createOakTree,
   createWillowTree,
   createPineTree,
+  createCactus,
   createWaterLily,
   createSeaweed,
   createFruit,
@@ -1009,7 +1019,7 @@ let genSeed = Math.floor(Math.random() * 1000000) + 1;
 let genCreatureDensity = "STANDARD"; // "NONE", "LOW", "STANDARD", "HIGH"
 let genPlantDensity = "NORMAL"; // "SPARSE", "NORMAL", "DENSE"
 let genSpawnPioneers = true;
-let genEmbarkCount = 3; // 0, 1, 2, 3, 4, 5, 8
+let genEmbarkCount = Math.floor(Math.random() * 5) + 3; // Random 3 to 7 Embarks by default
 
 function generateConfiguredWorld() {
   if (!renderer || !world) return;
@@ -1094,28 +1104,47 @@ function generateConfiguredWorld() {
     if (found) break;
   }
 
-  // Fauna
+  // Fauna & Diverse Wildlife
   if (creatureMult > 0) {
     const mobCount = (base) => Math.max(1, Math.round(base * creatureMult));
     const outsideSettlement = (x, y) => inBounds(x, y) && (Math.abs(x - startX) + Math.abs(y - startY)) > Math.min(28, Math.floor(genWidth / 8));
 
+    // Real-World Dumb / Ambient Animals (Grasslands, Plains, Meadows)
+    spawnRandomGlobal(mobCount(28), (x, y) => createCapybara(x, y), (x, y) => inBounds(x, y) && (world.getTile(x, y) === 0 || world.getTile(x, y) === 2), spawnBounds);
+    spawnRandomGlobal(mobCount(32), (x, y) => createCow(x, y), (x, y) => inBounds(x, y) && world.getTile(x, y) === 0, spawnBounds);
+    spawnRandomGlobal(mobCount(45), (x, y) => createChicken(x, y), (x, y) => inBounds(x, y) && world.getTile(x, y) === 0, spawnBounds);
+    spawnRandomGlobal(mobCount(40), (x, y) => createRabbit(x, y), (x, y) => inBounds(x, y) && world.getTile(x, y) === 0, spawnBounds);
+    spawnRandomGlobal(mobCount(28), (x, y) => createDeer(x, y), (x, y) => inBounds(x, y) && world.getTile(x, y) === 0, spawnBounds);
+    spawnRandomGlobal(mobCount(22), (x, y) => createBoar(x, y), (x, y) => inBounds(x, y) && (world.getTile(x, y) === 0 || world.getTile(x, y) === 4), spawnBounds);
+
+    // Water & Amphibious Wildlife (Lakes, Rivers, Coast)
+    spawnRandomGlobal(mobCount(35), (x, y) => createDuck(x, y), (x, y) => inBounds(x, y) && (world.getTile(x, y) === 2 || world.getTile(x, y) === 0), spawnBounds);
+    spawnRandomGlobal(mobCount(40), (x, y) => createFrog(x, y), (x, y) => inBounds(x, y) && (world.getTile(x, y) === 2 || world.getTile(x, y) === 0), spawnBounds);
+    spawnRandomGlobal(mobCount(20), createSeaSerpent, (x, y) => inBounds(x, y) && world.getTile(x, y) === 2, spawnBounds);
+
+    // Deserts, Caves & Mountain Wildlife
     spawnRandomGlobal(mobCount(25), createScorpion, (x, y) => inBounds(x, y) && world.getTile(x, y) === 3, spawnBounds);
-    spawnRandomGlobal(mobCount(20), createLizard, (x, y) => inBounds(x, y) && (world.getTile(x, y) === 3 || world.getTile(x, y) === 0), spawnBounds);
+    spawnRandomGlobal(mobCount(22), createLizard, (x, y) => inBounds(x, y) && (world.getTile(x, y) === 3 || world.getTile(x, y) === 0), spawnBounds);
     spawnRandomGlobal(mobCount(20), createMountainGoat, (x, y) => inBounds(x, y) && (world.getTile(x, y) === 4 || world.getTile(x, y) === 1), spawnBounds);
-    spawnRandomGlobal(mobCount(20), (x, y) => createCat(x, y, false), (x, y) => inBounds(x, y) && world.getTile(x, y) === 0, spawnBounds);
+    spawnRandomGlobal(mobCount(25), createBat, (x, y) => inBounds(x, y), spawnBounds);
+    spawnRandomGlobal(mobCount(3), createDragon, (x, y) => inBounds(x, y) && (world.getTile(x, y) === 1 || world.getTile(x, y) === 4) && outsideSettlement(x, y), spawnBounds);
+
+    // Varied Humanoids & Nomadic Species
+    spawnRandomGlobal(mobCount(22), (x, y) => createKobold(x, y), (x, y) => inBounds(x, y) && (world.getTile(x, y) === 1 || world.getTile(x, y) === 4) && outsideSettlement(x, y), spawnBounds);
+    spawnRandomGlobal(mobCount(20), (x, y) => createLizardfolk(x, y), (x, y) => inBounds(x, y) && (world.getTile(x, y) === 3 || world.getTile(x, y) === 2 || world.getTile(x, y) === 0) && outsideSettlement(x, y), spawnBounds);
+    spawnRandomGlobal(mobCount(18), (x, y) => createCatfolk(x, y), (x, y) => inBounds(x, y) && world.getTile(x, y) === 0 && outsideSettlement(x, y), spawnBounds);
+    spawnRandomGlobal(mobCount(15), (x, y) => createCentaur(x, y), (x, y) => inBounds(x, y) && world.getTile(x, y) === 0 && outsideSettlement(x, y), spawnBounds);
+    spawnRandomGlobal(mobCount(18), (x, y) => createDwarf(x, y), (x, y) => inBounds(x, y) && (world.getTile(x, y) === 1 || world.getTile(x, y) === 4) && outsideSettlement(x, y), spawnBounds);
+    spawnRandomGlobal(mobCount(18), (x, y) => createElf(x, y), (x, y) => inBounds(x, y) && world.getTile(x, y) === 0 && outsideSettlement(x, y), spawnBounds);
+    spawnRandomGlobal(mobCount(18), (x, y) => createOrc(x, y), (x, y) => inBounds(x, y) && (world.getTile(x, y) === 0 || world.getTile(x, y) === 4) && outsideSettlement(x, y), spawnBounds);
+    spawnRandomGlobal(mobCount(20), createGoblin, (x, y) => inBounds(x, y) && (world.getTile(x, y) === 0 || world.getTile(x, y) === 4) && outsideSettlement(x, y), spawnBounds);
     spawnRandomGlobal(mobCount(14), createWolf, (x, y) => inBounds(x, y) && (world.getTile(x, y) === 0 || world.getTile(x, y) === 4) && outsideSettlement(x, y), spawnBounds);
     spawnRandomGlobal(mobCount(8), createBear, (x, y) => inBounds(x, y) && world.getTile(x, y) === 0 && outsideSettlement(x, y), spawnBounds);
-    spawnRandomGlobal(mobCount(25), createBat, (x, y) => inBounds(x, y), spawnBounds);
-    spawnRandomGlobal(mobCount(20), createSeaSerpent, (x, y) => inBounds(x, y) && world.getTile(x, y) === 2, spawnBounds);
-    spawnRandomGlobal(mobCount(3), createDragon, (x, y) => inBounds(x, y) && (world.getTile(x, y) === 1 || world.getTile(x, y) === 4) && outsideSettlement(x, y), spawnBounds);
-    spawnRandomGlobal(mobCount(18), (x, y) => createKnight(x, y, Math.random() < 0.5 ? "male" : "female"), (x, y) => inBounds(x, y) && world.getTile(x, y) === 0 && outsideSettlement(x, y), spawnBounds);
-    spawnRandomGlobal(mobCount(18), (x, y) => createArcher(x, y, Math.random() < 0.5 ? "male" : "female"), (x, y) => inBounds(x, y) && world.getTile(x, y) === 0 && outsideSettlement(x, y), spawnBounds);
-    spawnRandomGlobal(mobCount(20), createGoblin, (x, y) => inBounds(x, y) && (world.getTile(x, y) === 0 || world.getTile(x, y) === 4) && outsideSettlement(x, y), spawnBounds);
   }
 
-  // Founding Pioneers Clans / Multiple Embark Parties
+  // Founding Pioneers Clans / Multiple Diverse Embark Parties (3 to 7 Embarks)
   if (genSpawnPioneers && genEmbarkCount > 0) {
-    const minDistanceBetweenEmbarks = Math.max(30, Math.floor(Math.min(genWidth, genHeight) / (genEmbarkCount + 1)));
+    const minDistanceBetweenEmbarks = Math.max(28, Math.floor(Math.min(genWidth, genHeight) / (genEmbarkCount + 1)));
     const spawnedEmbarkCenters = [];
 
     // Helper to find a suitable walkable terrain spot for an embark party
@@ -1142,6 +1171,10 @@ function generateConfiguredWorld() {
       return null;
     }
 
+    const EMBARK_THEMES = ["diverse", "dwarf", "elf", "orc", "goblin", "lizardfolk", "human", "catfolk", "centaur", "random"];
+    // Shuffle themes
+    const shuffledThemes = [...EMBARK_THEMES].sort(() => Math.random() - 0.5);
+
     for (let k = 0; k < genEmbarkCount; k++) {
       let embarkSpot = null;
       if (k === 0) {
@@ -1159,7 +1192,8 @@ function generateConfiguredWorld() {
 
       if (embarkSpot) {
         spawnedEmbarkCenters.push([embarkSpot.x, embarkSpot.y]);
-        const res = createEmbarkParty(embarkSpot.x, embarkSpot.y, world, entities);
+        const theme = shuffledThemes[k % shuffledThemes.length];
+        const res = createEmbarkParty(embarkSpot.x, embarkSpot.y, world, entities, { theme });
         if (k === 0 && res.members.length > 0) {
           lastSelectedId = res.members[0].id;
           renderer.selectEntity(lastSelectedId);
@@ -1183,6 +1217,7 @@ function generateConfiguredWorld() {
 function resetWorld(presetId = 0) {
   genPreset = presetId;
   genSeed = Math.floor(Math.random() * 1000000) + 1;
+  genEmbarkCount = Math.floor(Math.random() * 5) + 3; // Random 3 to 7 Embarks on map reset
   generateConfiguredWorld();
 }
 
