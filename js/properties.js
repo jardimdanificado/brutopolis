@@ -4686,7 +4686,7 @@ export function createGroupMemberProp() {
         const distToWh = Math.abs(completedWarehouse.x - ent.x) + Math.abs(completedWarehouse.y - ent.y);
         if (distToWh <= 1) {
           for (const [k, p] of Object.entries(ent.properties)) {
-            if (k.startsWith("arm") && p && p.heldItem && p.heldItem.resourceType !== "torch") {
+            if (k.startsWith("arm") && p && p.heldItem && p.heldItem.resourceType !== "torch" && p.heldItem.resourceType !== "seed") {
               completedWarehouse.properties.warehouse.items = completedWarehouse.properties.warehouse.items || [];
               completedWarehouse.properties.warehouse.items.push(p.heldItem);
               p.heldItem = null;
@@ -4706,7 +4706,7 @@ export function createGroupMemberProp() {
           const py = ent.y + off.dy;
           const tile = world.getTile(px, py);
           const isLand = (tile !== 2 && tile !== 5 && tile !== 1 && tile !== 4);
-          const hasNearbyPlant = entities.some(e => !e.destroyed && (e.properties.photosynthesis || e.properties.deep_root || e.properties.species === "oak" || e.properties.species === "willow" || e.properties.species === "cactus" || e.properties.species === "pine") && Math.abs(e.x - px) <= 1 && Math.abs(e.y - py) <= 1);
+          const hasNearbyPlant = entities.some(e => !e.destroyed && (e.properties.photosynthesis || e.properties.deep_root || e.properties.species === "oak" || e.properties.species === "willow" || e.properties.species === "cactus" || e.properties.species === "pine" || e.properties.species === "berry") && e.x === px && e.y === py);
           if (isLand && !hasNearbyPlant) {
             targetX = px;
             targetY = py;
@@ -4715,7 +4715,7 @@ export function createGroupMemberProp() {
           }
         }
 
-        if (canPlant && this.actionTimer >= 0.8) {
+        if (canPlant && this.actionTimer >= 0.5) {
           this.actionTimer = 0;
           let seedSpecies = "oak";
           for (const [k, p] of Object.entries(ent.properties)) {
@@ -4730,9 +4730,13 @@ export function createGroupMemberProp() {
           const plantTile = world.getTile(targetX, targetY);
           if (seedSpecies === "cactus" || plantTile === 3) plantedTree = createCactus(targetX, targetY);
           else if (seedSpecies === "willow") plantedTree = createWillowTree(targetX, targetY);
+          else if (seedSpecies === "pine") plantedTree = createPineTree(targetX, targetY);
+          else if (seedSpecies === "berry") plantedTree = createBerryBush(targetX, targetY);
           else plantedTree = createOakTree(targetX, targetY);
 
           entities.push(plantedTree);
+          registerEntitySpatial(plantedTree);
+          ent.emote = 2;
 
           // Auto-claim new zones whenever members lack private residential rooms (Continuous Housing Expansion)
           const livingMems = (group.members || []).map(id => getEntityById(id)).filter(e => e && !e.destroyed);
@@ -6210,6 +6214,7 @@ export function createLocomotionProp() {
 
         // 1. If carrying seed: cultivate and plant inside territory with spacing (Agriculture Highest Priority)
         if (!hasIntention && isCarryingSeed) {
+          const sz = currentZoneSize || 8;
           let targetPlot = null;
           let minPlotDist = 9999;
 
@@ -6217,15 +6222,21 @@ export function createLocomotionProp() {
             const zp = zk.includes("_") ? zk.split("_") : zk.split(",");
             const zx = parseInt(zp[0], 10);
             const zy = parseInt(zp[1], 10);
-            for (let ox = 1; ox < 7; ox++) {
-              for (let oy = 1; oy < 7; oy++) {
-                const px = zx * 8 + ox;
-                const py = zy * 8 + oy;
+            for (let ox = 0; ox < sz; ox++) {
+              for (let oy = 0; oy < sz; oy++) {
+                const px = zx * sz + ox;
+                const py = zy * sz + oy;
                 const t = world ? world.getTile(px, py) : 0;
                 const isLand = (t !== 2 && t !== 5 && t !== 1 && t !== 4);
-                if (isLand) {
-                  const hasNearbyCrop = getEntitiesInRadius(px, py, 1).some(e => !e.destroyed && (e.properties.photosynthesis || e.properties.deep_root || e.properties.species === "oak" || e.properties.species === "willow" || e.properties.species === "cactus" || e.properties.species === "pine"));
-                  if (!hasNearbyCrop) {
+                if (isLand && !isRoadTile(px, py)) {
+                  let isOccupied = false;
+                  for (const e of entityRegistry.values()) {
+                    if (!e.destroyed && e.x === px && e.y === py && (e.properties?.structure || e.properties?.house || e.properties?.door || e.properties?.photosynthesis || e.properties?.deep_root || e.properties?.tree || e.properties?.cactus || e.properties?.torch || e.properties?.campfire)) {
+                      isOccupied = true;
+                      break;
+                    }
+                  }
+                  if (!isOccupied) {
                     const dist = Math.abs(px - ent.x) + Math.abs(py - ent.y);
                     if (dist < minPlotDist) {
                       minPlotDist = dist;
@@ -6429,9 +6440,10 @@ export function createLocomotionProp() {
         // 5. If hands are free: role-driven tasks with multi-role generalist fallbacks
         else if (!hasIntention) {
           const myRole = ent.properties.role || "Pioneer";
-          const isFarmer = myRole === "Farmer" || myRole === "Hunter" || myRole === "Pioneer" || myRole === "Leader";
-          const isBuilder = myRole === "Builder" || myRole === "Pioneer" || myRole === "Leader";
-          const isForager = myRole === "Forager" || myRole === "Miner" || myRole === "Pioneer" || myRole === "Leader";
+          const isPioneer = myRole === "Pioneer";
+          const isFarmer = myRole === "Farmer" || myRole === "Hunter" || isPioneer || myRole === "Leader";
+          const isBuilder = myRole === "Builder" || isPioneer || myRole === "Leader";
+          const isForager = myRole === "Forager" || myRole === "Miner" || isPioneer || myRole === "Leader";
           const isGuard = myRole === "Guard";
 
           // Calculate exact resource needs for Houses -> Walls -> Gates
@@ -6516,8 +6528,8 @@ export function createLocomotionProp() {
             }
           }
 
-          // --- 5.2 Agriculture / Farming (Farmers, Pioneers, Leaders) ---
-          if (isFarmer && !hasIntention) {
+          // --- 5.2 Agriculture / Farming (Farmers, Pioneers, Foragers, Leaders, and Free Settlers) ---
+          if ((isFarmer || isForager || isPioneer || (!hasUnbuiltStruct && energyRatio > 0.40)) && !hasIntention) {
             let seedTarget = null;
             if (ent._taskGoal && ent._taskGoal.type === "get_seed") {
               const lSeed = getEntityById(ent._taskGoal.id);
@@ -6531,9 +6543,9 @@ export function createLocomotionProp() {
 
             if (!seedTarget) {
               let minSeedDist = 9999;
-              const nearbySeedCandidates = getEntitiesInRadius(ent.x, ent.y, 30);
+              const nearbySeedCandidates = getEntitiesInRadius(ent.x, ent.y, 45);
               for (const e of nearbySeedCandidates) {
-                if (!e.destroyed && !e.properties.photosynthesis && !e.properties.deep_root && (e.properties.germination || e.properties.resourceType === "seed" || e.properties.name?.includes("Seed") || e.properties.name?.includes("Semente"))) {
+                if (!e.destroyed && !e.properties.photosynthesis && !e.properties.deep_root && (e.properties.germination || e.properties.resourceType === "seed" || e.properties.name?.includes("Seed") || e.properties.name?.includes("Semente") || (e.properties.edible?.foodType === "fruit" && e.properties.edible.seed))) {
                   const sdist = Math.abs(e.x - ent.x) + Math.abs(e.y - ent.y);
                   if (sdist < minSeedDist) {
                     minSeedDist = sdist;
@@ -7326,6 +7338,24 @@ export function createLocomotionProp() {
                 remainingTurns: ed.digestDuration || 45,
                 seed: ed.seed?.type === "small" ? ed.seed : null
               });
+
+              // Extract and save viable seed for agriculture
+              if (ed.seed) {
+                const freeArm = getFreeArm(ent);
+                if (freeArm && ent.properties.group) {
+                  freeArm.heldItem = {
+                    name: `Semente de ${ed.seed.species || "Planta"}`,
+                    resourceType: "seed",
+                    seedType: ed.seed.type || "small",
+                    seedSpecies: ed.seed.species || "oak",
+                    ownerId: ent.id
+                  };
+                } else if (Math.random() < 0.75) {
+                  const seedEnt = createSeedEntity(ent.x, ent.y, ed.seed.type || "small", ed.seed.species || "oak");
+                  entities.push(seedEnt);
+                  registerEntitySpatial(seedEnt);
+                }
+              }
 
               // Forget from memory
               if (ent.properties.brain?.forgetObject) {
@@ -8519,7 +8549,7 @@ export function createCentaur(x, y, opts = {}) {
 /**
  * Seed Germination (Slow natural germination with spatial spacing constraints)
  */
-export function createSeedGerminationProp(species = "oak", checkInterval = 8.0, sproutChance = 0.15) {
+export function createSeedGerminationProp(species = "oak", checkInterval = 4.0, sproutChance = 0.35) {
   return {
     timer: 0,
     species,
@@ -8532,12 +8562,12 @@ export function createSeedGerminationProp(species = "oak", checkInterval = 8.0, 
       if (this.timer >= this.checkInterval) {
         this.timer = 0;
 
-        // Density & Spacing Clearance: Allow tree growth if no tree within 1 tile
+        // Density & Spacing Clearance: Allow plant growth if no tree on exact tile
         for (let i = 0; i < entities.length; i++) {
           const e = entities[i];
-          if (!e.destroyed && e.id !== ent.id && (e.properties?.photosynthesis || e.properties?.deep_root || e.properties?.species === "oak" || e.properties?.species === "willow" || e.properties?.species === "cactus" || e.properties?.species === "pine" || e.properties?.species === "lichen")) {
-            if (Math.abs(e.x - ent.x) <= 1 && Math.abs(e.y - ent.y) <= 1) {
-              return; // Immediate tile occupied
+          if (!e.destroyed && e.id !== ent.id && (e.properties?.photosynthesis || e.properties?.deep_root || e.properties?.species === "oak" || e.properties?.species === "willow" || e.properties?.species === "cactus" || e.properties?.species === "pine" || e.properties?.species === "berry" || e.properties?.species === "lichen")) {
+            if (e.x === ent.x && e.y === ent.y) {
+              return; // Exact tile occupied
             }
           }
         }
@@ -8557,6 +8587,8 @@ export function createSeedGerminationProp(species = "oak", checkInterval = 8.0, 
             newPlant = createPineTree(ent.x, ent.y);
           } else if (this.species === "cactus") {
             newPlant = createCactus(ent.x, ent.y);
+          } else if (this.species === "berry") {
+            newPlant = createBerryBush(ent.x, ent.y);
           } else if (this.species === "lichen") {
             newPlant = createAlpineShrub(ent.x, ent.y);
           } else {
@@ -8566,12 +8598,13 @@ export function createSeedGerminationProp(species = "oak", checkInterval = 8.0, 
           ent.destroyed = true;
           if (entities && newPlant) {
             entities.push(newPlant);
+            registerEntitySpatial(newPlant);
             recordWorldEvent({
               type: "SPROUT",
               primaryEntityId: newPlant.id,
               secondaryEntityId: ent.id,
               location: { x: ent.x, y: ent.y },
-              description: `A wild seed slowly germinated into ${newPlant.properties.name}!`,
+              description: `A wild seed germinated into ${newPlant.properties.name}!`,
               tick: currentTick,
               timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
               metadata: { species: this.species }
@@ -8723,7 +8756,7 @@ export function createOakTree(x, y) {
       bladder: createBladderProp(6000, 6000),
       deep_root: createDeepRootProp(20.0, 12.0),
       photosynthesis: createPhotosynthesisProp(0.3, 35.0),
-      fruiting: createFruitingProp(90.0, "large", "oak"),
+      fruiting: createFruitingProp(35.0, "large", "oak"),
       terrain_pref: createTerrainPreferenceProp([0], "Fertile Land"),
       wood: { nutrition: 2000, foodType: "plant" }
     },
@@ -8741,7 +8774,7 @@ export function createWillowTree(x, y) {
       life: createLifeProp(9000, 9000, 0.08),
       bladder: createBladderProp(4000, 4000),
       photosynthesis: createPhotosynthesisProp(0.3, 30.0),
-      fruiting: createFruitingProp(75.0, "small", "willow"),
+      fruiting: createFruitingProp(30.0, "small", "willow"),
       terrain_pref: createTerrainPreferenceProp([0, 2], "Riverbank / Moist Soil"),
       wood: { nutrition: 1500, foodType: "plant" }
     },
@@ -8760,9 +8793,28 @@ export function createPineTree(x, y) {
       bladder: createBladderProp(5000, 5000),
       deep_root: createDeepRootProp(18.0, 14.0),
       photosynthesis: createPhotosynthesisProp(0.3, 32.0),
-      fruiting: createFruitingProp(80.0, "large", "pine"),
+      fruiting: createFruitingProp(32.0, "large", "pine"),
       terrain_pref: createTerrainPreferenceProp([0, 1], "Soil and Mountain"),
       wood: { nutrition: 1800, foodType: "plant" }
+    },
+    x,
+    y
+  );
+}
+
+export function createBerryBush(x, y) {
+  return createEntity(
+    {
+      name: generateUniqueFloraName("Berry Bush", "berry"),
+      species: "berry",
+      render: { skin: "Feature_Bush.png", color: 0xff48c85a, backcolor: 0xff143c14 },
+      life: createLifeProp(5000, 5000, 0.08),
+      bladder: createBladderProp(3000, 3000),
+      deep_root: createDeepRootProp(12.0, 8.0),
+      photosynthesis: createPhotosynthesisProp(0.3, 28.0),
+      fruiting: createFruitingProp(22.0, "small", "berry"),
+      terrain_pref: createTerrainPreferenceProp([0], "Fertile Soil"),
+      wood: { nutrition: 800, foodType: "plant" }
     },
     x,
     y
