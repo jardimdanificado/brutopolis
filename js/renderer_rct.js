@@ -436,6 +436,111 @@ function createHouseStage3Geometry() {
   return mergeBufferGeometries(parts);
 }
 
+// Fortified Stone Wall Geometry (Slope-Adaptive Base Skirt + Crenellated Battlements)
+function createStoneWallGeometry() {
+  const parts = [];
+  // 1. Base skirt extending down to anchor into steep ground slopes
+  const skirt = new THREE.BoxGeometry(1.02, 0.60, 0.90);
+  skirt.translate(0, -0.15, 0);
+  parts.push(skirt);
+
+  // 2. Main solid wall body
+  const body = new THREE.BoxGeometry(1.0, 1.05, 0.82);
+  body.translate(0, 0.525, 0);
+  parts.push(body);
+
+  // 3. Merlons / Crenellations atop the wall
+  const merlon1 = new THREE.BoxGeometry(0.38, 0.28, 0.86);
+  merlon1.translate(-0.31, 1.05 + 0.14, 0);
+  parts.push(merlon1);
+
+  const merlon2 = new THREE.BoxGeometry(0.38, 0.28, 0.86);
+  merlon2.translate(0.31, 1.05 + 0.14, 0);
+  parts.push(merlon2);
+
+  return mergeBufferGeometries(parts);
+}
+
+// Stage 1: Wall Foundation Trench & Timber Scaffolding
+function createWallStage1Geometry() {
+  const parts = [];
+  const trench = new THREE.BoxGeometry(1.04, 0.30, 0.94);
+  trench.translate(0, 0.10, 0);
+  parts.push(trench);
+
+  const post = new THREE.BoxGeometry(0.08, 0.70, 0.08);
+  const p1 = post.clone(); p1.translate(-0.45, 0.35, -0.40); parts.push(p1);
+  const p2 = post.clone(); p2.translate( 0.45, 0.35, -0.40); parts.push(p2);
+  const p3 = post.clone(); p3.translate(-0.45, 0.35,  0.40); parts.push(p3);
+  const p4 = post.clone(); p4.translate( 0.45, 0.35,  0.40); parts.push(p4);
+
+  return mergeBufferGeometries(parts);
+}
+
+// Fortified Wooden & Iron Gatehouse (Closed State)
+function createGatehouseClosedGeometry() {
+  const parts = [];
+  // 1. Left & Right Heavy Timber/Stone Pillars
+  const pillarGeo = new THREE.BoxGeometry(0.26, 1.45, 0.60);
+  const leftPillar = pillarGeo.clone(); leftPillar.translate(-0.38, 0.725, 0); parts.push(leftPillar);
+  const rightPillar = pillarGeo.clone(); rightPillar.translate( 0.38, 0.725, 0); parts.push(rightPillar);
+
+  // 2. Top Architrave / Lintel Beam
+  const lintel = new THREE.BoxGeometry(1.08, 0.32, 0.64);
+  lintel.translate(0, 1.45 + 0.16, 0);
+  parts.push(lintel);
+
+  // 3. Merlons atop the Gatehouse
+  const m1 = new THREE.BoxGeometry(0.28, 0.22, 0.66); m1.translate(-0.40, 1.61 + 0.22, 0); parts.push(m1);
+  const m2 = new THREE.BoxGeometry(0.28, 0.22, 0.66); m2.translate( 0.40, 1.61 + 0.22, 0); parts.push(m2);
+
+  // 4. Closed Double Wooden Doors with Iron Bracing
+  const doorGeo = new THREE.BoxGeometry(0.50, 1.35, 0.12);
+  doorGeo.translate(0, 0.675, 0);
+  parts.push(doorGeo);
+
+  // Iron Cross-brace
+  const brace1 = new THREE.BoxGeometry(0.52, 0.08, 0.16); brace1.translate(0, 0.35, 0); parts.push(brace1);
+  const brace2 = new THREE.BoxGeometry(0.52, 0.08, 0.16); brace2.translate(0, 1.05, 0); parts.push(brace2);
+
+  return mergeBufferGeometries(parts);
+}
+
+// Fortified Wooden & Iron Gatehouse (Open State)
+function createGatehouseOpenGeometry() {
+  const parts = [];
+  // 1. Left & Right Heavy Pillars
+  const pillarGeo = new THREE.BoxGeometry(0.26, 1.45, 0.60);
+  const leftPillar = pillarGeo.clone(); leftPillar.translate(-0.38, 0.725, 0); parts.push(leftPillar);
+  const rightPillar = pillarGeo.clone(); rightPillar.translate( 0.38, 0.725, 0); parts.push(rightPillar);
+
+  // 2. Top Architrave / Lintel Beam
+  const lintel = new THREE.BoxGeometry(1.08, 0.32, 0.64);
+  lintel.translate(0, 1.45 + 0.16, 0);
+  parts.push(lintel);
+
+  // 3. Merlons atop the Gatehouse
+  const m1 = new THREE.BoxGeometry(0.28, 0.22, 0.66); m1.translate(-0.40, 1.61 + 0.22, 0); parts.push(m1);
+  const m2 = new THREE.BoxGeometry(0.28, 0.22, 0.66); m2.translate( 0.40, 1.61 + 0.22, 0); parts.push(m2);
+
+  // 4. Swung-Open Doors folded against the interior pillars
+  const doorLeaf = new THREE.BoxGeometry(0.10, 1.30, 0.26);
+  const leftDoor = doorLeaf.clone(); leftDoor.translate(-0.24, 0.65, 0.14); parts.push(leftDoor);
+  const rightDoor = doorLeaf.clone(); rightDoor.translate( 0.24, 0.65, 0.14); parts.push(rightDoor);
+
+  return mergeBufferGeometries(parts);
+}
+
+// Stage 1: Gate Foundation & Post Framing
+function createGateStage1Geometry() {
+  const parts = [];
+  const postGeo = new THREE.BoxGeometry(0.18, 1.10, 0.18);
+  const p1 = postGeo.clone(); p1.translate(-0.38, 0.55, 0); parts.push(p1);
+  const p2 = postGeo.clone(); p2.translate( 0.38, 0.55, 0); parts.push(p2);
+  const cross = new THREE.BoxGeometry(0.94, 0.08, 0.08); cross.translate(0, 1.05, 0); parts.push(cross);
+  return mergeBufferGeometries(parts);
+}
+
 // ---------------------------------------------------------------------------
 // Main RCT 3D Renderer Class (Volumetric 3D Models + Shaded Terrain)
 // ---------------------------------------------------------------------------
@@ -601,7 +706,19 @@ export class RCT3DRenderer {
         side: THREE.DoubleSide
       }),
       wall: new THREE.MeshLambertMaterial({
-        map: createTintedTexture("Feature_Stone_B.png", 0xa5a5af, 0x3a3a44, 1.0),
+        map: createTintedTexture("Feature_Stone_C.png", 0xd8d7de, 0x3a3842, 1.0),
+        side: THREE.DoubleSide
+      }),
+      wallBlueprint: new THREE.MeshLambertMaterial({
+        map: createTintedTexture("Feature_Stone_A.png", 0x9a8f82, 0x3d3024, 1.0),
+        side: THREE.DoubleSide
+      }),
+      gate: new THREE.MeshLambertMaterial({
+        map: createTintedTexture("Feature_Wood.png", 0xad7842, 0x3a2214, 1.0),
+        side: THREE.DoubleSide
+      }),
+      gateBlueprint: new THREE.MeshLambertMaterial({
+        map: createTintedTexture("Feature_Wood.png", 0xc89858, 0x482c18, 1.0),
         side: THREE.DoubleSide
       })
     };
@@ -649,12 +766,32 @@ export class RCT3DRenderer {
     this.instCacti.castShadow = true;
     this.instCacti.receiveShadow = true;
 
-    // Stone Walls
-    const wallGeo = new THREE.BoxGeometry(1.0, 1.1, 1.0);
-    wallGeo.translate(0, 0.55, 0);
+    // Stone Walls (Finished Stage & Stage 1 Foundation/Scaffolding)
+    const wallGeo = createStoneWallGeometry();
     this.instWalls = new THREE.InstancedMesh(wallGeo, this.materials.wall, this.maxInstances);
     this.instWalls.castShadow = true;
     this.instWalls.receiveShadow = true;
+
+    const wallSt1Geo = createWallStage1Geometry();
+    this.instWallsStage1 = new THREE.InstancedMesh(wallSt1Geo, this.materials.wallBlueprint, this.maxInstances);
+    this.instWallsStage1.castShadow = true;
+    this.instWallsStage1.receiveShadow = true;
+
+    // Fortified Gates (Closed, Open, and Stage 1 Foundation)
+    const gateClosedGeo = createGatehouseClosedGeometry();
+    this.instGatesClosed = new THREE.InstancedMesh(gateClosedGeo, this.materials.gate, 400);
+    this.instGatesClosed.castShadow = true;
+    this.instGatesClosed.receiveShadow = true;
+
+    const gateOpenGeo = createGatehouseOpenGeometry();
+    this.instGatesOpen = new THREE.InstancedMesh(gateOpenGeo, this.materials.gate, 400);
+    this.instGatesOpen.castShadow = true;
+    this.instGatesOpen.receiveShadow = true;
+
+    const gateSt1Geo = createGateStage1Geometry();
+    this.instGatesStage1 = new THREE.InstancedMesh(gateSt1Geo, this.materials.gateBlueprint, 400);
+    this.instGatesStage1.castShadow = true;
+    this.instGatesStage1.receiveShadow = true;
 
     // Houses (Finished Stage 4: Stone Walls + Terracotta Clay Roof + Flagpole Mast)
     const houseWallGeo = new THREE.BoxGeometry(1.5, 1.2, 1.5);
@@ -713,6 +850,10 @@ export class RCT3DRenderer {
     this.instPineLeaves.frustumCulled = false;
     this.instCacti.frustumCulled = false;
     this.instWalls.frustumCulled = false;
+    this.instWallsStage1.frustumCulled = false;
+    this.instGatesClosed.frustumCulled = false;
+    this.instGatesOpen.frustumCulled = false;
+    this.instGatesStage1.frustumCulled = false;
     this.instHouseWalls.frustumCulled = false;
     this.instHouseRoofs.frustumCulled = false;
     this.instHousePegs.frustumCulled = false;
@@ -725,7 +866,8 @@ export class RCT3DRenderer {
     this.instancedGroup.add(
       this.instOakTrunks, this.instOakLeaves,
       this.instPineTrunks, this.instPineLeaves,
-      this.instCacti, this.instWalls,
+      this.instCacti, this.instWalls, this.instWallsStage1,
+      this.instGatesClosed, this.instGatesOpen, this.instGatesStage1,
       this.instHouseWalls, this.instHouseRoofs,
       this.instHousePegs, this.instHouseStage1,
       this.instHouseStage2, this.instHouseStage3,
@@ -1929,6 +2071,10 @@ export class RCT3DRenderer {
     let pineCount = 0;
     let cactusCount = 0;
     let wallCount = 0;
+    let wallStage1Count = 0;
+    let gateClosedCount = 0;
+    let gateOpenCount = 0;
+    let gateStage1Count = 0;
     let houseCount = 0;
     let pegsCount = 0;
     let stage1Count = 0;
@@ -1978,7 +2124,7 @@ export class RCT3DRenderer {
       const isTree = !isCactus && (e.properties.species === "oak" || e.properties.species === "pine" || e.properties.species === "willow" || e.properties.species === "tree" || !!e.properties.tree || (r.skin && r.skin.toLowerCase().includes("tree")));
       const isPine = isTree && (e.properties.species === "pine" || (r.skin && r.skin.toLowerCase().includes("pine")));
 
-      const isStructureOrPlant = isTree || isHouse || isWall || isCactus;
+      const isStructureOrPlant = isTree || isHouse || isWall || isDoor || isCactus;
       const surfaceH = isStructureOrPlant
         ? this.getTileSurfaceHeight(map, Math.floor(e.x), Math.floor(e.y))
         : this.getSurfaceElevation(map, e.x, e.y);
@@ -2009,12 +2155,62 @@ export class RCT3DRenderer {
         this.instCacti.setMatrixAt(cactusCount, mMatrix);
         cactusCount++;
       }
-      // --- 3D STONE WALLS ---
-      else if (isWall && wallCount < this.maxInstances) {
+      // --- 3D STONE WALLS (Slope/Ramp Adaptive & Progressive Construction) ---
+      else if (isWall) {
+        const isCompleted = e.isConstructed !== false;
+        const tx = Math.floor(e.x);
+        const ty = Math.floor(e.y);
+        const h00 = map?.getElevation ? map.getElevation(tx, ty) : surfaceH;
+        const h10 = map?.getElevation ? map.getElevation(tx + 1, ty) : surfaceH;
+        const h01 = map?.getElevation ? map.getElevation(tx, ty + 1) : surfaceH;
+        const h11 = map?.getElevation ? map.getElevation(tx + 1, ty + 1) : surfaceH;
+        const slopeX = (h10 + h11 - h00 - h01) * 0.5;
+        const slopeZ = (h01 + h11 - h00 - h10) * 0.5;
+
         mMatrix.identity();
+        const rotEuler = new THREE.Euler(-slopeZ * 0.40, 0, slopeX * 0.40, "YXZ");
+        mMatrix.makeRotationFromEuler(rotEuler);
         mMatrix.setPosition(e.x + 0.5, surfaceH, e.y + 0.5);
-        this.instWalls.setMatrixAt(wallCount, mMatrix);
-        wallCount++;
+
+        if (isCompleted && wallCount < this.maxInstances) {
+          this.instWalls.setMatrixAt(wallCount, mMatrix);
+          wallCount++;
+        } else if (!isCompleted && wallStage1Count < this.maxInstances) {
+          this.instWallsStage1.setMatrixAt(wallStage1Count, mMatrix);
+          wallStage1Count++;
+        }
+      }
+      // --- 3D FORTIFIED GATES (Wood & Iron Archway + Open/Closed States) ---
+      else if (isDoor) {
+        const isCompleted = e.isConstructed !== false;
+        const isOpen = !!e.properties?.door?.isOpen;
+        const tx = Math.floor(e.x);
+        const ty = Math.floor(e.y);
+
+        let gateRotY = 0;
+        const hasLeftWall = globalWallCoords?.has?.(`${tx - 1},${ty}`);
+        const hasRightWall = globalWallCoords?.has?.(`${tx + 1},${ty}`);
+        const hasTopWall = globalWallCoords?.has?.(`${tx},${ty - 1}`);
+        const hasBottomWall = globalWallCoords?.has?.(`${tx},${ty + 1}`);
+
+        if ((hasTopWall || hasBottomWall) && !(hasLeftWall || hasRightWall)) {
+          gateRotY = Math.PI / 2;
+        }
+
+        mMatrix.identity();
+        mMatrix.makeRotationY(gateRotY);
+        mMatrix.setPosition(e.x + 0.5, surfaceH, e.y + 0.5);
+
+        if (!isCompleted && gateStage1Count < 400) {
+          this.instGatesStage1.setMatrixAt(gateStage1Count, mMatrix);
+          gateStage1Count++;
+        } else if (isOpen && gateOpenCount < 400) {
+          this.instGatesOpen.setMatrixAt(gateOpenCount, mMatrix);
+          gateOpenCount++;
+        } else if (gateClosedCount < 400) {
+          this.instGatesClosed.setMatrixAt(gateClosedCount, mMatrix);
+          gateClosedCount++;
+        }
       }
       // --- 3D HOUSES & PROGRESSIVE MULTI-STAGE CONSTRUCTION ---
       else if (isHouse) {
@@ -2347,6 +2543,15 @@ export class RCT3DRenderer {
 
     this.instWalls.count = wallCount;
     this.instWalls.instanceMatrix.needsUpdate = true;
+    this.instWallsStage1.count = wallStage1Count;
+    this.instWallsStage1.instanceMatrix.needsUpdate = true;
+
+    this.instGatesClosed.count = gateClosedCount;
+    this.instGatesClosed.instanceMatrix.needsUpdate = true;
+    this.instGatesOpen.count = gateOpenCount;
+    this.instGatesOpen.instanceMatrix.needsUpdate = true;
+    this.instGatesStage1.count = gateStage1Count;
+    this.instGatesStage1.instanceMatrix.needsUpdate = true;
 
     this.instHouseWalls.count = houseCount;
     this.instHouseWalls.instanceMatrix.needsUpdate = true;

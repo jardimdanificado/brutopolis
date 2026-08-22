@@ -598,11 +598,19 @@ export class Renderer {
         const isWall = !isDoor && !isHouse && (e.properties.structure || r.skin?.startsWith("Wall_") || e.properties.name?.includes("Muralha") || e.properties.name?.includes("Wall"));
         let entSkin = r.skin || "Human_Knight_M.png";
         if (isDoor) {
-          entSkin = e.properties.door.isOpen ? "Feature_Door_Open.png" : "Feature_Door_Closed.png";
+          if (e.isConstructed === false) {
+            entSkin = "Feature_Wood.png";
+          } else {
+            entSkin = e.properties.door.isOpen ? "Feature_Door_Open.png" : "Feature_Door_Closed.png";
+          }
         } else if (isHouse) {
           entSkin = "Overworld_House.png";
         } else if (isWall) {
-          entSkin = resolveWallSkin(e.x, e.y, globalWallCoords);
+          if (e.isConstructed === false) {
+            entSkin = "Feature_Stone_A.png";
+          } else {
+            entSkin = resolveWallSkin(e.x, e.y, globalWallCoords);
+          }
         }
         const entTex = findTexture(entSkin);
         if (entTex) {

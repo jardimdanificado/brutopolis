@@ -886,7 +886,7 @@ export function createBrainProp(maxPath = 16, personality = { bravery: 0.7, curi
     effect(ent, dt, world, entities) {
       if (ent.properties.life) {
         const mult = getDamagedEnergyMultiplier(this.condition, this.maxCondition);
-        ent.properties.life.energy = Math.max(0, ent.properties.life.energy - dt * 5.0 * mult);
+        ent.properties.life.energy = Math.max(0, ent.properties.life.energy - dt * 2.0 * mult);
       }
 
       // 1. Geographic Zone Tracking
@@ -1941,7 +1941,50 @@ export function createGroup(name, founder, baseZone = null, claimedZones = null)
     zy = baseZone[1] || 32;
   }
 
-  const defaultZones = [`${zx}_${zy}`, `${zx + 1}_${zy}`, `${zx}_${zy + 1}`];
+  const sz = currentZoneSize;
+  const maxZX = Math.max(1, Math.floor((activeWorld?.width || 512) / sz));
+  const maxZY = Math.max(1, Math.floor((activeWorld?.height || 512) / sz));
+
+  zx = Math.max(0, Math.min(maxZX - 1, zx));
+  zy = Math.max(0, Math.min(maxZY - 1, zy));
+
+  // Organic random expansion of initial zones adjacent to base zone within map boundaries
+  const defaultZones = [`${zx}_${zy}`];
+  const initialCount = 3;
+  const offsets = [{ dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 }];
+
+  while (defaultZones.length < initialCount) {
+    const fromZk = defaultZones[Math.floor(Math.random() * defaultZones.length)];
+    const [czx, czy] = fromZk.split("_").map(n => parseInt(n, 10));
+    const shuffled = [...offsets].sort(() => Math.random() - 0.5);
+    let added = false;
+    for (const off of shuffled) {
+      const nx = czx + off.dx;
+      const ny = czy + off.dy;
+      if (nx >= 0 && nx < maxZX && ny >= 0 && ny < maxZY) {
+        const k = `${nx}_${ny}`;
+        if (!defaultZones.includes(k) && isLandTile(nx * sz + Math.floor(sz / 2), ny * sz + Math.floor(sz / 2))) {
+          defaultZones.push(k);
+          added = true;
+          break;
+        }
+      }
+    }
+    if (!added) {
+      for (const off of shuffled) {
+        const nx = czx + off.dx;
+        const ny = czy + off.dy;
+        if (nx >= 0 && nx < maxZX && ny >= 0 && ny < maxZY) {
+          const k = `${nx}_${ny}`;
+          if (!defaultZones.includes(k)) {
+            defaultZones.push(k);
+            break;
+          }
+        }
+      }
+      break;
+    }
+  }
 
   const group = {
     id: nextGroupId++,
@@ -3282,16 +3325,27 @@ export function createGroupMemberProp() {
       const residentialRooms = (group.rooms || []).filter(r => r.type === "residential");
       let unhousedMembers = livingMems.filter(m => !residentialRooms.some(r => r.assignedMembers && r.assignedMembers.includes(m.id)));
       
+      const sz = currentZoneSize;
+      const maxZX = Math.max(1, Math.floor((world?.width || activeWorld?.width || 512) / sz));
+      const maxZY = Math.max(1, Math.floor((world?.height || activeWorld?.height || 512) / sz));
+
       while (unhousedMembers.length > 0) {
         let newZone = null;
-        for (const zk of group.claimedZones || ["32_32"]) {
+        const shuffledZones = [...(group.claimedZones || ["32_32"])].sort(() => Math.random() - 0.5);
+        for (const zk of shuffledZones) {
           const zp = zk.includes("_") ? zk.split("_") : zk.split(",");
           const cx = parseInt(zp[0], 10);
           const cy = parseInt(zp[1], 10);
-          for (const cand of [`${cx + 1}_${cy}`, `${cx - 1}_${cy}`, `${cx}_${cy + 1}`, `${cx}_${cy - 1}`]) {
-            if (!group.claimedZones.includes(cand)) {
-              newZone = cand;
-              break;
+          const shuffledOffs = [{ dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 }].sort(() => Math.random() - 0.5);
+          for (const off of shuffledOffs) {
+            const nx = cx + off.dx;
+            const ny = cy + off.dy;
+            if (nx >= 0 && nx < maxZX && ny >= 0 && ny < maxZY) {
+              const cand = `${nx}_${ny}`;
+              if (!group.claimedZones.includes(cand) && isLandTile(nx * sz + Math.floor(sz / 2), ny * sz + Math.floor(sz / 2))) {
+                newZone = cand;
+                break;
+              }
             }
           }
           if (newZone) break;
@@ -3672,16 +3726,27 @@ export function createGroupMemberProp() {
           const residentialRooms = (group.rooms || []).filter(r => r.type === "residential");
           let unhousedMembers = livingMems.filter(m => !residentialRooms.some(r => r.assignedMembers && r.assignedMembers.includes(m.id)));
           
+          const sz = currentZoneSize;
+          const maxZX = Math.max(1, Math.floor((world?.width || activeWorld?.width || 512) / sz));
+          const maxZY = Math.max(1, Math.floor((world?.height || activeWorld?.height || 512) / sz));
+
           while (unhousedMembers.length > 0) {
             let newZone = null;
-            for (const zk of group.claimedZones || ["32_32"]) {
+            const shuffledZones = [...(group.claimedZones || ["32_32"])].sort(() => Math.random() - 0.5);
+            for (const zk of shuffledZones) {
               const zp = zk.includes("_") ? zk.split("_") : zk.split(",");
               const cx = parseInt(zp[0], 10);
               const cy = parseInt(zp[1], 10);
-              for (const cand of [`${cx + 1}_${cy}`, `${cx - 1}_${cy}`, `${cx}_${cy + 1}`, `${cx}_${cy - 1}`]) {
-                if (!group.claimedZones.includes(cand)) {
-                  newZone = cand;
-                  break;
+              const shuffledOffs = [{ dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 }].sort(() => Math.random() - 0.5);
+              for (const off of shuffledOffs) {
+                const nx = cx + off.dx;
+                const ny = cy + off.dy;
+                if (nx >= 0 && nx < maxZX && ny >= 0 && ny < maxZY) {
+                  const cand = `${nx}_${ny}`;
+                  if (!group.claimedZones.includes(cand) && isLandTile(nx * sz + Math.floor(sz / 2), ny * sz + Math.floor(sz / 2))) {
+                    newZone = cand;
+                    break;
+                  }
                 }
               }
               if (newZone) break;
@@ -6233,7 +6298,7 @@ export function createSurfaceRootProp() {
 /**
  * Fruiting (Generates Edible Fruits with Seeds at Low Frequency with Density Limit)
  */
-export function createFruitingProp(interval = 90.0, seedType = "small", species = "oak", initialTimer = null) {
+export function createFruitingProp(interval = 40.0, seedType = "small", species = "oak", initialTimer = null) {
   return {
     interval,
     seedType,
@@ -6241,22 +6306,22 @@ export function createFruitingProp(interval = 90.0, seedType = "small", species 
     timer: initialTimer !== null ? initialTimer : Math.random() * (interval * 0.95),
     effect(ent, dt, world, entities) {
       if (!ent.properties.life || !entities || !world) return;
-      if (ent.properties.life.energy < ent.properties.life.max * 0.30) return;
+      if (ent.properties.life.energy < ent.properties.life.max * 0.20) return;
 
       this.timer = (this.timer || 0) + dt;
       if (this.timer >= this.interval) {
         this.timer = 0;
 
-        // Density check: allow up to 2 fruits per tree area
+        // Density check: allow up to 3 fruits per tree area
         let nearbyFruits = 0;
         for (let i = 0; i < entities.length; i++) {
           const e = entities[i];
           if (!e.destroyed && e.properties?.edible?.foodType === "fruit" && Math.abs(e.x - ent.x) <= 3 && Math.abs(e.y - ent.y) <= 3) {
             nearbyFruits++;
-            if (nearbyFruits >= 2) break;
+            if (nearbyFruits >= 3) break;
           }
         }
-        if (nearbyFruits >= 2) return;
+        if (nearbyFruits >= 3) return;
 
         const fx = Math.max(0, Math.min(world.width - 1, ent.x + (Math.floor(Math.random() * 3) - 1)));
         const fy = Math.max(0, Math.min(world.height - 1, ent.y + (Math.floor(Math.random() * 3) - 1)));
