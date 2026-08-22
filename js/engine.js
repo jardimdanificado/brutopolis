@@ -37,7 +37,11 @@ export function getSpatialZoneSize() {
 export function getSpatialZoneKey(x, y, zoneSize = activeZoneSize) {
   const zx = Math.floor(x / zoneSize);
   const zy = Math.floor(y / zoneSize);
-  return `${zx}_${zy}`;
+  return ((zx & 0xFFFF) << 16) | (zy & 0xFFFF);
+}
+
+export function getTileKey(x, y) {
+  return ((Math.floor(x) & 0xFFFF) << 16) | (Math.floor(y) & 0xFFFF);
 }
 
 export function registerEntitySpatial(entity, zoneSize = activeZoneSize) {
@@ -53,7 +57,7 @@ export function registerEntitySpatial(entity, zoneSize = activeZoneSize) {
   entity._lastSpatialX = entity.x;
   entity._lastSpatialY = entity.y;
 
-  const tk = `${entity.x}_${entity.y}`;
+  const tk = getTileKey(entity.x, entity.y);
   let tileBucket = tileEntityMap.get(tk);
   if (!tileBucket) {
     tileBucket = new Set();
@@ -69,7 +73,7 @@ export function registerEntitySpatial(entity, zoneSize = activeZoneSize) {
 
 export function unregisterEntitySpatial(entity, zoneSize = activeZoneSize) {
   if (!entity) return;
-  const zk = entity._lastSpatialZone || getSpatialZoneKey(entity.x, entity.y, zoneSize);
+  const zk = entity._lastSpatialZone !== undefined ? entity._lastSpatialZone : getSpatialZoneKey(entity.x, entity.y, zoneSize);
   const bucket = spatialGrid.get(zk);
   if (bucket) {
     bucket.delete(entity);
@@ -78,7 +82,7 @@ export function unregisterEntitySpatial(entity, zoneSize = activeZoneSize) {
 
   const lastX = entity._lastSpatialX !== undefined ? entity._lastSpatialX : entity.x;
   const lastY = entity._lastSpatialY !== undefined ? entity._lastSpatialY : entity.y;
-  const tk = `${lastX}_${lastY}`;
+  const tk = getTileKey(lastX, lastY);
   const tileBucket = tileEntityMap.get(tk);
   if (tileBucket) {
     tileBucket.delete(entity);
@@ -97,14 +101,14 @@ export function updateEntitySpatial(entity, zoneSize = activeZoneSize) {
 
   // Tile map update
   if (entity._lastSpatialX !== undefined && entity._lastSpatialY !== undefined) {
-    const oldTk = `${entity._lastSpatialX}_${entity._lastSpatialY}`;
+    const oldTk = getTileKey(entity._lastSpatialX, entity._lastSpatialY);
     const oldTileBucket = tileEntityMap.get(oldTk);
     if (oldTileBucket) {
       oldTileBucket.delete(entity);
       if (oldTileBucket.size === 0) tileEntityMap.delete(oldTk);
     }
   }
-  const newTk = `${entity.x}_${entity.y}`;
+  const newTk = getTileKey(entity.x, entity.y);
   let newTileBucket = tileEntityMap.get(newTk);
   if (!newTileBucket) {
     newTileBucket = new Set();
@@ -115,7 +119,7 @@ export function updateEntitySpatial(entity, zoneSize = activeZoneSize) {
   // Zone bucket update
   const newZk = getSpatialZoneKey(entity.x, entity.y, zoneSize);
   if (newZk !== entity._lastSpatialZone) {
-    if (entity._lastSpatialZone) {
+    if (entity._lastSpatialZone !== undefined) {
       const oldBucket = spatialGrid.get(entity._lastSpatialZone);
       if (oldBucket) {
         oldBucket.delete(entity);
@@ -137,7 +141,8 @@ export function updateEntitySpatial(entity, zoneSize = activeZoneSize) {
 
 export function getEntitiesInRadius(centerX, centerY, radiusTiles, zoneSize = activeZoneSize) {
   if (radiusTiles === 0) {
-    const bucket = tileEntityMap.get(`${centerX}_${centerY}`);
+    const tk = getTileKey(centerX, centerY);
+    const bucket = tileEntityMap.get(tk);
     if (!bucket) return [];
     const res = [];
     for (const ent of bucket) {
@@ -154,8 +159,9 @@ export function getEntitiesInRadius(centerX, centerY, radiusTiles, zoneSize = ac
   const rSq = radiusTiles * radiusTiles;
 
   for (let zy = minZy; zy <= maxZy; zy++) {
+    const zyPart = (zy & 0xFFFF);
     for (let zx = minZx; zx <= maxZx; zx++) {
-      const zk = `${zx}_${zy}`;
+      const zk = ((zx & 0xFFFF) << 16) | zyPart;
       const bucket = spatialGrid.get(zk);
       if (bucket) {
         for (const ent of bucket) {
@@ -181,8 +187,9 @@ export function getEntitiesInViewport(minX, maxX, minY, maxY, zoneSize = activeZ
 
   const results = [];
   for (let zy = minZy; zy <= maxZy; zy++) {
+    const zyPart = (zy & 0xFFFF);
     for (let zx = minZx; zx <= maxZx; zx++) {
-      const zk = `${zx}_${zy}`;
+      const zk = ((zx & 0xFFFF) << 16) | zyPart;
       const bucket = spatialGrid.get(zk);
       if (bucket) {
         for (const ent of bucket) {
@@ -197,7 +204,7 @@ export function getEntitiesInViewport(minX, maxX, minY, maxY, zoneSize = activeZ
 }
 
 export function getEntityAtTile(x, y) {
-  const tk = `${x}_${y}`;
+  const tk = getTileKey(x, y);
   const bucket = tileEntityMap.get(tk);
   if (!bucket || bucket.size === 0) return null;
   for (const ent of bucket) {

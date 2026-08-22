@@ -2263,7 +2263,13 @@ export function getClanBlueprintTiles(group) {
   const memberSet = new Set(members);
 
   // 1. Central Warehouse / Stockpile Blueprint (Grande Armazém do Clã)
-  const warehouseEnt = Array.from(entityRegistry.values()).find(e => !e.destroyed && e.properties.warehouse && isTileInClaimedZones(e.x, e.y, group.claimedZones));
+  let warehouseEnt = null;
+  for (const e of entityRegistry.values()) {
+    if (!e.destroyed && e.properties?.warehouse && isTileInClaimedZones(e.x, e.y, group.claimedZones)) {
+      warehouseEnt = e;
+      break;
+    }
+  }
   if (warehouseEnt) {
     tiles.push({ x: warehouseEnt.x, y: warehouseEnt.y, type: "warehouse" });
     occupiedHouseTiles.add(`${warehouseEnt.x}_${warehouseEnt.y}`);
@@ -2349,9 +2355,12 @@ export function getClanBlueprintTiles(group) {
 
       if (available.length > 0) {
         // Road Connection Preference: If existing roads exist, prioritize candidate house plots connected to roads (>3 free available)
-        const existingRoadTiles = Array.from(entityRegistry.values()).filter(e =>
-          !e.destroyed && e.properties.road && isTileInClaimedZones(e.x, e.y, group.claimedZones)
-        );
+        const existingRoadTiles = [];
+        for (const e of entityRegistry.values()) {
+          if (!e.destroyed && e.properties?.road && isTileInClaimedZones(e.x, e.y, group.claimedZones)) {
+            existingRoadTiles.push(e);
+          }
+        }
         if (existingRoadTiles.length > 0) {
           const roadAdjacentCandidates = available.filter(c => {
             return existingRoadTiles.some(r => Math.abs(r.x - c.x) + Math.abs(r.y - c.y) === 1);
@@ -2471,9 +2480,13 @@ export function getClanRoadBlueprints(group, allGroups = null) {
   const sz = currentZoneSize || 8;
 
   // Find clan warehouse
-  const warehouse = Array.from(entityRegistry.values()).find(e =>
-    !e.destroyed && e.properties.warehouse?.isCompleted && isTileInClaimedZones(e.x, e.y, group.claimedZones)
-  );
+  let warehouse = null;
+  for (const e of entityRegistry.values()) {
+    if (!e.destroyed && e.properties?.warehouse?.isCompleted && isTileInClaimedZones(e.x, e.y, group.claimedZones)) {
+      warehouse = e;
+      break;
+    }
+  }
   if (!warehouse) return []; // Roads are planned exclusively after warehouse is completed
 
   const roadTiles = new Map();
@@ -2516,9 +2529,13 @@ export function getClanRoadBlueprints(group, allGroups = null) {
   if (allGroups && Array.isArray(allGroups)) {
     for (const otherGroup of allGroups) {
       if (otherGroup.id !== group.id && canBuildInterVillageRoad(group, otherGroup)) {
-        const otherWarehouse = Array.from(entityRegistry.values()).find(e =>
-          !e.destroyed && e.properties.warehouse?.isCompleted && isTileInClaimedZones(e.x, e.y, otherGroup.claimedZones)
-        );
+        let otherWarehouse = null;
+        for (const e of entityRegistry.values()) {
+          if (!e.destroyed && e.properties?.warehouse?.isCompleted && isTileInClaimedZones(e.x, e.y, otherGroup.claimedZones)) {
+            otherWarehouse = e;
+            break;
+          }
+        }
         if (otherWarehouse) {
           let cx = warehouse.x;
           let cy = warehouse.y;
@@ -3705,13 +3722,22 @@ export function isTileInClaimedZones(x, y, claimedZones) {
   if (!claimedZones || !Array.isArray(claimedZones) || claimedZones.length === 0) return false;
   const zx = Math.floor(x / currentZoneSize);
   const zy = Math.floor(y / currentZoneSize);
-  const key1 = `${zx}_${zy}`;
-  const key2 = `${zx},${zy}`;
-  for (let i = 0; i < claimedZones.length; i++) {
-    const k = claimedZones[i];
-    if (k === key1 || k === key2) return true;
+
+  let fastSet = claimedZones._fastSet;
+  if (!fastSet || fastSet.size < claimedZones.length) {
+    fastSet = new Set();
+    for (let i = 0; i < claimedZones.length; i++) {
+      const k = claimedZones[i];
+      fastSet.add(k);
+      if (k.includes("_")) {
+        const [cx, cy] = k.split("_");
+        fastSet.add(`${cx},${cy}`);
+      }
+    }
+    claimedZones._fastSet = fastSet;
   }
-  return false;
+
+  return fastSet.has(`${zx}_${zy}`) || fastSet.has(`${zx},${zy}`);
 }
 
 export function isPerimeterEdge(zx, zy, ox, oy, claimedZones) {
@@ -3744,19 +3770,22 @@ export function manageCreatureTorches(ent, group, world, entities, dt = 0.1) {
   const isNight = (curHour >= 17.5 || curHour < 5.8);
 
   // 1. Check if creature has a completed house and build a standing torch nearby
-  const houseEnt = Array.from(entityRegistry.values()).find(e =>
-    !e.destroyed &&
-    e.properties?.house &&
-    e.properties.house.isCompleted !== false &&
-    e.properties.house.ownerId === ent.id
-  );
+  let houseEnt = null;
+  for (const e of entityRegistry.values()) {
+    if (!e.destroyed && e.properties?.house && e.properties.house.isCompleted !== false && e.properties.house.ownerId === ent.id) {
+      houseEnt = e;
+      break;
+    }
+  }
 
   if (houseEnt) {
-    const standingTorch = Array.from(entityRegistry.values()).find(e =>
-      !e.destroyed &&
-      e.properties?.torch &&
-      (e.properties.torch.ownerId === ent.id || (Math.abs(e.x - houseEnt.x) <= 2 && Math.abs(e.y - houseEnt.y) <= 2))
-    );
+    let standingTorch = null;
+    for (const e of entityRegistry.values()) {
+      if (!e.destroyed && e.properties?.torch && (e.properties.torch.ownerId === ent.id || (Math.abs(e.x - houseEnt.x) <= 2 && Math.abs(e.y - houseEnt.y) <= 2))) {
+        standingTorch = e;
+        break;
+      }
+    }
 
     if (!standingTorch) {
       const candidates = [];
@@ -3769,11 +3798,13 @@ export function manageCreatureTorches(ent, group, world, entities, dt = 0.1) {
           if (tx < 0 || ty < 0 || (world && (tx >= world.width || ty >= world.height))) continue;
           if (world && world.getTile(tx, ty) === TILE_WATER) continue;
 
-          const isOccupied = Array.from(entityRegistry.values()).some(e =>
-            !e.destroyed &&
-            e.x === tx && e.y === ty &&
-            (e.properties?.structure || e.properties?.house || e.properties?.tree || e.properties?.cactus || e.properties?.torch || e.properties?.campfire)
-          );
+          let isOccupied = false;
+          for (const e of entityRegistry.values()) {
+            if (!e.destroyed && e.x === tx && e.y === ty && (e.properties?.structure || e.properties?.house || e.properties?.tree || e.properties?.cactus || e.properties?.torch || e.properties?.campfire)) {
+              isOccupied = true;
+              break;
+            }
+          }
           if (!isOccupied) {
             candidates.push({ x: tx, y: ty, dist: Math.abs(dx) + Math.abs(dy) });
           }
@@ -3805,11 +3836,12 @@ export function manageCreatureTorches(ent, group, world, entities, dt = 0.1) {
   const numZones = group.claimedZones?.length || 1;
   const maxCampfires = Math.max(1, Math.floor(numZones / 4));
 
-  const existingCampfires = Array.from(entityRegistry.values()).filter(e =>
-    !e.destroyed &&
-    e.properties?.campfire &&
-    isTileInClaimedZones(e.x, e.y, group.claimedZones)
-  ).length;
+  let existingCampfires = 0;
+  for (const e of entityRegistry.values()) {
+    if (!e.destroyed && e.properties?.campfire && isTileInClaimedZones(e.x, e.y, group.claimedZones)) {
+      existingCampfires++;
+    }
+  }
 
   if (existingCampfires < maxCampfires && Math.random() < 0.04 && group.claimedZones && group.claimedZones.length > 0) {
     const randomZone = group.claimedZones[Math.floor(Math.random() * group.claimedZones.length)];
@@ -3821,16 +3853,19 @@ export function manageCreatureTorches(ent, group, world, entities, dt = 0.1) {
     const ty = zy * sz + Math.floor(Math.random() * (sz - 2)) + 1;
 
     if (tx >= 0 && ty >= 0 && (!world || (tx < world.width && ty < world.height)) && (!world || world.getTile(tx, ty) !== TILE_WATER)) {
-      const hasCampfireNearby = Array.from(entityRegistry.values()).some(e =>
-        !e.destroyed &&
-        e.properties?.campfire &&
-        Math.abs(e.x - tx) <= 8 && Math.abs(e.y - ty) <= 8
-      );
-      const isOccupied = Array.from(entityRegistry.values()).some(e =>
-        !e.destroyed &&
-        e.x === tx && e.y === ty &&
-        (e.properties?.structure || e.properties?.house || e.properties?.tree || e.properties?.cactus || e.properties?.torch || e.properties?.campfire)
-      );
+      let hasCampfireNearby = false;
+      let isOccupied = false;
+      for (const e of entityRegistry.values()) {
+        if (!e.destroyed) {
+          if (e.properties?.campfire && Math.abs(e.x - tx) <= 8 && Math.abs(e.y - ty) <= 8) {
+            hasCampfireNearby = true;
+          }
+          if (e.x === tx && e.y === ty && (e.properties?.structure || e.properties?.house || e.properties?.tree || e.properties?.cactus || e.properties?.torch || e.properties?.campfire)) {
+            isOccupied = true;
+          }
+          if (hasCampfireNearby || isOccupied) break;
+        }
+      }
 
       if (!hasCampfireNearby && !isOccupied) {
         const cf = createCampfireEntity(tx, ty, ent.id);
@@ -3848,12 +3883,13 @@ export function manageCreatureTorches(ent, group, world, entities, dt = 0.1) {
   }
 
   // 3. Campfire Refueling (Keep 24/7 active campfires replenished with wood)
-  const nearbyCampfire = Array.from(entityRegistry.values()).find(e =>
-    !e.destroyed &&
-    e.properties?.campfire &&
-    Math.abs(e.x - ent.x) <= 4 && Math.abs(e.y - ent.y) <= 4 &&
-    ((e.properties.campfire.fuel || 0) < 250 || !e.properties.campfire.isLit)
-  );
+  let nearbyCampfire = null;
+  for (const e of entityRegistry.values()) {
+    if (!e.destroyed && e.properties?.campfire && Math.abs(e.x - ent.x) <= 4 && Math.abs(e.y - ent.y) <= 4 && ((e.properties.campfire.fuel || 0) < 250 || !e.properties.campfire.isLit)) {
+      nearbyCampfire = e;
+      break;
+    }
+  }
   if (nearbyCampfire) {
     nearbyCampfire.properties.campfire.fuel = nearbyCampfire.properties.campfire.maxFuel || 480;
     nearbyCampfire.properties.campfire.isLit = true;

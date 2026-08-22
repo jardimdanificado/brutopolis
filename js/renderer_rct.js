@@ -1071,6 +1071,29 @@ export class RCT3DRenderer {
       this.nightLightPool.push(pl);
     }
 
+    // Reusable Math and Transform objects for Zero-Alloc Rendering
+    this._mMatrix = new THREE.Matrix4();
+    this._scaleMatrix = new THREE.Matrix4();
+    this._rotEuler = new THREE.Euler(0, 0, 0, "YXZ");
+    this._tempVec = new THREE.Vector3();
+    this._tempColor = new THREE.Color();
+
+    // Reusable Light Candidate Structs (Zero GC during nighttime)
+    this.lightCandidatesPool = [];
+    for (let i = 0; i < 128; i++) {
+      this.lightCandidatesPool.push({
+        x: 0,
+        y: 0,
+        z: 0,
+        color: 0,
+        distance: 0,
+        decay: 0,
+        intensity: 0,
+        priority: 0,
+        distSq: 0
+      });
+    }
+
     // 5. Materials with Vertex Colors for Contact AO, Textures & Dithering
     this.materials = {
       [TILE_FLOOR]: new THREE.MeshLambertMaterial({
@@ -2793,8 +2816,8 @@ export class RCT3DRenderer {
     let campfireFlameCount = 0;
     let roadCount = 0;
 
-    const mMatrix = new THREE.Matrix4();
-    const scaleMatrix = new THREE.Matrix4();
+    const mMatrix = this._mMatrix;
+    const scaleMatrix = this._scaleMatrix;
     const hoverTime = (time || 0) * 3.5;
     const floatBob = Math.sin(hoverTime) * 0.04;
 
@@ -2933,8 +2956,8 @@ export class RCT3DRenderer {
         const slopeZ = (h01 + h11 - h00 - h10) * 0.5;
 
         mMatrix.identity();
-        const rotEuler = new THREE.Euler(-slopeZ * 0.40, 0, slopeX * 0.40, "YXZ");
-        mMatrix.makeRotationFromEuler(rotEuler);
+        this._rotEuler.set(-slopeZ * 0.40, 0, slopeX * 0.40, "YXZ");
+        mMatrix.makeRotationFromEuler(this._rotEuler);
         mMatrix.setPosition(e.x + 0.5, surfaceH, e.y + 0.5);
 
         const wallStyle = e.wallStyle || e.properties?.wallStyle || "stone";
@@ -3304,11 +3327,12 @@ export class RCT3DRenderer {
     // --- REAL MULTI-POINT DYNAMIC NIGHT LIGHTS (Placed directly at entities) ---
     let lightIdx = 0;
     if (nightGlow > 0.02) {
-      const candidates = [];
+      let candidateCount = 0;
       const focusX = (this.selectedEntityId > 0 && selectedPos) ? selectedPos.x : this.camX;
       const focusY = (this.selectedEntityId > 0 && selectedPos) ? selectedPos.z : this.camY;
+      const maxPool = this.lightCandidatesPool.length;
 
-      for (let i = 0; i < visibleEntities.length; i++) {
+      for (let i = 0; i < visibleEntities.length && candidateCount < maxPool; i++) {
         const e = visibleEntities[i];
         if (!e || e.destroyed) continue;
 
@@ -3318,17 +3342,16 @@ export class RCT3DRenderer {
           const sH = this.getSurfaceElevation(map, e.x + 0.5, e.y + 0.5);
           const dx = (e.x + 0.5) - focusX;
           const dy = (e.y + 0.5) - focusY;
-          candidates.push({
-            x: e.x + 0.5,
-            y: sH + 1.20,
-            z: e.y + 0.5,
-            color: 0xffa033,
-            distance: 16.0,
-            decay: 1.3,
-            intensity: nightGlow * 3.5,
-            priority: 1, // Top priority for placed torches
-            distSq: dx * dx + dy * dy
-          });
+          const c = this.lightCandidatesPool[candidateCount++];
+          c.x = e.x + 0.5;
+          c.y = sH + 1.20;
+          c.z = e.y + 0.5;
+          c.color = 0xffa033;
+          c.distance = 16.0;
+          c.decay = 1.3;
+          c.intensity = nightGlow * 3.5;
+          c.priority = 1; // Top priority for placed torches
+          c.distSq = dx * dx + dy * dy;
           continue;
         }
 
@@ -3338,17 +3361,16 @@ export class RCT3DRenderer {
           const sH = this.getSurfaceElevation(map, e.x + 0.5, e.y + 0.5);
           const dx = (e.x + 0.5) - focusX;
           const dy = (e.y + 0.5) - focusY;
-          candidates.push({
-            x: e.x + 0.5,
-            y: sH + 0.40,
-            z: e.y + 0.5,
-            color: 0xff8822,
-            distance: 20.0, // 1 Zone Radius (8x8 tiles)
-            decay: 1.2,
-            intensity: nightGlow * 4.6,
-            priority: 1, // Top priority for campfires
-            distSq: dx * dx + dy * dy
-          });
+          const c = this.lightCandidatesPool[candidateCount++];
+          c.x = e.x + 0.5;
+          c.y = sH + 0.40;
+          c.z = e.y + 0.5;
+          c.color = 0xff8822;
+          c.distance = 20.0; // 1 Zone Radius (8x8 tiles)
+          c.decay = 1.2;
+          c.intensity = nightGlow * 4.6;
+          c.priority = 1; // Top priority for campfires
+          c.distSq = dx * dx + dy * dy;
           continue;
         }
 
@@ -3362,17 +3384,16 @@ export class RCT3DRenderer {
             const sH = this.getSurfaceElevation(map, e.x, e.y);
             const dx = e.x - focusX;
             const dy = e.y - focusY;
-            candidates.push({
-              x: e.x,
-              y: sH + 0.95,
-              z: e.y,
-              color: 0xffaa44,
-              distance: 12.0,
-              decay: 1.5,
-              intensity: nightGlow * 2.8,
-              priority: e.id === this.selectedEntityId ? 0 : 2,
-              distSq: dx * dx + dy * dy
-            });
+            const c = this.lightCandidatesPool[candidateCount++];
+            c.x = e.x;
+            c.y = sH + 0.95;
+            c.z = e.y;
+            c.color = 0xffaa44;
+            c.distance = 12.0;
+            c.decay = 1.5;
+            c.intensity = nightGlow * 2.8;
+            c.priority = e.id === this.selectedEntityId ? 0 : 2;
+            c.distSq = dx * dx + dy * dy;
           }
           continue;
         }
@@ -3383,28 +3404,28 @@ export class RCT3DRenderer {
           const sH = this.getTileSurfaceHeight(map, Math.floor(e.x), Math.floor(e.y));
           const dx = (e.x + 0.5) - focusX;
           const dy = (e.y + 0.5) - focusY;
-          candidates.push({
-            x: e.x + 0.5,
-            y: sH + 1.60,
-            z: e.y + 0.5,
-            color: 0xffb555,
-            distance: 10.0,
-            decay: 1.6,
-            intensity: nightGlow * 2.0,
-            priority: 3,
-            distSq: dx * dx + dy * dy
-          });
+          const c = this.lightCandidatesPool[candidateCount++];
+          c.x = e.x + 0.5;
+          c.y = sH + 1.60;
+          c.z = e.y + 0.5;
+          c.color = 0xffb555;
+          c.distance = 10.0;
+          c.decay = 1.6;
+          c.intensity = nightGlow * 2.0;
+          c.priority = 3;
+          c.distSq = dx * dx + dy * dy;
         }
       }
 
-      // Sort candidate lights by priority then distance to camera/selected creature
-      candidates.sort((a, b) => {
+      // Sort candidate lights in-place up to candidateCount
+      const activeCandidates = this.lightCandidatesPool.slice(0, candidateCount);
+      activeCandidates.sort((a, b) => {
         if (a.priority !== b.priority) return a.priority - b.priority;
         return a.distSq - b.distSq;
       });
 
-      for (let i = 0; i < candidates.length && lightIdx < this.maxNightLights; i++) {
-        const c = candidates[i];
+      for (let i = 0; i < activeCandidates.length && lightIdx < this.maxNightLights; i++) {
+        const c = activeCandidates[i];
         const pl = this.nightLightPool[lightIdx];
         pl.color.setHex(c.color);
         pl.distance = c.distance;
