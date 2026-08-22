@@ -215,9 +215,63 @@ export function createLifeProp(energy = 8000, max = 8000, basalRate = 0.05, init
     fatherId,
     motherId,
     childrenIds: [],
-    effect(ent, dt) {
+    isSleeping: false,
+    effect(ent, dt, world, entities) {
       this.age = (this.age || 0) + (dt !== undefined ? dt : 1.0);
-      this.energy = Math.max(0, this.energy - (dt !== undefined ? dt : 1.0) * this.basalRate);
+
+      // Check if entity is currently inside their completed private home/house
+      let inOwnHouse = false;
+      if (entities) {
+        for (const e of entities) {
+          if (!e.destroyed && e.properties?.house?.isCompleted && e.x === ent.x && e.y === ent.y) {
+            if (e.properties.house.ownerId === ent.id || e.properties.house.partnerId === ent.id) {
+              inOwnHouse = true;
+              break;
+            }
+          }
+        }
+      }
+
+      // If creature runs out of energy (energy <= 5):
+      // 1. Try burning fat reserve to stay awake
+      // 2. If no fat available or failed, collapse into deep helpless sleep until 100% full
+      if (this.energy <= 5 && !this.isSleeping) {
+        const stomach = ent.properties.stomach;
+        if (stomach && (stomach.fatUnits || 0) > 0) {
+          stomach.fatUnits--;
+          this.energy = this.max * 0.40;
+          ent.properties.brain?.addShortTerm({
+            type: "FAT_BURN",
+            desc: "Burned body fat to stay awake and stave off collapse!",
+            location: { x: ent.x, y: ent.y }
+          });
+        } else {
+          this.isSleeping = true;
+          ent.emote = 7; // Zzz / Sleeping
+        }
+      }
+
+      // Sleeping Restoration
+      if (this.isSleeping) {
+        // Safe home sleep gives 4x faster energy recharge and heals brain/organs
+        const sleepRechargeRate = inOwnHouse ? (this.max * 0.08) : (this.max * 0.025);
+        this.energy = Math.min(this.max, this.energy + sleepRechargeRate * dt);
+        ent.emote = 7; // Zzz
+
+        // Home healing benefit
+        if (inOwnHouse && ent.properties.brain && ent.properties.brain.condition < ent.properties.brain.maxCondition) {
+          ent.properties.brain.condition = Math.min(ent.properties.brain.maxCondition, ent.properties.brain.condition + dt * 0.5);
+        }
+
+        // Wake up fully revitalized!
+        if (this.energy >= this.max) {
+          this.isSleeping = false;
+          ent.emote = 2; // Happy
+        }
+      } else {
+        // Normal awake basal metabolic drain
+        this.energy = Math.max(0, this.energy - (dt !== undefined ? dt : 1.0) * this.basalRate);
+      }
     }
   };
 }
@@ -673,6 +727,72 @@ export function createKidneyProp(ratio = 0.75) {
         ent.properties.life.energy = Math.max(0, ent.properties.life.energy - dt * 15.0);
       }
     }
+  };
+}
+
+/**
+ * Heart (Pumps vital blood and oxygen to brain and organs)
+ */
+export function createHeartProp() {
+  return {
+    condition: 100,
+    maxCondition: 100,
+    nutrition: 900,
+    foodType: "organ",
+    effect(ent, dt) {
+      if (!ent.properties.brain) return;
+      // If heart is damaged, brain loses condition due to lack of blood supply
+      if (this.condition < 40) {
+        const dmg = (1.0 - (this.condition / 40)) * 2.0 * dt;
+        ent.properties.brain.condition = Math.max(0, ent.properties.brain.condition - dmg);
+      }
+    }
+  };
+}
+
+/**
+ * Liver (Detoxifies and aids in metabolism and cellular repair)
+ */
+export function createLiverProp() {
+  return {
+    condition: 100,
+    maxCondition: 100,
+    nutrition: 800,
+    foodType: "organ",
+    effect(ent, dt) {
+      // Intact liver passively cleanses and stabilizes body condition
+      if (this.condition >= 50 && ent.properties.brain && ent.properties.brain.condition < ent.properties.brain.maxCondition) {
+        ent.properties.brain.condition = Math.min(ent.properties.brain.maxCondition, ent.properties.brain.condition + dt * 0.15);
+      }
+    }
+  };
+}
+
+/**
+ * Intestines (Nutrient absorption efficiency and digestion throughput)
+ */
+export function createIntestineProp() {
+  return {
+    condition: 100,
+    maxCondition: 100,
+    nutrition: 700,
+    foodType: "organ",
+    effect(ent, dt) {}
+  };
+}
+
+/**
+ * Ear (Acoustic perception and hearing radius)
+ */
+export function createEarProp(side = "left") {
+  return {
+    side,
+    hearingRadius: 10,
+    condition: 100,
+    maxCondition: 100,
+    nutrition: 150,
+    foodType: "organ",
+    effect(ent, dt) {}
   };
 }
 
@@ -1863,46 +1983,67 @@ export function getClanBlueprintTiles(group) {
   const sz = currentZoneSize;
   const members = group.members || [];
 
-  // 1. Individual House Plots inside the Kingdom Zones (Each member gets a dedicated house plot)
-  const housePositionsPerZone = [
-    { ox: 2, oy: 2 },
-    { ox: 5, oy: 2 },
-    { ox: 2, oy: 5 },
-    { ox: 5, oy: 5 }
-  ];
+  // 1. Individual House Plots inside the Kingdom Zones (Organic random scatter avoiding perimeter edges, water & trees)
+  // Deterministic pseudo-random hashing based on groupId and ownerId so layout is stable
+  function pseudoRandomPos(seedA, seedB, limit) {
+    let h = (seedA * 374761393 + seedB * 668265263) ^ 0x5bf03635;
+    h = Math.imul(h ^ (h >>> 13), 1274126177);
+    return Math.abs(h ^ (h >>> 16)) % limit;
+  }
 
-  let memberIdx = 0;
+  // Find all valid interior land candidate tiles inside claimed zones
+  const candidateInteriorTiles = [];
   for (const zk of group.claimedZones) {
     const zp = zk.includes("_") ? zk.split("_") : zk.split(",");
     const zx = parseInt(zp[0], 10);
     const zy = parseInt(zp[1], 10);
 
-    for (const pos of housePositionsPerZone) {
-      if (memberIdx >= members.length) break;
-      let px = zx * sz + pos.ox;
-      let py = zy * sz + pos.oy;
-
-      if (!isLandTile(px, py)) {
-        let foundLand = false;
-        for (let dy = 1; dy < sz - 1 && !foundLand; dy++) {
-          for (let dx = 1; dx < sz - 1 && !foundLand; dx++) {
-            const candX = zx * sz + dx;
-            const candY = zy * sz + dy;
-            if (isLandTile(candX, candY)) {
-              px = candX;
-              py = candY;
-              foundLand = true;
+    // Inner coordinates (avoid outer zone boundary walls/gates)
+    for (let ox = 1; ox < sz - 1; ox++) {
+      for (let oy = 1; oy < sz - 1; oy++) {
+        const px = zx * sz + ox;
+        const py = zy * sz + oy;
+        const isPerim = isPerimeterEdge(zx, zy, ox, oy, group.claimedZones);
+        if (!isPerim && isLandTile(px, py)) {
+          // Check if there is an existing standing tree entity on this tile
+          let hasTree = false;
+          for (const ent of entityRegistry.values()) {
+            if (!ent.destroyed && ent.x === px && ent.y === py && (ent.properties.photosynthesis || ent.properties.deep_root || ent.properties.species === "oak" || ent.properties.species === "willow" || ent.properties.species === "pine" || ent.properties.species === "tree" || ent.properties.species === "cactus")) {
+              hasTree = true;
+              break;
             }
           }
+          if (!hasTree) {
+            candidateInteriorTiles.push({ x: px, y: py, zx, zy });
+          }
         }
-        if (!foundLand) continue;
       }
-
-      const ownerId = members[memberIdx];
-      tiles.push({ x: px, y: py, type: "house", ownerId });
-      memberIdx++;
     }
-    if (memberIdx >= members.length) break;
+  }
+
+  // Assign houses organically to members
+  const occupiedHouseTiles = new Set();
+  // Keep existing completed or active house locations pinned first!
+  for (const ent of entityRegistry.values()) {
+    if (!ent.destroyed && ent.properties.house && (members.includes(ent.properties.house.ownerId) || members.includes(ent.properties.house.partnerId))) {
+      tiles.push({ x: ent.x, y: ent.y, type: "house", ownerId: ent.properties.house.ownerId });
+      occupiedHouseTiles.add(`${ent.x}_${ent.y}`);
+    }
+  }
+
+  for (let mIdx = 0; mIdx < members.length; mIdx++) {
+    const ownerId = members[mIdx];
+    // If member already has a registered house entity on map, skip generating duplicate blueprint
+    if (tiles.some(t => t.type === "house" && t.ownerId === ownerId)) continue;
+
+    // Filter available candidates not yet occupied
+    const available = candidateInteriorTiles.filter(c => !occupiedHouseTiles.has(`${c.x}_${c.y}`));
+    if (available.length > 0) {
+      const pickIdx = pseudoRandomPos(group.id, ownerId, available.length);
+      const chosen = available[pickIdx];
+      tiles.push({ x: chosen.x, y: chosen.y, type: "house", ownerId });
+      occupiedHouseTiles.add(`${chosen.x}_${chosen.y}`);
+    }
   }
 
   // Check if every living member in the clan has a completed house before revealing wall/gate blueprints
@@ -2112,7 +2253,10 @@ export function createCommunicationProp(talkRate = 12.0) {
       if (this.talkTimer < this.talkRate) return;
       this.talkTimer = 0;
 
-      if (!ent.properties.brain || !entities || ent.destroyed) return;
+      // Sleeping creatures or creatures actively carrying building materials / seeds do not stop to chat
+      if (ent.properties.life?.isSleeping) return;
+      const isCarryingWork = isCarryingItem(ent, "stone") || isCarryingItem(ent, "wood") || isCarryingItem(ent, "seed");
+      if (isCarryingWork) return;
 
       // General talking cooldown: creature only engages in conversation once per 45 ticks
       if (ent._lastTalkTick && (currentTick - ent._lastTalkTick < 45)) return;
@@ -2125,7 +2269,7 @@ export function createCommunicationProp(talkRate = 12.0) {
       const nearbyTalkers = getEntitiesInRadius(ent.x, ent.y, talkRange);
 
       for (const other of nearbyTalkers) {
-        if (other === ent || other.destroyed || !other.properties.brain) continue;
+        if (other === ent || other.destroyed || !other.properties.brain || other.properties.life?.isSleeping) continue;
 
         // Pair interaction cooldown (120 ticks between conversations with the same person)
         if (ent._lastSpokeWith && ent._lastSpokeWith[other.id] && (currentTick - ent._lastSpokeWith[other.id] < 120)) {
@@ -4511,6 +4655,9 @@ export function createLocomotionProp() {
       const currentTile = world ? world.getTile(ent.x, ent.y) : 0;
       const inWater = currentTile === 2;
 
+      // Sleeping creatures cannot move and remain helpless while resting
+      if (ent.properties.life?.isSleeping) return;
+
       // Species-specific Locomotion Speed:
       const species = ent.properties.species || "human";
       let speciesSpeed = SPECIES_SPEED_MULTIPLIERS[species] || 1.0;
@@ -4553,18 +4700,24 @@ export function createLocomotionProp() {
       }
 
       // -----------------------------------------------------------------------
-      // Priority 1: Home Refuge & Emergency Shelter (Low health or fleeing to home)
+      // Priority 1: Fatigue & Home Bedtime Refuge (Energy <= 30% -> Head to private house to rest)
       // -----------------------------------------------------------------------
-      if (!hasIntention && ent.properties.group && entities) {
+      if (!hasIntention && entities) {
         const ownHouse = entities.find(e => !e.destroyed && e.properties.house?.isCompleted && (e.properties.house.ownerId === ent.id || e.properties.house.partnerId === ent.id));
         if (ownHouse) {
-          const isSeverelyInjured = energyRatio <= 0.40;
-          if (isSeverelyInjured && (Math.abs(ownHouse.x - ent.x) + Math.abs(ownHouse.y - ent.y)) > 0) {
+          const isTired = energyRatio <= 0.30;
+          const distToHouse = Math.abs(ownHouse.x - ent.x) + Math.abs(ownHouse.y - ent.y);
+          if (isTired && distToHouse > 0) {
             chosenDx = Math.sign(ownHouse.x - ent.x);
             chosenDy = Math.sign(ownHouse.y - ent.y);
             hasIntention = true;
             ent._navGoal = null;
             ent._taskGoal = null;
+          } else if (isTired && distToHouse === 0 && energyRatio <= 0.25) {
+            // Arrived home and tired: go to sleep safely!
+            ent.properties.life.isSleeping = true;
+            ent.emote = 7; // Zzz
+            return;
           }
         }
       }
@@ -6189,6 +6342,11 @@ export function createCreatureFromArchetype(speciesKey, x, y, customOpts = {}) {
       mouth: createMouthProp(32, 32),
       communication: createCommunicationProp(1.6),
       brain: createBrainProp(iq, { bravery: 0.7, curiosity: 0.7, aggression: normKey === "orc" ? 0.7 : 0.2 }, 1.2),
+      heart: createHeartProp(),
+      liver: createLiverProp(),
+      intestines: createIntestineProp(),
+      ear_left: createEarProp("left"),
+      ear_right: createEarProp("right"),
       stomach: createStomachProp(4, { meat: 1.0, plant: 1.0, fruit: 1.1, organ: 0.9, bone: 0.2 }),
       bladder: createBladderProp(3500, 3500),
       kidney: createKidneyProp(0.75),
@@ -6220,6 +6378,11 @@ export function createCreatureFromArchetype(speciesKey, x, y, customOpts = {}) {
       mouth: createMouthProp(36, 36),
       communication: createCommunicationProp(2.5),
       brain: createBrainProp(11, { bravery: 0.7, curiosity: 0.6, aggression: 0.4 }, 1.0),
+      heart: createHeartProp(),
+      liver: createLiverProp(),
+      intestines: createIntestineProp(),
+      ear_left: createEarProp("left"),
+      ear_right: createEarProp("right"),
       stomach: createStomachProp(5, { plant: 1.4, fruit: 1.3, meat: 0.5, organ: 0.8 }),
       bladder: createBladderProp(3000, 3000),
       kidney: createKidneyProp(0.7),
@@ -6248,6 +6411,11 @@ export function createCreatureFromArchetype(speciesKey, x, y, customOpts = {}) {
       mouth: createMouthProp(30, 30),
       communication: createCommunicationProp(3.0),
       brain: createBrainProp(13, { bravery: 0.2, curiosity: 0.9, aggression: 0.05 }, 1.1),
+      heart: createHeartProp(),
+      liver: createLiverProp(),
+      intestines: createIntestineProp(),
+      ear_left: createEarProp("left"),
+      ear_right: createEarProp("right"),
       stomach: createStomachProp(4, { plant: 1.5, fruit: 1.4, meat: 0.0 }),
       bladder: createBladderProp(2200, 2200),
       kidney: createKidneyProp(0.7),
@@ -6275,6 +6443,8 @@ export function createCreatureFromArchetype(speciesKey, x, y, customOpts = {}) {
       mouth: createMouthProp(30, 30),
       communication: createCommunicationProp(4.0),
       brain: createBrainProp(11, { bravery: 0.8, curiosity: 0.5, aggression: 0.85 }, 0.9),
+      heart: createHeartProp(),
+      intestines: createIntestineProp(),
       stomach: createStomachProp(2, { meat: 1.5, organ: 1.4 }),
       bladder: createBladderProp(1500, 1500),
       kidney: createKidneyProp(0.6),
@@ -6301,6 +6471,11 @@ export function createCreatureFromArchetype(speciesKey, x, y, customOpts = {}) {
       mouth: createMouthProp(42, 42),
       communication: createCommunicationProp(2.5),
       brain: createBrainProp(14, { bravery: 0.8, curiosity: 0.7, aggression: 0.7 }, 1.1),
+      heart: createHeartProp(),
+      liver: createLiverProp(),
+      intestines: createIntestineProp(),
+      ear_left: createEarProp("left"),
+      ear_right: createEarProp("right"),
       stomach: createStomachProp(3, { meat: 1.4, plant: 0.1, fruit: 0.3, organ: 1.3, bone: 0.6 }),
       bladder: createBladderProp(2000, 2000),
       kidney: createKidneyProp(0.7),
@@ -6330,6 +6505,11 @@ export function createCreatureFromArchetype(speciesKey, x, y, customOpts = {}) {
       mouth: createMouthProp(42, 42),
       communication: createCommunicationProp(3.0),
       brain: createBrainProp(16, { bravery: 0.9, curiosity: 0.6, aggression: 0.6 }, 1.3),
+      heart: createHeartProp(),
+      liver: createLiverProp(),
+      intestines: createIntestineProp(),
+      ear_left: createEarProp("left"),
+      ear_right: createEarProp("right"),
       stomach: createStomachProp(6, { meat: 1.3, plant: 0.9, fruit: 1.4, organ: 1.2, bone: 0.5 }),
       bladder: createBladderProp(5000, 5000),
       kidney: createKidneyProp(0.75),

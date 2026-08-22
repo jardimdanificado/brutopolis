@@ -377,7 +377,23 @@ export function explodeEntityOnDeath(entity, entitiesArray, world) {
       let color = 0xffe65a5a;
       let name = `Meat of ${entityName} (${key})`;
 
-      if (key.includes("wing")) {
+      if (key.includes("heart")) {
+        skin = "Other_Heart.png";
+        color = 0xffff1e3c;
+        name = `Heart of ${entityName}`;
+      } else if (key.includes("liver")) {
+        skin = "Other_Heart.png";
+        color = 0xff8c2828;
+        name = `Liver of ${entityName}`;
+      } else if (key.includes("intestine")) {
+        skin = "Item_Nugget.png";
+        color = 0xffdc8c78;
+        name = `Intestines of ${entityName}`;
+      } else if (key.includes("ear")) {
+        skin = "Item_Feather.png";
+        color = 0xffe6b496;
+        name = `Ear (${key}) of ${entityName}`;
+      } else if (key.includes("wing")) {
         skin = "Item_Cloak.png";
         color = 0xffe6e6f0;
         name = `Wing (${key}) of ${entityName}`;
@@ -435,6 +451,27 @@ export function explodeEntityOnDeath(entity, entitiesArray, world) {
 
       if (entitiesArray) {
         entitiesArray.push(foodItem);
+
+        // Arms, Legs and Paws also yield Bone item for increased sustainability!
+        if (key.startsWith("arm") || key.startsWith("leg") || key.startsWith("paw")) {
+          const boneItem = createEntity(
+            {
+              name: `Bone (${key}) of ${entityName}`,
+              render: { skin: "Item_Bone.png", color: 0xffe6e6d2, backcolor: 0x00000000 },
+              edible: {
+                nutrition: 350,
+                foodType: "bone",
+                digestDuration: 30,
+                sourceEntityId: entity.id,
+                sourceName: entityName,
+                sourceSpecies: species,
+                partKey: `bone_${key}`
+              }
+            },
+            ex + (Math.floor(Math.random() * 3) - 1),
+            ey + (Math.floor(Math.random() * 3) - 1)
+          );
+        }
       }
     }
   }
@@ -606,9 +643,12 @@ export function tickEntities(entities, dt, world) {
     // Synchronize spatial hash grid if entity coordinates changed
     updateEntitySpatial(entity);
 
-    // 3. Check life energy (death condition)
+    // 3. Check Vital HP (Death Condition: Brain condition <= 0, or plant life with no roots/energy)
     let isDead = false;
-    if (props.life && props.life.energy <= 0) {
+    if (props.brain && props.brain.condition <= 0) {
+      isDead = true;
+    } else if (!props.brain && props.life && props.life.energy <= 0) {
+      // Plants/Flora without brains die when energy runs out
       isDead = true;
     } else if (props.health && props.health.current <= 0) {
       isDead = true;

@@ -2176,21 +2176,32 @@ function renderDossierModal() {
 
     // 3. Vital Gauges
     let gaugeY = lineageY + 62;
+    if (props.brain && typeof props.brain.condition === "number") {
+      drawNESProgressBar(mx + 10, gaugeY, mw - 20, 16, props.brain.condition, props.brain.maxCondition || 100, `VITAL HP (BRAIN INTEGRITY): ${Math.round(props.brain.condition)}/${props.brain.maxCondition || 100}`, "#f83800");
+      gaugeY += 20;
+    }
+
     if (props.life) {
-      drawNESProgressBar(mx + 10, gaugeY, mw - 20, 16, props.life.energy, props.life.max || 100, "HP ENERGY", "#58d854");
+      const isSleeping = props.life.isSleeping;
+      const sleepTag = isSleeping ? " [ASLEEP - RECOVERING]" : "";
+      drawNESProgressBar(mx + 10, gaugeY, mw - 20, 16, props.life.energy, props.life.max || 100, `METABOLIC ENERGY: ${Math.round(props.life.energy)}/${props.life.max || 100}${sleepTag}`, isSleeping ? "#3cbcfc" : "#58d854");
       gaugeY += 20;
     }
 
     if (props.stomach) {
       const fatUnits = props.stomach.fatUnits || 0;
       const maxFat = props.stomach.maxFatUnits || 6;
-      drawNESProgressBar(mx + 10, gaugeY, mw - 20, 16, fatUnits, maxFat, `BODY FAT RESERVES: ${fatUnits}/${maxFat} UNITS (50% HP BACKUP)`, "#e4c858");
+      drawNESProgressBar(mx + 10, gaugeY, mw - 20, 16, fatUnits, maxFat, `BODY FAT RESERVES: ${fatUnits}/${maxFat} UNITS (AWAKE BACKUP)`, "#e4c858");
       gaugeY += 20;
     }
 
-    const condProp = Object.values(props).find(p => p && typeof p.condition === "number" && typeof p.maxCondition === "number");
-    if (condProp) {
-      drawNESProgressBar(mx + 10, gaugeY, mw - 20, 16, condProp.condition, condProp.maxCondition, "BODY CONDITION", "#3cbcfc");
+    if (props.heart && typeof props.heart.condition === "number") {
+      drawNESProgressBar(mx + 10, gaugeY, mw - 20, 16, props.heart.condition, props.heart.maxCondition || 100, `HEART CONDITION: ${Math.round(props.heart.condition)}%`, "#e6194b");
+      gaugeY += 20;
+    }
+
+    if (props.liver && typeof props.liver.condition === "number") {
+      drawNESProgressBar(mx + 10, gaugeY, mw - 20, 16, props.liver.condition, props.liver.maxCondition || 100, `LIVER CONDITION: ${Math.round(props.liver.condition)}%`, "#9a6324");
       gaugeY += 20;
     }
 
@@ -2517,16 +2528,17 @@ function renderEntitiesModal() {
     }
 
     const cursorPrefix = isSelected || isHover ? "▶" : " ";
-    const energyStr = ent.properties.life ? `${Math.round(ent.properties.life.energy)}` : "-";
-    const statusStr = ent.properties.life ? (ent.properties.life.energy > 0 ? "LIVE" : "DEAD") : "ITEM";
-    const statusCol = ent.properties.life ? (ent.properties.life.energy > 0 ? "#58d854" : "#f83800") : "#f8b800";
+    const brainHp = ent.properties.brain ? Math.round(ent.properties.brain.condition) : (ent.properties.life ? Math.round(ent.properties.life.energy) : "-");
+    const isSleeping = ent.properties.life?.isSleeping;
+    const statusStr = ent.properties.life ? (isSleeping ? "SLEEP" : (!ent.destroyed ? "LIVE" : "DEAD")) : "ITEM";
+    const statusCol = ent.properties.life ? (isSleeping ? "#3cbcfc" : (!ent.destroyed ? "#58d854" : "#f83800")) : "#f8b800";
 
     if (!isMobile) {
       drawText8x8(`${cursorPrefix}#${ent.id}`, mx + 16, rowY + 3, isSelected || isHover ? "#f8b800" : "#ffffff", 1);
       drawText8x8((ent.properties.name || "ENTITY").slice(0, 22).toUpperCase(), mx + 75, rowY + 3, "#ffffff", 1);
       drawText8x8((ent.properties.species || "-").slice(0, 12).toUpperCase(), mx + 275, rowY + 3, "#3cbcfc", 1);
       drawText8x8(`[${ent.x},${ent.y}]`, mx + 400, rowY + 3, "#bcbcbc", 1);
-      drawText8x8(energyStr, mx + 500, rowY + 3, "#58d854", 1);
+      drawText8x8(String(brainHp), mx + 500, rowY + 3, "#f83800", 1);
       drawText8x8(statusStr, mx + 580, rowY + 3, statusCol, 1);
       const maxClanChars = Math.max(10, Math.floor((mw - 700) / 8));
       drawText8x8((ent.properties.group?.name || "-").slice(0, maxClanChars).toUpperCase(), mx + 665, rowY + 3, "#d3869b", 1);
@@ -2534,7 +2546,7 @@ function renderEntitiesModal() {
       drawText8x8(`${cursorPrefix}#${ent.id}`, mx + 16, rowY + 3, isSelected || isHover ? "#f8b800" : "#ffffff", 1);
       const maxMobileName = Math.max(8, Math.floor((mw - 190) / 8));
       drawText8x8((ent.properties.name || "ENTITY").slice(0, maxMobileName).toUpperCase(), mx + 64, rowY + 3, "#ffffff", 1);
-      drawText8x8(energyStr, mx + mw - 116, rowY + 3, "#58d854", 1);
+      drawText8x8(String(brainHp), mx + mw - 116, rowY + 3, "#f83800", 1);
       drawText8x8(statusStr, mx + mw - 68, rowY + 3, statusCol, 1);
     }
 

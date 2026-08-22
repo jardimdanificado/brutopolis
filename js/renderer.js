@@ -611,9 +611,21 @@ export class Renderer {
           drawBox32(buf32, width, height, sx + 2, sy + 2, tileSize - 4, tileSize - 4, entFg);
         }
 
-        // Health bar & Construction Progress bar
-        const hp = e.properties.life ? e.properties.life.energy : e.properties.health ? e.properties.health.current : 0;
-        const maxHp = e.properties.life ? e.properties.life.max : e.properties.health ? e.properties.health.max : 100;
+        // Health bar (HP = Brain Condition for conscious creatures; health/energy for flora/inanimate)
+        let hp = 0;
+        let maxHp = 100;
+        let isCreatureBrain = false;
+        if (e.properties.brain) {
+          hp = e.properties.brain.condition;
+          maxHp = e.properties.brain.maxCondition || 100;
+          isCreatureBrain = true;
+        } else if (e.properties.life) {
+          hp = e.properties.life.energy;
+          maxHp = e.properties.life.max;
+        } else if (e.properties.health) {
+          hp = e.properties.health.current;
+          maxHp = e.properties.health.max;
+        }
 
         if (maxHp > 0 && hp < maxHp && hp > 0) {
           const barW = tileSize;
@@ -621,7 +633,8 @@ export class Renderer {
           const barY = sy - barH - 2;
           drawBox32(buf32, width, height, sx, barY, barW, barH, rgba32(50, 10, 10));
           const fillW = Math.max(1, Math.floor((hp / maxHp) * barW));
-          drawBox32(buf32, width, height, sx, barY, fillW, barH, rgba32(80, 220, 80));
+          const hpColor = isCreatureBrain ? rgba32(230, 60, 60) : rgba32(80, 220, 80);
+          drawBox32(buf32, width, height, sx, barY, fillW, barH, hpColor);
         }
 
         // Construction Progress indicator (renders for houses, walls, gates being built)
