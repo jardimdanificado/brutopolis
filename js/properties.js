@@ -231,9 +231,11 @@ export function createLifeProp(energy = 8000, max = 8000, basalRate = 0.05, init
         }
       }
 
-      // If creature runs out of energy (energy <= 5):
-      // Collapse into deep sleep to recover energy exclusively through sleep
-      if (this.energy <= 5 && !this.isSleeping) {
+      // Bedtime & Fatigue Sleep Trigger
+      const isNight = world?.clock ? (world.clock.hour >= 20 || world.clock.hour < 6) : false;
+      const isLowEnergy = this.energy <= this.max * 0.40;
+
+      if (!this.isSleeping && (this.energy <= 10 || (isNight && this.energy <= this.max * 0.80) || isLowEnergy)) {
         this.isSleeping = true;
         ent.emote = 8; // Emote_Sleeping.png
       }
@@ -3656,15 +3658,18 @@ export function createGroupMemberProp() {
               const owner = getEntityById(bp.ownerId);
               const ownerName = owner?.properties?.name || `Membro #${bp.ownerId}`;
 
-              // Select house style based on clan resource availability
+              // Select house style based on clan culture and resource availability
               const clanStock = getGroupStockpile(group, entities);
               const woodAvail = (clanStock.items["wood"] || 0) + (clanStock.items["Wood"] || 0);
               const stoneAvail = (clanStock.items["stone"] || 0) + (clanStock.items["Stone"] || 0);
 
               let style = "mixed";
-              if (stoneAvail >= 4 && stoneAvail > woodAvail * 1.4) {
+              const isDwarfOrOrc = (group.name?.includes("Anão") || group.name?.includes("Orc") || group.name?.includes("Fortaleza") || ent.properties?.species === "dwarf" || ent.properties?.species === "orc");
+              const isElfOrWild = (group.name?.includes("Élfico") || group.name?.includes("Felino") || group.name?.includes("Centauro") || group.name?.includes("Goblin") || ent.properties?.species === "elf" || ent.properties?.species === "catfolk");
+
+              if (isDwarfOrOrc || resType === "stone" || (stoneAvail > woodAvail)) {
                 style = "stone";
-              } else if (woodAvail >= 4 && woodAvail > stoneAvail * 1.4) {
+              } else if (isElfOrWild || resType === "wood" || (woodAvail > stoneAvail)) {
                 style = "wood";
               }
 
@@ -3723,15 +3728,16 @@ export function createGroupMemberProp() {
               }
               this.actionTimer = 0;
 
-              // Select wall style based on clan resource availability
-              const clanStock = getGroupStockpile(group, entities);
-              const woodAvail = (clanStock.items["wood"] || 0) + (clanStock.items["Wood"] || 0);
-              const stoneAvail = (clanStock.items["stone"] || 0) + (clanStock.items["Stone"] || 0);
+              // Select wall style based on culture, material in hand, and availability
+              const isDwarfOrOrc = (group.name?.includes("Anão") || group.name?.includes("Orc") || group.name?.includes("Fortaleza") || ent.properties?.species === "dwarf" || ent.properties?.species === "orc");
+              const isElfOrWild = (group.name?.includes("Élfico") || group.name?.includes("Felino") || group.name?.includes("Centauro") || group.name?.includes("Goblin") || ent.properties?.species === "elf" || ent.properties?.species === "catfolk");
 
               let wallStyle = "stone";
-              if (woodAvail > stoneAvail * 1.5) {
+              if (isElfOrWild || resType === "wood") {
                 wallStyle = "wood";
-              } else if (woodAvail >= 1 && stoneAvail >= 1 && Math.abs(woodAvail - stoneAvail) <= 3) {
+              } else if (isDwarfOrOrc || resType === "stone") {
+                wallStyle = "stone";
+              } else if (Math.random() < 0.5) {
                 wallStyle = "mixed";
               }
 
@@ -4925,25 +4931,32 @@ export function createLocomotionProp() {
       }
 
       // -----------------------------------------------------------------------
-      // Priority 1: Fatigue & Home Bedtime Refuge (Energy <= 30% -> Head to private house to rest)
+      // Priority 1: Fatigue & Bedtime (Night time or Energy <= 45% -> Sleep in house or outdoors)
       // -----------------------------------------------------------------------
-      if (!hasIntention && entities) {
+      const isNightLoco = world?.clock ? (world.clock.hour >= 20 || world.clock.hour < 6) : false;
+      const isTiredLoco = energyRatio <= 0.45 || (isNightLoco && energyRatio <= 0.85);
+
+      if (!hasIntention && isTiredLoco && entities) {
         const ownHouse = entities.find(e => !e.destroyed && e.properties.house?.isCompleted && (e.properties.house.ownerId === ent.id || e.properties.house.partnerId === ent.id));
         if (ownHouse) {
-          const isTired = energyRatio <= 0.30;
           const distToHouse = Math.abs(ownHouse.x - ent.x) + Math.abs(ownHouse.y - ent.y);
-          if (isTired && distToHouse > 0) {
+          if (distToHouse > 0) {
             chosenDx = Math.sign(ownHouse.x - ent.x);
             chosenDy = Math.sign(ownHouse.y - ent.y);
             hasIntention = true;
             ent._navGoal = null;
             ent._taskGoal = null;
-          } else if (isTired && distToHouse === 0 && energyRatio <= 0.25) {
-            // Arrived home and tired: go to sleep safely!
+          } else {
+            // Arrived home: go to sleep safely!
             ent.properties.life.isSleeping = true;
             ent.emote = 8; // Emote_Sleeping.png
             return;
           }
+        } else if (energyRatio <= 0.35 || isNightLoco) {
+          // Outdoors rest (settlers without house yet or wild animals)
+          ent.properties.life.isSleeping = true;
+          ent.emote = 8; // Emote_Sleeping.png
+          return;
         }
       }
 

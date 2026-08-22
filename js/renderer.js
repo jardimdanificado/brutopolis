@@ -604,12 +604,20 @@ export class Renderer {
             entSkin = e.properties.door.isOpen ? "Feature_Door_Open.png" : "Feature_Door_Closed.png";
           }
         } else if (isHouse) {
-          entSkin = "Overworld_House.png";
+          const hStyle = e.properties?.house?.style || "mixed";
+          if (hStyle === "wood") entSkin = "Feature_Wood.png";
+          else if (hStyle === "stone") entSkin = "Feature_Brick_A.png";
+          else entSkin = "Overworld_House.png";
         } else if (isWall) {
+          const wStyle = e.wallStyle || e.properties?.wallStyle || "stone";
           if (e.isConstructed === false) {
-            entSkin = "Feature_Stone_A.png";
+            entSkin = "Feature_Brick_A.png";
+          } else if (wStyle === "wood") {
+            entSkin = "Feature_Wood.png";
+          } else if (wStyle === "mixed") {
+            entSkin = "Feature_Brick_B.png";
           } else {
-            entSkin = resolveWallSkin(e.x, e.y, globalWallCoords);
+            entSkin = "Feature_Brick_A.png";
           }
         }
         const entTex = findTexture(entSkin);

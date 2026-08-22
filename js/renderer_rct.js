@@ -437,6 +437,91 @@ function createHouseStage3Geometry() {
   return mergeBufferGeometries(parts);
 }
 
+// -----------------------------------------------------------------------------
+// House Variational Geometries (Stone Castle Keep & Rustic Forest Wood Cabin)
+// -----------------------------------------------------------------------------
+
+// Stone Castle Keep House Walls (Square fortress tower with 4 corner bastion turrets)
+function createStoneCastleWallGeometry() {
+  const parts = [];
+  // Base fortified keep body
+  const body = new THREE.BoxGeometry(1.58, 1.40, 1.58);
+  body.translate(0, 0.70, 0);
+  parts.push(body);
+
+  // 4 Corner Bastion Turrets
+  const turretGeo = new THREE.BoxGeometry(0.36, 1.65, 0.36);
+  const t1 = turretGeo.clone(); t1.translate(-0.72, 0.825, -0.72); parts.push(t1);
+  const t2 = turretGeo.clone(); t2.translate( 0.72, 0.825, -0.72); parts.push(t2);
+  const t3 = turretGeo.clone(); t3.translate(-0.72, 0.825,  0.72); parts.push(t3);
+  const t4 = turretGeo.clone(); t4.translate( 0.72, 0.825,  0.72); parts.push(t4);
+
+  return mergeBufferGeometries(parts);
+}
+
+// Stone Castle Keep Battlements & Roof Geometry (Parapets & Merlons)
+function createStoneCastleRoofGeometry() {
+  const parts = [];
+  // Flat stone walkway slab
+  const slab = new THREE.BoxGeometry(1.68, 0.15, 1.68);
+  slab.translate(0, 1.40 + 0.075, 0);
+  parts.push(slab);
+
+  // Perimeter Crenellated Merlons
+  const merlonX = new THREE.BoxGeometry(0.34, 0.28, 0.16);
+  for (const x of [-0.48, 0, 0.48]) {
+    const mf = merlonX.clone(); mf.translate(x, 1.40 + 0.15 + 0.14, 0.76); parts.push(mf);
+    const mb = merlonX.clone(); mb.translate(x, 1.40 + 0.15 + 0.14, -0.76); parts.push(mb);
+  }
+  const merlonZ = new THREE.BoxGeometry(0.16, 0.28, 0.34);
+  for (const z of [-0.32, 0.32]) {
+    const ml = merlonZ.clone(); ml.translate(-0.76, 1.40 + 0.15 + 0.14, z); parts.push(ml);
+    const mr = merlonZ.clone(); mr.translate( 0.76, 1.40 + 0.15 + 0.14, z); parts.push(mr);
+  }
+
+  // Central Flagpole Mast
+  const mast = new THREE.CylinderGeometry(0.04, 0.04, 0.70, 5);
+  mast.translate(0, 1.40 + 0.15 + 0.35, 0);
+  parts.push(mast);
+
+  return mergeBufferGeometries(parts);
+}
+
+// Rustic Wood Cabin / Forest Shack Walls Geometry
+function createWoodCabinWallGeometry() {
+  const parts = [];
+  // Interlocking timber logs main body
+  const body = new THREE.BoxGeometry(1.48, 1.05, 1.38);
+  body.translate(0, 0.525, 0);
+  parts.push(body);
+
+  // Front porch veranda posts
+  const post = new THREE.CylinderGeometry(0.08, 0.09, 1.05, 6);
+  const p1 = post.clone(); p1.translate(-0.65, 0.525, 0.85); parts.push(p1);
+  const p2 = post.clone(); p2.translate( 0.65, 0.525, 0.85); parts.push(p2);
+
+  // Stone / Clay fireplace chimney on side
+  const chimney = new THREE.BoxGeometry(0.32, 1.55, 0.32);
+  chimney.translate(0.78, 0.775, -0.20);
+  parts.push(chimney);
+
+  return mergeBufferGeometries(parts);
+}
+
+// Rustic Wood Cabin Roof Geometry (Overhanging timber roof extending over front porch)
+function createWoodCabinRoofGeometry() {
+  const parts = [];
+  const roof = createPitchedRoofGeometry(1.72, 1.88, 0.75);
+  roof.translate(0, 1.05, 0.10);
+  parts.push(roof);
+
+  const mast = new THREE.CylinderGeometry(0.04, 0.04, 0.65, 5);
+  mast.translate(0, 1.05 + 0.75 + 0.32, 0.10);
+  parts.push(mast);
+
+  return mergeBufferGeometries(parts);
+}
+
 // Fortified Stone Wall Geometry (Slope-Adaptive Base Skirt + Crenellated Battlements)
 function createStoneWallGeometry() {
   const parts = [];
@@ -795,11 +880,11 @@ export class RCT3DRenderer {
         side: THREE.DoubleSide
       }),
       stoneHouseWall: new THREE.MeshLambertMaterial({
-        map: createTintedTexture("Feature_Stone_C.png", 0xd8d7de, 0x3a3842, 1.0),
+        map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0),
         side: THREE.DoubleSide
       }),
       stoneHouseRoof: new THREE.MeshLambertMaterial({
-        map: createTintedTexture("Feature_Stone_B.png", 0x718096, 0x2d3748, 1.0),
+        map: createTintedTexture("Feature_Brick_A.png", 0x9098a8, 0x2d3748, 1.0),
         side: THREE.DoubleSide
       }),
       houseBlueprint: new THREE.MeshLambertMaterial({
@@ -807,7 +892,7 @@ export class RCT3DRenderer {
         side: THREE.DoubleSide
       }),
       wall: new THREE.MeshLambertMaterial({
-        map: createTintedTexture("Feature_Stone_C.png", 0xd8d7de, 0x3a3842, 1.0),
+        map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0),
         side: THREE.DoubleSide
       }),
       woodWall: new THREE.MeshLambertMaterial({
@@ -815,11 +900,11 @@ export class RCT3DRenderer {
         side: THREE.DoubleSide
       }),
       mixedWall: new THREE.MeshLambertMaterial({
-        map: createTintedTexture("Feature_Stone_A.png", 0xdfd0b0, 0x3d3024, 1.0),
+        map: createTintedTexture("Feature_Brick_B.png", 0xdfd0b0, 0x3d3024, 1.0),
         side: THREE.DoubleSide
       }),
       wallBlueprint: new THREE.MeshLambertMaterial({
-        map: createTintedTexture("Feature_Stone_A.png", 0x9a8f82, 0x3d3024, 1.0),
+        map: createTintedTexture("Feature_Brick_A.png", 0x9a8f82, 0x3d3024, 1.0),
         side: THREE.DoubleSide
       }),
       woodLog: new THREE.MeshLambertMaterial({
@@ -920,18 +1005,20 @@ export class RCT3DRenderer {
     this.instGatesStage1.castShadow = true;
     this.instGatesStage1.receiveShadow = true;
 
-    // Houses (Finished Stage 4: Mixed, Wood, Stone Walls + Roof + Flagpole Mast)
+    // Houses (Finished Stage 4: Mixed, Wood Cabin, Stone Castle Keep Walls + Roof + Flagpole Mast)
     const houseWallGeo = new THREE.BoxGeometry(1.5, 1.2, 1.5);
     houseWallGeo.translate(0, 0.6, 0);
     this.instHouseWalls = new THREE.InstancedMesh(houseWallGeo, this.materials.houseWall, 400);
     this.instHouseWalls.castShadow = true;
     this.instHouseWalls.receiveShadow = true;
 
-    this.instWoodHouseWalls = new THREE.InstancedMesh(houseWallGeo, this.materials.woodHouseWall, 400);
+    const woodCabinWallGeo = createWoodCabinWallGeometry();
+    this.instWoodHouseWalls = new THREE.InstancedMesh(woodCabinWallGeo, this.materials.woodHouseWall, 400);
     this.instWoodHouseWalls.castShadow = true;
     this.instWoodHouseWalls.receiveShadow = true;
 
-    this.instStoneHouseWalls = new THREE.InstancedMesh(houseWallGeo, this.materials.stoneHouseWall, 400);
+    const stoneCastleWallGeo = createStoneCastleWallGeometry();
+    this.instStoneHouseWalls = new THREE.InstancedMesh(stoneCastleWallGeo, this.materials.stoneHouseWall, 400);
     this.instStoneHouseWalls.castShadow = true;
     this.instStoneHouseWalls.receiveShadow = true;
 
@@ -950,11 +1037,13 @@ export class RCT3DRenderer {
     this.instHouseRoofs.castShadow = true;
     this.instHouseRoofs.receiveShadow = true;
 
-    this.instWoodHouseRoofs = new THREE.InstancedMesh(fullRoofGeo, this.materials.woodHouseRoof, 400);
+    const woodCabinRoofGeo = createWoodCabinRoofGeometry();
+    this.instWoodHouseRoofs = new THREE.InstancedMesh(woodCabinRoofGeo, this.materials.woodHouseRoof, 400);
     this.instWoodHouseRoofs.castShadow = true;
     this.instWoodHouseRoofs.receiveShadow = true;
 
-    this.instStoneHouseRoofs = new THREE.InstancedMesh(fullRoofGeo, this.materials.stoneHouseRoof, 400);
+    const stoneCastleRoofGeo = createStoneCastleRoofGeometry();
+    this.instStoneHouseRoofs = new THREE.InstancedMesh(stoneCastleRoofGeo, this.materials.stoneHouseRoof, 400);
     this.instStoneHouseRoofs.castShadow = true;
     this.instStoneHouseRoofs.receiveShadow = true;
 
