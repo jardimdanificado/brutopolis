@@ -1818,22 +1818,38 @@ function renderTopHudBar() {
     // Mobile responsive top bar
     const timeStr = `D${clock.day} ${String(clock.hour).padStart(2,"0")}:${String(clock.minute).padStart(2,"0")}`;
     drawText8x8(timeStr, 8, 13, "#ffffff", 1);
-    drawText8x8(`☀️${Math.round(clock.globalLight * 100)}%`, 84, 13, "#3cbcfc", 1);
-    drawText8x8(`${currentFps}F`, 136, 13, "#888888", 1);
+    drawText8x8(`${currentFps}F`, 82, 13, "#888888", 1);
 
-    drawNESButton(CANVAS_WIDTH - 150, 5, 46, 24, "SAVE", false, false);
-    registerClickableRegion(CANVAS_WIDTH - 150, 5, 46, 24, saveWorldState);
+    let topBtnX = CANVAS_WIDTH - 44;
+    const modeTxt = is3DMode ? "3D" : "2D";
+    drawNESButton(topBtnX, 5, 38, 24, modeTxt, is3DMode, false);
+    registerClickableRegion(topBtnX, 5, 38, 24, toggle3DMode);
+    topBtnX -= 42;
 
     const isGenAct = currentMode === "GENERATOR";
-    drawNESButton(CANVAS_WIDTH - 100, 5, 46, 24, "GEN", isGenAct, false);
-    registerClickableRegion(CANVAS_WIDTH - 100, 5, 46, 24, () => {
+    drawNESButton(topBtnX, 5, 38, 24, "GEN", isGenAct, false);
+    registerClickableRegion(topBtnX, 5, 38, 24, () => {
       currentMode = currentMode === "GENERATOR" ? "MAP" : "GENERATOR";
       modalScroll = 0;
     });
+    topBtnX -= 46;
 
-    const modeTxt = is3DMode ? "3D" : "2D";
-    drawNESButton(CANVAS_WIDTH - 50, 5, 44, 24, modeTxt, is3DMode, false);
-    registerClickableRegion(CANVAS_WIDTH - 50, 5, 44, 24, toggle3DMode);
+    drawNESButton(topBtnX, 5, 42, 24, "SAVE", false, false);
+    registerClickableRegion(topBtnX, 5, 42, 24, saveWorldState);
+    topBtnX -= 46;
+
+    if (is3DMode && rctRenderer) {
+      const resMode = rctRenderer.getResolutionName ? rctRenderer.getResolutionName() : "100%";
+      const isResActive = resMode !== "100%";
+      drawNESButton(topBtnX, 5, 42, 24, resMode, isResActive, false);
+      registerClickableRegion(topBtnX, 5, 42, 24, () => rctRenderer.toggleResolution());
+      topBtnX -= 46;
+
+      const wireMode = rctRenderer.getWireframeModeName ? rctRenderer.getWireframeModeName() : (rctRenderer.isWireframe ? "ON" : "OFF");
+      const isWireActive = wireMode !== "OFF";
+      drawNESButton(topBtnX, 5, 42, 24, "WIRE", isWireActive, false);
+      registerClickableRegion(topBtnX, 5, 42, 24, () => rctRenderer.toggleWireframe());
+    }
   }
 }
 
@@ -2805,6 +2821,12 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
 
   drawText8x8(`CLAN DOSSIER: ${(g.name || "CLAN").toUpperCase()}`, mx + 44, my + 14, gFgColor, 1);
 
+  // Close X Button
+  drawNESButton(mx + mw - 32, my + 6, 26, 24, "X", false, true);
+  registerClickableRegion(mx + mw - 32, my + 6, 26, 24, () => {
+    inspectingGroup = null;
+  });
+
   // Top Tabs
   const isOverview = groupDetailTab === "OVERVIEW";
   drawNESButton(mx + 16, my + 32, 100, 24, "OVERVIEW", isOverview, false);
@@ -3196,9 +3218,15 @@ function renderLogDetailView(mx, my, mw, mh, ev) {
 
   drawText8x8(`EVENT DETAIL (#${ev.id})`, mx + 16, my + 14, "#f8b800", 1);
 
+  // Close X Button
+  drawNESButton(mx + mw - 32, my + 6, 26, 24, "X", false, true);
+  registerClickableRegion(mx + mw - 32, my + 6, 26, 24, () => {
+    inspectingLogEvent = null;
+  });
+
   const isLie = ev.opcode === 18 || ev.type === "LIE" || !!ev.metadata?.isLie;
   if (isLie) {
-    drawText8x8("[FABRICATED LIE 🤥]", mx + 240, my + 14, "#fa5078", 1);
+    drawText8x8("[FABRICATED LIE]", mx + 190, my + 14, "#fa5078", 1);
   }
 
   // Detail Container Box
@@ -4317,15 +4345,23 @@ canvas.addEventListener("touchmove", (e) => {
     // Single-finger camera pan (Supports 2D and 3D)
     if (touchMoved && !isPainting && currentMode === "MAP") {
       if (is3DMode && rctRenderer) {
-        const zoom = rctRenderer.zoom;
-        const rect = canvas.getBoundingClientRect();
-        const pixelScale = rect.width / CANVAS_WIDTH;
-        const baseSpeed = 0.045 / (zoom * pixelScale);
-        const scrDx = t.clientX - dragStartClientX;
-        const scrDy = t.clientY - dragStartClientY;
-        const worldDx = (scrDx - scrDy) * baseSpeed;
-        const worldDy = (scrDx + scrDy) * baseSpeed;
-        rctRenderer.setCamera(dragCameraStartX - worldDx, dragCameraStartY - worldDy, zoom);
+        const zoom = rctRenderer.zoom || 1.0;
+        const canvasRect = canvas.getBoundingClientRect();
+        const scale = 56.0 / (zoom * Math.max(100, canvasRect.height));
+
+        const sx = (t.clientX - dragStartClientX) * scale;
+        const sy = (t.clientY - dragStartClientY) * scale;
+
+        // Ground plane projection matching desktop 3D camera pan:
+        const moveX = -(sx * 0.70710678 + sy * 1.22474487);
+        const moveY = -(-sx * 0.70710678 + sy * 1.22474487);
+
+        if (!isNaN(moveX) && !isNaN(moveY)) {
+          const targetX = dragCameraStartX + moveX;
+          const targetY = dragCameraStartY + moveY;
+          rctRenderer.setCamera(targetX, targetY, zoom);
+          if (renderer) renderer.setCamera(targetX, targetY, zoom);
+        }
       } else if (renderer) {
         const zoom = renderer.getCameraZoom();
         const rect = canvas.getBoundingClientRect();
