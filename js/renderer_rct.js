@@ -212,6 +212,56 @@ export function createTintedTexture(skinName, fgHex = 0xffffff, bgHex = 0x000000
 }
 
 // ---------------------------------------------------------------------------
+// Retro Bayer Ordered Dithering on Color & 3D Lighting Edges
+// ---------------------------------------------------------------------------
+
+export function applyRetroDitherToMaterial(mat, steps = 24.0, intensity = 0.50) {
+  if (!mat) return;
+  mat.dithering = true;
+  mat.onBeforeCompile = (shader) => {
+    shader.fragmentShader = `
+      float getBayer4x4(vec2 p) {
+        vec2 m = mod(floor(p), 4.0);
+        int x = int(m.x);
+        int y = int(m.y);
+        if (y == 0) {
+          if (x == 0) return 0.0 / 16.0;
+          if (x == 1) return 8.0 / 16.0;
+          if (x == 2) return 2.0 / 16.0;
+          return 10.0 / 16.0;
+        } else if (y == 1) {
+          if (x == 0) return 12.0 / 16.0;
+          if (x == 1) return 4.0 / 16.0;
+          if (x == 2) return 14.0 / 16.0;
+          return 6.0 / 16.0;
+        } else if (y == 2) {
+          if (x == 0) return 3.0 / 16.0;
+          if (x == 1) return 11.0 / 16.0;
+          if (x == 2) return 1.0 / 16.0;
+          return 9.0 / 16.0;
+        } else {
+          if (x == 0) return 15.0 / 16.0;
+          if (x == 1) return 7.0 / 16.0;
+          if (x == 2) return 13.0 / 16.0;
+          return 5.0 / 16.0;
+        }
+      }
+    ` + shader.fragmentShader;
+
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <dithering_fragment>',
+      `
+      #include <dithering_fragment>
+      // Subtle, controlled Bayer dithering on color transitions & 3D edges
+      float bayer = (getBayer4x4(gl_FragCoord.xy) - 0.5) * ${intensity.toFixed(2)};
+      float dSteps = ${steps.toFixed(1)};
+      gl_FragColor.rgb = floor(gl_FragColor.rgb * dSteps + bayer + 0.5) / dSteps;
+      `
+    );
+  };
+}
+
+// ---------------------------------------------------------------------------
 // 3D Procedural Geometries (Saguaro Cactus, Natural Grass, Textured Houses)
 // ---------------------------------------------------------------------------
 
@@ -940,35 +990,41 @@ export class RCT3DRenderer {
       this.nightLightPool.push(pl);
     }
 
-    // 5. Materials with Vertex Colors for Contact AO & Textures
+    // 5. Materials with Vertex Colors for Contact AO, Textures & Dithering
     this.materials = {
       [TILE_FLOOR]: new THREE.MeshLambertMaterial({
         color: 0x2e5424,
+        dithering: true,
         vertexColors: true,
         side: THREE.DoubleSide
       }),
       sandClean: new THREE.MeshLambertMaterial({
         color: 0xdec078,
+        dithering: true,
         vertexColors: true,
         side: THREE.DoubleSide
       }),
       [TILE_SAND]: new THREE.MeshLambertMaterial({
         map: createTintedTexture("Feature_Pebbles.png", 0x6e5228, 0xdec078, 1.0),
+        dithering: true,
         vertexColors: true,
         side: THREE.DoubleSide
       }),
       [TILE_STONE]: new THREE.MeshLambertMaterial({
         map: createTintedTexture("Feature_Stone_B.png", 0xa5a5af, 0x3a3a44, 1.0),
+        dithering: true,
         vertexColors: true,
         side: THREE.DoubleSide
       }),
       [TILE_MOUNTAIN]: new THREE.MeshLambertMaterial({
         map: createTintedTexture("Feature_Stone_C.png", 0xb4afaa, 0x484242, 1.0),
+        dithering: true,
         vertexColors: true,
         side: THREE.DoubleSide
       }),
       [TILE_WATER]: new THREE.MeshLambertMaterial({
         map: createTintedTexture("Feature_Waves.png", 0x64b4ff, 0x143764, 1.0),
+        dithering: true,
         vertexColors: true,
         transparent: false,
         opacity: 1.0,
@@ -976,99 +1032,125 @@ export class RCT3DRenderer {
       }),
       cliff: new THREE.MeshLambertMaterial({
         map: createTintedTexture("Feature_Stone_C.png", 0x887a6a, 0x2b2218, 1.0),
+        dithering: true,
         vertexColors: true,
         side: THREE.DoubleSide
       }),
       grassFoliage: new THREE.MeshLambertMaterial({
         map: createTintedTexture("Feature_Grass.png", 0x3c7228, 0x000000, 0.0),
+        dithering: true,
         transparent: false,
         alphaTest: 0.5,
         depthWrite: true,
         depthTest: true,
         side: THREE.DoubleSide
       }),
-      treeTrunk: new THREE.MeshLambertMaterial({ color: 0x583c1e }),
-      oakLeaves: new THREE.MeshLambertMaterial({ color: 0x3e8226 }),
-      pineLeaves: new THREE.MeshLambertMaterial({ color: 0x205222 }),
-      cactus: new THREE.MeshLambertMaterial({ color: 0x3c7c2c }),
+      treeTrunk: new THREE.MeshLambertMaterial({ color: 0x583c1e, dithering: true }),
+      oakLeaves: new THREE.MeshLambertMaterial({ color: 0x3e8226, dithering: true }),
+      pineLeaves: new THREE.MeshLambertMaterial({ color: 0x205222, dithering: true }),
+      cactus: new THREE.MeshLambertMaterial({ color: 0x3c7c2c, dithering: true }),
       // Textured House Walls (Warm Timbered Plaster/Brick) & Roofs (Terracotta Shingles)
       houseWall: new THREE.MeshLambertMaterial({
         map: createTintedTexture("Feature_Brick_B.png", 0xfffaea, 0x8a6242, 1.0),
+        dithering: true,
         side: THREE.DoubleSide
       }),
       houseRoof: new THREE.MeshLambertMaterial({
         map: createTintedTexture("Feature_Brick_C.png", 0xff6238, 0x941e0a, 1.0),
+        dithering: true,
         side: THREE.DoubleSide
       }),
       woodHouseWall: new THREE.MeshLambertMaterial({
         map: createTintedTexture("Feature_Wood.png", 0xd4a373, 0x4a3525, 1.0),
+        dithering: true,
         side: THREE.DoubleSide
       }),
       woodHouseRoof: new THREE.MeshLambertMaterial({
         map: createTintedTexture("Feature_Wood.png", 0xa67c52, 0x3b271a, 1.0),
+        dithering: true,
         side: THREE.DoubleSide
       }),
       stoneHouseWall: new THREE.MeshLambertMaterial({
         map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0),
+        dithering: true,
         side: THREE.DoubleSide
       }),
       stoneHouseRoof: new THREE.MeshLambertMaterial({
         map: createTintedTexture("Feature_Brick_A.png", 0x9098a8, 0x2d3748, 1.0),
+        dithering: true,
         side: THREE.DoubleSide
       }),
       houseBlueprint: new THREE.MeshLambertMaterial({
         map: createTintedTexture("Feature_Wood.png", 0xdfa052, 0x5a3418, 1.0),
+        dithering: true,
         side: THREE.DoubleSide
       }),
       wall: new THREE.MeshLambertMaterial({
         map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0),
+        dithering: true,
         side: THREE.DoubleSide
       }),
       woodWall: new THREE.MeshLambertMaterial({
         map: createTintedTexture("Feature_Wood.png", 0xc89858, 0x482c18, 1.0),
+        dithering: true,
         side: THREE.DoubleSide
       }),
       mixedWall: new THREE.MeshLambertMaterial({
         map: createTintedTexture("Feature_Brick_B.png", 0xdfd0b0, 0x3d3024, 1.0),
+        dithering: true,
         side: THREE.DoubleSide
       }),
       wallBlueprint: new THREE.MeshLambertMaterial({
         map: createTintedTexture("Feature_Brick_A.png", 0x9a8f82, 0x3d3024, 1.0),
+        dithering: true,
         side: THREE.DoubleSide
       }),
       woodLog: new THREE.MeshLambertMaterial({
         map: createTintedTexture("Feature_Wood.png", 0xc89858, 0x3d2210, 1.0),
+        dithering: true,
         side: THREE.DoubleSide
       }),
       stoneItem: new THREE.MeshLambertMaterial({
         map: createTintedTexture("Feature_Stone_B.png", 0xd8d8e6, 0x3c3c46, 1.0),
+        dithering: true,
         side: THREE.DoubleSide
       }),
       gate: new THREE.MeshLambertMaterial({
         map: createTintedTexture("Feature_Wood.png", 0xad7842, 0x3a2214, 1.0),
+        dithering: true,
         side: THREE.DoubleSide
       }),
       gateBlueprint: new THREE.MeshLambertMaterial({
         map: createTintedTexture("Feature_Wood.png", 0xc89858, 0x482c18, 1.0),
+        dithering: true,
         side: THREE.DoubleSide
       }),
       warehouse: new THREE.MeshLambertMaterial({
         map: createTintedTexture("Feature_Wood.png", 0xc89858, 0x482c18, 1.0),
+        dithering: true,
         side: THREE.DoubleSide
       }),
       boneHouseWall: new THREE.MeshLambertMaterial({
         map: createTintedTexture("Feature_Stone_B.png", 0xf5f3ea, 0x5a554a, 1.0),
+        dithering: true,
         side: THREE.DoubleSide
       }),
       boneHouseRoof: new THREE.MeshLambertMaterial({
         map: createTintedTexture("Feature_Stone_B.png", 0xe6e2d3, 0x3d3830, 1.0),
+        dithering: true,
         side: THREE.DoubleSide
       }),
       boneWall: new THREE.MeshLambertMaterial({
         map: createTintedTexture("Feature_Stone_B.png", 0xf5f3ea, 0x5a554a, 1.0),
+        dithering: true,
         side: THREE.DoubleSide
       })
     };
+
+    // Apply Bayer ordered dithering strictly to shadow masks
+    for (const mat of Object.values(this.materials)) {
+      applyRetroDitherToMaterial(mat);
+    }
 
     // Dark Quad Grid Material (RCT Style)
     this.rctGridMaterial = new THREE.LineBasicMaterial({
@@ -2857,10 +2939,12 @@ export class RCT3DRenderer {
         if (!sprite) {
           const mat = new THREE.MeshLambertMaterial({
             map: tex,
+            dithering: true,
             transparent: true,
             alphaTest: 0.08,
             side: THREE.DoubleSide
           });
+          applyRetroDitherToMaterial(mat);
           sprite = new THREE.Mesh(this.billboardGeo, mat);
           sprite.castShadow = true;
           sprite.receiveShadow = true;
@@ -3056,17 +3140,17 @@ export class RCT3DRenderer {
         const isHouse = !!e.properties?.house || e.properties?.render?.skin === "Overworld_House.png";
         if (isHouse && e.properties?.house?.isCompleted !== false) {
           const sH = this.getTileSurfaceHeight(map, Math.floor(e.x), Math.floor(e.y));
-          // Place lantern on exterior front porch / veranda outside the walls so light radiates unobstructed
+          // Place light source on top of the house (roof peak) so light radiates unobstructed in all directions
           const dx = (e.x + 0.5) - focusX;
-          const dy = (e.y + 1.25) - focusY;
+          const dy = (e.y + 0.5) - focusY;
           candidates.push({
             x: e.x + 0.5,
-            y: sH + 1.15,
-            z: e.y + 1.25,
+            y: sH + 2.35,
+            z: e.y + 0.5,
             color: 0xffa040,
-            distance: 14.0,
-            decay: 1.5,
-            intensity: nightGlow * 2.8,
+            distance: 16.0,
+            decay: 1.4,
+            intensity: nightGlow * 3.0,
             priority: 2, // High priority
             distSq: dx * dx + dy * dy
           });
