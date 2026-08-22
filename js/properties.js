@@ -1,4 +1,5 @@
 import { createEntity, getEntityById, entityRegistry, currentTick, getEntitiesInRadius, getEntityAtTile, setSpatialZoneSize, tileEntityMap, globalWallCoords } from "./engine.js";
+import { MAP_WIDTH, MAP_HEIGHT, TILE_WATER, TILE_VOID } from "./world_gen.js";
 import {
   recordWorldEvent,
   allEvents,
@@ -32,6 +33,18 @@ import {
   OP_FORGET
 } from "./event_log.js";
 import { vocabulario } from "./vocabulario.js";
+
+export let activeWorld = null;
+export function setActiveWorld(w) {
+  activeWorld = w;
+}
+
+export function isLandTile(x, y) {
+  if (!activeWorld || !activeWorld.map) return true;
+  if (x < 0 || x >= MAP_WIDTH || y < 0 || y >= MAP_HEIGHT) return false;
+  const t = activeWorld.map[y * MAP_WIDTH + x];
+  return t !== TILE_WATER && t !== TILE_VOID;
+}
 
 // Configurable macro-chunk zone size (tiles per zone side)
 export let currentZoneSize = 8;
@@ -1751,6 +1764,45 @@ export function getRandomFlagSkin() {
 }
 
 /**
+ * Generates group and faction names with optional prefixes ("Clã dos", "Irmandade da", etc.)
+ * and authentic 1 or 2 real words directly from the Portuguese vocabulario database (no eufonia mangling).
+ */
+export function gerarNomeGrupo(founderName = null) {
+  const PREFIXOS = [
+    "Clã dos", "Clã das", "Clã do", "Clã da", "Clã de",
+    "Irmandade dos", "Irmandade das", "Irmandade do", "Irmandade da", "Irmandade de",
+    "Guilda dos", "Guilda das", "Guilda do", "Guilda da", "Guilda de",
+    "Tribo dos", "Tribo das", "Tribo do", "Tribo da", "Tribo de",
+    "Ordem dos", "Ordem das", "Ordem do", "Ordem da", "Ordem de",
+    "Aliança dos", "Aliança das", "Aliança do", "Aliança da", "Aliança de",
+    "Povo dos", "Povo das", "Povo do", "Povo da", "Povo de",
+    "Vanguarda da", "Vanguarda do", "Vanguarda dos", "Vanguarda das",
+    "Legião da", "Legião do", "Legião dos", "Legião das",
+    "Bastião da", "Bastião do", "Bastião dos", "Bastião das",
+    "Sociedade da", "Sociedade do", "Sociedade dos", "Sociedade das"
+  ];
+
+  const w1 = getRandomVocabWord();
+  const w2 = getRandomVocabWord();
+
+  const usePrefix = Math.random() < 0.70;
+  const numWords = Math.random() < 0.50 ? 2 : 1;
+  const baseWords = numWords === 2 ? `${w1} ${w2}` : w1;
+
+  if (founderName && Math.random() < 0.25) {
+    const p = ["Clã de", "Irmandade de", "Guilda de", "Povo de", "Ordem de", "Tribo de"][Math.floor(Math.random() * 6)];
+    return `${p} ${founderName}`;
+  }
+
+  if (usePrefix) {
+    const prefix = PREFIXOS[Math.floor(Math.random() * PREFIXOS.length)];
+    return `${prefix} ${baseWords}`;
+  }
+
+  return baseWords;
+}
+
+/**
  * Group / Faction System (Same JS Object shared by reference between all group members)
  */
 let nextGroupId = 1;
@@ -1777,7 +1829,7 @@ export function createGroup(name, founder, baseZone = null, claimedZones = null)
 
   const group = {
     id: nextGroupId++,
-    name: name || `Clan #${nextGroupId}`,
+    name: name || gerarNomeGrupo(),
     leaderId: founderId !== undefined && founderId !== null ? founderId : null,
     members: founderId !== undefined && founderId !== null ? [founderId] : [],
     claimedZones: claimedZones || defaultZones,
@@ -1827,9 +1879,26 @@ export function getClanBlueprintTiles(group) {
 
     for (const pos of housePositionsPerZone) {
       if (memberIdx >= members.length) break;
+      let px = zx * sz + pos.ox;
+      let py = zy * sz + pos.oy;
+
+      if (!isLandTile(px, py)) {
+        let foundLand = false;
+        for (let dy = 1; dy < sz - 1 && !foundLand; dy++) {
+          for (let dx = 1; dx < sz - 1 && !foundLand; dx++) {
+            const candX = zx * sz + dx;
+            const candY = zy * sz + dy;
+            if (isLandTile(candX, candY)) {
+              px = candX;
+              py = candY;
+              foundLand = true;
+            }
+          }
+        }
+        if (!foundLand) continue;
+      }
+
       const ownerId = members[memberIdx];
-      const px = zx * sz + pos.ox;
-      const py = zy * sz + pos.oy;
       tiles.push({ x: px, y: py, type: "house", ownerId });
       memberIdx++;
     }
@@ -2377,7 +2446,7 @@ export function gossipBetweenCreatures(speaker, listener, world, entities) {
   // 3. Group Formation: If both have mutual affinity >= 70 and neither has a group
   if (spkAffToLis >= 70 && lisAffToSpk >= 70 && Math.random() < 0.10) {
     if (!speaker.properties.group && !listener.properties.group) {
-      const newGrp = createGroup(`Clan of ${speaker.properties.name}`, speaker);
+      const newGrp = createGroup(gerarNomeGrupo(speaker.properties.name), speaker);
       newGrp.members.push(listener.id);
       speaker.properties.group = newGrp;
       listener.properties.group = newGrp;
@@ -2387,7 +2456,7 @@ export function gossipBetweenCreatures(speaker, listener, world, entities) {
         primaryEntityId: speaker.id,
         secondaryEntityId: listener.id,
         location: { x: speaker.x, y: speaker.y },
-        description: `${speaker.properties.name} and ${listener.properties.name} founded the faction '${newGrp.name}'!`,
+        description: `${speaker.properties.name} e ${listener.properties.name} fundaram a facção '${newGrp.name}'!`,
         tick: currentTick,
         timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
         metadata: { primaryName: speaker.properties.name, secondaryName: listener.properties.name }
@@ -3171,7 +3240,7 @@ export function createGroupMemberProp() {
               type: "KILL",
               primaryEntityId: ent.id,
               location: { x: ent.x, y: ent.y },
-              description: `DECISIVE WAR VICTORY! '${group.name}' crushed '${enemyGroup.name}'! The enemy leader fell and their forces were cut in half. The defeated clan dissolved and '${group.name}' annexed all their territory!`,
+              description: `VITÓRIA DECISIVA DE GUERRA! '${group.name}' esmagou '${enemyGroup.name}'! O líder inimigo caiu e suas forças foram reduzidas pela metade. O clã derrotado foi dissolvido e '${group.name}' anexou todo o seu território!`,
               tick: currentTick,
               timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
             });
@@ -6920,9 +6989,7 @@ export function createHumanExplorer(x, y, name = null) {
  * equipped with starter supplies, mutual clan affinity, and claims.
  */
 export function createEmbarkParty(centerX, centerY, world, entities) {
-  const CLAN_ADJECTIVES = ["Obsidian", "Iron", "Golden", "Sunfire", "Silver", "Shadow", "Emerald", "Frostpeak", "Stormborn", "Crimson", "Wildwood", "Deeprock"];
-  const CLAN_NOUNS = ["Vanguard", "Settlers", "Enclave", "Tribe", "Brotherhood", "Legion", "Pioneers", "Guild", "Syndicate", "Fellowship", "Haven", "Clan"];
-  const clanName = `The ${CLAN_ADJECTIVES[Math.floor(Math.random() * CLAN_ADJECTIVES.length)]} ${CLAN_NOUNS[Math.floor(Math.random() * CLAN_NOUNS.length)]}`;
+  const clanName = gerarNomeGrupo();
 
   const partyPlan = [
     { species: "human", role: "Builder" },
@@ -6934,7 +7001,7 @@ export function createEmbarkParty(centerX, centerY, world, entities) {
     { species: "elf", role: "Guard" }
   ];
 
-  const SURNAMES = ["Vance", "Silveira", "Rocha", "Barros", "Prado", "Montes", "Ramos", "Torres", "Valente", "Thorne", "Alba", "Fletcher"];
+  const SURNAMES = ["Silveira", "Rocha", "Barros", "Prado", "Montes", "Ramos", "Torres", "Valente", "Carvalho", "Alba", "Ferreira", "Macedo", "Gouveia", "Freitas", "Machado", "Fontes"];
   const surname = SURNAMES[Math.floor(Math.random() * SURNAMES.length)];
 
   const members = [];
@@ -7023,7 +7090,7 @@ export function createEmbarkParty(centerX, centerY, world, entities) {
     type: "BIRTH",
     primaryEntityId: founder.id,
     location: { x: centerX, y: centerY },
-    description: `The clan "${clanName}" has embarked and established a settlement at [X: ${centerX}, Y: ${centerY}]!`
+    description: `O clã "${clanName}" embarcou e estabeleceu seu assentamento em [X: ${centerX}, Y: ${centerY}]!`
   });
 
   return { clan, members };

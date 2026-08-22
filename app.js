@@ -116,7 +116,8 @@ import {
   getZoneSize,
   setZoneSize,
   getMoodLabel,
-  getGroupStockpile
+  getGroupStockpile,
+  setActiveWorld
 } from "./js/properties.js";
 
 // ---------------------------------------------------------------------------
@@ -784,11 +785,28 @@ function applyTileBrush(cx, cy, tileType, brushSize) {
   }
 }
 
+function getEditorHoverTile() {
+  if (is3DMode && rctRenderer) {
+    return rctRenderer.getTileAtScreen(mouseClientX, mouseClientY, world);
+  } else if (renderer) {
+    const zoom = renderer.getCameraZoom();
+    const tileSize = 16.0 * zoom;
+    const cx = renderer.getCameraX();
+    const cy = renderer.getCameraY();
+    return {
+      x: Math.floor(cx + (mouseX - CANVAS_WIDTH / 2) / tileSize),
+      y: Math.floor(cy + (mouseY - CANVAS_HEIGHT / 2) / tileSize)
+    };
+  }
+  return { x: 0, y: 0 };
+}
+
 function applyEditorActionAt(tileX, tileY) {
   if (!world || tileX < 0 || tileX >= (world.width || 512) || tileY < 0 || tileY >= (world.height || 512)) return;
 
   if (editorTool === "PAINT") {
     applyTileBrush(tileX, tileY, editorSelectedTile, editorBrushSize);
+    if (rctRenderer) rctRenderer.lastBuiltCamTileX = -9999;
   } else if (editorTool === "SPAWN" && editorActiveSpawner) {
     const ent = editorActiveSpawner.fn(tileX, tileY);
     if (ent) {
@@ -1415,16 +1433,10 @@ window.addEventListener("mousedown", (e) => {
     }
 
     // If Editor is active and clicked on map canvas (not over UI bars or corner menu)
-    if (isEditorOpen && editorTool && renderer && currentMode === "MAP" && coords.inside && coords.y > 32 && coords.y < CANVAS_HEIGHT - 36) {
-      const zoom = renderer.getCameraZoom();
-      const tileSize = 16.0 * zoom;
-      const cx = renderer.getCameraX();
-      const cy = renderer.getCameraY();
-      const tileX = Math.floor(cx + (coords.x - CANVAS_WIDTH / 2) / tileSize);
-      const tileY = Math.floor(cy + (coords.y - CANVAS_HEIGHT / 2) / tileSize);
-
+    if (isEditorOpen && editorTool && coords.inside && coords.y > 32 && coords.y < CANVAS_HEIGHT - 36) {
+      const tile = getEditorHoverTile();
       isPainting = true;
-      applyEditorActionAt(tileX, tileY);
+      applyEditorActionAt(tile.x, tile.y);
       return;
     }
   }
@@ -1450,19 +1462,14 @@ window.addEventListener("mousemove", (e) => {
     }
   }
   if (!isOverUi) {
-    canvas.style.cursor = (currentMode === "MAP" && isEditorOpen && editorTool) ? "crosshair" : "default";
+    canvas.style.cursor = (isEditorOpen && editorTool) ? "crosshair" : "default";
   }
 
   // Active Real-Time Painting Drag
-  if (isEditorOpen && isPainting && isMouseDown && renderer && currentMode === "MAP" && (editorTool === "PAINT" || editorTool === "BULLDOZER")) {
+  if (isEditorOpen && isPainting && isMouseDown && (editorTool === "PAINT" || editorTool === "BULLDOZER")) {
     if (coords.inside && coords.y > 32 && coords.y < CANVAS_HEIGHT - 36) {
-      const zoom = renderer.getCameraZoom();
-      const tileSize = 16.0 * zoom;
-      const cx = renderer.getCameraX();
-      const cy = renderer.getCameraY();
-      const tileX = Math.floor(cx + (coords.x - CANVAS_WIDTH / 2) / tileSize);
-      const tileY = Math.floor(cy + (coords.y - CANVAS_HEIGHT / 2) / tileSize);
-      applyEditorActionAt(tileX, tileY);
+      const tile = getEditorHoverTile();
+      applyEditorActionAt(tile.x, tile.y);
       return;
     }
   }
@@ -3161,35 +3168,30 @@ function renderLogDetailView(mx, my, mw, mh, ev) {
 function renderCompactEditorPanel() {
   if (!isEditorOpen || currentMode !== "MAP") return;
 
-  const pw = 216;
-  const ph = 380;
+  const pw = 232;
+  const ph = 362;
   const px = CANVAS_WIDTH - pw - 10;
-  const py = 36;
+  const py = 38;
 
-  ctx.save();
-  ctx.fillStyle = "rgba(10, 10, 18, 0.94)";
-  ctx.fillRect(px, py, pw, ph);
+  // 1. Outer NES Window Box
+  drawNESBox(px, py, pw, ph);
 
-  ctx.strokeStyle = "#f8b800";
-  ctx.lineWidth = 2;
-  ctx.strokeRect(px + 1, py + 1, pw - 2, ph - 2);
-
-  // Header Title & Close Button
-  drawText8x8("MAP EDITOR", px + 8, py + 10, "#f8b800", 1);
-  drawNESButton(px + pw - 20, py + 5, 15, 15, "X", false, true);
-  registerClickableRegion(px + pw - 20, py + 5, 15, 15, () => {
+  // 2. Header Title & Close Button
+  drawText8x8("MAP EDITOR", px + 10, py + 10, "#f8b800", 1);
+  drawNESButton(px + pw - 22, py + 6, 16, 16, "X", false, true);
+  registerClickableRegion(px + pw - 22, py + 6, 16, 16, () => {
     isEditorOpen = false;
     editorTool = null;
     editorActiveSpawner = null;
     isPainting = false;
   });
 
-  // Mini Category Tabs: [TILE] [MOB] [ITEM] [TOOL]
+  // 3. Category Tabs: [TILE] [MOB] [ITEM] [TOOL]
   const tabs = [
-    { id: "TILES", label: "TILE", w: 46 },
-    { id: "CREATURES", label: "MOB", w: 44 },
-    { id: "ITEMS", label: "ITEM", w: 46 },
-    { id: "TOOLS", label: "TOOL", w: 46 }
+    { id: "TILES", label: "TILE", w: 50 },
+    { id: "CREATURES", label: "MOB", w: 48 },
+    { id: "ITEMS", label: "ITEM", w: 50 },
+    { id: "TOOLS", label: "TOOL", w: 50 }
   ];
 
   let tabX = px + 8;
@@ -3205,30 +3207,35 @@ function renderCompactEditorPanel() {
   }
 
   const contentY = py + 52;
+  const contentH = ph - 114;
+
+  // Inner NES Content Frame
+  drawNESBox(px + 8, contentY, pw - 16, contentH);
 
   // TAB 1: TILES
   if (editorTab === "TILES") {
-    drawText8x8("TERRAIN TILES:", px + 8, contentY, "#3cbcfc", 1);
+    drawText8x8("TERRAIN TILES:", px + 14, contentY + 8, "#3cbcfc", 1);
 
     const cols = 2;
-    const colW = Math.floor((pw - 20) / cols);
-    const itemH = 24;
+    const colW = Math.floor((pw - 36) / cols);
+    const itemH = 22;
 
     for (let i = 0; i < EDITOR_TILES.length; i++) {
       const tile = EDITOR_TILES[i];
       const col = i % cols;
       const row = Math.floor(i / cols);
-      const bx = px + 8 + col * (colW + 4);
-      const by = contentY + 12 + row * (itemH + 4);
+      const bx = px + 14 + col * (colW + 6);
+      const by = contentY + 22 + row * (itemH + 4);
       const isSel = editorTool === "PAINT" && editorSelectedTile === tile.id;
 
       drawNESButton(bx, by, colW, itemH, ` ${tile.label.slice(0, 7)}`, isSel, false);
 
       // Mini Color Swatch
       ctx.fillStyle = tile.color;
-      ctx.fillRect(bx + 4, by + 6, 10, 10);
+      ctx.fillRect(bx + 4, by + 5, 10, 10);
       ctx.strokeStyle = "#ffffff";
-      ctx.strokeRect(bx + 4, by + 6, 10, 10);
+      ctx.lineWidth = 1;
+      ctx.strokeRect(bx + 4, by + 5, 10, 10);
 
       const tileId = tile.id;
       registerClickableRegion(bx, by, colW, itemH, () => {
@@ -3239,42 +3246,32 @@ function renderCompactEditorPanel() {
     }
 
     // Brush Sizes
-    const brushY = contentY + 104;
-    drawText8x8("BRUSH RADIUS:", px + 8, brushY, "#f8b800", 1);
+    const brushY = contentY + 118;
+    drawText8x8("BRUSH RADIUS:", px + 14, brushY, "#f8b800", 1);
     const sizes = [1, 3, 5, 9];
-    let bsizeX = px + 8;
-    const bsizeW = Math.floor((pw - 20 - 12) / 4);
+    let bsizeX = px + 14;
+    const bsizeW = Math.floor((pw - 36 - 12) / 4);
     for (const sz of sizes) {
       const isAct = editorBrushSize === sz;
-      drawNESButton(bsizeX, brushY + 12, bsizeW, 20, `${sz}x${sz}`, isAct, false);
+      drawNESButton(bsizeX, brushY + 14, bsizeW, 22, `${sz}x${sz}`, isAct, false);
       const sizeVal = sz;
-      registerClickableRegion(bsizeX, brushY + 12, bsizeW, 20, () => {
+      registerClickableRegion(bsizeX, brushY + 14, bsizeW, 22, () => {
         editorBrushSize = sizeVal;
         editorTool = "PAINT";
       });
       bsizeX += bsizeW + 4;
     }
-
-    // Fill Viewport Button
-    drawNESButton(px + 8, brushY + 38, pw - 16, 22, "FILL VIEWPORT AREA", false, false);
-    registerClickableRegion(px + 8, brushY + 38, pw - 16, 22, () => {
-      if (renderer && world) {
-        const cx = Math.floor(renderer.getCameraX());
-        const cy = Math.floor(renderer.getCameraY());
-        applyTileBrush(cx, cy, editorSelectedTile, 30);
-      }
-    });
   }
 
   // TAB 2: CREATURES (Paginated: 8 per page)
   else if (editorTab === "CREATURES") {
     const itemsPerPage = 8;
     const maxPages = Math.ceil(EDITOR_CREATURES.length / itemsPerPage);
-    drawText8x8(`SPAWN MOB (P.${editorPage + 1}/${maxPages}):`, px + 8, contentY, "#3cbcfc", 1);
+    drawText8x8(`SPAWN MOB (P.${editorPage + 1}/${maxPages}):`, px + 14, contentY + 8, "#3cbcfc", 1);
 
     const cols = 2;
-    const colW = Math.floor((pw - 20) / cols);
-    const itemH = 24;
+    const colW = Math.floor((pw - 36) / cols);
+    const itemH = 22;
 
     const startIdx = editorPage * itemsPerPage;
     const pageItems = EDITOR_CREATURES.slice(startIdx, startIdx + itemsPerPage);
@@ -3283,8 +3280,8 @@ function renderCompactEditorPanel() {
       const c = pageItems[i];
       const col = i % cols;
       const row = Math.floor(i / cols);
-      const bx = px + 8 + col * (colW + 4);
-      const by = contentY + 12 + row * (itemH + 4);
+      const bx = px + 14 + col * (colW + 6);
+      const by = contentY + 22 + row * (itemH + 4);
       const isSel = editorTool === "SPAWN" && editorActiveSpawner?.label === c.label;
 
       drawNESButton(bx, by, colW, itemH, `+${c.label.slice(0, 8)}`, isSel, false);
@@ -3297,14 +3294,14 @@ function renderCompactEditorPanel() {
     }
 
     // Pagination buttons
-    const pageY = contentY + 128;
-    drawNESButton(px + 8, pageY, 90, 20, "◀ PREV", false, false);
-    registerClickableRegion(px + 8, pageY, 90, 20, () => {
+    const pageY = contentY + 146;
+    drawNESButton(px + 14, pageY, 96, 22, "◀ PREV", false, false);
+    registerClickableRegion(px + 14, pageY, 96, 22, () => {
       editorPage = (editorPage - 1 + maxPages) % maxPages;
     });
 
-    drawNESButton(px + pw - 98, pageY, 90, 20, "NEXT ▶", false, false);
-    registerClickableRegion(px + pw - 98, pageY, 90, 20, () => {
+    drawNESButton(px + pw - 110, pageY, 96, 22, "NEXT ▶", false, false);
+    registerClickableRegion(px + pw - 110, pageY, 96, 22, () => {
       editorPage = (editorPage + 1) % maxPages;
     });
   }
@@ -3313,11 +3310,11 @@ function renderCompactEditorPanel() {
   else if (editorTab === "ITEMS") {
     const itemsPerPage = 8;
     const maxPages = Math.ceil(EDITOR_ITEMS.length / itemsPerPage);
-    drawText8x8(`ITEMS/NATURE (P.${editorPage + 1}/${maxPages}):`, px + 8, contentY, "#3cbcfc", 1);
+    drawText8x8(`ITEMS/NATURE (P.${editorPage + 1}/${maxPages}):`, px + 14, contentY + 8, "#3cbcfc", 1);
 
     const cols = 2;
-    const colW = Math.floor((pw - 20) / cols);
-    const itemH = 24;
+    const colW = Math.floor((pw - 36) / cols);
+    const itemH = 22;
 
     const startIdx = editorPage * itemsPerPage;
     const pageItems = EDITOR_ITEMS.slice(startIdx, startIdx + itemsPerPage);
@@ -3326,8 +3323,8 @@ function renderCompactEditorPanel() {
       const it = pageItems[i];
       const col = i % cols;
       const row = Math.floor(i / cols);
-      const bx = px + 8 + col * (colW + 4);
-      const by = contentY + 12 + row * (itemH + 4);
+      const bx = px + 14 + col * (colW + 6);
+      const by = contentY + 22 + row * (itemH + 4);
       const isSel = editorTool === "SPAWN" && editorActiveSpawner?.label === it.label;
 
       drawNESButton(bx, by, colW, itemH, `+${it.label.slice(0, 8)}`, isSel, false);
@@ -3340,21 +3337,21 @@ function renderCompactEditorPanel() {
     }
 
     // Pagination buttons
-    const pageY = contentY + 128;
-    drawNESButton(px + 8, pageY, 90, 20, "◀ PREV", false, false);
-    registerClickableRegion(px + 8, pageY, 90, 20, () => {
+    const pageY = contentY + 146;
+    drawNESButton(px + 14, pageY, 96, 22, "◀ PREV", false, false);
+    registerClickableRegion(px + 14, pageY, 96, 22, () => {
       editorPage = (editorPage - 1 + maxPages) % maxPages;
     });
 
-    drawNESButton(px + pw - 98, pageY, 90, 20, "NEXT ▶", false, false);
-    registerClickableRegion(px + pw - 98, pageY, 90, 20, () => {
+    drawNESButton(px + pw - 110, pageY, 96, 22, "NEXT ▶", false, false);
+    registerClickableRegion(px + pw - 110, pageY, 96, 22, () => {
       editorPage = (editorPage + 1) % maxPages;
     });
   }
 
   // TAB 4: TOOLS
   else if (editorTab === "TOOLS") {
-    drawText8x8("MAP TOOLS:", px + 8, contentY, "#3cbcfc", 1);
+    drawText8x8("MAP TOOLS:", px + 14, contentY + 8, "#3cbcfc", 1);
 
     const tools = [
       { id: "PAINT", label: "TERRAIN BRUSH" },
@@ -3362,27 +3359,24 @@ function renderCompactEditorPanel() {
       { id: "BULLDOZER", label: "BULLDOZER (DEL)" }
     ];
 
-    let toolY = contentY + 12;
+    let toolY = contentY + 22;
     for (const t of tools) {
       const isAct = editorTool === t.id;
-      drawNESButton(px + 8, toolY, pw - 16, 26, t.label, isAct, t.id === "BULLDOZER");
+      drawNESButton(px + 14, toolY, pw - 28, 28, t.label, isAct, t.id === "BULLDOZER");
 
       const toolId = t.id;
-      registerClickableRegion(px + 8, toolY, pw - 16, 26, () => {
+      registerClickableRegion(px + 14, toolY, pw - 28, 28, () => {
         editorTool = toolId;
         if (toolId !== "SPAWN") editorActiveSpawner = null;
       });
 
-      toolY += 32;
+      toolY += 36;
     }
   }
 
-  // Bottom Quick Status & Instructions
+  // Bottom Quick Status & Instructions (NES Box)
   const footerY = py + ph - 54;
-  ctx.fillStyle = "#181824";
-  ctx.fillRect(px + 8, footerY, pw - 16, 44);
-  ctx.strokeStyle = "#444458";
-  ctx.strokeRect(px + 8, footerY, pw - 16, 44);
+  drawNESBox(px + 8, footerY, pw - 16, 46);
 
   let activeStr = "NONE";
   if (editorTool === "PAINT") activeStr = `TILE: ${EDITOR_TILES[editorSelectedTile]?.label.slice(0, 8)}`;
@@ -3390,76 +3384,68 @@ function renderCompactEditorPanel() {
   else if (editorTool === "BULLDOZER") activeStr = "BULLDOZER";
   else if (editorTool === "EYEDROPPER") activeStr = "EYEDROPPER";
 
-  drawText8x8(`ACTIVE: ${activeStr}`, px + 12, footerY + 6, "#f8b800", 1);
-  drawText8x8("L-CLICK MAP: APPLY", px + 12, footerY + 20, "#58d854", 1);
-  drawText8x8("R-CLICK: PAN | ESC: EXIT", px + 12, footerY + 32, "#bcbcbc", 1);
-
-  ctx.restore();
+  drawText8x8(`ACTIVE: ${activeStr}`, px + 14, footerY + 7, "#f8b800", 1);
+  drawText8x8("L-CLICK MAP: APPLY", px + 14, footerY + 20, "#58d854", 1);
+  drawText8x8("R-CLICK: PAN | ESC: EXIT", px + 14, footerY + 32, "#bcbcbc", 1);
 }
 
 function renderMapEditorOverlay() {
-  if (!renderer || !world || !isEditorOpen || !editorTool || currentMode !== "MAP") return;
+  if (!world || !isEditorOpen || !editorTool) return;
 
-  const zoom = renderer.getCameraZoom();
-  const tileSize = 16.0 * zoom;
-  const cx = renderer.getCameraX();
-  const cy = renderer.getCameraY();
-  const hoverTileX = Math.floor(cx + (mouseX - CANVAS_WIDTH / 2) / tileSize);
-  const hoverTileY = Math.floor(cy + (mouseY - CANVAS_HEIGHT / 2) / tileSize);
+  const hoverTile = getEditorHoverTile();
+  const hoverTileX = hoverTile.x;
+  const hoverTileY = hoverTile.y;
 
   const panelX = CANVAS_WIDTH - 226;
   const isOverPanel = mouseX >= panelX && mouseY >= 36 && mouseY <= 420;
 
   // If hovering over active map area and not over the docked corner panel
   if (!isOverPanel && mouseY > 32 && mouseY < CANVAS_HEIGHT - 36 && mouseX >= 0 && mouseX <= CANVAS_WIDTH) {
-    const centerScreenX = CANVAS_WIDTH / 2;
-    const centerScreenY = CANVAS_HEIGHT / 2;
+    ctx.save();
+    const infoX = Math.min(CANVAS_WIDTH - 230, mouseX + 16);
+    const infoY = Math.max(52, mouseY - 14);
 
     if (editorTool === "PAINT") {
-      const half = Math.floor(editorBrushSize / 2);
-      const startX = centerScreenX + (hoverTileX - half - cx) * tileSize;
-      const startY = centerScreenY + (hoverTileY - half - cy) * tileSize;
-      const boxSize = editorBrushSize * tileSize;
-
-      ctx.save();
-      ctx.strokeStyle = EDITOR_TILES[editorSelectedTile]?.color || "#f8b800";
-      ctx.lineWidth = 2;
-      ctx.strokeRect(startX, startY, boxSize, boxSize);
-
-      ctx.fillStyle = (EDITOR_TILES[editorSelectedTile]?.color || "#f8b800") + "44";
-      ctx.fillRect(startX, startY, boxSize, boxSize);
-      ctx.restore();
+      const tileName = EDITOR_TILES[editorSelectedTile]?.label || "TILE";
+      const badge = `PAINT [${hoverTileX},${hoverTileY}] (${editorBrushSize}x${editorBrushSize}): ${tileName}`;
+      drawText8x8(badge, infoX, infoY, EDITOR_TILES[editorSelectedTile]?.color || "#f8b800", 1);
     } else if (editorTool === "SPAWN" && editorActiveSpawner) {
-      const startX = centerScreenX + (hoverTileX - cx) * tileSize;
-      const startY = centerScreenY + (hoverTileY - cy) * tileSize;
-
-      ctx.save();
-      ctx.strokeStyle = "#58d854";
-      ctx.lineWidth = 2;
-      ctx.strokeRect(startX, startY, tileSize, tileSize);
-      drawText8x8(`SPAWN: ${editorActiveSpawner.label}`, Math.min(CANVAS_WIDTH - 230, mouseX + 12), Math.max(48, mouseY - 14), "#58d854", 1);
-      ctx.restore();
+      drawText8x8(`SPAWN [${hoverTileX},${hoverTileY}]: ${editorActiveSpawner.label}`, infoX, infoY, "#58d854", 1);
     } else if (editorTool === "BULLDOZER") {
-      const startX = centerScreenX + (hoverTileX - cx) * tileSize;
-      const startY = centerScreenY + (hoverTileY - cy) * tileSize;
-
-      ctx.save();
-      ctx.strokeStyle = "#e40058";
-      ctx.lineWidth = 2;
-      ctx.strokeRect(startX, startY, tileSize, tileSize);
-      drawText8x8("ERASE / BULLDOZE", Math.min(CANVAS_WIDTH - 230, mouseX + 12), Math.max(48, mouseY - 14), "#e40058", 1);
-      ctx.restore();
+      drawText8x8(`ERASE [${hoverTileX},${hoverTileY}]`, infoX, infoY, "#e40058", 1);
     } else if (editorTool === "EYEDROPPER") {
-      const startX = centerScreenX + (hoverTileX - cx) * tileSize;
-      const startY = centerScreenY + (hoverTileY - cy) * tileSize;
-
-      ctx.save();
-      ctx.strokeStyle = "#3cbcfc";
-      ctx.lineWidth = 2;
-      ctx.strokeRect(startX, startY, tileSize, tileSize);
-      drawText8x8("SAMPLE TILE", Math.min(CANVAS_WIDTH - 230, mouseX + 12), Math.max(48, mouseY - 14), "#3cbcfc", 1);
-      ctx.restore();
+      drawText8x8(`SAMPLE [${hoverTileX},${hoverTileY}]`, infoX, infoY, "#3cbcfc", 1);
     }
+
+    if (!is3DMode && renderer) {
+      const zoom = renderer.getCameraZoom();
+      const tileSize = 16.0 * zoom;
+      const cx = renderer.getCameraX();
+      const cy = renderer.getCameraY();
+      const centerScreenX = CANVAS_WIDTH / 2;
+      const centerScreenY = CANVAS_HEIGHT / 2;
+
+      if (editorTool === "PAINT") {
+        const half = Math.floor(editorBrushSize / 2);
+        const startX = centerScreenX + (hoverTileX - half - cx) * tileSize;
+        const startY = centerScreenY + (hoverTileY - half - cy) * tileSize;
+        const boxSize = editorBrushSize * tileSize;
+
+        ctx.strokeStyle = EDITOR_TILES[editorSelectedTile]?.color || "#f8b800";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(startX, startY, boxSize, boxSize);
+
+        ctx.fillStyle = (EDITOR_TILES[editorSelectedTile]?.color || "#f8b800") + "44";
+        ctx.fillRect(startX, startY, boxSize, boxSize);
+      } else {
+        const startX = centerScreenX + (hoverTileX - cx) * tileSize;
+        const startY = centerScreenY + (hoverTileY - cy) * tileSize;
+        ctx.strokeStyle = (editorTool === "SPAWN") ? "#58d854" : (editorTool === "BULLDOZER" ? "#e40058" : "#3cbcfc");
+        ctx.lineWidth = 2;
+        ctx.strokeRect(startX, startY, tileSize, tileSize);
+      }
+    }
+    ctx.restore();
   }
 }
 
@@ -3990,6 +3976,19 @@ function frame(time) {
     // 2. High-performance Frustum Culling & Rendering (2D or 3D RCT)
     if (is3DMode && rctRenderer) {
       rctRenderer.setPaused(isPaused);
+      if (isEditorOpen && editorTool) {
+        const hoverTile = getEditorHoverTile();
+        let toolColorHex = 0xffe600;
+        if (editorTool === "SPAWN") toolColorHex = 0x58d854;
+        else if (editorTool === "BULLDOZER") toolColorHex = 0xe40058;
+        else if (editorTool === "EYEDROPPER") toolColorHex = 0x3cbcfc;
+        else if (editorTool === "PAINT" && EDITOR_TILES[editorSelectedTile]?.color) {
+          toolColorHex = parseInt(EDITOR_TILES[editorSelectedTile].color.replace("#", "0x"), 16);
+        }
+        rctRenderer.setEditorCursor(world, hoverTile.x, hoverTile.y, editorTool === "PAINT" ? editorBrushSize : 1, toolColorHex);
+      } else {
+        rctRenderer.hideEditorCursor();
+      }
       const visionTarget = (isCreatureVisionMode && lastSelectedId > 0) ? getEntityById(lastSelectedId) : null;
       rctRenderer.render(world, entities, time * 0.001, dt, isPaused ? 0.0 : simSpeed, visionTarget, visualizedGroupId);
       ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
@@ -4033,6 +4032,7 @@ async function init() {
     renderer = new Renderer(canvas);
     await renderer.initPromise;
     world = new World(0, genSeed);
+    setActiveWorld(world);
     resetWorld(0);
     console.log("✓ Brutopolis (Pure JavaScript & Canvas 2D Engine) initialized successfully!");
     requestAnimationFrame(frame);
@@ -4077,7 +4077,7 @@ canvas.addEventListener("touchstart", (e) => {
     }
 
     // Touch Editor Painting
-    if (isEditorOpen && editorTool && renderer && currentMode === "MAP" && coords.inside && coords.y > 32 && coords.y < CANVAS_HEIGHT - 36) {
+    if (isEditorOpen && editorTool && coords.inside && coords.y > 32 && coords.y < CANVAS_HEIGHT - 36) {
       let isOverUi = false;
       for (let i = activeUiRegions.length - 1; i >= 0; i--) {
         const reg = activeUiRegions[i];
@@ -4087,14 +4087,11 @@ canvas.addEventListener("touchstart", (e) => {
         }
       }
       if (!isOverUi) {
-        const zoom = renderer.getCameraZoom();
-        const tileSize = 16.0 * zoom;
-        const cx = renderer.getCameraX();
-        const cy = renderer.getCameraY();
-        const tileX = Math.floor(cx + (coords.x - CANVAS_WIDTH / 2) / tileSize);
-        const tileY = Math.floor(cy + (coords.y - CANVAS_HEIGHT / 2) / tileSize);
+        mouseClientX = t.clientX;
+        mouseClientY = t.clientY;
+        const tile = getEditorHoverTile();
         isPainting = true;
-        applyEditorActionAt(tileX, tileY);
+        applyEditorActionAt(tile.x, tile.y);
       }
     }
   } else if (e.touches.length === 2) {
@@ -4116,21 +4113,18 @@ canvas.addEventListener("touchmove", (e) => {
     const coords = getCanvasCoords(t.clientX, t.clientY);
     mouseX = coords.x;
     mouseY = coords.y;
+    mouseClientX = t.clientX;
+    mouseClientY = t.clientY;
 
     const totalDist = Math.hypot(t.clientX - touchStartX, t.clientY - touchStartY);
     if (totalDist > 8) {
       touchMoved = true;
     }
 
-    if (isEditorOpen && isPainting && renderer && currentMode === "MAP" && (editorTool === "PAINT" || editorTool === "BULLDOZER")) {
+    if (isEditorOpen && isPainting && (editorTool === "PAINT" || editorTool === "BULLDOZER")) {
       if (coords.inside && coords.y > 32 && coords.y < CANVAS_HEIGHT - 36) {
-        const zoom = renderer.getCameraZoom();
-        const tileSize = 16.0 * zoom;
-        const cx = renderer.getCameraX();
-        const cy = renderer.getCameraY();
-        const tileX = Math.floor(cx + (coords.x - CANVAS_WIDTH / 2) / tileSize);
-        const tileY = Math.floor(cy + (coords.y - CANVAS_HEIGHT / 2) / tileSize);
-        applyEditorActionAt(tileX, tileY);
+        const tile = getEditorHoverTile();
+        applyEditorActionAt(tile.x, tile.y);
         return;
       }
     }

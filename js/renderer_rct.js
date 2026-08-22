@@ -102,8 +102,8 @@ function getEntityBounds(e) {
   if (isHouse) return { radius: 1.3, h: 2.4, yBottom: 0.0 };
   if (isCactus) return { radius: 0.9, h: 2.0, yBottom: 0.0 };
   if (isWall) return { radius: 0.75, h: 1.5, yBottom: 0.0 };
-  if (isItem) return { radius: 0.5, h: 0.9, yBottom: 0.0 };
-  return { radius: 0.7, h: 1.4, yBottom: 0.0 }; // Creatures / humanoids
+  if (isItem) return { radius: 0.45, h: 0.7, yBottom: 0.0 };
+  return { radius: 0.55, h: 1.1, yBottom: 0.0 }; // Compact creatures
 }
 
 // ---------------------------------------------------------------------------
@@ -211,32 +211,52 @@ export function createTintedTexture(skinName, fgHex = 0xffffff, bgHex = 0x000000
 }
 
 // ---------------------------------------------------------------------------
-// 3D Procedural Geometries (Saguaro Cactus, Natural Grass, Progressive Houses)
+// 3D Procedural Geometries (Saguaro Cactus, Natural Grass, Textured Houses)
 // ---------------------------------------------------------------------------
 
 function mergeBufferGeometries(geometries) {
   const nonIndexed = geometries.map(g => g.index ? g.toNonIndexed() : g);
 
   let totalPos = 0;
+  let totalUv = 0;
   for (const g of nonIndexed) {
     if (g.attributes && g.attributes.position) {
       totalPos += g.attributes.position.array.length;
     }
+    if (g.attributes && g.attributes.uv) {
+      totalUv += g.attributes.uv.array.length;
+    }
   }
 
   const posArr = new Float32Array(totalPos);
+  const uvArr = new Float32Array(totalUv || (totalPos * 2 / 3));
   let posOffset = 0;
+  let uvOffset = 0;
 
   for (const g of nonIndexed) {
     if (g.attributes && g.attributes.position) {
       const p = g.attributes.position.array;
       posArr.set(p, posOffset);
       posOffset += p.length;
+
+      if (g.attributes.uv) {
+        const u = g.attributes.uv.array;
+        uvArr.set(u, uvOffset);
+        uvOffset += u.length;
+      } else {
+        // Fallback default UVs
+        const vertCount = p.length / 3;
+        for (let v = 0; v < vertCount; v++) {
+          uvArr[uvOffset++] = (v % 2);
+          uvArr[uvOffset++] = Math.floor(v / 2) % 2;
+        }
+      }
     }
   }
 
   const merged = new THREE.BufferGeometry();
   merged.setAttribute("position", new THREE.Float32BufferAttribute(posArr, 3));
+  merged.setAttribute("uv", new THREE.Float32BufferAttribute(uvArr, 2));
   merged.computeVertexNormals();
   return merged;
 }
@@ -267,7 +287,7 @@ function createSaguaroCactusGeometry() {
   geos.push(armRV);
 
   const merged = mergeBufferGeometries(geos);
-  // Rotate +45 degrees so arms spread horizontally across the isometric view
+  // Rotate +45 degrees so arms spread horizontally across isometric view
   merged.rotateY(Math.PI / 4);
   return merged;
 }
@@ -289,17 +309,26 @@ function createPitchedRoofGeometry(width = 1.68, depth = 1.68, height = 0.78) {
   const hw = width / 2;
   const hd = depth / 2;
   const positions = [
+    // Front face
     -hw, 0, hd,   hw, 0, hd,   hw, height, 0,
     -hw, 0, hd,   hw, height, 0,  -hw, height, 0,
+    // Back face
     -hw, 0, -hd,  -hw, height, 0,  hw, height, 0,
     -hw, 0, -hd,  hw, height, 0,   hw, 0, -hd,
-    -hw, 0, -hd,  -hw, 0,  hd,  -hw, height, 0,
+    // Left gable
+    -hw, 0, -hd,  -hw, 0, hd,  -hw, height, 0,
+    // Right gable
      hw, 0,  hd,   hw, 0, -hd,   hw, height, 0
   ];
   const uvs = [
-    0, 0, 1, 0, 1, 1,  0, 0, 1, 1, 0, 1,
-    0, 0, 0, 1, 1, 1,  0, 0, 1, 1, 1, 0,
-    0, 0, 1, 0, 0.5, 1,  0, 0, 1, 0, 0.5, 1
+    0, 0,  1, 0,  1, 1,
+    0, 0,  1, 1,  0, 1,
+
+    0, 0,  0, 1,  1, 1,
+    0, 0,  1, 1,  1, 0,
+
+    0, 0,  1, 0,  0.5, 1,
+    0, 0,  1, 0,  0.5, 1
   ];
   const geo = new THREE.BufferGeometry();
   geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
@@ -416,7 +445,7 @@ export class RCT3DRenderer {
     this.container = container;
     this.width = container.clientWidth || window.innerWidth;
     this.height = container.clientHeight || window.innerHeight;
-    this.scaleFactor = 1.0; // 100% Native HD -> 75% Balanced -> 50% Retro Pixel
+    this.scaleFactor = 0.5; // Defaults directly to 50% Retro Pixel Mode
 
     // 1. Scene & Background
     this.scene = new THREE.Scene();
@@ -504,7 +533,7 @@ export class RCT3DRenderer {
       this.nightLightPool.push(pl);
     }
 
-    // 5. Materials with Vertex Colors for Contact AO
+    // 5. Materials with Vertex Colors for Contact AO & Textures
     this.materials = {
       [TILE_FLOOR]: new THREE.MeshLambertMaterial({
         color: 0x2e5424,
@@ -555,16 +584,17 @@ export class RCT3DRenderer {
       oakLeaves: new THREE.MeshLambertMaterial({ color: 0x3e8226 }),
       pineLeaves: new THREE.MeshLambertMaterial({ color: 0x205222 }),
       cactus: new THREE.MeshLambertMaterial({ color: 0x3c7c2c }),
+      // Textured House Walls (Warm Timbered Plaster/Brick) & Roofs (Terracotta Shingles)
       houseWall: new THREE.MeshLambertMaterial({
-        color: 0xdfd4bc,
+        map: createTintedTexture("Feature_Brick_B.png", 0xfffaea, 0x8a6242, 1.0),
         side: THREE.DoubleSide
       }),
       houseRoof: new THREE.MeshLambertMaterial({
-        color: 0xd84c2a,
+        map: createTintedTexture("Feature_Brick_C.png", 0xff6238, 0x941e0a, 1.0),
         side: THREE.DoubleSide
       }),
       houseBlueprint: new THREE.MeshLambertMaterial({
-        color: 0xdfa052,
+        map: createTintedTexture("Feature_Wood.png", 0xdfa052, 0x5a3418, 1.0),
         side: THREE.DoubleSide
       }),
       wall: new THREE.MeshLambertMaterial({
@@ -623,16 +653,25 @@ export class RCT3DRenderer {
     this.instWalls.castShadow = true;
     this.instWalls.receiveShadow = true;
 
-    // Houses (Finished Stage 4: Stone Walls + Terracotta Clay Roof)
+    // Houses (Finished Stage 4: Stone Walls + Terracotta Clay Roof + Flagpole Mast)
     const houseWallGeo = new THREE.BoxGeometry(1.5, 1.2, 1.5);
     houseWallGeo.translate(0, 0.6, 0);
     this.instHouseWalls = new THREE.InstancedMesh(houseWallGeo, this.materials.houseWall, 400);
     this.instHouseWalls.castShadow = true;
     this.instHouseWalls.receiveShadow = true;
 
-    const houseRoofGeo = createPitchedRoofGeometry(1.68, 1.68, 0.78);
-    houseRoofGeo.translate(0, 1.2, 0);
-    this.instHouseRoofs = new THREE.InstancedMesh(houseRoofGeo, this.materials.houseRoof, 400);
+    const houseRoofParts = [];
+    const roofGeo = createPitchedRoofGeometry(1.68, 1.68, 0.78);
+    roofGeo.translate(0, 1.2, 0);
+    houseRoofParts.push(roofGeo);
+
+    // Flagpole Mast Geometry attached to roof apex
+    const mastGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.65, 5);
+    mastGeo.translate(0, 1.2 + 0.78 + 0.32, 0);
+    houseRoofParts.push(mastGeo);
+
+    const fullRoofGeo = mergeBufferGeometries(houseRoofParts);
+    this.instHouseRoofs = new THREE.InstancedMesh(fullRoofGeo, this.materials.houseRoof, 400);
     this.instHouseRoofs.castShadow = true;
     this.instHouseRoofs.receiveShadow = true;
 
@@ -657,6 +696,9 @@ export class RCT3DRenderer {
     // Stage 3: Full Stone Walls + Roof Rafter Skeleton (35 to 49 materials)
     const st3Geo = createHouseStage3Geometry();
     this.instHouseStage3 = new THREE.InstancedMesh(st3Geo, this.materials.houseBlueprint, 400);
+    this.instHouseStage3.castShadow = true;
+    this.instHouseStage3.receiveShadow = true;
+
     // Natural Grass Tufts
     const grassGeo = createNaturalGrassGeometry(0.72, 0.58);
     this.instGrassTufts = new THREE.InstancedMesh(grassGeo, this.materials.grassFoliage, 1200);
@@ -689,15 +731,19 @@ export class RCT3DRenderer {
     this.scene.add(this.instancedGroup);
 
     // Dynamic Billboard Entities (Creatures, Humanoids, Items)
-    this.billboardGeo = new THREE.PlaneGeometry(1.25, 1.25);
-    this.billboardGeo.translate(0, 0.62, 0);
+    this.billboardGeo = new THREE.PlaneGeometry(1.0, 1.0);
+    this.billboardGeo.translate(0, 0.50, 0);
     this.entityGroup = new THREE.Group();
     this.scene.add(this.entityGroup);
     this.entitySprites = new Map();
 
-    // Floating UI Group (Emotes & Held Item Icons)
-    this.uiIconGeo = new THREE.PlaneGeometry(0.48, 0.48);
-    this.uiIconGeo.translate(0, 0.24, 0);
+    // Floating UI Group (Emotes, Held Items & Clan House Flags)
+    this.uiIconGeo = new THREE.PlaneGeometry(0.40, 0.40);
+    this.uiIconGeo.translate(0, 0.20, 0);
+
+    this.flagGeo = new THREE.PlaneGeometry(0.70, 0.50);
+    this.flagGeo.translate(0.35, 0.25, 0);
+
     this.floatingUiGroup = new THREE.Group();
     this.scene.add(this.floatingUiGroup);
     this.floatingUiSprites = new Map();
@@ -720,7 +766,7 @@ export class RCT3DRenderer {
     this.lastVisualizedGroupId = null;
 
     // Selection Reticle (Ground Decal beneath units)
-    const reticleGeo = new THREE.RingGeometry(0.55, 0.75, 4);
+    const reticleGeo = new THREE.RingGeometry(0.45, 0.65, 4);
     reticleGeo.rotateX(-Math.PI / 2);
     reticleGeo.rotateY(Math.PI / 4);
     const reticleMat = new THREE.MeshBasicMaterial({
@@ -739,13 +785,47 @@ export class RCT3DRenderer {
     this.reticleMesh.visible = false;
     this.scene.add(this.reticleMesh);
 
+    // 3D Editor Selection Cursor (Terrain draped polygon + outline)
+    this.editorCursorGeo = new THREE.BufferGeometry();
+    this.editorCursorMat = new THREE.MeshBasicMaterial({
+      color: 0xffe600,
+      transparent: true,
+      opacity: 0.45,
+      depthTest: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      polygonOffset: true,
+      polygonOffsetFactor: -4.0,
+      polygonOffsetUnits: -4.0
+    });
+    this.editorCursorMesh = new THREE.Mesh(this.editorCursorGeo, this.editorCursorMat);
+    this.editorCursorMesh.renderOrder = 999;
+    this.editorCursorMesh.frustumCulled = false;
+    this.editorCursorMesh.visible = false;
+    this.scene.add(this.editorCursorMesh);
+
+    this.editorCursorLineGeo = new THREE.BufferGeometry();
+    this.editorCursorLineMat = new THREE.LineBasicMaterial({
+      color: 0xffffff,
+      linewidth: 2,
+      transparent: true,
+      opacity: 0.95,
+      depthTest: true,
+      depthWrite: false
+    });
+    this.editorCursorLine = new THREE.LineSegments(this.editorCursorLineGeo, this.editorCursorLineMat);
+    this.editorCursorLine.renderOrder = 1000;
+    this.editorCursorLine.frustumCulled = false;
+    this.editorCursorLine.visible = false;
+    this.scene.add(this.editorCursorLine);
+
     // Raycaster & Ground Plane
     this.raycaster = new THREE.Raycaster();
     this.groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   }
 
   // ---------------------------------------------------------------------------
-  // Resolution Downscaling (100% -> 75% -> 50%)
+  // Resolution Downscaling (50% Retro Pixel -> 75% Balanced -> 100% Native HD)
   // ---------------------------------------------------------------------------
 
   updateRendererResolution() {
@@ -761,12 +841,12 @@ export class RCT3DRenderer {
   }
 
   toggleResolution() {
-    if (this.scaleFactor === 1.0) {
+    if (this.scaleFactor === 0.5) {
       this.scaleFactor = 0.75;
     } else if (this.scaleFactor === 0.75) {
-      this.scaleFactor = 0.5;
-    } else {
       this.scaleFactor = 1.0;
+    } else {
+      this.scaleFactor = 0.5;
     }
     this.updateRendererResolution();
     return this.getResolutionName();
@@ -983,7 +1063,7 @@ export class RCT3DRenderer {
       const centerH = surfaceH + bounds.h * 0.45;
       const entPos = new THREE.Vector3(e.x, centerH, e.y);
       const distToRay = ray.distanceToPoint(entPos);
-      if (distToRay < Math.max(0.65, bounds.radius * 0.95)) {
+      if (distToRay < Math.max(0.55, bounds.radius * 0.95)) {
         const distAlong = ray.origin.distanceTo(entPos);
         if (distAlong < closestDist) {
           closestDist = distAlong;
@@ -1070,7 +1150,7 @@ export class RCT3DRenderer {
       const centerH = surfaceH + bounds.h * 0.45;
       const entPos = new THREE.Vector3(e.x, centerH, e.y);
       const distToRay = ray.distanceToPoint(entPos);
-      if (distToRay < Math.max(0.65, bounds.radius * 0.95)) {
+      if (distToRay < Math.max(0.55, bounds.radius * 0.95)) {
         const distAlong = ray.origin.distanceTo(entPos);
         if (distAlong < closestDist) {
           closestDist = distAlong;
@@ -1101,6 +1181,140 @@ export class RCT3DRenderer {
     }
 
     return -1;
+  }
+
+  getTileAtScreen(screenX, screenY, world = null) {
+    const rect = this.container.getBoundingClientRect();
+    const w = rect.width || this.width;
+    const h = rect.height || this.height;
+    const ndcX = ((screenX - rect.left) / w) * 2 - 1;
+    const ndcY = -((screenY - rect.top) / h) * 2 + 1;
+
+    this.raycaster.setFromCamera({ x: ndcX, y: ndcY }, this.camera);
+    const ray = this.raycaster.ray;
+
+    const map = world?.map;
+    if (map && Math.abs(ray.direction.y) > 0.0001) {
+      // Raymarch through terrain elevation range (y: 8.0 down to -0.5)
+      const tMaxY = (8.0 - ray.origin.y) / ray.direction.y;
+      const tMinY = (-0.5 - ray.origin.y) / ray.direction.y;
+      const tStart = Math.min(tMaxY, tMinY);
+      const tEnd = Math.max(tMaxY, tMinY);
+
+      const steps = 60;
+      const dt = (tEnd - tStart) / steps;
+      let prevT = tStart;
+
+      for (let i = 1; i <= steps; i++) {
+        const t = tStart + i * dt;
+        const rx = ray.origin.x + t * ray.direction.x;
+        const ry = ray.origin.y + t * ray.direction.y;
+        const rz = ray.origin.z + t * ray.direction.z;
+        const surfH = this.getSurfaceElevation(map, rx, rz);
+
+        if (ry <= surfH) {
+          // Binary search refinement
+          let low = prevT;
+          let high = t;
+          for (let b = 0; b < 5; b++) {
+            const mid = (low + high) * 0.5;
+            const mx = ray.origin.x + mid * ray.direction.x;
+            const my = ray.origin.y + mid * ray.direction.y;
+            const mz = ray.origin.z + mid * ray.direction.z;
+            if (my <= this.getSurfaceElevation(map, mx, mz)) {
+              high = mid;
+            } else {
+              low = mid;
+            }
+          }
+          const hitX = Math.floor(ray.origin.x + low * ray.direction.x);
+          const hitY = Math.floor(ray.origin.z + low * ray.direction.z);
+          return {
+            x: Math.max(0, Math.min(MAP_WIDTH - 1, hitX)),
+            y: Math.max(0, Math.min(MAP_HEIGHT - 1, hitY))
+          };
+        }
+        prevT = t;
+      }
+    }
+
+    // Fallback: intersect with flat ground plane at Y=0.5
+    const intersectPoint = new THREE.Vector3();
+    this.groundPlane.constant = -0.5;
+    if (this.raycaster.ray.intersectPlane(this.groundPlane, intersectPoint)) {
+      const tx = Math.floor(intersectPoint.x);
+      const ty = Math.floor(intersectPoint.z);
+      return {
+        x: Math.max(0, Math.min(MAP_WIDTH - 1, tx)),
+        y: Math.max(0, Math.min(MAP_HEIGHT - 1, ty))
+      };
+    }
+    return { x: Math.floor(this.camX), y: Math.floor(this.camY) };
+  }
+
+  setEditorCursor(world, tileX, tileY, brushSize = 1, toolColorHex = 0xffe600) {
+    if (!world || !world.map) {
+      this.hideEditorCursor();
+      return;
+    }
+    const map = world.map;
+    const half = Math.floor(brushSize / 2);
+    const minTx = Math.max(0, tileX - half);
+    const maxTx = Math.min(MAP_WIDTH - 1, tileX + half);
+    const minTy = Math.max(0, tileY - half);
+    const maxTy = Math.min(MAP_HEIGHT - 1, tileY + half);
+
+    const posArray = [];
+    const lineArray = [];
+
+    for (let ty = minTy; ty <= maxTy; ty++) {
+      for (let tx = minTx; tx <= maxTx; tx++) {
+        const h00 = this.getCornerHeight(map, tx, ty) + 0.08;
+        const h10 = this.getCornerHeight(map, tx + 1, ty) + 0.08;
+        const h11 = this.getCornerHeight(map, tx + 1, ty + 1) + 0.08;
+        const h01 = this.getCornerHeight(map, tx, ty + 1) + 0.08;
+
+        // Triangle 1: (tx, ty), (tx+1, ty), (tx+1, ty+1)
+        posArray.push(tx, h00, ty);
+        posArray.push(tx + 1, h10, ty);
+        posArray.push(tx + 1, h11, ty + 1);
+
+        // Triangle 2: (tx, ty), (tx+1, ty+1), (tx, ty+1)
+        posArray.push(tx, h00, ty);
+        posArray.push(tx + 1, h11, ty + 1);
+        posArray.push(tx, h01, ty + 1);
+
+        // Outer Boundary Outline Lines
+        if (ty === minTy) {
+          lineArray.push(tx, h00 + 0.02, ty, tx + 1, h10 + 0.02, ty);
+        }
+        if (tx === maxTx) {
+          lineArray.push(tx + 1, h10 + 0.02, ty, tx + 1, h11 + 0.02, ty + 1);
+        }
+        if (ty === maxTy) {
+          lineArray.push(tx + 1, h11 + 0.02, ty + 1, tx, h01 + 0.02, ty + 1);
+        }
+        if (tx === minTx) {
+          lineArray.push(tx, h01 + 0.02, ty + 1, tx, h00 + 0.02, ty);
+        }
+      }
+    }
+
+    this.editorCursorGeo.setAttribute('position', new THREE.Float32BufferAttribute(posArray, 3));
+    this.editorCursorGeo.computeVertexNormals();
+    this.editorCursorGeo.computeBoundingSphere();
+
+    this.editorCursorLineGeo.setAttribute('position', new THREE.Float32BufferAttribute(lineArray, 3));
+    this.editorCursorLineGeo.computeBoundingSphere();
+
+    this.editorCursorMat.color.set(toolColorHex);
+    this.editorCursorMesh.visible = true;
+    this.editorCursorLine.visible = true;
+  }
+
+  hideEditorCursor() {
+    if (this.editorCursorMesh) this.editorCursorMesh.visible = false;
+    if (this.editorCursorLine) this.editorCursorLine.visible = false;
   }
 
   updateCamera() {
@@ -1686,6 +1900,7 @@ export class RCT3DRenderer {
     let stage3Count = 0;
 
     const mMatrix = new THREE.Matrix4();
+    const scaleMatrix = new THREE.Matrix4();
     const hoverTime = (time || 0) * 3.5;
     const floatBob = Math.sin(hoverTime) * 0.04;
 
@@ -1732,28 +1947,35 @@ export class RCT3DRenderer {
         ? this.getTileSurfaceHeight(map, Math.floor(e.x), Math.floor(e.y))
         : this.getSurfaceElevation(map, e.x, e.y);
 
-      // --- 3D OAK TREES ---
+      // --- 3D OAK TREES (Natural Random Rotation) ---
       if (isTree && !isPine && oakCount < this.maxInstances) {
+        const rotY = (((Math.imul(Math.floor(e.x) ^ Math.imul(Math.floor(e.y), 45211), 982451653) >>> 0) % 628) / 100.0);
+        mMatrix.makeRotationY(rotY);
         mMatrix.setPosition(e.x + 0.5, surfaceH, e.y + 0.5);
         this.instOakTrunks.setMatrixAt(oakCount, mMatrix);
         this.instOakLeaves.setMatrixAt(oakCount, mMatrix);
         oakCount++;
       }
-      // --- 3D PINE TREES ---
+      // --- 3D PINE TREES (Natural Random Rotation) ---
       else if (isPine && pineCount < this.maxInstances) {
+        const rotY = (((Math.imul(Math.floor(e.x) ^ Math.imul(Math.floor(e.y), 73819), 428931173) >>> 0) % 628) / 100.0);
+        mMatrix.makeRotationY(rotY);
         mMatrix.setPosition(e.x + 0.5, surfaceH, e.y + 0.5);
         this.instPineTrunks.setMatrixAt(pineCount, mMatrix);
         this.instPineLeaves.setMatrixAt(pineCount, mMatrix);
         pineCount++;
       }
-      // --- 3D SAGUARO CACTI ---
+      // --- 3D SAGUARO CACTI (Natural Random Rotation) ---
       else if (isCactus && cactusCount < this.maxInstances) {
+        const rotY = (((Math.imul(Math.floor(e.x) ^ Math.imul(Math.floor(e.y), 31849), 619284711) >>> 0) % 4)) * (Math.PI / 2) + Math.PI / 4;
+        mMatrix.makeRotationY(rotY);
         mMatrix.setPosition(e.x + 0.5, surfaceH, e.y + 0.5);
         this.instCacti.setMatrixAt(cactusCount, mMatrix);
         cactusCount++;
       }
       // --- 3D STONE WALLS ---
       else if (isWall && wallCount < this.maxInstances) {
+        mMatrix.identity();
         mMatrix.setPosition(e.x + 0.5, surfaceH, e.y + 0.5);
         this.instWalls.setMatrixAt(wallCount, mMatrix);
         wallCount++;
@@ -1767,14 +1989,62 @@ export class RCT3DRenderer {
         const curMaterials = (h?.woodCurrent || 0) + (h?.stoneCurrent || 0);
         const progress = isCompleted ? 1.0 : (curMaterials / Math.max(1, totalCost));
 
+        // Deterministic Cardinal Rotation per House (0, 90, 180, 270 deg)
+        const houseRot = (((Math.imul(Math.floor(e.x) ^ Math.imul(Math.floor(e.y), 32452843), 8253729) >>> 0) % 4)) * (Math.PI / 2);
+        // Random Height Variation per House (0.85x to 1.25x height)
+        const heightScale = 0.85 + (((Math.imul(Math.floor(e.x) ^ Math.imul(Math.floor(e.y), 198491317), 445582319) >>> 0) % 100) / 100.0) * 0.40;
+
+        mMatrix.makeRotationY(houseRot);
+        scaleMatrix.makeScale(1.0, heightScale, 1.0);
+        mMatrix.multiply(scaleMatrix);
+        mMatrix.setPosition(e.x + 0.5, surfaceH, e.y + 0.5);
+
         if (isCompleted && houseCount < 400) {
-          // Stage 4: Finished stone house with terracotta roof
-          mMatrix.setPosition(e.x + 0.5, surfaceH, e.y + 0.5);
+          // Stage 4: Finished stone house with terracotta roof & flagpole mast
           this.instHouseWalls.setMatrixAt(houseCount, mMatrix);
           this.instHouseRoofs.setMatrixAt(houseCount, mMatrix);
           houseCount++;
+
+          // Hoist Clan Flag Banner atop the Roof Apex
+          let houseClan = e.properties.group;
+          if (!houseClan && h?.ownerId) {
+            for (const g of clanGroups.values()) {
+              if (g.id === e.properties.groupId || g.members?.includes(h.ownerId) || g.members?.includes(Number(h.ownerId))) {
+                houseClan = g;
+                break;
+              }
+            }
+          }
+          const flagKey = `${e.id}_house_flag`;
+          activeUiIds.add(flagKey);
+
+          const flagSkin = houseClan?.flagSkin || "Feature_Flower.png";
+          const fgHex = (houseClan && houseClan.color !== undefined ? houseClan.color : 0xffd700) & 0xffffff;
+          const bgHex = (houseClan && houseClan.backcolor !== undefined ? houseClan.backcolor : 0x1e1e28) & 0xffffff;
+          const flagTex = createTintedTexture(flagSkin, fgHex, bgHex, 1.0);
+
+          let flagMesh = this.floatingUiSprites.get(flagKey);
+          if (!flagMesh) {
+            const flagMat = new THREE.MeshBasicMaterial({
+              map: flagTex,
+              transparent: true,
+              alphaTest: 0.05,
+              depthTest: true,
+              side: THREE.DoubleSide
+            });
+            flagMesh = new THREE.Mesh(this.flagGeo, flagMat);
+            flagMesh.renderOrder = 30;
+            this.floatingUiGroup.add(flagMesh);
+            this.floatingUiSprites.set(flagKey, flagMesh);
+          } else if (flagMesh.material.map !== flagTex) {
+            flagMesh.material.map = flagTex;
+            flagMesh.material.needsUpdate = true;
+          }
+
+          const peakY = surfaceH + (1.20 + 0.78) * heightScale + 0.25;
+          flagMesh.position.set(e.x + 0.5, peakY, e.y + 0.5);
+          flagMesh.rotation.y = this.fixedRotationY;
         } else if (!isCompleted) {
-          mMatrix.setPosition(e.x + 0.5, surfaceH, e.y + 0.5);
           if (progress < 0.32 && stage1Count < 400) {
             // Stage 1 (1 - 15 materials): Stone slab foundation + 4 corner timber posts
             this.instHouseStage1.setMatrixAt(stage1Count++, mMatrix);
@@ -1819,9 +2089,10 @@ export class RCT3DRenderer {
         }
 
         if (isItem) {
-          sprite.scale.set(0.65, 0.65, 0.65);
+          sprite.scale.set(0.48, 0.48, 0.48);
         } else {
-          sprite.scale.set(1.15, 1.15, 1.15);
+          // Compact 2/3 scale for creatures
+          sprite.scale.set(0.72, 0.72, 0.72);
         }
 
         sprite.position.set(e.x, surfaceH, e.y);
@@ -1853,8 +2124,8 @@ export class RCT3DRenderer {
 
           const totalIcons = (emoteSkin ? 1 : 0) + heldItems.length;
           if (totalIcons > 0) {
-            const headY = surfaceH + 1.35 + floatBob;
-            const iconSpacing = 0.38;
+            const headY = surfaceH + 0.90 + floatBob;
+            const iconSpacing = 0.32;
             const startOffset = -((totalIcons - 1) * iconSpacing) / 2;
 
             // Camera right vector in 45° view: (1/sqrt(2), 0, -1/sqrt(2))
@@ -1955,6 +2226,8 @@ export class RCT3DRenderer {
                   if (!knownZones.has(zk)) continue;
                 }
                 const bpH = this.getTileSurfaceHeight(map, bp.x, bp.y);
+                const houseRot = (((Math.imul(Math.floor(bp.x) ^ Math.imul(Math.floor(bp.y), 32452843), 8253729) >>> 0) % 4)) * (Math.PI / 2);
+                mMatrix.makeRotationY(houseRot);
                 mMatrix.setPosition(bp.x + 0.5, bpH, bp.y + 0.5);
                 this.instHousePegs.setMatrixAt(pegsCount++, mMatrix);
                 occupiedHouseTiles.add(tileKey);
@@ -1996,7 +2269,7 @@ export class RCT3DRenderer {
           pl.distance = 7.0;
           pl.decay = 1.8;
           pl.intensity = nightGlow * 1.5;
-          pl.position.set(e.x, sH + 1.1, e.y);
+          pl.position.set(e.x, sH + 0.85, e.y);
         }
       }
 
@@ -2065,7 +2338,7 @@ export class RCT3DRenderer {
       }
     }
 
-    // Clean inactive floating UI icons
+    // Clean inactive floating UI icons & house flags
     for (const [key, spr] of this.floatingUiSprites.entries()) {
       if (!activeUiIds.has(key)) {
         this.floatingUiGroup.remove(spr);
