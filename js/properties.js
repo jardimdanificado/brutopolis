@@ -303,7 +303,6 @@ export function rollCreatureTraits() {
   if (Math.random() < 0.10) traits.violent = true;
   else if (Math.random() < 0.10) traits.pacifist = true;
 
-  if (Math.random() < 0.06) traits.schizophrenic = true;
   if (Math.random() < 0.03) traits.scatological = true;
   if (Math.random() < 0.18) traits.industrious = true;
   if (Math.random() < 0.15) traits.brave = true;
@@ -391,115 +390,6 @@ export function createGullibleProp(trustBonus = 0.35) {
     trustBonus
   };
 }
-
-/**
- * Schizophrenic Trait (Deus ex machina internal delusions & visions)
- * Believes own delusions completely; small chance to hallucinate about inanimate objects;
- * Cannot become a liar through delusions.
- */
-export function createSchizophrenicProp() {
-  return {
-    type: "schizophrenic",
-    delusionTimer: 0,
-    delusionInterval: 28.0,
-    effect(ent, dt, world, entities) {
-      if (!ent.properties.brain || ent.destroyed) return;
-      this.delusionTimer = (this.delusionTimer || 0) + dt;
-      if (this.delusionTimer < this.delusionInterval) return;
-      this.delusionTimer = 0;
-
-      if (Math.random() < 0.35) {
-        generateSchizophrenicDelusion(ent, world, entities);
-      }
-    }
-  };
-}
-
-export function generateSchizophrenicDelusion(ent, world, entities) {
-  const brain = ent.properties.brain;
-  if (!brain) return;
-
-  const rollInanimate = Math.random() < 0.14; // ~14% chance of inanimate object delusion
-  let subjectName = "";
-  let subjectId = null;
-  let narrative = "";
-  let isObjectSubject = false;
-
-  if (rollInanimate && entities) {
-    const nearbyObjects = entities.filter(e => e !== ent && !e.destroyed && (!e.properties?.life || e.properties?.species === "item" || e.properties?.structure));
-    const obj = nearbyObjects.length > 0 ? nearbyObjects[Math.floor(Math.random() * nearbyObjects.length)] : null;
-    if (obj) {
-      isObjectSubject = true;
-      subjectId = obj.id;
-      subjectName = obj.properties?.name || "a mystical stone";
-      const objDelusions = [
-        `Heard the prophetic voice of ${subjectName} whispering ancient secrets from beyond`,
-        `Had a revelatory vision that ${subjectName} possesses a conscious soul observing all creation`,
-        `Firmly believed that ${subjectName} placed an occult hex upon everyone nearby`,
-        `Felt that ${subjectName} demands a sacred ritual to shield the world from cosmic darkness`
-      ];
-      narrative = objDelusions[Math.floor(Math.random() * objDelusions.length)];
-    }
-  }
-
-  if (!isObjectSubject) {
-    // 86% based on internal thoughts, paranoias, suspicions about known people or divine voices
-    const knownIds = Object.keys(brain.affinities || {}).map(k => parseInt(k, 10)).filter(id => id && id !== ent.id);
-    const knownEnt = knownIds.length > 0 ? entities?.find(e => e.id === knownIds[Math.floor(Math.random() * knownIds.length)] && !e.destroyed) : null;
-    const targetName = knownEnt?.properties?.name || "a shadowy presence";
-    subjectId = knownEnt?.id || null;
-    subjectName = targetName;
-
-    const aff = knownEnt ? (brain.affinities[knownEnt.id] || 0) : 0;
-    if (aff < 0) {
-      const paranoiaOptions = [
-        `Received a divine revelation that ${targetName} is an emissary of chaos plotting against everyone`,
-        `Became absolutely certain that ${targetName} is secretly planning to steal their soul`,
-        `Heard celestial voices warning that ${targetName} brings impending doom`
-      ];
-      narrative = paranoiaOptions[Math.floor(Math.random() * paranoiaOptions.length)];
-    } else {
-      const mysticalOptions = [
-        `Had a mystical revelation that ${targetName} was anointed by the stars with hidden powers`,
-        `Firmly believed that divine voices chose ${targetName} for a grand cosmic quest`,
-        `Felt that ancestral spirits whispered a prophetic blessing upon ${targetName}`
-      ];
-      narrative = mysticalOptions[Math.floor(Math.random() * mysticalOptions.length)];
-    }
-  }
-
-  // Schizophrenic genuinely believes this delusion: recorded as believed truth in memory
-  const lieEv = recordWorldEvent({
-    opcode: OP_LIE,
-    primaryEntityId: ent.id,
-    secondaryEntityId: subjectId,
-    location: { x: ent.x, y: ent.y },
-    tick: currentTick,
-    timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
-    metadata: {
-      primaryName: ent.properties.name,
-      secondaryName: subjectName,
-      lieType: isObjectSubject ? "DELUSION_INANIMATE" : "DELUSION_DIVINE",
-      narrative,
-      isDelusion: true,
-      believedBy: [ent.id],
-      disbelievedBy: []
-    }
-  });
-
-  brain.addLongTerm({
-    type: "DELUSION",
-    isLie: true,
-    isDelusion: true,
-    believed: true,
-    lieEventId: lieEv.id,
-    targetId: subjectId,
-    desc: narrative
-  });
-
-  ent.emote = 10; // Shocked / In a trance
-}
-
 export function createTraitorProp() {
   return {
     name: "Traíra",
@@ -622,9 +512,8 @@ export function applyRandomPersonalityPerks(ent, isFemale = null) {
 
   // Outros traços preexistentes
   const rOther = Math.random();
-  if (rOther < 0.10) p.skeptic = createSkepticProp();
-  else if (rOther < 0.20) p.gullible = createGullibleProp();
-  else if (rOther < 0.27) p.schizophrenic = createSchizophrenicProp();
+  if (rOther < 0.15) p.skeptic = createSkepticProp();
+  else if (rOther < 0.30) p.gullible = createGullibleProp();
 }
 
 /**
@@ -970,27 +859,31 @@ export function createBrainProp(maxPath = 16, personality = { bravery: 0.7, curi
         if (affVal >= 65 && prevMilestone !== "friend") {
           this.affinityMilestones[tId] = "friend";
           const friend = entities?.find(e => e.id === tId && !e.destroyed);
-          const friendName = friend?.properties.name || `Entity #${tId}`;
-          recordWorldEvent({
-            type: "RELATION",
-            primaryEntityId: ent.id,
-            secondaryEntityId: tId,
-            location: { x: ent.x, y: ent.y },
-            description: `${ent.properties.name} developed a deep bond of friendship with ${friendName} (affinity +${Math.round(affVal)})!`,
-            tick: currentTick
-          });
+          if (friend && friend.properties.brain) {
+            const friendName = friend.properties.name || `Entity #${tId}`;
+            recordWorldEvent({
+              type: "RELATION",
+              primaryEntityId: ent.id,
+              secondaryEntityId: tId,
+              location: { x: ent.x, y: ent.y },
+              description: `${ent.properties.name} developed a deep bond of friendship with ${friendName} (affinity +${Math.round(affVal)})!`,
+              tick: currentTick
+            });
+          }
         } else if (affVal <= -65 && prevMilestone !== "enemy") {
           this.affinityMilestones[tId] = "enemy";
           const enemy = entities?.find(e => e.id === tId && !e.destroyed);
-          const enemyName = enemy?.properties.name || `Entity #${tId}`;
-          recordWorldEvent({
-            type: "RELATION",
-            primaryEntityId: ent.id,
-            secondaryEntityId: tId,
-            location: { x: ent.x, y: ent.y },
-            description: `${ent.properties.name} declared mortal hatred and rivalry against ${enemyName} (affinity ${Math.round(affVal)})!`,
-            tick: currentTick
-          });
+          if (enemy && enemy.properties.brain) {
+            const enemyName = enemy.properties.name || `Entity #${tId}`;
+            recordWorldEvent({
+              type: "RELATION",
+              primaryEntityId: ent.id,
+              secondaryEntityId: tId,
+              location: { x: ent.x, y: ent.y },
+              description: `${ent.properties.name} declared mortal hatred and rivalry against ${enemyName} (affinity ${Math.round(affVal)})!`,
+              tick: currentTick
+            });
+          }
         }
       }
 
@@ -2509,21 +2402,95 @@ export function gossipBetweenCreatures(speaker, listener, world, entities) {
     }
   }
 
-  // 4. Sharing Date of Birth / Age in Casual Conversation
-  if (Math.random() < 0.22 && speaker.properties.birthDate) {
+  // 4. Deep Social & Romantic Interactions (Admiration, Flattery, Jealousy, Consolation, Gossip, Territory Sharing)
+  const spkPartnerId = spkMono?.partnerId;
+  const lisPartnerId = lisMono?.partnerId;
+  const isCheating = spkPartnerId && spkPartnerId !== listener.id;
+
+  // A. Jealousy & Rivalry Confrontation (Ciúmes / Traição / Conflito Amoroso)
+  if (spkPartnerId && !isCheating && lisPartnerId === spkPartnerId && speaker.id !== listener.id) {
+    // Both are attached or pursuing the same partner!
+    spkBrain.affinities[listener.id] = Math.max(-100, spkAffToLis - 30);
+    lisBrain.affinities[speaker.id] = Math.max(-100, lisAffToSpk - 30);
+    speaker.emote = 0; // Angry
+    listener.emote = 10; // Upset
+    const pEnt = getEntityById(spkPartnerId);
+    const pName = pEnt?.properties?.name || "their partner";
+
+    recordWorldEvent({
+      opcode: OP_DIALOGUE,
+      type: "DIALOGUE",
+      primaryEntityId: speaker.id,
+      secondaryEntityId: listener.id,
+      location: { x: speaker.x, y: speaker.y },
+      description: `${speaker.properties.name} confronted ${listener.properties.name} with intense jealousy over their rivalry for ${pName}!`,
+      tick: currentTick,
+      timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
+      metadata: { primaryName: speaker.properties.name, secondaryName: listener.properties.name, topic: "jealousy" }
+    });
+    return;
+  }
+
+  // B. Sharing Geographic & Territory Knowledge (Troca de Conhecimento sobre o Mundo e Zonas)
+  if (Math.random() < 0.25 && spkBrain.geoMemory) {
+    const knownZones = Object.entries(spkBrain.geoMemory).filter(([k, z]) => z && z.affinity > 10);
+    if (knownZones.length > 0) {
+      const [zk, zInfo] = knownZones[Math.floor(Math.random() * knownZones.length)];
+      if (!lisBrain.geoMemory[zk]) {
+        lisBrain.geoMemory[zk] = { zx: zInfo.zx, zy: zInfo.zy, affinity: Math.round(zInfo.affinity * 0.5), timeSpent: 0, lastVisitedTick: currentTick };
+      } else {
+        lisBrain.geoMemory[zk].affinity = Math.min(100, lisBrain.geoMemory[zk].affinity + 5);
+      }
+      spkBrain.affinities[listener.id] = Math.min(100, spkAffToLis + 1.0);
+      lisBrain.affinities[speaker.id] = Math.min(100, lisAffToSpk + 1.0);
+
+      recordWorldEvent({
+        opcode: OP_DIALOGUE,
+        type: "DIALOGUE",
+        primaryEntityId: speaker.id,
+        secondaryEntityId: listener.id,
+        location: { x: speaker.x, y: speaker.y },
+        description: `${speaker.properties.name} shared geographic knowledge with ${listener.properties.name} about territory zone [${zInfo.zx}, ${zInfo.zy}]!`,
+        tick: currentTick,
+        timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
+        metadata: { primaryName: speaker.properties.name, secondaryName: listener.properties.name, zone: zk }
+      });
+      return;
+    }
+  }
+
+  // C. Consolation / Moral Support in hard times (Apoio Mútuo quando alguém está triste/traumatizado)
+  if (lisBrain.mood < -20 && spkAffToLis > 15 && Math.random() < 0.35) {
+    lisBrain.mood = Math.min(100, lisBrain.mood + 18);
+    spkBrain.mood = Math.min(100, spkBrain.mood + 6);
+    lisBrain.affinities[speaker.id] = Math.min(100, lisAffToSpk + 4);
+    speaker.emote = 2; // Happy
+    listener.emote = 2; // Relieved
+
+    recordWorldEvent({
+      opcode: OP_DIALOGUE,
+      type: "DIALOGUE",
+      primaryEntityId: speaker.id,
+      secondaryEntityId: listener.id,
+      location: { x: speaker.x, y: speaker.y },
+      description: `${speaker.properties.name} offered warm comfort and moral support to ${listener.properties.name} during difficult times!`,
+      tick: currentTick,
+      timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
+      metadata: { primaryName: speaker.properties.name, secondaryName: listener.properties.name, topic: "consolation" }
+    });
+    return;
+  }
+
+  // D. Birthdate / Age - Rare occasional mention (only ~3% chance)
+  if (Math.random() < 0.03 && speaker.properties.birthDate) {
     const b = speaker.properties.birthDate;
     const currentDay = world?.clock?.day || b.day;
     const ageDays = Math.max(0, currentDay - b.day);
-    let birthDesc = "";
-    if (ageDays === 0) {
-      birthDesc = `${speaker.properties.name} told ${listener.properties.name}: "I was born today at ${String(b.hour).padStart(2,"0")}:${String(b.minute).padStart(2,"0")}!"`;
-    } else {
-      birthDesc = `${speaker.properties.name} shared with ${listener.properties.name}: "I was born on Day ${b.day} at ${String(b.hour).padStart(2,"0")}:${String(b.minute).padStart(2,"0")} (${ageDays} days old)!"`;
-    }
+    const birthDesc = `${speaker.properties.name} shared with ${listener.properties.name}: "I was born on Day ${b.day} (${ageDays} days ago)!"`;
 
     lisBrain.addShortTerm({
       type: "BIRTHDATE_HEARD",
-      desc: `Learned that ${speaker.properties.name} was born on Day ${b.day} at ${String(b.hour).padStart(2,"0")}:${String(b.minute).padStart(2,"0")}`,
+      desc: `Learned that ${speaker.properties.name} was born on Day ${b.day}`,
       targetId: speaker.id
     });
 
@@ -2541,16 +2508,31 @@ export function gossipBetweenCreatures(speaker, listener, world, entities) {
     return;
   }
 
-  // 5. Deception, Lies, and Truthful Memory Sharing (Occasional Verbal Exchange)
+  // 5. Truthful Organic Memory Sharing & Strategic Slander
   const isLiar = !!speaker.properties.liar;
-  const isSchizophrenic = !!speaker.properties.schizophrenic;
-  const lieChance = isSchizophrenic ? 0.25 : (isLiar ? (speaker.properties.liar.type === "manipulator" ? 0.35 : 0.20) : 0.08);
+  const lieChance = isLiar ? (speaker.properties.liar.type === "manipulator" ? 0.35 : 0.20) : 0.06;
   const wantsToLie = Math.random() < lieChance;
 
   if (wantsToLie) {
     createAndTransmitLie(speaker, listener, world, entities);
   } else if (spkBrain.longTermMemory.length > 0) {
     transmitTruthfulGossip(speaker, listener, world, entities);
+  } else if (spkBrain.shortTermMemory.length > 0) {
+    // If no long term memories yet, share recent short-term observations organically!
+    const recentMem = spkBrain.shortTermMemory[Math.floor(Math.random() * spkBrain.shortTermMemory.length)];
+    if (recentMem && recentMem.desc) {
+      recordWorldEvent({
+        opcode: OP_DIALOGUE,
+        type: "DIALOGUE",
+        primaryEntityId: speaker.id,
+        secondaryEntityId: listener.id,
+        location: { x: speaker.x, y: speaker.y },
+        description: `${speaker.properties.name} told ${listener.properties.name}: "I recently witnessed ${recentMem.desc}!"`,
+        tick: currentTick,
+        timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
+        metadata: { primaryName: speaker.properties.name, secondaryName: listener.properties.name }
+      });
+    }
   }
 
   // 5. Bystander / Eavesdropping Perception (Nearby witnesses observe interaction)
@@ -2574,10 +2556,9 @@ export function createAndTransmitLie(speaker, listener, world, entities) {
   const lisBrain = listener.properties.brain;
   if (!spkBrain || !lisBrain) return;
 
-  const isSchizo = !!speaker.properties.schizophrenic;
   const isLiarTrait = !!speaker.properties.liar;
 
-  // Check if speaker already knows a lie/delusion in memory to re-spread
+  // Check if speaker already knows a lie in memory to re-spread
   const knownLieMem = spkBrain.longTermMemory.find(m => m && m.isLie && m.lieEventId) ||
                       spkBrain.shortTermMemory.find(m => m && m.isLie && m.lieEventId);
 
@@ -2627,36 +2608,10 @@ export function createAndTransmitLie(speaker, listener, world, entities) {
       knownIds.add(speaker.properties.monogamy.partnerId);
     }
 
-    // Filter candidate targets: NEVER inanimate objects for non-schizophrenics; MUST be known creatures
+    // Filter candidate targets: MUST be known living creatures
     const candidateLivingKnown = entities ? entities.filter(e => knownIds.has(e.id) && !e.destroyed && e.properties?.life && e.properties?.species !== "item" && e.properties?.name) : [];
 
-    if (isSchizo) {
-      // SCHIZOPHRENIC DELUSION: deus ex machina generated, genuinely believed
-      speakerBelievesLie = true;
-      const rollInanimate = Math.random() < 0.14; // ~14% chance of inanimate object
-      if (rollInanimate && entities) {
-        const objects = entities.filter(e => e !== speaker && !e.destroyed && (!e.properties?.life || e.properties?.species === "item" || e.properties?.structure));
-        accusedTarget = objects.length > 0 ? objects[Math.floor(Math.random() * objects.length)] : null;
-        if (accusedTarget) {
-          const objName = accusedTarget.properties?.name || "a mystical relic";
-          lieType = "DELUSION_INANIMATE";
-          narrative = `${speaker.properties.name} declared with mystical conviction that ${objName} whispers dark omens to the clan!`;
-        }
-      }
-
-      if (!accusedTarget) {
-        // Delusion regarding known person or internal voices
-        accusedTarget = candidateLivingKnown.length > 0 ? candidateLivingKnown[Math.floor(Math.random() * candidateLivingKnown.length)] : null;
-        const targetName = accusedTarget?.properties?.name || "a shadowy presence";
-        const aff = accusedTarget ? (spkBrain.affinities[accusedTarget.id] || 0) : 0;
-        lieType = "DELUSION_DIVINE";
-        if (aff < 0) {
-          narrative = `${speaker.properties.name} warned in panic that divine voices revealed ${targetName} is a traitorous demon in disguise!`;
-        } else {
-          narrative = `${speaker.properties.name} claimed with solemn awe that spirits blessed ${targetName} with cosmic ascension!`;
-        }
-      }
-    } else if (!isLiarTrait) {
+    if (!isLiarTrait) {
       // NORMAL CREATURE: Lies must be purposeful based on affinities (slander enemy or exalt friend/self)
       if (candidateLivingKnown.length === 0) return; // No known people to talk about!
 
@@ -3416,8 +3371,22 @@ export function createGroupMemberProp() {
           }
         }
 
-        // If holding building material but blueprint is 100% complete: drop item so hands become free
-        if ((inClaimedZone || distToBase <= 4) && distToBase <= 2) {
+        // Only drop material if hands are holding an unneeded material and 100% of ALL clan blueprints are completed
+        const hasAnyUnbuiltBlueprint = blueprint.some(bp => {
+          if (bp.type === "gate" || bp.type === "door") {
+            const g = entities.find(e => !e.destroyed && e.properties.door && e.x === bp.x && e.y === bp.y);
+            return !g || !g.isConstructed;
+          } else if (bp.type === "house") {
+            const h = entities.find(e => !e.destroyed && e.properties.house && e.x === bp.x && e.y === bp.y);
+            return !h || !h.properties.house?.isCompleted;
+          } else if (bp.type === "wall") {
+            const w = entities.find(e => !e.destroyed && (e.properties.structure && !e.properties.house) && e.x === bp.x && e.y === bp.y);
+            return !w || !w.isConstructed;
+          }
+          return false;
+        });
+
+        if (!hasAnyUnbuiltBlueprint && (inClaimedZone || distToBase <= 4) && distToBase <= 2) {
           dropHeldItem(ent, entities, world);
         }
       }
@@ -3460,18 +3429,6 @@ export function createGroupMemberProp() {
           else plantedTree = createOakTree(targetX, targetY);
 
           entities.push(plantedTree);
-
-          recordWorldEvent({
-            opcode: OP_PLANT,
-            type: "PLANT",
-            primaryEntityId: ent.id,
-            secondaryEntityId: plantedTree.id,
-            location: { x: targetX, y: targetY },
-            description: `${ent.properties.name} planted a ${plantedTree.properties.name} for '${group.name}'!`,
-            tick: currentTick,
-            timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
-            metadata: { seedSpecies, cropName: plantedTree.properties.name }
-          });
 
           // Auto-claim new zones whenever members lack private residential rooms (Continuous Housing Expansion)
           const livingMems = (group.members || []).map(id => getEntityById(id)).filter(e => e && !e.destroyed);
@@ -3548,16 +3505,6 @@ export function createGroupMemberProp() {
       // D. Dropping Feces Outside Territory (Cleaning Task)
       if (isCarryingFeces && !inClaimedZone) {
         dropHeldItem(ent, entities, world);
-        recordWorldEvent({
-          opcode: OP_DROP,
-          type: "DROP",
-          primaryEntityId: ent.id,
-          location: { x: ent.x, y: ent.y },
-          description: `${ent.properties.name} swept feces outside the borders of '${group.name}'!`,
-          tick: currentTick,
-          timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
-          metadata: { itemName: "feces" }
-        });
       }
 
       // ---------------------------------------------------------------------
@@ -3592,17 +3539,6 @@ export function createGroupMemberProp() {
             const resName = isStone ? "Stone Block" : "Wood Log";
             nearbyRes.destroyed = true;
             freeArm.heldItem = { name: resName, resourceType: isStone ? "stone" : "wood", weight: 1 };
-
-            recordWorldEvent({
-              opcode: OP_PICKUP,
-              type: "PICKUP",
-              primaryEntityId: ent.id,
-              location: { x: ent.x, y: ent.y },
-              description: `${ent.properties.name} picked up a ${resName} to build for '${group.name}'!`,
-              tick: currentTick,
-              timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
-              metadata: { itemName: resName }
-            });
             return;
           }
 
@@ -3635,17 +3571,6 @@ export function createGroupMemberProp() {
               );
               entities.push(seedEntity);
             }
-
-            recordWorldEvent({
-              opcode: OP_CHOP,
-              type: "CHOP",
-              primaryEntityId: ent.id,
-              location: { x: ent.x, y: ent.y },
-              description: `${ent.properties.name} felled timber to build houses and fortifications for '${group.name}'!`,
-              tick: currentTick,
-              timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
-              metadata: { resource: "wood" }
-            });
             return;
           }
 
@@ -3665,16 +3590,6 @@ export function createGroupMemberProp() {
           if (adjacentStone && this.actionTimer >= 1.2) {
             this.actionTimer = 0;
             freeArm.heldItem = { name: "Stone Block", resourceType: "stone", weight: 1 };
-            recordWorldEvent({
-              opcode: OP_MINE,
-              type: "MINE",
-              primaryEntityId: ent.id,
-              location: { x: ent.x, y: ent.y },
-              description: `${ent.properties.name} quarried stone to construct houses and defenses for '${group.name}'!`,
-              tick: currentTick,
-              timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
-              metadata: { resource: "stone" }
-            });
             return;
           }
         }
@@ -4158,16 +4073,20 @@ export function createCombatProp(attackInterval = 1.2, aggroRange = 3) {
         time: Date.now()
       };
 
-      recordWorldEvent({
-        type: "ATTACK",
-        primaryEntityId: ent.id,
-        secondaryEntityId: target.id,
-        location: { x: ent.x, y: ent.y },
-        description: attackDesc,
-        tick: currentTick,
-        timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
-        metadata: { attackerName, targetName, usedLimbName, hitPartName, netDamage, absorbed: absorbedDamage, motive: targetIsHate ? "hatred" : (targetIsHunger ? "hunger" : "combat") }
-      });
+      // 4. Record indexed ATTACK event (Only for conscious/living beings, never for trees or flora)
+      const targetIsFloraOrInanimate = !target.properties.brain || !target.properties.life || target.properties.photosynthesis || target.properties.deep_root || target.properties.species === "oak" || target.properties.species === "willow" || target.properties.species === "pine" || target.properties.species === "tree" || target.properties.species === "cactus";
+      if (!targetIsFloraOrInanimate) {
+        recordWorldEvent({
+          type: "ATTACK",
+          primaryEntityId: ent.id,
+          secondaryEntityId: target.id,
+          location: { x: ent.x, y: ent.y },
+          description: attackDesc,
+          tick: currentTick,
+          timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
+          metadata: { attackerName, targetName, usedLimbName, hitPartName, netDamage, absorbed: absorbedDamage, motive: targetIsHate ? "hatred" : (targetIsHunger ? "hunger" : "combat") }
+        });
+      }
 
       // 5. Affinity Dynamics upon Attack
       if (target.properties.brain) {

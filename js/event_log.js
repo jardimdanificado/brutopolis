@@ -474,7 +474,9 @@ export function exportWorldChronicleJSON(world, entities, currentTick = 0, entit
     const perks = [];
     if (props.skeptic) perks.push("skeptic");
     if (props.gullible) perks.push("gullible");
-    if (props.schizophrenic) perks.push("schizophrenic");
+    if (props.traira) perks.push("traitor");
+    if (props.estressado) perks.push("stressed");
+    if (props.calmo) perks.push("calm");
     if (props.liar) perks.push(props.liar.type || "liar");
 
     const fatherId = props.fatherId !== undefined ? props.fatherId : props.life?.fatherId ?? null;

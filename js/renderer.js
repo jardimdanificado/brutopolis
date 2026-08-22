@@ -5,6 +5,7 @@
 import { ASSET_DATA } from "./assets_data.js";
 import { MAP_WIDTH, MAP_HEIGHT, TILE_FLOOR, TILE_MOUNTAIN, TILE_WATER, TILE_SAND, TILE_STONE } from "./world_gen.js";
 import { globalWallCoords, resolveWallSkin, getEntitiesInViewport } from "./engine.js";
+import { getClanBlueprintTiles } from "./properties.js";
 
 // Cached emote textures
 let cachedEmoteTextures = null;
@@ -508,9 +509,48 @@ export class Renderer {
       }
     }
 
+    // 3.5. Render Planned Clan House Blueprints
+    const visibleEntities = getEntitiesInViewport(minTx - 1, maxTx + 1, minTy - 1, maxTy + 1);
+    const clanGroups = new Map();
+    const occupiedHouseTiles = new Set();
+    for (let i = 0; i < visibleEntities.length; i++) {
+      const ve = visibleEntities[i];
+      if (!ve || ve.destroyed) continue;
+      if (ve.properties?.group && ve.properties.group.id) {
+        clanGroups.set(ve.properties.group.id, ve.properties.group);
+      }
+      if (ve.properties?.house || ve.properties?.render?.skin === "Overworld_House.png" || ve.properties?.name?.includes("Casa")) {
+        occupiedHouseTiles.add(`${Math.floor(ve.x)}_${Math.floor(ve.y)}`);
+      }
+    }
+
+    if (clanGroups.size > 0) {
+      const houseTex = findTexture("Overworld_House.png");
+      for (const group of clanGroups.values()) {
+        if (!group || !group.claimedZones) continue;
+        const bpTiles = getClanBlueprintTiles(group);
+        for (let b = 0; b < bpTiles.length; b++) {
+          const bp = bpTiles[b];
+          if (bp.type === "house" && bp.x >= minTx && bp.x <= maxTx && bp.y >= minTy && bp.y <= maxTy) {
+            const tileKey = `${bp.x}_${bp.y}`;
+            if (!occupiedHouseTiles.has(tileKey)) {
+              const sx = centerScreenX + Math.floor((bp.x - this.camX) * tileSize);
+              const sy = centerScreenY + Math.floor((bp.y - this.camY) * tileSize);
+              drawBoxOutline32(buf32, width, height, sx, sy, tileSize, tileSize, rgba32(200, 160, 60));
+              // Corner pegs
+              drawBox32(buf32, width, height, sx, sy, 2, 2, rgba32(240, 190, 80));
+              drawBox32(buf32, width, height, sx + tileSize - 2, sy, 2, 2, rgba32(240, 190, 80));
+              drawBox32(buf32, width, height, sx, sy + tileSize - 2, 2, 2, rgba32(240, 190, 80));
+              drawBox32(buf32, width, height, sx + tileSize - 2, sy + tileSize - 2, 2, 2, rgba32(240, 190, 80));
+              occupiedHouseTiles.add(tileKey);
+            }
+          }
+        }
+      }
+    }
+
     // 4. Render Dropped Items & Entities (Fast Viewport Culling)
     const emoteTextures = getEmoteTextures();
-    const visibleEntities = getEntitiesInViewport(minTx - 1, maxTx + 1, minTy - 1, maxTy + 1);
 
     for (let i = 0; i < visibleEntities.length; i++) {
       const e = visibleEntities[i];
@@ -609,7 +649,7 @@ export class Renderer {
           drawBox32(buf32, width, height, sx, cBarY, cFillW, cBarH, rgba32(50, 210, 240));
         }
 
-        // Emote bubble
+        // Emote bubble & Held Items per hand
         let emoteTex = null;
         if (e.emote >= 0 && e.emote < emoteTextures.length) {
           emoteTex = emoteTextures[e.emote];
@@ -618,22 +658,57 @@ export class Renderer {
         else if (e.motor === 6) emoteTex = emoteTextures[10]; // Flee -> Upset
         else if (e.motor === 7) emoteTex = emoteTextures[2]; // Socialize -> Happy
 
-        if (emoteTex && tileSize >= 12) {
-          const emoteSize = Math.floor(tileSize / 2);
-          const tintFg = (e.emote === 12) ? rgba32(255, 60, 120) : (e.emote === 13) ? rgba32(255, 40, 40) : rgba32(255, 240, 100);
-          drawSpriteTinted32(buf32, width, height, emoteTex, sx + tileSize - emoteSize, sy - emoteSize, emoteSize, emoteSize, tintFg, rgba32(30, 20, 0), 1.0);
+        // Detect items held in all hands/arms
+        const heldItems = [];
+        for (const [k, p] of Object.entries(e.properties || {})) {
+          if ((k.toLowerCase().includes("arm") || k.toLowerCase().includes("hand")) && p && p.heldItem) {
+            heldItems.push(p.heldItem);
+          }
         }
+        if (e.properties?.heldItem) heldItems.push(e.properties.heldItem);
+        if (e.properties?.equipment?.mainHand) heldItems.push(e.properties.equipment.mainHand);
+        if (e.properties?.equipment?.offHand) heldItems.push(e.properties.equipment.offHand);
 
-        // Selection Reticle
-        if (e.id === this.selectedEntityId) {
-          const selectColor = rgba32(255, 215, 0);
-          drawBoxOutline32(buf32, width, height, sx - 2, sy - 2, tileSize + 4, tileSize + 4, selectColor);
-          drawBoxOutline32(buf32, width, height, sx - 3, sy - 3, tileSize + 6, tileSize + 6, selectColor);
+        if (tileSize >= 12 && (emoteTex || heldItems.length > 0)) {
+          const iconSize = Math.floor(tileSize * 0.48);
+          let iconX = sx + tileSize - iconSize;
+          const iconY = sy - iconSize - 1;
+
+          if (emoteTex) {
+            const tintFg = (e.emote === 12) ? rgba32(255, 60, 120) : (e.emote === 13) ? rgba32(255, 40, 40) : rgba32(255, 240, 100);
+            drawSpriteTinted32(buf32, width, height, emoteTex, iconX, iconY, iconSize, iconSize, tintFg, rgba32(0, 0, 0, 0), 1.0);
+            iconX -= (iconSize + 1);
+          }
+
+          for (let h = 0; h < heldItems.length; h++) {
+            const it = heldItems[h];
+            const skinName = it.skin || it.render?.skin || (typeof it === "string" ? it : it.name) || "Item_Nugget.png";
+            const itemTex = findTexture(skinName);
+            if (itemTex) {
+              drawSpriteTinted32(buf32, width, height, itemTex, iconX, iconY, iconSize, iconSize, rgba32(255, 255, 255), rgba32(0, 0, 0, 0), globalLight);
+              iconX -= (iconSize + 1);
+            }
+          }
         }
       }
     }
 
-    // 5. Blit final 32-bit buffer straight to Canvas in 1 call (60 FPS even on Zoomout)
+    // 5. Final Pass: Selection Box Overlay (Guaranteed to render ON TOP of all entity sprites)
+    if (this.selectedEntityId > 0) {
+      for (let i = 0; i < visibleEntities.length; i++) {
+        const e = visibleEntities[i];
+        if (e && !e.destroyed && e.id === this.selectedEntityId) {
+          const sx = centerScreenX + Math.floor((e.x - this.camX) * tileSize);
+          const sy = centerScreenY + Math.floor((e.y - this.camY) * tileSize);
+          const selectColor = rgba32(255, 215, 0);
+          drawBoxOutline32(buf32, width, height, sx - 2, sy - 2, tileSize + 4, tileSize + 4, selectColor);
+          drawBoxOutline32(buf32, width, height, sx - 3, sy - 3, tileSize + 6, tileSize + 6, selectColor);
+          break;
+        }
+      }
+    }
+
+    // 6. Blit final 32-bit buffer straight to Canvas in 1 call (60 FPS even on Zoomout)
     this.ctx.putImageData(this.imageData, 0, 0);
   }
 }

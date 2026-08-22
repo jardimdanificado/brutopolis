@@ -573,8 +573,10 @@ export function tickEntities(entities, dt, world) {
       continue;
     }
 
-    // 1. Run effects for all properties in the entity's property bag
-    for (const [key, prop] of Object.entries(entity.properties)) {
+    // 1. Run effects for all properties in the entity's property bag (direct loop without Object.entries GC overhead)
+    const props = entity.properties;
+    for (const key in props) {
+      const prop = props[key];
       if (!prop) continue;
 
       if (typeof prop.effect === "function") {
@@ -588,15 +590,9 @@ export function tickEntities(entities, dt, world) {
           prop.effect(entity, dt, world, entities, prop);
         }
       }
-    }
 
-    // Synchronize spatial hash grid if entity coordinates changed
-    updateEntitySpatial(entity);
-
-    // 2. Check for limb condition degradation & automatic amputation (condition <= 0)
-    for (const [key, prop] of Object.entries(entity.properties)) {
+      // 2. Check for limb condition degradation & automatic amputation (condition <= 0)
       if (
-        prop &&
         typeof prop.condition === "number" &&
         typeof prop.maxCondition === "number" &&
         !key.startsWith("amputated_")
@@ -607,11 +603,14 @@ export function tickEntities(entities, dt, world) {
       }
     }
 
+    // Synchronize spatial hash grid if entity coordinates changed
+    updateEntitySpatial(entity);
+
     // 3. Check life energy (death condition)
     let isDead = false;
-    if (entity.properties.life && entity.properties.life.energy <= 0) {
+    if (props.life && props.life.energy <= 0) {
       isDead = true;
-    } else if (entity.properties.health && entity.properties.health.current <= 0) {
+    } else if (props.health && props.health.current <= 0) {
       isDead = true;
     }
 

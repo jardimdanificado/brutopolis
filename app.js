@@ -629,7 +629,7 @@ let rctRenderer = null;
 if (container3D) {
   rctRenderer = new RCT3DRenderer(container3D);
 }
-let is3DMode = false;
+let is3DMode = true;
 
 function toggle3DMode() {
   is3DMode = !is3DMode;
@@ -656,8 +656,8 @@ let entities = [];
 
 // Simulation Speed & Time State
 let isPaused = false;
-let simSpeed = 1.0; // 0.5x, 1x, 2x, 4x, 8x, 16x, 32x, ??x
-const SPEED_TIERS = [0.5, 1.0, 2.0, 4.0, 8.0, 16.0, 32.0, "??"];
+let simSpeed = 1.0; // 0.5x, 1x, 2x, 4x, 8x, 16x, 32x
+const SPEED_TIERS = [0.5, 1.0, 2.0, 4.0, 8.0, 16.0, 32.0];
 
 function increaseSimSpeed() {
   const idx = SPEED_TIERS.indexOf(simSpeed);
@@ -667,8 +667,7 @@ function increaseSimSpeed() {
     simSpeed = 1.0;
   }
   if (renderer) {
-    const tps = simSpeed === "??" ? 600 : Math.round(60 * (typeof simSpeed === "number" ? simSpeed : 32));
-    renderer.setTps(tps);
+    renderer.setTps(Math.round(60 * simSpeed));
   }
 }
 
@@ -680,8 +679,7 @@ function decreaseSimSpeed() {
     simSpeed = 1.0;
   }
   if (renderer) {
-    const tps = simSpeed === "??" ? 600 : Math.round(60 * (typeof simSpeed === "number" ? simSpeed : 0.5));
-    renderer.setTps(tps);
+    renderer.setTps(Math.round(60 * simSpeed));
   }
 }
 
@@ -689,8 +687,7 @@ function cycleSimSpeed() {
   const idx = SPEED_TIERS.indexOf(simSpeed);
   simSpeed = SPEED_TIERS[(idx + 1) % SPEED_TIERS.length];
   if (renderer) {
-    const tps = simSpeed === "??" ? 600 : Math.round(60 * (typeof simSpeed === "number" ? simSpeed : 32));
-    renderer.setTps(tps);
+    renderer.setTps(Math.round(60 * simSpeed));
   }
 }
 
@@ -987,8 +984,8 @@ let touchStartY = 0;
 
 // World Generator & Configurator State
 let genPreset = 0; // 0: ARCHIPELAGO, 1: CONTINENT, 2: HIGHLANDS
-let genWidth = 512; // 64 to 1024
-let genHeight = 512; // 64 to 1024
+let genWidth = 256; // 64 to 1024 (Default: 256x256)
+let genHeight = 256; // 64 to 1024 (Default: 256x256)
 let genZoneSize = 8; // 4, 8, 16, 32, 64
 let genSeed = Math.floor(Math.random() * 1000000) + 1;
 let genCreatureDensity = "STANDARD"; // "NONE", "LOW", "STANDARD", "HIGH"
@@ -1158,6 +1155,10 @@ function generateConfiguredWorld() {
 
   const zoomFactor = genWidth <= 128 ? 3.0 : genWidth <= 256 ? 2.0 : 1.5;
   renderer.setCamera(startX, startY, zoomFactor);
+  if (rctRenderer) {
+    rctRenderer.setCamera(startX, startY, zoomFactor);
+    if (lastSelectedId > 0) rctRenderer.selectEntity(lastSelectedId);
+  }
   currentMode = "MAP";
 }
 
@@ -1615,6 +1616,8 @@ window.addEventListener("keydown", (e) => {
     currentMode = currentMode === "LOGS" ? "MAP" : "LOGS";
     modalScroll = 0;
     inspectingLogEvent = null;
+  } else if (e.code === "KeyM") {
+    toggle3DMode();
   } else if (e.code === "KeyS") {
     isEditorOpen = !isEditorOpen;
     if (isEditorOpen) {
@@ -1793,22 +1796,17 @@ function renderTopHudBar() {
   drawNESButton(CANVAS_WIDTH - 218, 4, 52, 24, "SAVE", false, false);
   registerClickableRegion(CANVAS_WIDTH - 218, 4, 52, 24, saveWorldState);
 
-  // 3D / 2D Toggle Button
-  const mode3dTxt = is3DMode ? "3D:ON" : "3D:OFF";
-  drawNESButton(CANVAS_WIDTH - 286, 4, 62, 24, mode3dTxt, is3DMode, false);
-  registerClickableRegion(CANVAS_WIDTH - 286, 4, 62, 24, toggle3DMode);
-
   if (is3DMode && rctRenderer) {
     const wireMode = rctRenderer.getWireframeModeName ? rctRenderer.getWireframeModeName() : (rctRenderer.isWireframe ? "ON" : "OFF");
     const wireTxt = "WIRE:" + wireMode;
     const isWireActive = wireMode !== "OFF";
-    drawNESButton(CANVAS_WIDTH - 364, 4, 72, 24, wireTxt, isWireActive, false);
-    registerClickableRegion(CANVAS_WIDTH - 364, 4, 72, 24, () => rctRenderer.toggleWireframe());
+    drawNESButton(CANVAS_WIDTH - 296, 4, 72, 24, wireTxt, isWireActive, false);
+    registerClickableRegion(CANVAS_WIDTH - 296, 4, 72, 24, () => rctRenderer.toggleWireframe());
 
     const resMode = rctRenderer.getResolutionName ? rctRenderer.getResolutionName() : "100%";
     const resTxt = "RES:" + resMode;
-    drawNESButton(CANVAS_WIDTH - 442, 4, 72, 24, resTxt, resMode !== "100%", false);
-    registerClickableRegion(CANVAS_WIDTH - 442, 4, 72, 24, () => rctRenderer.toggleResolution());
+    drawNESButton(CANVAS_WIDTH - 374, 4, 72, 24, resTxt, resMode !== "100%", false);
+    registerClickableRegion(CANVAS_WIDTH - 374, 4, 72, 24, () => rctRenderer.toggleResolution());
   }
 }
 
@@ -1833,12 +1831,19 @@ function renderBottomToolbar() {
           isPainting = false;
         }
       }
+    },
+    {
+      label: "MAP",
+      isMapBtn: true,
+      action: () => {
+        toggle3DMode();
+      }
     }
   ];
 
   let btnX = 8;
   for (const b of buttons) {
-    const isAct = b.isEditorBtn ? isEditorOpen : currentMode === b.mode;
+    const isAct = b.isEditorBtn ? isEditorOpen : b.isMapBtn ? !is3DMode : currentMode === b.mode;
     const bw = b.label.length * 8 + 18;
     drawNESButton(btnX, CANVAS_HEIGHT - 30, bw, 24, b.label, isAct, false);
 
@@ -1862,7 +1867,7 @@ function renderBottomToolbar() {
   drawNESButton(timeCtlX, CANVAS_HEIGHT - 30, 20, 24, "-", false, false);
   registerClickableRegion(timeCtlX, CANVAS_HEIGHT - 30, 20, 24, decreaseSimSpeed);
 
-  const speedStr = simSpeed === "??" ? "??X (MAX)" : `${simSpeed}X (${Math.round(60 * simSpeed)}TPS)`;
+  const speedStr = `${simSpeed}X (${Math.round(60 * simSpeed)}TPS)`;
   drawText8x8(speedStr, timeCtlX + 26, CANVAS_HEIGHT - 22, "#f8b800", 1);
   registerClickableRegion(timeCtlX + 26, CANVAS_HEIGHT - 30, speedStr.length * 8 + 4, 24, cycleSimSpeed);
 
@@ -2563,20 +2568,23 @@ function renderGroupsModal() {
     const isViewing = visualizedGroupId === g.id;
     drawNESButton(mx + cardW - 170, cardY + 24, 80, 22, isViewing ? "ZONE*" : "ZONE", isViewing, false);
     registerClickableRegion(mx + cardW - 170, cardY + 24, 80, 22, () => {
-      visualizedGroupId = g.id;
-      let sumX = 0, sumY = 0, count = 0;
-      for (const zk of g.claimedZones || []) {
-        const coords = parseZoneCoords(zk);
-        if (coords) {
-          sumX += coords.centerX;
-          sumY += coords.centerY;
-          count++;
+      visualizedGroupId = (visualizedGroupId === g.id) ? null : g.id;
+      if (visualizedGroupId !== null) {
+        let sumX = 0, sumY = 0, count = 0;
+        for (const zk of g.claimedZones || []) {
+          const coords = parseZoneCoords(zk);
+          if (coords) {
+            sumX += coords.centerX;
+            sumY += coords.centerY;
+            count++;
+          }
         }
+        if (count > 0) {
+          if (renderer) renderer.setCamera(sumX / count, sumY / count, 1.5);
+          if (rctRenderer) rctRenderer.setCamera(sumX / count, sumY / count, 1.5);
+        }
+        currentMode = "GAME";
       }
-      if (count > 0 && renderer) {
-        renderer.setCamera(sumX / count, sumY / count, 1.5);
-      }
-      currentMode = "MAP";
     });
 
     // Focus Leader Button
@@ -2660,20 +2668,23 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
   // Top Action Buttons
   drawNESButton(mx + mw - 230, my + 32, 100, 24, "TERRITORY", false, false);
   registerClickableRegion(mx + mw - 230, my + 32, 100, 24, () => {
-    visualizedGroupId = g.id;
-    let sumX = 0, sumY = 0, count = 0;
-    for (const zk of g.claimedZones || []) {
-      const coords = parseZoneCoords(zk);
-      if (coords) {
-        sumX += coords.centerX;
-        sumY += coords.centerY;
-        count++;
+    visualizedGroupId = (visualizedGroupId === g.id) ? null : g.id;
+    if (visualizedGroupId !== null) {
+      let sumX = 0, sumY = 0, count = 0;
+      for (const zk of g.claimedZones || []) {
+        const coords = parseZoneCoords(zk);
+        if (coords) {
+          sumX += coords.centerX;
+          sumY += coords.centerY;
+          count++;
+        }
       }
+      if (count > 0) {
+        if (renderer) renderer.setCamera(sumX / count, sumY / count, 1.5);
+        if (rctRenderer) rctRenderer.setCamera(sumX / count, sumY / count, 1.5);
+      }
+      currentMode = "GAME";
     }
-    if (count > 0 && renderer) {
-      renderer.setCamera(sumX / count, sumY / count, 1.5);
-    }
-    currentMode = "MAP";
   });
 
   drawNESButton(mx + mw - 124, my + 32, 110, 24, "FOCUS LEADER", false, false);
@@ -2845,7 +2856,7 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
  * Renders glowing claimed territory overlay on the world map for the selected clan.
  */
 function renderTerritoryOverlay() {
-  if (currentMode !== "MAP" || !renderer || !world || visualizedGroupId === null) return;
+  if (!world || visualizedGroupId === null) return;
   const groups = getAllGroups();
   const g = groups.find(grp => grp.id === visualizedGroupId);
   if (!g) {
@@ -2853,51 +2864,53 @@ function renderTerritoryOverlay() {
     return;
   }
 
-  const zoom = renderer.getCameraZoom();
-  const tileSize = 16.0 * zoom;
-  const cx = renderer.getCameraX();
-  const cy = renderer.getCameraY();
-  const centerScreenX = CANVAS_WIDTH / 2;
-  const centerScreenY = CANVAS_HEIGHT / 2;
-
   ctx.save();
 
-  // Draw Claimed Macro-Chunks
-  for (const zk of g.claimedZones || []) {
-    const coords = parseZoneCoords(zk);
-    if (!coords) continue;
+  // Draw Claimed Macro-Chunks on 2D Canvas when in Map Mode
+  if (!is3DMode && renderer) {
+    const zoom = renderer.getCameraZoom();
+    const tileSize = 16.0 * zoom;
+    const cx = renderer.getCameraX();
+    const cy = renderer.getCameraY();
+    const centerScreenX = CANVAS_WIDTH / 2;
+    const centerScreenY = CANVAS_HEIGHT / 2;
 
-    const sz = getZoneSize();
-    const screenX = centerScreenX + (coords.minX - cx) * tileSize;
-    const screenY = centerScreenY + (coords.minY - cy) * tileSize;
-    const screenW = sz * tileSize;
-    const screenH = sz * tileSize;
+    for (const zk of g.claimedZones || []) {
+      const coords = parseZoneCoords(zk);
+      if (!coords) continue;
 
-    // Only draw if on screen
-    if (screenX + screenW < 0 || screenX > CANVAS_WIDTH || screenY + screenH < 0 || screenY > CANVAS_HEIGHT) continue;
+      const sz = getZoneSize();
+      const screenX = centerScreenX + (coords.minX - cx) * tileSize;
+      const screenY = centerScreenY + (coords.minY - cy) * tileSize;
+      const screenW = sz * tileSize;
+      const screenH = sz * tileSize;
 
-    // Translucent Tinted Fill
-    ctx.fillStyle = "rgba(248, 184, 0, 0.18)";
-    ctx.fillRect(screenX, screenY, screenW, screenH);
+      // Only draw if on screen
+      if (screenX + screenW < 0 || screenX > CANVAS_WIDTH || screenY + screenH < 0 || screenY > CANVAS_HEIGHT) continue;
 
-    // Glowing Border
-    ctx.strokeStyle = "#ffd700";
-    ctx.lineWidth = 2;
-    ctx.strokeRect(screenX, screenY, screenW, screenH);
+      // Translucent Tinted Fill
+      ctx.fillStyle = "rgba(248, 184, 0, 0.18)";
+      ctx.fillRect(screenX, screenY, screenW, screenH);
 
-    // Corner Accents
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(screenX, screenY, 4, 4);
-    ctx.fillRect(screenX + screenW - 4, screenY, 4, 4);
-    ctx.fillRect(screenX, screenY + screenH - 4, 4, 4);
-    ctx.fillRect(screenX + screenW - 4, screenY + screenH - 4, 4, 4);
+      // Glowing Border
+      ctx.strokeStyle = "#ffd700";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(screenX, screenY, screenW, screenH);
 
-    // Zone Badge
-    const zoneBadge = `ZONE [${coords.zx},${coords.zy}]`;
-    drawText8x8(zoneBadge, screenX + 4, screenY + 4, "#ffd700", 1);
+      // Corner Accents
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(screenX, screenY, 4, 4);
+      ctx.fillRect(screenX + screenW - 4, screenY, 4, 4);
+      ctx.fillRect(screenX, screenY + screenH - 4, 4, 4);
+      ctx.fillRect(screenX + screenW - 4, screenY + screenH - 4, 4, 4);
+
+      // Zone Badge
+      const zoneBadge = `ZONE [${coords.zx},${coords.zy}]`;
+      drawText8x8(zoneBadge, screenX + 4, screenY + 4, "#ffd700", 1);
+    }
   }
 
-  // Floating Territory Banner on Top HUD area
+  // Floating Territory Banner on Top HUD area (Shown in both 3D and 2D)
   const bannerText = `TERRITORY: ${(g.name || "CLAN").toUpperCase()}`;
   const bannerW = bannerText.length * 8 + 80;
   const bannerX = Math.floor((CANVAS_WIDTH - bannerW) / 2);
@@ -3764,15 +3777,16 @@ function renderGeneratorModal() {
   
   // Quick size presets
   const quickSizes = [
+    { w: 64, h: 64, label: "64x64" },
+    { w: 128, h: 128, label: "128x128" },
     { w: 256, h: 256, label: "256x256" },
     { w: 512, h: 512, label: "512x512" },
-    { w: 768, h: 768, label: "768x768" },
     { w: 1024, h: 1024, label: "1024x1024" }
   ];
   let qx = mx + 16;
   for (const qs of quickSizes) {
     const isSel = genWidth === qs.w && genHeight === qs.h;
-    const bw = 84;
+    const bw = 70;
     drawNESButton(qx, curY + 10, bw, 22, qs.label, isSel, false);
     const qw = qs.w;
     const qh = qs.h;
@@ -3780,7 +3794,7 @@ function renderGeneratorModal() {
       genWidth = qw;
       genHeight = qh;
     });
-    qx += bw + 6;
+    qx += bw + 4;
   }
 
   // Fine Width / Height adjusters
@@ -3948,19 +3962,7 @@ function frame(time) {
   if (renderer && world) {
     // 1. Tick Simulation if not paused
     if (!isPaused) {
-      if (simSpeed === "??") {
-        // Unleashed ??X speed: process as many ticks as possible (up to 300 subticks with elastic frame budget)
-        const startPerf = performance.now();
-        const subDt = 0.05;
-        let subTicks = 0;
-        while (subTicks < 300 && (subTicks < 75 || (performance.now() - startPerf) < 18)) {
-          world.clock.tick(subDt);
-          incrementEngineTick();
-          tickEntities(entities, subDt, world);
-          tpsCounter++;
-          subTicks++;
-        }
-      } else if (typeof simSpeed === "number" && simSpeed > 1.0) {
+      if (typeof simSpeed === "number" && simSpeed > 1.0) {
         const subTicks = Math.round(simSpeed);
         const subDt = 0.05;
         for (let s = 0; s < subTicks; s++) {
@@ -3989,7 +3991,7 @@ function frame(time) {
     if (is3DMode && rctRenderer) {
       rctRenderer.setPaused(isPaused);
       const visionTarget = (isCreatureVisionMode && lastSelectedId > 0) ? getEntityById(lastSelectedId) : null;
-      rctRenderer.render(world, entities, time * 0.001, dt, isPaused ? 0.0 : simSpeed, visionTarget);
+      rctRenderer.render(world, entities, time * 0.001, dt, isPaused ? 0.0 : simSpeed, visionTarget, visualizedGroupId);
       ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     } else {
       renderer.render(world, entities, time * 0.001, dt, simSpeed);

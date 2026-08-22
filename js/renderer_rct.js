@@ -6,6 +6,7 @@ import * as THREE from "https://esm.sh/three@0.160.0";
 import { ASSET_DATA } from "./assets_data.js";
 import { MAP_WIDTH, MAP_HEIGHT, TILE_FLOOR, TILE_MOUNTAIN, TILE_WATER, TILE_SAND, TILE_STONE, TILE_VOID } from "./world_gen.js";
 import { globalWallCoords, resolveWallSkin, getEntitiesInViewport } from "./engine.js";
+import { getClanBlueprintTiles } from "./properties.js";
 
 // Cache for raw asset images
 const rawImages = new Map();
@@ -18,6 +19,54 @@ for (const item of ASSET_DATA) {
   img.src = `data:image/png;base64,${item.base64}`;
   rawImages.set(base, img);
   rawImages.set(clean, img);
+}
+
+// ---------------------------------------------------------------------------
+// Smooth Day & Night Color Keyframes (Enhanced Night Visibility & Color Curve)
+// ---------------------------------------------------------------------------
+
+const DAY_NIGHT_KEYFRAMES = [
+  { t: 0.0,  sun: 0x5a7ca8, amb: 0x22324c, bg: 0x0a101c, sunI: 0.35, ambI: 0.40 }, // Midnight
+  { t: 4.5,  sun: 0x6a8cb8, amb: 0x283854, bg: 0x0e1422, sunI: 0.38, ambI: 0.42 }, // Pre-dawn
+  { t: 5.5,  sun: 0xff7b39, amb: 0x8a5870, bg: 0x241628, sunI: 0.70, ambI: 0.52 }, // Sunrise start
+  { t: 6.5,  sun: 0xffa048, amb: 0xb88890, bg: 0x342430, sunI: 0.95, ambI: 0.65 }, // Golden dawn
+  { t: 7.5,  sun: 0xffd285, amb: 0xd0b8ae, bg: 0x2e303c, sunI: 1.25, ambI: 0.78 }, // Early morning
+  { t: 9.0,  sun: 0xfffaea, amb: 0xdde8f5, bg: 0x151c28, sunI: 1.40, ambI: 0.85 }, // Morning
+  { t: 12.0, sun: 0xffffff, amb: 0xe5f0ff, bg: 0x121922, sunI: 1.55, ambI: 0.90 }, // Solar Noon
+  { t: 15.5, sun: 0xfffaea, amb: 0xdde8f5, bg: 0x151c28, sunI: 1.40, ambI: 0.85 }, // Afternoon
+  { t: 17.0, sun: 0xffab4c, amb: 0xb57870, bg: 0x241a24, sunI: 1.10, ambI: 0.72 }, // Sunset start
+  { t: 18.2, sun: 0xff6a35, amb: 0x8a4565, bg: 0x221226, sunI: 0.80, ambI: 0.58 }, // Sunset golden hour
+  { t: 19.5, sun: 0x724888, amb: 0x48345c, bg: 0x160f22, sunI: 0.50, ambI: 0.45 }, // Dusk twilight
+  { t: 21.0, sun: 0x5a7ca8, amb: 0x253550, bg: 0x0c121e, sunI: 0.38, ambI: 0.40 }, // Nightfall
+  { t: 24.0, sun: 0x5a7ca8, amb: 0x22324c, bg: 0x0a101c, sunI: 0.35, ambI: 0.40 }  // Wrap to midnight
+];
+
+const EMOTE_SKINS = [
+  "Emote_Angry.png",      // 0
+  "Emote_Excited.png",    // 1
+  "Emote_Happy.png",      // 2
+  "Emote_Hurt.png",       // 3
+  "Emote_Nerd.png",       // 4
+  "Emote_Sad.png",        // 5
+  "Emote_Serious.png",    // 6
+  "Emote_Sick.png",       // 7
+  "Emote_Sleeping.png",   // 8
+  "Emote_Surprised.png",  // 9
+  "Emote_Upset.png",      // 10
+  "Emote_Question.png",   // 11
+  "Emote_Heart.png",      // 12
+  "Emote_Exclamation.png" // 13
+];
+
+function getCreatureEmoteSkin(e) {
+  if (e.emote !== undefined && e.emote >= 0 && e.emote < EMOTE_SKINS.length) {
+    return EMOTE_SKINS[e.emote];
+  }
+  if (e.motor === 5) return "Emote_Angry.png";    // Attack
+  if (e.motor === 4) return "Emote_Sleeping.png"; // Sleep
+  if (e.motor === 6) return "Emote_Upset.png";    // Flee
+  if (e.motor === 7) return "Emote_Happy.png";    // Socialize
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -44,7 +93,7 @@ function getEntityBounds(e) {
   const r = e.properties?.render;
   const isItem = !e.properties?.life && (!!e.properties?.edible || !!e.properties?.resourceType || !!e.properties?.germination || e.properties?.species === "item");
   const isDoor = !!e.properties?.door;
-  const isHouse = !!e.properties?.house || r?.skin === "Overworld_House.png";
+  const isHouse = !!e.properties?.house || r?.skin === "Overworld_House.png" || e.properties?.name?.includes("Casa");
   const isWall = !isDoor && !isHouse && (e.properties?.structure || r?.skin?.startsWith("Wall_") || e.properties?.name?.includes("Muralha") || e.properties?.name?.includes("Wall"));
   const isCactus = e.properties?.species === "cactus" || e.properties?.name?.toLowerCase().includes("cactus") || e.properties?.name?.toLowerCase().includes("cacto");
   const isTree = !isCactus && (e.properties?.species === "oak" || e.properties?.species === "pine" || e.properties?.species === "willow" || e.properties?.species === "tree" || !!e.properties?.tree || (r?.skin && r?.skin.toLowerCase().includes("tree")));
@@ -162,39 +211,32 @@ export function createTintedTexture(skinName, fgHex = 0xffffff, bgHex = 0x000000
 }
 
 // ---------------------------------------------------------------------------
-// 3D Procedural Geometries (Saguaro Cactus, Natural Grass, Roofs)
+// 3D Procedural Geometries (Saguaro Cactus, Natural Grass, Progressive Houses)
 // ---------------------------------------------------------------------------
 
 function mergeBufferGeometries(geometries) {
-  const parts = [];
-  for (const g of geometries) {
-    parts.push(g.index ? g.toNonIndexed() : g);
-  }
+  const nonIndexed = geometries.map(g => g.index ? g.toNonIndexed() : g);
 
   let totalPos = 0;
-  let totalUv = 0;
-  for (const g of parts) {
-    totalPos += g.attributes.position.array.length;
-    totalUv += g.attributes.uv.array.length;
+  for (const g of nonIndexed) {
+    if (g.attributes && g.attributes.position) {
+      totalPos += g.attributes.position.array.length;
+    }
   }
 
   const posArr = new Float32Array(totalPos);
-  const uvArr = new Float32Array(totalUv);
   let posOffset = 0;
-  let uvOffset = 0;
 
-  for (const g of parts) {
-    const p = g.attributes.position.array;
-    const u = g.attributes.uv.array;
-    posArr.set(p, posOffset);
-    uvArr.set(u, uvOffset);
-    posOffset += p.length;
-    uvOffset += u.length;
+  for (const g of nonIndexed) {
+    if (g.attributes && g.attributes.position) {
+      const p = g.attributes.position.array;
+      posArr.set(p, posOffset);
+      posOffset += p.length;
+    }
   }
 
   const merged = new THREE.BufferGeometry();
   merged.setAttribute("position", new THREE.Float32BufferAttribute(posArr, 3));
-  merged.setAttribute("uv", new THREE.Float32BufferAttribute(uvArr, 2));
   merged.computeVertexNormals();
   return merged;
 }
@@ -231,7 +273,6 @@ function createSaguaroCactusGeometry() {
 }
 
 function createNaturalGrassGeometry(w = 0.72, h = 0.58) {
-  const hw = w / 2;
   const p1 = new THREE.PlaneGeometry(w, h);
   p1.translate(0, h / 2, 0);
 
@@ -244,7 +285,7 @@ function createNaturalGrassGeometry(w = 0.72, h = 0.58) {
   return mergeBufferGeometries([p1, p2, p3]);
 }
 
-function createPitchedRoofGeometry(width = 1.6, depth = 1.6, height = 0.65) {
+function createPitchedRoofGeometry(width = 1.68, depth = 1.68, height = 0.78) {
   const hw = width / 2;
   const hd = depth / 2;
   const positions = [
@@ -265,6 +306,105 @@ function createPitchedRoofGeometry(width = 1.6, depth = 1.6, height = 0.65) {
   geo.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
   geo.computeVertexNormals();
   return geo;
+}
+
+// Stage 0: Empty Clan Plot Pegs & Layout String (0 materials)
+function createHousePegsGeometry() {
+  const parts = [];
+  const pegH = 0.35;
+  const pegGeo = new THREE.CylinderGeometry(0.04, 0.05, pegH, 5);
+  const px = 0.68;
+  const pz = 0.68;
+
+  const p1 = pegGeo.clone(); p1.translate(-px, pegH / 2, -pz); parts.push(p1);
+  const p2 = pegGeo.clone(); p2.translate( px, pegH / 2, -pz); parts.push(p2);
+  const p3 = pegGeo.clone(); p3.translate(-px, pegH / 2,  pz); parts.push(p3);
+  const p4 = pegGeo.clone(); p4.translate( px, pegH / 2,  pz); parts.push(p4);
+
+  const strX = new THREE.BoxGeometry(px * 2, 0.02, 0.02);
+  const sx1 = strX.clone(); sx1.translate(0, pegH * 0.75, -pz); parts.push(sx1);
+  const sx2 = strX.clone(); sx2.translate(0, pegH * 0.75,  pz); parts.push(sx2);
+
+  const strZ = new THREE.BoxGeometry(0.02, 0.02, pz * 2);
+  const sz1 = strZ.clone(); sz1.translate(-px, pegH * 0.75, 0); parts.push(sz1);
+  const sz2 = strZ.clone(); sz2.translate( px, pegH * 0.75, 0); parts.push(sz2);
+
+  return mergeBufferGeometries(parts);
+}
+
+// Stage 1: Foundation Slab + 4 Timber Corner Posts (1 to 15 materials)
+function createHouseStage1Geometry() {
+  const parts = [];
+  const slab = new THREE.BoxGeometry(1.48, 0.22, 1.48);
+  slab.translate(0, 0.11, 0);
+  parts.push(slab);
+
+  const postH = 0.95;
+  const postGeo = new THREE.BoxGeometry(0.12, postH, 0.12);
+  const px = 0.64;
+  const pz = 0.64;
+
+  const p1 = postGeo.clone(); p1.translate(-px, 0.22 + postH / 2, -pz); parts.push(p1);
+  const p2 = postGeo.clone(); p2.translate( px, 0.22 + postH / 2, -pz); parts.push(p2);
+  const p3 = postGeo.clone(); p3.translate(-px, 0.22 + postH / 2,  pz); parts.push(p3);
+  const p4 = postGeo.clone(); p4.translate( px, 0.22 + postH / 2,  pz); parts.push(p4);
+
+  return mergeBufferGeometries(parts);
+}
+
+// Stage 2: Foundation Slab + Posts + Top Cross Beams + Half Stone Masonry Walls (16 to 34 materials)
+function createHouseStage2Geometry() {
+  const parts = [];
+  const slab = new THREE.BoxGeometry(1.48, 0.22, 1.48);
+  slab.translate(0, 0.11, 0);
+  parts.push(slab);
+
+  const wallBase = new THREE.BoxGeometry(1.42, 0.55, 1.42);
+  wallBase.translate(0, 0.22 + 0.275, 0);
+  parts.push(wallBase);
+
+  const postH = 0.95;
+  const postGeo = new THREE.BoxGeometry(0.12, postH, 0.12);
+  const px = 0.64;
+  const pz = 0.64;
+
+  const p1 = postGeo.clone(); p1.translate(-px, 0.22 + postH / 2, -pz); parts.push(p1);
+  const p2 = postGeo.clone(); p2.translate( px, 0.22 + postH / 2, -pz); parts.push(p2);
+  const p3 = postGeo.clone(); p3.translate(-px, 0.22 + postH / 2,  pz); parts.push(p3);
+  const p4 = postGeo.clone(); p4.translate( px, 0.22 + postH / 2,  pz); parts.push(p4);
+
+  const beamX = new THREE.BoxGeometry(1.40, 0.10, 0.10);
+  const bx1 = beamX.clone(); bx1.translate(0, 0.22 + postH, -pz); parts.push(bx1);
+  const bx2 = beamX.clone(); bx2.translate(0, 0.22 + postH,  pz); parts.push(bx2);
+
+  const beamZ = new THREE.BoxGeometry(0.10, 0.10, 1.40);
+  const bz1 = beamZ.clone(); bz1.translate(-px, 0.22 + postH, 0); parts.push(bz1);
+  const bz2 = beamZ.clone(); bz2.translate( px, 0.22 + postH, 0); parts.push(bz2);
+
+  return mergeBufferGeometries(parts);
+}
+
+// Stage 3: Full Stone Walls + Roof Timber Ridge & Rafter Framing Skeleton (35 to 49 materials)
+function createHouseStage3Geometry() {
+  const parts = [];
+  const walls = new THREE.BoxGeometry(1.48, 1.20, 1.48);
+  walls.translate(0, 0.60, 0);
+  parts.push(walls);
+
+  const postH = 1.20;
+  const pz = 0.64;
+
+  const ridge = new THREE.BoxGeometry(0.10, 0.10, 1.50);
+  ridge.translate(0, postH + 0.55, 0);
+  parts.push(ridge);
+
+  const strutGeo = new THREE.BoxGeometry(0.08, 0.85, 0.08);
+  const s1 = strutGeo.clone(); s1.rotateZ(0.68); s1.translate(-0.35, postH + 0.28, -pz); parts.push(s1);
+  const s2 = strutGeo.clone(); s2.rotateZ(-0.68); s2.translate(0.35, postH + 0.28, -pz); parts.push(s2);
+  const s3 = strutGeo.clone(); s3.rotateZ(0.68); s3.translate(-0.35, postH + 0.28,  pz); parts.push(s3);
+  const s4 = strutGeo.clone(); s4.rotateZ(-0.68); s4.translate(0.35, postH + 0.28,  pz); parts.push(s4);
+
+  return mergeBufferGeometries(parts);
 }
 
 // ---------------------------------------------------------------------------
@@ -305,6 +445,10 @@ export class RCT3DRenderer {
     this.waterTime = 0;
     this.isPaused = false;
     this.targetTps = 60;
+
+    // Temporary Colors for Lerping
+    this.tempColor1 = new THREE.Color();
+    this.tempColor2 = new THREE.Color();
 
     // Wireframe Mode: 0 = OFF, 1 = GRID (RCT Dark Quad Lines), 2 = FULL
     this.wireframeMode = 0;
@@ -349,6 +493,16 @@ export class RCT3DRenderer {
     this.sunLight.shadow.camera.bottom = -sd;
     this.sunLight.shadow.bias = -0.0008;
     this.scene.add(this.sunLight);
+
+    // Dynamic Night Point Light Pool (Placed strictly at intelligent creatures, houses, and walls)
+    this.maxNightLights = 28;
+    this.nightLightPool = [];
+    for (let i = 0; i < this.maxNightLights; i++) {
+      const pl = new THREE.PointLight(0xffaa44, 0, 10, 1.8);
+      pl.castShadow = false;
+      this.scene.add(pl);
+      this.nightLightPool.push(pl);
+    }
 
     // 5. Materials with Vertex Colors for Contact AO
     this.materials = {
@@ -402,16 +556,15 @@ export class RCT3DRenderer {
       pineLeaves: new THREE.MeshLambertMaterial({ color: 0x205222 }),
       cactus: new THREE.MeshLambertMaterial({ color: 0x3c7c2c }),
       houseWall: new THREE.MeshLambertMaterial({
-        map: createTintedTexture("Feature_Stone_B.png", 0xdfd4bc, 0x7c6950, 1.0),
+        color: 0xdfd4bc,
         side: THREE.DoubleSide
       }),
       houseRoof: new THREE.MeshLambertMaterial({
-        map: createTintedTexture("Feature_Stone_C.png", 0xe65c40, 0x8a2b16, 1.0),
+        color: 0xd84c2a,
         side: THREE.DoubleSide
       }),
       houseBlueprint: new THREE.MeshLambertMaterial({
-        map: createTintedTexture("Feature_Door_Closed.png", 0xe8d090, 0x4a3a20, 0.9),
-        transparent: true,
+        color: 0xdfa052,
         side: THREE.DoubleSide
       }),
       wall: new THREE.MeshLambertMaterial({
@@ -470,27 +623,58 @@ export class RCT3DRenderer {
     this.instWalls.castShadow = true;
     this.instWalls.receiveShadow = true;
 
-    // Houses
-    const houseWallGeo = new THREE.BoxGeometry(1.5, 0.9, 1.5);
-    houseWallGeo.translate(0, 0.45, 0);
+    // Houses (Finished Stage 4: Stone Walls + Terracotta Clay Roof)
+    const houseWallGeo = new THREE.BoxGeometry(1.5, 1.2, 1.5);
+    houseWallGeo.translate(0, 0.6, 0);
     this.instHouseWalls = new THREE.InstancedMesh(houseWallGeo, this.materials.houseWall, 400);
     this.instHouseWalls.castShadow = true;
     this.instHouseWalls.receiveShadow = true;
 
-    const houseRoofGeo = createPitchedRoofGeometry(1.65, 1.65, 0.65);
-    houseRoofGeo.translate(0, 0.9, 0);
+    const houseRoofGeo = createPitchedRoofGeometry(1.68, 1.68, 0.78);
+    houseRoofGeo.translate(0, 1.2, 0);
     this.instHouseRoofs = new THREE.InstancedMesh(houseRoofGeo, this.materials.houseRoof, 400);
     this.instHouseRoofs.castShadow = true;
     this.instHouseRoofs.receiveShadow = true;
 
-    // Blueprints
-    const bpGeo = new THREE.BoxGeometry(1.4, 0.15, 1.4);
-    bpGeo.translate(0, 0.08, 0);
-    this.instBlueprints = new THREE.InstancedMesh(bpGeo, this.materials.houseBlueprint, 300);
+    // Progressive Construction Stages
+    // Stage 0: Pegs & String Layout (0 materials)
+    const pegsGeo = createHousePegsGeometry();
+    this.instHousePegs = new THREE.InstancedMesh(pegsGeo, this.materials.houseBlueprint, 400);
+    this.instHousePegs.castShadow = true;
 
+    // Stage 1: Foundation Slab + 4 Posts (1 to 15 materials)
+    const st1Geo = createHouseStage1Geometry();
+    this.instHouseStage1 = new THREE.InstancedMesh(st1Geo, this.materials.houseBlueprint, 400);
+    this.instHouseStage1.castShadow = true;
+    this.instHouseStage1.receiveShadow = true;
+
+    // Stage 2: Foundation + Posts + Cross Beams + Half Stone Walls (16 to 34 materials)
+    const st2Geo = createHouseStage2Geometry();
+    this.instHouseStage2 = new THREE.InstancedMesh(st2Geo, this.materials.houseBlueprint, 400);
+    this.instHouseStage2.castShadow = true;
+    this.instHouseStage2.receiveShadow = true;
+
+    // Stage 3: Full Stone Walls + Roof Rafter Skeleton (35 to 49 materials)
+    const st3Geo = createHouseStage3Geometry();
+    this.instHouseStage3 = new THREE.InstancedMesh(st3Geo, this.materials.houseBlueprint, 400);
     // Natural Grass Tufts
     const grassGeo = createNaturalGrassGeometry(0.72, 0.58);
     this.instGrassTufts = new THREE.InstancedMesh(grassGeo, this.materials.grassFoliage, 1200);
+
+    // Disable Frustum Culling on Instanced Meshes (Manual Viewport Spatial Grid Culling is active)
+    this.instOakTrunks.frustumCulled = false;
+    this.instOakLeaves.frustumCulled = false;
+    this.instPineTrunks.frustumCulled = false;
+    this.instPineLeaves.frustumCulled = false;
+    this.instCacti.frustumCulled = false;
+    this.instWalls.frustumCulled = false;
+    this.instHouseWalls.frustumCulled = false;
+    this.instHouseRoofs.frustumCulled = false;
+    this.instHousePegs.frustumCulled = false;
+    this.instHouseStage1.frustumCulled = false;
+    this.instHouseStage2.frustumCulled = false;
+    this.instHouseStage3.frustumCulled = false;
+    this.instGrassTufts.frustumCulled = false;
 
     this.instancedGroup = new THREE.Group();
     this.instancedGroup.add(
@@ -498,7 +682,9 @@ export class RCT3DRenderer {
       this.instPineTrunks, this.instPineLeaves,
       this.instCacti, this.instWalls,
       this.instHouseWalls, this.instHouseRoofs,
-      this.instBlueprints, this.instGrassTufts
+      this.instHousePegs, this.instHouseStage1,
+      this.instHouseStage2, this.instHouseStage3,
+      this.instGrassTufts
     );
     this.scene.add(this.instancedGroup);
 
@@ -509,6 +695,13 @@ export class RCT3DRenderer {
     this.scene.add(this.entityGroup);
     this.entitySprites = new Map();
 
+    // Floating UI Group (Emotes & Held Item Icons)
+    this.uiIconGeo = new THREE.PlaneGeometry(0.48, 0.48);
+    this.uiIconGeo.translate(0, 0.24, 0);
+    this.floatingUiGroup = new THREE.Group();
+    this.scene.add(this.floatingUiGroup);
+    this.floatingUiSprites = new Map();
+
     // Terrain & Water Groups
     this.terrainGroup = new THREE.Group();
     this.scene.add(this.terrainGroup);
@@ -518,6 +711,14 @@ export class RCT3DRenderer {
 
     // RCT Dark Quad Line Overlay Group (for GRID mode)
     this.rctGridLineGroup = new THREE.Group();
+    this.rctGridLineGroup.visible = false;
+    this.scene.add(this.rctGridLineGroup);
+
+    // Claimed Clan Territory 3D Overlay Group
+    this.territoryGroup = new THREE.Group();
+    this.scene.add(this.territoryGroup);
+    this.lastVisualizedGroupId = null;
+
     // Selection Reticle (Ground Decal beneath units)
     const reticleGeo = new THREE.RingGeometry(0.55, 0.75, 4);
     reticleGeo.rotateX(-Math.PI / 2);
@@ -698,6 +899,19 @@ export class RCT3DRenderer {
     return map[y * MAP_WIDTH + x];
   }
 
+  getTileSurfaceHeight(map, tx, ty) {
+    const t = this.getTileTypeAt(map, tx, ty);
+    if (t === TILE_WATER) return 0.08;
+    const h00 = this.getCornerHeight(map, tx, ty);
+    const h10 = this.getCornerHeight(map, tx + 1, ty);
+    const h11 = this.getCornerHeight(map, tx + 1, ty + 1);
+    const h01 = this.getCornerHeight(map, tx, ty + 1);
+    return Math.max(
+      (h00 + h10 + h11 + h01) / 4.0,
+      Math.max(h00, h10, h11, h01) - 0.05
+    );
+  }
+
   getSurfaceElevation(map, x, y) {
     const tx = Math.floor(x);
     const ty = Math.floor(y);
@@ -732,7 +946,6 @@ export class RCT3DRenderer {
     let bestEntId = -1;
     let closestDist = Infinity;
 
-    // Normal vector for billboard/volumetric cross-section in 45° isometric view
     const nx = 0.70710678;
     const nz = 0.70710678;
 
@@ -740,8 +953,11 @@ export class RCT3DRenderer {
       const e = entities[i];
       if (!e || e.destroyed || !e.properties?.render) continue;
 
-      const surfaceH = map ? this.getSurfaceElevation(map, e.x, e.y) : 1.0;
       const bounds = getEntityBounds(e);
+      const isStructureOrPlant = bounds.radius > 0.72;
+      const surfaceH = map
+        ? (isStructureOrPlant ? this.getTileSurfaceHeight(map, Math.floor(e.x), Math.floor(e.y)) : this.getSurfaceElevation(map, e.x, e.y))
+        : 1.0;
 
       // 1. Ray-to-Plane Intersection
       const denom = nx * ray.direction.x + nz * ray.direction.z;
@@ -826,8 +1042,11 @@ export class RCT3DRenderer {
       const e = entities[i];
       if (!e || e.destroyed || !e.properties?.render) continue;
 
-      const surfaceH = map ? this.getSurfaceElevation(map, e.x, e.y) : 1.0;
       const bounds = getEntityBounds(e);
+      const isStructureOrPlant = bounds.radius > 0.72;
+      const surfaceH = map
+        ? (isStructureOrPlant ? this.getTileSurfaceHeight(map, Math.floor(e.x), Math.floor(e.y)) : this.getSurfaceElevation(map, e.x, e.y))
+        : 1.0;
 
       const denom = nx * ray.direction.x + nz * ray.direction.z;
       if (Math.abs(denom) > 1e-4) {
@@ -910,47 +1129,66 @@ export class RCT3DRenderer {
     this.sunLight.target.position.set(this.camX, 0, this.camY);
   }
 
+  // ---------------------------------------------------------------------------
+  // Smooth Day & Night Transitions
+  // ---------------------------------------------------------------------------
+
   updateDayNightLighting(world) {
     const clock = world?.clock;
-    if (!clock) return;
+    if (!clock) return 0.0;
 
-    const globalLight = clock.globalLight !== undefined ? clock.globalLight : 1.0;
     const hour = clock.hour !== undefined ? clock.hour : 12;
     const minute = clock.minute !== undefined ? clock.minute : 0;
     const timeOfDay = hour + minute / 60.0;
 
-    let sunHex = 0xfffaea;
-    let ambientHex = 0xdde8f5;
-    let bgHex = 0x131922;
+    let k1 = DAY_NIGHT_KEYFRAMES[0];
+    let k2 = DAY_NIGHT_KEYFRAMES[1];
 
-    if (timeOfDay >= 5.0 && timeOfDay < 7.5) {
-      sunHex = 0xffa550;
-      ambientHex = 0xc5a898;
-      bgHex = 0x221820;
-    } else if (timeOfDay >= 7.5 && timeOfDay < 16.5) {
-      sunHex = 0xfffaea;
-      ambientHex = 0xdde8f5;
-      bgHex = 0x131922;
-    } else if (timeOfDay >= 16.5 && timeOfDay < 19.0) {
-      sunHex = 0xff8c42;
-      ambientHex = 0x8a6078;
-      bgHex = 0x1a1224;
-    } else {
-      sunHex = 0x6e8cc8;
-      ambientHex = 0x1d2942;
-      bgHex = 0x080c14;
+    for (let i = 0; i < DAY_NIGHT_KEYFRAMES.length - 1; i++) {
+      if (timeOfDay >= DAY_NIGHT_KEYFRAMES[i].t && timeOfDay <= DAY_NIGHT_KEYFRAMES[i + 1].t) {
+        k1 = DAY_NIGHT_KEYFRAMES[i];
+        k2 = DAY_NIGHT_KEYFRAMES[i + 1];
+        break;
+      }
     }
 
-    const sunIntensity = 0.3 + 1.25 * globalLight;
-    const ambientIntensity = 0.25 + 0.70 * globalLight;
+    const span = Math.max(0.001, k2.t - k1.t);
+    let alpha = (timeOfDay - k1.t) / span;
+    alpha = Math.max(0.0, Math.min(1.0, alpha));
+    const sAlpha = alpha * alpha * (3 - 2 * alpha); // Smoothstep curve
 
-    this.sunLight.color.setHex(sunHex);
+    this.tempColor1.setHex(k1.sun);
+    this.tempColor2.setHex(k2.sun);
+    this.tempColor1.lerp(this.tempColor2, sAlpha);
+    this.sunLight.color.copy(this.tempColor1);
+
+    this.tempColor1.setHex(k1.amb);
+    this.tempColor2.setHex(k2.amb);
+    this.tempColor1.lerp(this.tempColor2, sAlpha);
+    this.ambientLight.color.copy(this.tempColor1);
+
+    this.tempColor1.setHex(k1.bg);
+    this.tempColor2.setHex(k2.bg);
+    this.tempColor1.lerp(this.tempColor2, sAlpha);
+    this.scene.background.copy(this.tempColor1);
+
+    const sunIntensity = k1.sunI + (k2.sunI - k1.sunI) * sAlpha;
+    const ambIntensity = k1.ambI + (k2.ambI - k1.ambI) * sAlpha;
+
     this.sunLight.intensity = sunIntensity;
+    this.ambientLight.intensity = ambIntensity;
 
-    this.ambientLight.color.setHex(ambientHex);
-    this.ambientLight.intensity = ambientIntensity;
+    // Calculate Night Darkness Factor (0.0 = daytime, 1.0 = deep night)
+    let nightGlow = 0.0;
+    if (timeOfDay >= 19.0 || timeOfDay < 5.5) {
+      nightGlow = 1.0;
+    } else if (timeOfDay >= 17.5 && timeOfDay < 19.0) {
+      nightGlow = (timeOfDay - 17.5) / 1.5;
+    } else if (timeOfDay >= 5.5 && timeOfDay < 7.0) {
+      nightGlow = 1.0 - (timeOfDay - 5.5) / 1.5;
+    }
 
-    this.scene.background.setHex(bgHex);
+    return nightGlow;
   }
 
   // ---------------------------------------------------------------------------
@@ -1221,7 +1459,160 @@ export class RCT3DRenderer {
     }
   }
 
-  render(world, entities, time, dt, simSpeed = 1.0, visionCreature = null) {
+  // ---------------------------------------------------------------------------
+  // 3D Claimed Clan Territory Overlay Builder
+  // ---------------------------------------------------------------------------
+
+  rebuildTerritoryOverlayIfNeeded(world, clanGroups, visualizedGroupId) {
+    if (visualizedGroupId === this.lastVisualizedGroupId) {
+      return;
+    }
+    this.lastVisualizedGroupId = visualizedGroupId;
+
+    while (this.territoryGroup.children.length > 0) {
+      const m = this.territoryGroup.children[0];
+      this.territoryGroup.remove(m);
+      if (m.geometry) m.geometry.dispose();
+      if (m.material) {
+        if (Array.isArray(m.material)) m.material.forEach(mat => mat.dispose());
+        else m.material.dispose();
+      }
+    }
+
+    if (!visualizedGroupId || !clanGroups.has(visualizedGroupId) || !world?.map) {
+      return;
+    }
+
+    const g = clanGroups.get(visualizedGroupId);
+    if (!g || !g.claimedZones) return;
+
+    const map = world.map;
+    const zoneSz = 8;
+    const lineElevOffset = 0.04;
+    const fillElevOffset = 0.02;
+
+    const positions = [];
+    const colors = [];
+    const linePositions = [];
+
+    const groupCol = new THREE.Color(g.color !== undefined ? g.color : 0xffd700);
+
+    for (const zk of g.claimedZones) {
+      const p = zk.includes("_") ? zk.split("_") : zk.split(",");
+      const zx = parseInt(p[0], 10);
+      const zy = parseInt(p[1], 10);
+      if (isNaN(zx) || isNaN(zy)) continue;
+
+      const minX = zx * zoneSz;
+      const maxX = minX + zoneSz;
+      const minY = zy * zoneSz;
+      const maxY = minY + zoneSz;
+
+      // Fill quads on each tile
+      for (let ty = minY; ty < maxY; ty++) {
+        for (let tx = minX; tx < maxX; tx++) {
+          if (tx < 0 || tx >= MAP_WIDTH || ty < 0 || ty >= MAP_HEIGHT) continue;
+          const h00 = this.getCornerHeight(map, tx, ty) + fillElevOffset;
+          const h10 = this.getCornerHeight(map, tx + 1, ty) + fillElevOffset;
+          const h11 = this.getCornerHeight(map, tx + 1, ty + 1) + fillElevOffset;
+          const h01 = this.getCornerHeight(map, tx, ty + 1) + fillElevOffset;
+
+          positions.push(
+            tx, h00, ty,
+            tx, h01, ty + 1,
+            tx + 1, h11, ty + 1,
+
+            tx, h00, ty,
+            tx + 1, h11, ty + 1,
+            tx + 1, h10, ty
+          );
+
+          for (let k = 0; k < 6; k++) {
+            colors.push(groupCol.r, groupCol.g, groupCol.b);
+          }
+        }
+      }
+
+      // Outer Perimeter Grid Lines of the Zone
+      for (let tx = minX; tx < maxX; tx++) {
+        const hA = this.getCornerHeight(map, tx, minY) + lineElevOffset;
+        const hB = this.getCornerHeight(map, tx + 1, minY) + lineElevOffset;
+        linePositions.push(tx, hA, minY, tx + 1, hB, minY);
+
+        const hC = this.getCornerHeight(map, tx, maxY) + lineElevOffset;
+        const hD = this.getCornerHeight(map, tx + 1, maxY) + lineElevOffset;
+        linePositions.push(tx, hC, maxY, tx + 1, hD, maxY);
+      }
+
+      for (let ty = minY; ty < maxY; ty++) {
+        const hA = this.getCornerHeight(map, minX, ty) + lineElevOffset;
+        const hB = this.getCornerHeight(map, minX, ty + 1) + lineElevOffset;
+        linePositions.push(minX, hA, ty, minX, hB, ty + 1);
+
+        const hC = this.getCornerHeight(map, maxX, ty) + lineElevOffset;
+        const hD = this.getCornerHeight(map, maxX, ty + 1) + lineElevOffset;
+        linePositions.push(maxX, hC, ty, maxX, hD, ty + 1);
+      }
+
+      // 4 Corner Glowing Boundary Beacons / Obelisks
+      const cornerCoords = [
+        [minX, minY],
+        [maxX, minY],
+        [minX, maxY],
+        [maxX, maxY]
+      ];
+      for (const [cx, cy] of cornerCoords) {
+        const cH = this.getCornerHeight(map, cx, cy);
+        const beaconGeo = new THREE.CylinderGeometry(0.12, 0.18, 1.8, 6);
+        beaconGeo.translate(0, 0.9, 0);
+        const beaconMat = new THREE.MeshLambertMaterial({
+          color: 0xffd700,
+          emissive: 0xffa800,
+          emissiveIntensity: 0.9
+        });
+        const beaconMesh = new THREE.Mesh(beaconGeo, beaconMat);
+        beaconMesh.position.set(cx, cH, cy);
+        this.territoryGroup.add(beaconMesh);
+      }
+    }
+
+    if (positions.length > 0) {
+      const fillGeo = new THREE.BufferGeometry();
+      fillGeo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+      fillGeo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+      fillGeo.computeVertexNormals();
+
+      const fillMat = new THREE.MeshBasicMaterial({
+        vertexColors: true,
+        transparent: true,
+        opacity: 0.26,
+        depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -1.5,
+        polygonOffsetUnits: -1.5,
+        side: THREE.DoubleSide
+      });
+      const fillMesh = new THREE.Mesh(fillGeo, fillMat);
+      fillMesh.renderOrder = 2;
+      this.territoryGroup.add(fillMesh);
+    }
+
+    if (linePositions.length > 0) {
+      const lineGeo = new THREE.BufferGeometry();
+      lineGeo.setAttribute("position", new THREE.Float32BufferAttribute(linePositions, 3));
+      const lineMat = new THREE.LineBasicMaterial({
+        color: 0xffd700,
+        linewidth: 3,
+        transparent: true,
+        opacity: 0.95
+      });
+      const lineSegments = new THREE.LineSegments(lineGeo, lineMat);
+      lineSegments.renderOrder = 3;
+      this.territoryGroup.add(lineSegments);
+    }
+  }
+
+  render(world, entities, time, dt, simSpeed = 1.0, visionCreature = null, visualizedGroupId = null) {
     if (!this.width || !this.height || !world) return;
     this.currentMap = world.map;
 
@@ -1238,7 +1629,7 @@ export class RCT3DRenderer {
     }
 
     this.updateCamera();
-    this.updateDayNightLighting(world);
+    const nightGlow = this.updateDayNightLighting(world);
 
     const aspect = this.width / this.height;
     const viewSize = Math.min(50, 28 / this.zoom);
@@ -1281,6 +1672,7 @@ export class RCT3DRenderer {
     const map = world.map;
     const visibleEntities = getEntitiesInViewport(this.renderedMinTx, this.renderedMaxTx, this.renderedMinTy, this.renderedMaxTy);
     const activeIds = new Set();
+    const activeUiIds = new Set();
     let selectedPos = null;
 
     let oakCount = 0;
@@ -1288,9 +1680,27 @@ export class RCT3DRenderer {
     let cactusCount = 0;
     let wallCount = 0;
     let houseCount = 0;
-    let bpCount = 0;
+    let pegsCount = 0;
+    let stage1Count = 0;
+    let stage2Count = 0;
+    let stage3Count = 0;
 
     const mMatrix = new THREE.Matrix4();
+    const hoverTime = (time || 0) * 3.5;
+    const floatBob = Math.sin(hoverTime) * 0.04;
+
+    const occupiedHouseTiles = new Set();
+    const clanGroups = new Map();
+
+    if (entities && Array.isArray(entities)) {
+      for (let i = 0; i < entities.length; i++) {
+        const ent = entities[i];
+        if (!ent || ent.destroyed) continue;
+        if (ent.properties?.group?.id) {
+          clanGroups.set(ent.properties.group.id, ent.properties.group);
+        }
+      }
+    }
 
     for (let i = 0; i < visibleEntities.length; i++) {
       const e = visibleEntities[i];
@@ -1311,13 +1721,16 @@ export class RCT3DRenderer {
       const r = e.properties.render;
       const isItem = !e.properties.life && (!!e.properties.edible || !!e.properties.resourceType || !!e.properties.germination || e.properties.species === "item");
       const isDoor = !!e.properties.door;
-      const isHouse = !!e.properties.house || r.skin === "Overworld_House.png";
+      const isHouse = !!e.properties.house || r.skin === "Overworld_House.png" || e.properties.name?.includes("Casa");
       const isWall = !isDoor && !isHouse && (e.properties.structure || r.skin?.startsWith("Wall_") || e.properties.name?.includes("Muralha") || e.properties.name?.includes("Wall"));
       const isCactus = e.properties.species === "cactus" || e.properties.name?.toLowerCase().includes("cactus") || e.properties.name?.toLowerCase().includes("cacto");
       const isTree = !isCactus && (e.properties.species === "oak" || e.properties.species === "pine" || e.properties.species === "willow" || e.properties.species === "tree" || !!e.properties.tree || (r.skin && r.skin.toLowerCase().includes("tree")));
       const isPine = isTree && (e.properties.species === "pine" || (r.skin && r.skin.toLowerCase().includes("pine")));
 
-      const surfaceH = this.getSurfaceElevation(map, e.x, e.y);
+      const isStructureOrPlant = isTree || isHouse || isWall || isCactus;
+      const surfaceH = isStructureOrPlant
+        ? this.getTileSurfaceHeight(map, Math.floor(e.x), Math.floor(e.y))
+        : this.getSurfaceElevation(map, e.x, e.y);
 
       // --- 3D OAK TREES ---
       if (isTree && !isPine && oakCount < this.maxInstances) {
@@ -1345,18 +1758,33 @@ export class RCT3DRenderer {
         this.instWalls.setMatrixAt(wallCount, mMatrix);
         wallCount++;
       }
-      // --- 3D HOUSES & BLUEPRINTS ---
+      // --- 3D HOUSES & PROGRESSIVE MULTI-STAGE CONSTRUCTION ---
       else if (isHouse) {
-        const isCompleted = e.properties.house ? (e.properties.house.isCompleted !== false) : true;
+        occupiedHouseTiles.add(`${Math.floor(e.x)}_${Math.floor(e.y)}`);
+        const h = e.properties.house;
+        const isCompleted = h ? (h.isCompleted !== false) : true;
+        const totalCost = (h?.woodCost || 25) + (h?.stoneCost || 25);
+        const curMaterials = (h?.woodCurrent || 0) + (h?.stoneCurrent || 0);
+        const progress = isCompleted ? 1.0 : (curMaterials / Math.max(1, totalCost));
+
         if (isCompleted && houseCount < 400) {
+          // Stage 4: Finished stone house with terracotta roof
           mMatrix.setPosition(e.x + 0.5, surfaceH, e.y + 0.5);
           this.instHouseWalls.setMatrixAt(houseCount, mMatrix);
           this.instHouseRoofs.setMatrixAt(houseCount, mMatrix);
           houseCount++;
-        } else if (!isCompleted && bpCount < 300) {
+        } else if (!isCompleted) {
           mMatrix.setPosition(e.x + 0.5, surfaceH, e.y + 0.5);
-          this.instBlueprints.setMatrixAt(bpCount, mMatrix);
-          bpCount++;
+          if (progress < 0.32 && stage1Count < 400) {
+            // Stage 1 (1 - 15 materials): Stone slab foundation + 4 corner timber posts
+            this.instHouseStage1.setMatrixAt(stage1Count++, mMatrix);
+          } else if (progress < 0.68 && stage2Count < 400) {
+            // Stage 2 (16 - 34 materials): Foundation + posts + cross beams + half-height stone walls
+            this.instHouseStage2.setMatrixAt(stage2Count++, mMatrix);
+          } else if (stage3Count < 400) {
+            // Stage 3 (35 - 49 materials): Full stone walls + roof timber rafters skeleton
+            this.instHouseStage3.setMatrixAt(stage3Count++, mMatrix);
+          }
         }
       }
       // --- DYNAMIC BILLBOARDS (Creatures, Humanoids, Items, Doors) ---
@@ -1409,6 +1837,95 @@ export class RCT3DRenderer {
         } else {
           sprite.material.color.setHex(0xffffff); // Full bright
         }
+
+        // --- 3D FLOATING EMOTES & HELD ITEMS PER HAND ---
+        if (!isItem && !isDoor) {
+          const emoteSkin = getCreatureEmoteSkin(e);
+          const heldItems = [];
+          for (const [k, p] of Object.entries(e.properties || {})) {
+            if ((k.toLowerCase().includes("arm") || k.toLowerCase().includes("hand")) && p && p.heldItem) {
+              heldItems.push(p.heldItem);
+            }
+          }
+          if (e.properties?.heldItem) heldItems.push(e.properties.heldItem);
+          if (e.properties?.equipment?.mainHand) heldItems.push(e.properties.equipment.mainHand);
+          if (e.properties?.equipment?.offHand) heldItems.push(e.properties.equipment.offHand);
+
+          const totalIcons = (emoteSkin ? 1 : 0) + heldItems.length;
+          if (totalIcons > 0) {
+            const headY = surfaceH + 1.35 + floatBob;
+            const iconSpacing = 0.38;
+            const startOffset = -((totalIcons - 1) * iconSpacing) / 2;
+
+            // Camera right vector in 45° view: (1/sqrt(2), 0, -1/sqrt(2))
+            const rx = 0.70710678;
+            const rz = -0.70710678;
+
+            let iconIdx = 0;
+
+            if (emoteSkin) {
+              const uiKey = `${e.id}_emote`;
+              activeUiIds.add(uiKey);
+              const tintFg = (e.emote === 12) ? 0xff3c78 : (e.emote === 13) ? 0xff2828 : 0xfff064;
+              const emTex = createTintedTexture(emoteSkin, tintFg, 0x000000, 0.0);
+
+              let emMesh = this.floatingUiSprites.get(uiKey);
+              if (!emMesh) {
+                const emMat = new THREE.MeshBasicMaterial({
+                  map: emTex,
+                  transparent: true,
+                  alphaTest: 0.1,
+                  depthTest: true,
+                  side: THREE.DoubleSide
+                });
+                emMesh = new THREE.Mesh(this.uiIconGeo, emMat);
+                emMesh.renderOrder = 25;
+                this.floatingUiGroup.add(emMesh);
+                this.floatingUiSprites.set(uiKey, emMesh);
+              } else if (emMesh.material.map !== emTex) {
+                emMesh.material.map = emTex;
+                emMesh.material.needsUpdate = true;
+              }
+
+              const offset = startOffset + iconIdx * iconSpacing;
+              emMesh.position.set(e.x + offset * rx, headY, e.y + offset * rz);
+              emMesh.rotation.y = this.fixedRotationY;
+              iconIdx++;
+            }
+
+            for (let h = 0; h < heldItems.length; h++) {
+              const it = heldItems[h];
+              const uiKey = `${e.id}_held_${h}`;
+              activeUiIds.add(uiKey);
+
+              const skinName = it.skin || it.render?.skin || (typeof it === "string" ? it : it.name) || "Item_Nugget.png";
+              const itTex = createTintedTexture(skinName, 0xffffff, 0x000000, 0.0);
+
+              let itMesh = this.floatingUiSprites.get(uiKey);
+              if (!itMesh) {
+                const itMat = new THREE.MeshBasicMaterial({
+                  map: itTex,
+                  transparent: true,
+                  alphaTest: 0.1,
+                  depthTest: true,
+                  side: THREE.DoubleSide
+                });
+                itMesh = new THREE.Mesh(this.uiIconGeo, itMat);
+                itMesh.renderOrder = 25;
+                this.floatingUiGroup.add(itMesh);
+                this.floatingUiSprites.set(uiKey, itMesh);
+              } else if (itMesh.material.map !== itTex) {
+                itMesh.material.map = itTex;
+                itMesh.material.needsUpdate = true;
+              }
+
+              const offset = startOffset + iconIdx * iconSpacing;
+              itMesh.position.set(e.x + offset * rx, headY, e.y + offset * rz);
+              itMesh.rotation.y = this.fixedRotationY;
+              iconIdx++;
+            }
+          }
+        }
       }
 
       if (e.id === this.selectedEntityId) {
@@ -1419,6 +1936,90 @@ export class RCT3DRenderer {
           z: isTileAligned ? e.y + 0.5 : e.y
         };
       }
+    }
+
+    // --- RENDER UNSTARTED CLAN HOUSE PLOTS (STAGE 0: PEGS & BOUNDARY STRINGS) ---
+    if (clanGroups.size > 0 && pegsCount < 400) {
+      for (const group of clanGroups.values()) {
+        if (!group || !group.claimedZones) continue;
+        const bpTiles = getClanBlueprintTiles(group);
+        for (let b = 0; b < bpTiles.length; b++) {
+          const bp = bpTiles[b];
+          if (bp.type === "house" && pegsCount < 400) {
+            if (bp.x >= this.renderedMinTx && bp.x <= this.renderedMaxTx &&
+                bp.y >= this.renderedMinTy && bp.y <= this.renderedMaxTy) {
+              const tileKey = `${bp.x}_${bp.y}`;
+              if (!occupiedHouseTiles.has(tileKey)) {
+                if (knownZones) {
+                  const zk = `${Math.floor(bp.x / zoneSz)}_${Math.floor(bp.y / zoneSz)}`;
+                  if (!knownZones.has(zk)) continue;
+                }
+                const bpH = this.getTileSurfaceHeight(map, bp.x, bp.y);
+                mMatrix.setPosition(bp.x + 0.5, bpH, bp.y + 0.5);
+                this.instHousePegs.setMatrixAt(pegsCount++, mMatrix);
+                occupiedHouseTiles.add(tileKey);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // --- REAL MULTI-POINT DYNAMIC NIGHT LIGHTS (Placed directly at entities) ---
+    let lightIdx = 0;
+    if (nightGlow > 0.05) {
+      // 1. Finished Houses (Larger warm lantern/hearth glow)
+      for (let i = 0; i < visibleEntities.length && lightIdx < this.maxNightLights; i++) {
+        const e = visibleEntities[i];
+        if (!e || e.destroyed) continue;
+        const isHouse = !!e.properties?.house || e.properties?.render?.skin === "Overworld_House.png";
+        if (isHouse && e.properties?.house?.isCompleted !== false) {
+          const sH = this.getTileSurfaceHeight(map, Math.floor(e.x), Math.floor(e.y));
+          const pl = this.nightLightPool[lightIdx++];
+          pl.color.setHex(0xff9e3b);
+          pl.distance = 11.0;
+          pl.decay = 1.6;
+          pl.intensity = nightGlow * 2.2;
+          pl.position.set(e.x + 0.5, sH + 1.3, e.y + 0.5);
+        }
+      }
+
+      // 2. Intelligent Humanoids & Members (Small individual torchlight)
+      for (let i = 0; i < visibleEntities.length && lightIdx < this.maxNightLights; i++) {
+        const e = visibleEntities[i];
+        if (!e || e.destroyed) continue;
+        const isIntelligent = !!e.properties?.brain || !!e.properties?.group_member;
+        if (isIntelligent) {
+          const sH = this.getSurfaceElevation(map, e.x, e.y);
+          const pl = this.nightLightPool[lightIdx++];
+          pl.color.setHex(0xffaa44);
+          pl.distance = 7.0;
+          pl.decay = 1.8;
+          pl.intensity = nightGlow * 1.5;
+          pl.position.set(e.x, sH + 1.1, e.y);
+        }
+      }
+
+      // 3. Stone Walls / Fortresses (Watch torch along perimeter)
+      for (let i = 0; i < visibleEntities.length && lightIdx < this.maxNightLights; i++) {
+        const e = visibleEntities[i];
+        if (!e || e.destroyed) continue;
+        const isWall = e.properties?.structure && !e.properties?.house && !e.properties?.door;
+        if (isWall) {
+          const sH = this.getTileSurfaceHeight(map, Math.floor(e.x), Math.floor(e.y));
+          const pl = this.nightLightPool[lightIdx++];
+          pl.color.setHex(0xffb555);
+          pl.distance = 8.5;
+          pl.decay = 1.7;
+          pl.intensity = nightGlow * 1.8;
+          pl.position.set(e.x + 0.5, sH + 1.4, e.y + 0.5);
+        }
+      }
+    }
+
+    // Turn off unused lights in pool
+    while (lightIdx < this.maxNightLights) {
+      this.nightLightPool[lightIdx++].intensity = 0;
     }
 
     // Flush Instanced Counts to GPU
@@ -1443,8 +2044,17 @@ export class RCT3DRenderer {
     this.instHouseRoofs.count = houseCount;
     this.instHouseRoofs.instanceMatrix.needsUpdate = true;
 
-    this.instBlueprints.count = bpCount;
-    this.instBlueprints.instanceMatrix.needsUpdate = true;
+    this.instHousePegs.count = pegsCount;
+    this.instHousePegs.instanceMatrix.needsUpdate = true;
+
+    this.instHouseStage1.count = stage1Count;
+    this.instHouseStage1.instanceMatrix.needsUpdate = true;
+
+    this.instHouseStage2.count = stage2Count;
+    this.instHouseStage2.instanceMatrix.needsUpdate = true;
+
+    this.instHouseStage3.count = stage3Count;
+    this.instHouseStage3.instanceMatrix.needsUpdate = true;
 
     // Clean inactive dynamic billboards
     for (const [id, spr] of this.entitySprites.entries()) {
@@ -1454,6 +2064,18 @@ export class RCT3DRenderer {
         this.entitySprites.delete(id);
       }
     }
+
+    // Clean inactive floating UI icons
+    for (const [key, spr] of this.floatingUiSprites.entries()) {
+      if (!activeUiIds.has(key)) {
+        this.floatingUiGroup.remove(spr);
+        if (spr.material) spr.material.dispose();
+        this.floatingUiSprites.delete(key);
+      }
+    }
+
+    // Update Claimed Territory 3D Overlay
+    this.rebuildTerritoryOverlayIfNeeded(world, clanGroups, visualizedGroupId);
 
     // Update Selection Reticle
     if (selectedPos) {
