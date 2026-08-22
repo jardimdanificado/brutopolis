@@ -5,6 +5,7 @@
 // WASM replaced by Pure JS Renderer
 import { World } from "./js/world.js";
 import { Renderer, findTexture } from "./js/renderer.js";
+import { RCT3DRenderer } from "./js/renderer_rct.js";
 import {
   createEntity,
   tickEntities,
@@ -623,6 +624,33 @@ const FRAMEBUFFER_SIZE = CANVAS_WIDTH * CANVAS_HEIGHT * 4;
 // Canvas 2D Native Rendering
 
 let renderer = new Renderer(canvas);
+const container3D = document.getElementById("container-3d");
+let rctRenderer = null;
+if (container3D) {
+  rctRenderer = new RCT3DRenderer(container3D);
+}
+let is3DMode = false;
+
+function toggle3DMode() {
+  is3DMode = !is3DMode;
+  if (is3DMode) {
+    if (container3D) container3D.style.display = "block";
+    if (rctRenderer) {
+      rctRenderer.resize(CANVAS_WIDTH, CANVAS_HEIGHT);
+      if (renderer) {
+        rctRenderer.setCamera(renderer.getCameraX(), renderer.getCameraY(), renderer.getCameraZoom());
+        rctRenderer.selectEntity(renderer.getSelectedId());
+      }
+    }
+  } else {
+    if (container3D) container3D.style.display = "none";
+    if (renderer && rctRenderer) {
+      renderer.setCamera(rctRenderer.getCameraX(), rctRenderer.getCameraY(), rctRenderer.getCameraZoom());
+      renderer.selectEntity(rctRenderer.getSelectedId());
+    }
+  }
+}
+
 let world = null;
 let entities = [];
 
@@ -871,6 +899,7 @@ let dragStartClientX = 0;
 let dragStartClientY = 0;
 let dragCameraStartX = 0;
 let dragCameraStartY = 0;
+let dragStartGroundPos = null;
 
 const keysDown = new Set();
 
@@ -894,6 +923,10 @@ function resizeCanvasToWindow() {
   canvas.height = CANVAS_HEIGHT;
   canvas.style.width = `${CANVAS_WIDTH}px`;
   canvas.style.height = `${CANVAS_HEIGHT}px`;
+
+  if (rctRenderer) {
+    rctRenderer.resize(CANVAS_WIDTH, CANVAS_HEIGHT);
+  }
 }
 
 if (window.visualViewport) {
@@ -985,11 +1018,12 @@ function generateConfiguredWorld() {
   const minY = Math.floor((1024 - genHeight) / 2);
   const maxY = minY + genHeight;
 
+  // Fill void outside active world
   if (genWidth < 1024 || genHeight < 1024) {
     for (let y = 0; y < 1024; y++) {
       for (let x = 0; x < 1024; x++) {
         if (x < minX || x >= maxX || y < minY || y >= maxY) {
-          world.setTile(x, y, 5); // Bedrock / Void border
+          world.setTile(x, y, 5); // Void border
         }
       }
     }
@@ -1346,7 +1380,7 @@ canvas.addEventListener("contextmenu", (e) => {
   e.preventDefault();
 });
 
-canvas.addEventListener("mousedown", (e) => {
+window.addEventListener("mousedown", (e) => {
   // If recent touch occurred (within 600ms), ignore simulated mouse event from mobile browser
   if (Date.now() - lastTouchTapTime < 600) return;
   if (e.button !== 0 && e.button !== 1 && e.button !== 2) return;
@@ -1360,7 +1394,10 @@ canvas.addEventListener("mousedown", (e) => {
   dragStartClientX = e.clientX;
   dragStartClientY = e.clientY;
 
-  if (renderer) {
+  if (is3DMode && rctRenderer) {
+    dragCameraStartX = rctRenderer.getCameraX();
+    dragCameraStartY = rctRenderer.getCameraY();
+  } else if (renderer) {
     dragCameraStartX = renderer.getCameraX();
     dragCameraStartY = renderer.getCameraY();
   }
@@ -1392,8 +1429,13 @@ canvas.addEventListener("mousedown", (e) => {
   }
 });
 
+let mouseClientX = 0;
+let mouseClientY = 0;
+
 window.addEventListener("mousemove", (e) => {
   if (Date.now() - lastTouchTapTime < 600) return;
+  mouseClientX = e.clientX;
+  mouseClientY = e.clientY;
   const coords = getCanvasCoords(e.clientX, e.clientY);
   mouseX = coords.x;
   mouseY = coords.y;
@@ -1425,19 +1467,41 @@ window.addEventListener("mousemove", (e) => {
   }
 
   // Camera Drag (Right Click or Left Click Drag when not painting)
-  if (isMouseDown && renderer && !isPainting && currentMode === "MAP") {
+  if (isMouseDown && (renderer || rctRenderer) && !isPainting && currentMode === "MAP") {
     const totalDist = Math.hypot(e.clientX - dragStartClientX, e.clientY - dragStartClientY);
-    if (totalDist > 4) {
+    if (totalDist > 2) {
       isDragging = true;
-      const zoom = renderer.getCameraZoom();
-      const rect = canvas.getBoundingClientRect();
-      const pixelScale = rect.width / CANVAS_WIDTH;
-      const tileSizeScreen = 16.0 * zoom * pixelScale;
+      if (is3DMode && rctRenderer) {
+        // Ultra-smooth 1:1 isometric closed-form pan
+        const zoom = rctRenderer.getCameraZoom();
+        const canvasRect = canvas.getBoundingClientRect();
+        const scale = 56.0 / (zoom * Math.max(100, canvasRect.height));
 
-      if (tileSizeScreen > 0.2) {
-        const dx = (e.clientX - dragStartClientX) / tileSizeScreen;
-        const dy = (e.clientY - dragStartClientY) / tileSizeScreen;
-        renderer.setCamera(dragCameraStartX - dx, dragCameraStartY - dy, zoom);
+        const sx = (e.clientX - dragStartClientX) * scale;
+        const sy = (e.clientY - dragStartClientY) * scale;
+
+        // Ground plane projection: X-screen = 45 deg, Y-screen = 35.264 deg pitch
+        const moveX = -(sx * 0.70710678 + sy * 1.22474487);
+        const moveY = -(-sx * 0.70710678 + sy * 1.22474487);
+
+        if (!isNaN(moveX) && !isNaN(moveY)) {
+          const targetX = dragCameraStartX + moveX;
+          const targetY = dragCameraStartY + moveY;
+          rctRenderer.setCamera(targetX, targetY, zoom);
+          if (renderer) renderer.setCamera(targetX, targetY, zoom);
+        }
+      } else if (renderer) {
+        const zoom = renderer.getCameraZoom();
+        const rect = canvas.getBoundingClientRect();
+        const pixelScale = rect.width / CANVAS_WIDTH;
+        const tileSizeScreen = 16.0 * zoom * pixelScale;
+
+        if (tileSizeScreen > 0.2) {
+          const dx = (e.clientX - dragStartClientX) / tileSizeScreen;
+          const dy = (e.clientY - dragStartClientY) / tileSizeScreen;
+          renderer.setCamera(dragCameraStartX - dx, dragCameraStartY - dy, zoom);
+          if (rctRenderer) rctRenderer.setCamera(dragCameraStartX - dx, dragCameraStartY - dy, zoom);
+        }
       }
     }
   }
@@ -1445,7 +1509,7 @@ window.addEventListener("mousemove", (e) => {
 
 window.addEventListener("mouseup", (e) => {
   if (Date.now() - lastTouchTapTime < 600) return;
-  if (isMouseDown && renderer && currentMode === "MAP") {
+  if (isMouseDown && (renderer || rctRenderer) && currentMode === "MAP") {
     const totalDist = Math.hypot(e.clientX - dragStartClientX, e.clientY - dragStartClientY);
     if (!isDragging && !isPainting && totalDist <= 5) {
       const coords = getCanvasCoords(e.clientX, e.clientY);
@@ -1461,8 +1525,12 @@ window.addEventListener("mouseup", (e) => {
       }
 
       if (!isOverUi && coords.inside && coords.y > 32 && coords.y < CANVAS_HEIGHT - 36) {
-        const foundId = renderer.selectAt(coords.x, coords.y, entities);
+        const foundId = (is3DMode && rctRenderer)
+          ? rctRenderer.selectAt(e.clientX, e.clientY, entities)
+          : renderer.selectAt(coords.x, coords.y, entities);
         lastSelectedId = foundId;
+        if (is3DMode && rctRenderer) rctRenderer.selectEntity(foundId);
+        if (renderer) renderer.selectEntity(foundId);
       }
     }
   }
@@ -1480,24 +1548,37 @@ canvas.addEventListener("wheel", (e) => {
     return;
   }
 
-  if (!renderer || !world) return;
-  let zoom = renderer.getCameraZoom();
-  const cx = renderer.getCameraX();
-  const cy = renderer.getCameraY();
-
-  if (e.deltaY < 0) {
-    zoom = Math.min(8.0, zoom * 1.15);
-  } else {
-    zoom = Math.max(0.15, zoom / 1.15);
+  if (is3DMode && rctRenderer) {
+    let zoom = rctRenderer.getCameraZoom();
+    zoom = (e.deltaY < 0) ? Math.min(4.0, zoom * 1.15) : Math.max(0.25, zoom / 1.15);
+    rctRenderer.setCamera(rctRenderer.getCameraX(), rctRenderer.getCameraY(), zoom);
+    if (renderer) renderer.setCamera(rctRenderer.getCameraX(), rctRenderer.getCameraY(), zoom);
+  } else if (renderer) {
+    let zoom = renderer.getCameraZoom();
+    const cx = renderer.getCameraX();
+    const cy = renderer.getCameraY();
+    zoom = (e.deltaY < 0) ? Math.min(8.0, zoom * 1.15) : Math.max(0.15, zoom / 1.15);
+    renderer.setCamera(cx, cy, zoom);
+    if (rctRenderer) rctRenderer.setCamera(cx, cy, zoom);
   }
-
-  renderer.setCamera(cx, cy, zoom);
 }, { passive: false });
 
 window.addEventListener("keydown", (e) => {
   keysDown.add(e.code);
 
-  if (e.code === "Space") {
+  if (e.code === "F3" || e.code === "KeyT") {
+    e.preventDefault();
+    toggle3DMode();
+  } else if (e.code === "F4" && is3DMode && rctRenderer) {
+    e.preventDefault();
+    rctRenderer.toggleWireframe();
+  } else if (e.code === "F6" && is3DMode && rctRenderer) {
+    e.preventDefault();
+    rctRenderer.toggleShadows();
+  } else if (e.code === "F7" && is3DMode && rctRenderer) {
+    e.preventDefault();
+    rctRenderer.toggleResolution();
+  } else if (e.code === "Space") {
     e.preventDefault();
     togglePause();
   } else if (e.code === "KeyR") {
@@ -1576,19 +1657,37 @@ window.addEventListener("keyup", (e) => {
 });
 
 function handleCameraKeys(dt) {
-  if (!renderer || currentMode !== "MAP") return;
-  let cx = renderer.getCameraX();
-  let cy = renderer.getCameraY();
-  let zoom = renderer.getCameraZoom();
+  if (currentMode !== "MAP") return;
+  const activeRenderer = (is3DMode && rctRenderer) ? rctRenderer : renderer;
+  if (!activeRenderer) return;
 
-  const speed = (240.0 / zoom) * dt;
+  let cx = activeRenderer.getCameraX();
+  let cy = activeRenderer.getCameraY();
+  let zoom = activeRenderer.getCameraZoom();
 
-  if (keysDown.has("ArrowUp")) cy -= speed;
-  if (keysDown.has("ArrowDown")) cy += speed;
-  if (keysDown.has("ArrowLeft")) cx -= speed;
-  if (keysDown.has("ArrowRight")) cx += speed;
+  const speed = (200.0 / zoom) * dt;
+  let mx = 0, my = 0;
 
-  renderer.setCamera(cx, cy, zoom);
+  if (keysDown.has("ArrowUp") || keysDown.has("KeyW")) my -= speed;
+  if (keysDown.has("ArrowDown") || keysDown.has("KeyS")) my += speed;
+  if (keysDown.has("ArrowLeft") || keysDown.has("KeyA")) mx -= speed;
+  if (keysDown.has("ArrowRight") || keysDown.has("KeyD")) mx += speed;
+
+  if (mx !== 0 || my !== 0) {
+    if (is3DMode) {
+      const rot = Math.PI / 4;
+      const moveX = mx * Math.cos(rot) - my * Math.sin(rot);
+      const moveY = mx * Math.sin(rot) + my * Math.cos(rot);
+      cx += moveX;
+      cy += moveY;
+    } else {
+      cx += mx;
+      cy += my;
+    }
+    activeRenderer.setCamera(cx, cy, zoom);
+    if (renderer) renderer.setCamera(cx, cy, zoom);
+    if (rctRenderer) rctRenderer.setCamera(cx, cy, zoom);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1665,39 +1764,52 @@ function renderTopHudBar() {
   drawNESBox(0, 0, CANVAS_WIDTH, 32);
 
   // Title
-  drawText8x8("BRUTOPOLIS", 8, 12, "#f8b800", 1);
+  drawText8x8("BRUTOPOLIS CHRONICLES", 8, 12, "#f8b800", 1);
 
   // Time & Sun Stats
   const timeStr = `D${String(clock.day).padStart(2,"0")} ${String(clock.hour).padStart(2,"0")}:${String(clock.minute).padStart(2,"0")}`;
-  drawText8x8(timeStr, 100, 12, "#ffffff", 1);
+  drawText8x8(timeStr, 188, 12, "#ffffff", 1);
 
-  drawText8x8(`SUN:${Math.round(clock.globalLight * 100)}%`, 188, 12, "#3cbcfc", 1);
+  drawText8x8(`SUN:${Math.round(clock.globalLight * 100)}%`, 276, 12, "#3cbcfc", 1);
 
   const presetNames = ["ARCHIPELAGO", "CONTINENT", "HIGHLANDS"];
-  drawText8x8(presetNames[currentPreset] || "WORLD", 264, 12, "#58d854", 1);
+  drawText8x8(presetNames[currentPreset] || "WORLD", 352, 12, "#58d854", 1);
 
-  drawText8x8(`${currentFps}FPS`, 368, 12, "#bcbcbc", 1);
-
-  // SAVE Button
-  drawNESButton(CANVAS_WIDTH - 296, 4, 52, 24, "SAVE", false, false);
-  registerClickableRegion(CANVAS_WIDTH - 296, 4, 52, 24, saveWorldState);
-
-  // LOAD Button
-  drawNESButton(CANVAS_WIDTH - 238, 4, 52, 24, "LOAD", false, false);
-  registerClickableRegion(CANVAS_WIDTH - 238, 4, 52, 24, openSaveFilePicker);
+  drawText8x8(`${currentFps}FPS`, 456, 12, "#bcbcbc", 1);
 
   // NEW WORLD Generator Button
   const isGenAct = currentMode === "GENERATOR";
-  drawNESButton(CANVAS_WIDTH - 180, 4, 94, 24, "NEW WORLD", isGenAct, false);
-  registerClickableRegion(CANVAS_WIDTH - 180, 4, 94, 24, () => {
+  drawNESButton(CANVAS_WIDTH - 102, 4, 94, 24, "NEW WORLD", isGenAct, false);
+  registerClickableRegion(CANVAS_WIDTH - 102, 4, 94, 24, () => {
     currentMode = currentMode === "GENERATOR" ? "MAP" : "GENERATOR";
     modalScroll = 0;
   });
 
-  // Pause / Run Button
-  const pauseTxt = isPaused ? "PAUSE" : "RUN";
-  drawNESButton(CANVAS_WIDTH - 80, 4, 74, 24, pauseTxt, !isPaused, isPaused);
-  registerClickableRegion(CANVAS_WIDTH - 80, 4, 74, 24, togglePause);
+  // LOAD Button
+  drawNESButton(CANVAS_WIDTH - 160, 4, 52, 24, "LOAD", false, false);
+  registerClickableRegion(CANVAS_WIDTH - 160, 4, 52, 24, openSaveFilePicker);
+
+  // SAVE Button
+  drawNESButton(CANVAS_WIDTH - 218, 4, 52, 24, "SAVE", false, false);
+  registerClickableRegion(CANVAS_WIDTH - 218, 4, 52, 24, saveWorldState);
+
+  // 3D / 2D Toggle Button
+  const mode3dTxt = is3DMode ? "3D:ON" : "3D:OFF";
+  drawNESButton(CANVAS_WIDTH - 286, 4, 62, 24, mode3dTxt, is3DMode, false);
+  registerClickableRegion(CANVAS_WIDTH - 286, 4, 62, 24, toggle3DMode);
+
+  if (is3DMode && rctRenderer) {
+    const wireMode = rctRenderer.getWireframeModeName ? rctRenderer.getWireframeModeName() : (rctRenderer.isWireframe ? "ON" : "OFF");
+    const wireTxt = "WIRE:" + wireMode;
+    const isWireActive = wireMode !== "OFF";
+    drawNESButton(CANVAS_WIDTH - 364, 4, 72, 24, wireTxt, isWireActive, false);
+    registerClickableRegion(CANVAS_WIDTH - 364, 4, 72, 24, () => rctRenderer.toggleWireframe());
+
+    const resMode = rctRenderer.getResolutionName ? rctRenderer.getResolutionName() : "100%";
+    const resTxt = "RES:" + resMode;
+    drawNESButton(CANVAS_WIDTH - 442, 4, 72, 24, resTxt, resMode !== "100%", false);
+    registerClickableRegion(CANVAS_WIDTH - 442, 4, 72, 24, () => rctRenderer.toggleResolution());
+  }
 }
 
 function renderBottomToolbar() {
@@ -1745,7 +1857,7 @@ function renderBottomToolbar() {
     btnX += bw + 6;
   }
 
-  // Simulation Speed / Time Control Interface (Moved to Bottom Toolbar)
+  // Simulation Speed / Time Control Interface (with RUN/PAUSE button beside speed controls)
   const timeCtlX = btnX + 16;
   drawNESButton(timeCtlX, CANVAS_HEIGHT - 30, 20, 24, "-", false, false);
   registerClickableRegion(timeCtlX, CANVAS_HEIGHT - 30, 20, 24, decreaseSimSpeed);
@@ -1757,6 +1869,12 @@ function renderBottomToolbar() {
   const plusX = timeCtlX + 32 + speedStr.length * 8;
   drawNESButton(plusX, CANVAS_HEIGHT - 30, 20, 24, "+", false, false);
   registerClickableRegion(plusX, CANVAS_HEIGHT - 30, 20, 24, increaseSimSpeed);
+
+  // RUN / PAUSE Button placed directly beside time speed controls
+  const pauseBtnX = plusX + 26;
+  const pauseTxt = isPaused ? "PAUSE" : "RUN";
+  drawNESButton(pauseBtnX, CANVAS_HEIGHT - 30, 56, 24, pauseTxt, !isPaused, isPaused);
+  registerClickableRegion(pauseBtnX, CANVAS_HEIGHT - 30, 56, 24, togglePause);
 
   // Coordinates [X, Y] on bottom right (Tile name removed as requested)
   if (renderer && world) {
@@ -3337,16 +3455,26 @@ function renderMapEditorOverlay() {
 // ---------------------------------------------------------------------------
 
 function renderHoverTooltip() {
-  if (currentMode !== "MAP" || !renderer || !world) return;
+  if (currentMode !== "MAP" || !world) return;
+  if (mouseY < 36 || mouseY > CANVAS_HEIGHT - 40) return; // Don't show tooltip when hovering over HUD bars
 
-  const zoom = renderer.getCameraZoom();
-  const tileSize = 16.0 * zoom;
-  const cx = renderer.getCameraX();
-  const cy = renderer.getCameraY();
-  const hoverTileX = Math.floor(cx + (mouseX - CANVAS_WIDTH / 2) / tileSize);
-  const hoverTileY = Math.floor(cy + (mouseY - CANVAS_HEIGHT / 2) / tileSize);
+  let hoveredEnt = null;
 
-  const hoveredEnt = getEntityAtTile(hoverTileX, hoverTileY);
+  if (is3DMode && rctRenderer) {
+    const foundId = rctRenderer.getEntityAtScreen(mouseClientX, mouseClientY, entities);
+    if (foundId > 0) {
+      hoveredEnt = getEntityById(foundId);
+    }
+  } else if (renderer) {
+    const zoom = renderer.getCameraZoom();
+    const tileSize = 16.0 * zoom;
+    const cx = renderer.getCameraX();
+    const cy = renderer.getCameraY();
+    const hoverTileX = Math.floor(cx + (mouseX - CANVAS_WIDTH / 2) / tileSize);
+    const hoverTileY = Math.floor(cy + (mouseY - CANVAS_HEIGHT / 2) / tileSize);
+    hoveredEnt = getEntityAtTile(hoverTileX, hoverTileY);
+  }
+
   if (!hoveredEnt) return;
 
   const tw = 180;
@@ -3394,8 +3522,22 @@ function renderCreatureVisionOverlay() {
   const creatureScreenY = centerScreenY + (target.y - camY) * tileSize + tileSize / 2;
   const visionRadiusPx = (viewRange + 0.6) * tileSize;
 
-  // Build creature's known macro-zone keys (8x8 chunks)
+  const sz = getZoneSize();
+  const curZx = Math.floor(target.x / sz);
+  const curZy = Math.floor(target.y / sz);
+
+  // In 3D Mode, do NOT draw 2D black rects over the 3D scene! Only draw the HUD badge text.
+  if (is3DMode) {
+    ctx.save();
+    const badge = `[VISION: ${(target.properties.name || "CREATURE").toUpperCase()} | ZONE (${curZx},${curZy})]`;
+    drawText8x8(badge, 8, CANVAS_HEIGHT - 48, "#ffd700", 1);
+    ctx.restore();
+    return;
+  }
+
+  // In 2D Mode: Draw pitch black on unknown zones and dark translucent on known explored zones
   const knownZones = new Set();
+  knownZones.add(`${curZx}_${curZy}`);
   if (target.properties.brain?.geoMemory) {
     for (const k of Object.keys(target.properties.brain.geoMemory)) {
       knownZones.add(k);
@@ -3407,9 +3549,6 @@ function renderCreatureVisionOverlay() {
       knownZones.add(`${parts[0]}_${parts[1]}`);
     }
   }
-  const sz = getZoneSize();
-  // Current zone is always known
-  knownZones.add(`${Math.floor(target.x / sz)}_${Math.floor(target.y / sz)}`);
 
   const minTx = Math.floor(camX - (centerScreenX / tileSize) - 1);
   const maxTx = Math.ceil(camX + (centerScreenX / tileSize) + 1);
@@ -3423,14 +3562,6 @@ function renderCreatureVisionOverlay() {
 
   ctx.save();
 
-  // Create clipping region for everything strictly OUTSIDE the creature's perception circle
-  ctx.beginPath();
-  ctx.rect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-  ctx.arc(creatureScreenX, creatureScreenY, visionRadiusPx, 0, Math.PI * 2, true);
-  ctx.closePath();
-  ctx.clip();
-
-  // 1. Draw solid pitch black on unknown zones and dark translucent on known zones (only outside perception radius)
   for (let zy = minZy; zy <= maxZy; zy++) {
     for (let zx = minZx; zx <= maxZx; zx++) {
       const zk = `${zx}_${zy}`;
@@ -3439,32 +3570,32 @@ function renderCreatureVisionOverlay() {
       const screenW = sz * tileSize;
       const screenH = sz * tileSize;
 
-      const isKnown = knownZones.has(zk);
-      if (isKnown) {
-        // Known zone: darker / dimmed (fog-of-war memory)
-        ctx.fillStyle = "rgba(0, 0, 0, 0.70)";
-        ctx.fillRect(screenX, screenY, screenW, screenH);
-      } else {
-        // Unknown zone: completely pitch black
+      if (!knownZones.has(zk)) {
+        // UNKNOWN ZONE: Completely Solid Pitch Black
         ctx.fillStyle = "#000000";
+        ctx.fillRect(screenX, screenY, screenW, screenH);
+      } else if (zx === curZx && zy === curZy) {
+        // CURRENT ACTIVE ZONE: 100% Full Bright Color
+        continue;
+      } else {
+        // EXPLORED/KNOWN MEMORY ZONE: Dimmed Dark Translucent
+        ctx.fillStyle = "rgba(0, 0, 0, 0.70)";
         ctx.fillRect(screenX, screenY, screenW, screenH);
       }
     }
   }
 
-  ctx.restore();
-
-  // 2. Subtle soft perception perimeter ring
-  ctx.save();
-  ctx.strokeStyle = "rgba(255, 215, 0, 0.7)";
-  ctx.lineWidth = 1.5;
-  ctx.setLineDash([4, 4]);
-  ctx.beginPath();
-  ctx.arc(creatureScreenX, creatureScreenY, visionRadiusPx, 0, Math.PI * 2);
-  ctx.stroke();
+  // Draw clean subtle border around current zone
+  const curScreenX = centerScreenX + (curZx * sz - camX) * tileSize;
+  const curScreenY = centerScreenY + (curZy * sz - camY) * tileSize;
+  const curScreenW = sz * tileSize;
+  const curScreenH = sz * tileSize;
+  ctx.strokeStyle = "rgba(255, 215, 0, 0.6)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(curScreenX, curScreenY, curScreenW, curScreenH);
 
   // Badge on screen
-  const badge = `[VISION: ${(target.properties.name || "CREATURE").toUpperCase()} (RANGE: ${viewRange})]`;
+  const badge = `[VISION: ${(target.properties.name || "CREATURE").toUpperCase()} | ZONE (${curZx},${curZy})]`;
   drawText8x8(badge, 8, CANVAS_HEIGHT - 48, "#ffd700", 1);
   ctx.restore();
 }
@@ -3854,8 +3985,15 @@ function frame(time) {
       lastTpsUpdate = time;
     }
 
-    // 2. High-performance Frustum Culling & Pure Canvas 2D Rendering
-    renderer.render(world, entities, time * 0.001, dt, simSpeed);
+    // 2. High-performance Frustum Culling & Rendering (2D or 3D RCT)
+    if (is3DMode && rctRenderer) {
+      rctRenderer.setPaused(isPaused);
+      const visionTarget = (isCreatureVisionMode && lastSelectedId > 0) ? getEntityById(lastSelectedId) : null;
+      rctRenderer.render(world, entities, time * 0.001, dt, isPaused ? 0.0 : simSpeed, visionTarget);
+      ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    } else {
+      renderer.render(world, entities, time * 0.001, dt, simSpeed);
+    }
 
     // 6. Draw Pure In-Engine Canvas UI Overlay using Renderer's 8x8 Font
     renderCreatureVisionOverlay();

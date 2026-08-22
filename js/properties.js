@@ -3433,8 +3433,8 @@ export function createGroupMemberProp() {
           const py = ent.y + off.dy;
           const tile = world.getTile(px, py);
           const isLand = (tile !== 2 && tile !== 5 && tile !== 1 && tile !== 4);
-          const plantOnTile = entities.some(e => !e.destroyed && (e.properties.photosynthesis || e.properties.deep_root || e.properties.species === "oak" || e.properties.species === "willow" || e.properties.species === "cactus" || e.properties.species === "pine") && e.x === px && e.y === py);
-          if (isLand && !plantOnTile) {
+          const hasNearbyPlant = entities.some(e => !e.destroyed && (e.properties.photosynthesis || e.properties.deep_root || e.properties.species === "oak" || e.properties.species === "willow" || e.properties.species === "cactus" || e.properties.species === "pine") && Math.abs(e.x - px) <= 1 && Math.abs(e.y - py) <= 1);
+          if (isLand && !hasNearbyPlant) {
             targetX = px;
             targetY = py;
             canPlant = true;
@@ -4880,8 +4880,8 @@ export function createLocomotionProp() {
                 const t = world ? world.getTile(px, py) : 0;
                 const isLand = (t !== 2 && t !== 5 && t !== 1 && t !== 4);
                 if (isLand) {
-                  const plantOnTile = getEntitiesInRadius(px, py, 0).some(e => !e.destroyed && (e.properties.photosynthesis || e.properties.deep_root || e.properties.species === "oak" || e.properties.species === "willow" || e.properties.species === "cactus" || e.properties.species === "pine"));
-                  if (!plantOnTile) {
+                  const hasNearbyCrop = getEntitiesInRadius(px, py, 1).some(e => !e.destroyed && (e.properties.photosynthesis || e.properties.deep_root || e.properties.species === "oak" || e.properties.species === "willow" || e.properties.species === "cactus" || e.properties.species === "pine"));
+                  if (!hasNearbyCrop) {
                     const dist = Math.abs(px - ent.x) + Math.abs(py - ent.y);
                     if (dist < minPlotDist) {
                       minPlotDist = dist;
@@ -5985,7 +5985,7 @@ export function createSurfaceRootProp() {
 /**
  * Fruiting (Generates Edible Fruits with Seeds at Low Frequency with Density Limit)
  */
-export function createFruitingProp(interval = 45.0, seedType = "small", species = "oak", initialTimer = null) {
+export function createFruitingProp(interval = 90.0, seedType = "small", species = "oak", initialTimer = null) {
   return {
     interval,
     seedType,
@@ -5993,22 +5993,22 @@ export function createFruitingProp(interval = 45.0, seedType = "small", species 
     timer: initialTimer !== null ? initialTimer : Math.random() * (interval * 0.95),
     effect(ent, dt, world, entities) {
       if (!ent.properties.life || !entities || !world) return;
-      if (ent.properties.life.energy < ent.properties.life.max * 0.25) return;
+      if (ent.properties.life.energy < ent.properties.life.max * 0.30) return;
 
       this.timer = (this.timer || 0) + dt;
       if (this.timer >= this.interval) {
         this.timer = 0;
 
-        // Density check: allow up to 4 fruits per tree area
+        // Density check: allow up to 2 fruits per tree area
         let nearbyFruits = 0;
         for (let i = 0; i < entities.length; i++) {
           const e = entities[i];
-          if (!e.destroyed && e.properties?.edible?.foodType === "fruit" && Math.abs(e.x - ent.x) <= 2 && Math.abs(e.y - ent.y) <= 2) {
+          if (!e.destroyed && e.properties?.edible?.foodType === "fruit" && Math.abs(e.x - ent.x) <= 3 && Math.abs(e.y - ent.y) <= 3) {
             nearbyFruits++;
-            if (nearbyFruits >= 4) break;
+            if (nearbyFruits >= 2) break;
           }
         }
-        if (nearbyFruits >= 4) return;
+        if (nearbyFruits >= 2) return;
 
         const fx = Math.max(0, Math.min(world.width - 1, ent.x + (Math.floor(Math.random() * 3) - 1)));
         const fy = Math.max(0, Math.min(world.height - 1, ent.y + (Math.floor(Math.random() * 3) - 1)));
@@ -6782,7 +6782,7 @@ export function createOakTree(x, y) {
       bladder: createBladderProp(6000, 6000),
       deep_root: createDeepRootProp(20.0, 12.0),
       photosynthesis: createPhotosynthesisProp(0.3, 35.0),
-      fruiting: createFruitingProp(45.0, "large", "oak"),
+      fruiting: createFruitingProp(90.0, "large", "oak"),
       terrain_pref: createTerrainPreferenceProp([0], "Fertile Land"),
       wood: { nutrition: 2000, foodType: "plant" }
     },
@@ -6800,7 +6800,7 @@ export function createWillowTree(x, y) {
       life: createLifeProp(9000, 9000, 0.08),
       bladder: createBladderProp(4000, 4000),
       photosynthesis: createPhotosynthesisProp(0.3, 30.0),
-      fruiting: createFruitingProp(35.0, "small", "willow"),
+      fruiting: createFruitingProp(75.0, "small", "willow"),
       terrain_pref: createTerrainPreferenceProp([0, 2], "Riverbank / Moist Soil"),
       wood: { nutrition: 1500, foodType: "plant" }
     },
@@ -6819,7 +6819,7 @@ export function createPineTree(x, y) {
       bladder: createBladderProp(5000, 5000),
       deep_root: createDeepRootProp(18.0, 14.0),
       photosynthesis: createPhotosynthesisProp(0.3, 32.0),
-      fruiting: createFruitingProp(40.0, "large", "pine"),
+      fruiting: createFruitingProp(80.0, "large", "pine"),
       terrain_pref: createTerrainPreferenceProp([0, 1], "Soil and Mountain"),
       wood: { nutrition: 1800, foodType: "plant" }
     },
