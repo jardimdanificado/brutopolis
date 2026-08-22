@@ -1102,10 +1102,16 @@ export class RCT3DRenderer {
     return -1;
   }
 
+  selectAt(screenX, screenY, entities, world = null) {
+    return this.getEntityAtScreen(screenX, screenY, entities, world);
+  }
+
   getEntityAtScreen(screenX, screenY, entities, world = null) {
     const rect = this.container.getBoundingClientRect();
-    const ndcX = ((screenX - rect.left) / this.width) * 2 - 1;
-    const ndcY = -((screenY - rect.top) / this.height) * 2 + 1;
+    const w = rect.width || this.width;
+    const h = rect.height || this.height;
+    const ndcX = ((screenX - rect.left) / w) * 2 - 1;
+    const ndcY = -((screenY - rect.top) / h) * 2 + 1;
 
     this.raycaster.setFromCamera({ x: ndcX, y: ndcY }, this.camera);
     const ray = this.raycaster.ray;

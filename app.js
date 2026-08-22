@@ -1770,135 +1770,219 @@ function drawNESProgressBar(x, y, w, h, val, max, label, color = "#58d854") {
 function renderTopHudBar() {
   if (!world) return;
   const clock = world.clock;
+  const isMobile = CANVAS_WIDTH <= 680;
 
-  drawNESBox(0, 0, CANVAS_WIDTH, 32);
+  drawNESBox(0, 0, CANVAS_WIDTH, 34);
 
-  // Title
-  drawText8x8("BRUTOPOLIS CHRONICLES", 8, 12, "#f8b800", 1);
+  if (!isMobile) {
+    // Desktop layout
+    drawText8x8("BRUTOPOLIS CHRONICLES", 8, 13, "#f8b800", 1);
 
-  // Time & Sun Stats
-  const timeStr = `D${String(clock.day).padStart(2,"0")} ${String(clock.hour).padStart(2,"0")}:${String(clock.minute).padStart(2,"0")}`;
-  drawText8x8(timeStr, 188, 12, "#ffffff", 1);
+    const timeStr = `D${String(clock.day).padStart(2,"0")} ${String(clock.hour).padStart(2,"0")}:${String(clock.minute).padStart(2,"0")}`;
+    drawText8x8(timeStr, 188, 13, "#ffffff", 1);
+    drawText8x8(`SUN:${Math.round(clock.globalLight * 100)}%`, 276, 13, "#3cbcfc", 1);
 
-  drawText8x8(`SUN:${Math.round(clock.globalLight * 100)}%`, 276, 12, "#3cbcfc", 1);
+    const presetNames = ["ARCHIPELAGO", "CONTINENT", "HIGHLANDS"];
+    drawText8x8(presetNames[currentPreset] || "WORLD", 352, 13, "#58d854", 1);
+    drawText8x8(`${currentFps}FPS`, 456, 13, "#bcbcbc", 1);
 
-  const presetNames = ["ARCHIPELAGO", "CONTINENT", "HIGHLANDS"];
-  drawText8x8(presetNames[currentPreset] || "WORLD", 352, 12, "#58d854", 1);
+    // NEW WORLD Generator Button
+    const isGenAct = currentMode === "GENERATOR";
+    drawNESButton(CANVAS_WIDTH - 102, 5, 94, 24, "NEW WORLD", isGenAct, false);
+    registerClickableRegion(CANVAS_WIDTH - 102, 5, 94, 24, () => {
+      currentMode = currentMode === "GENERATOR" ? "MAP" : "GENERATOR";
+      modalScroll = 0;
+    });
 
-  drawText8x8(`${currentFps}FPS`, 456, 12, "#bcbcbc", 1);
+    // LOAD Button
+    drawNESButton(CANVAS_WIDTH - 160, 5, 52, 24, "LOAD", false, false);
+    registerClickableRegion(CANVAS_WIDTH - 160, 5, 52, 24, openSaveFilePicker);
 
-  // NEW WORLD Generator Button
-  const isGenAct = currentMode === "GENERATOR";
-  drawNESButton(CANVAS_WIDTH - 102, 4, 94, 24, "NEW WORLD", isGenAct, false);
-  registerClickableRegion(CANVAS_WIDTH - 102, 4, 94, 24, () => {
-    currentMode = currentMode === "GENERATOR" ? "MAP" : "GENERATOR";
-    modalScroll = 0;
-  });
+    // SAVE Button
+    drawNESButton(CANVAS_WIDTH - 218, 5, 52, 24, "SAVE", false, false);
+    registerClickableRegion(CANVAS_WIDTH - 218, 5, 52, 24, saveWorldState);
 
-  // LOAD Button
-  drawNESButton(CANVAS_WIDTH - 160, 4, 52, 24, "LOAD", false, false);
-  registerClickableRegion(CANVAS_WIDTH - 160, 4, 52, 24, openSaveFilePicker);
+    if (is3DMode && rctRenderer) {
+      const wireMode = rctRenderer.getWireframeModeName ? rctRenderer.getWireframeModeName() : (rctRenderer.isWireframe ? "ON" : "OFF");
+      const wireTxt = "WIRE:" + wireMode;
+      const isWireActive = wireMode !== "OFF";
+      drawNESButton(CANVAS_WIDTH - 296, 5, 72, 24, wireTxt, isWireActive, false);
+      registerClickableRegion(CANVAS_WIDTH - 296, 5, 72, 24, () => rctRenderer.toggleWireframe());
 
-  // SAVE Button
-  drawNESButton(CANVAS_WIDTH - 218, 4, 52, 24, "SAVE", false, false);
-  registerClickableRegion(CANVAS_WIDTH - 218, 4, 52, 24, saveWorldState);
+      const resMode = rctRenderer.getResolutionName ? rctRenderer.getResolutionName() : "100%";
+      const resTxt = "RES:" + resMode;
+      drawNESButton(CANVAS_WIDTH - 374, 5, 72, 24, resTxt, resMode !== "100%", false);
+      registerClickableRegion(CANVAS_WIDTH - 374, 5, 72, 24, () => rctRenderer.toggleResolution());
+    }
+  } else {
+    // Mobile responsive top bar
+    const timeStr = `D${clock.day} ${String(clock.hour).padStart(2,"0")}:${String(clock.minute).padStart(2,"0")}`;
+    drawText8x8(timeStr, 8, 13, "#ffffff", 1);
+    drawText8x8(`☀️${Math.round(clock.globalLight * 100)}%`, 84, 13, "#3cbcfc", 1);
+    drawText8x8(`${currentFps}F`, 136, 13, "#888888", 1);
 
-  if (is3DMode && rctRenderer) {
-    const wireMode = rctRenderer.getWireframeModeName ? rctRenderer.getWireframeModeName() : (rctRenderer.isWireframe ? "ON" : "OFF");
-    const wireTxt = "WIRE:" + wireMode;
-    const isWireActive = wireMode !== "OFF";
-    drawNESButton(CANVAS_WIDTH - 296, 4, 72, 24, wireTxt, isWireActive, false);
-    registerClickableRegion(CANVAS_WIDTH - 296, 4, 72, 24, () => rctRenderer.toggleWireframe());
+    drawNESButton(CANVAS_WIDTH - 150, 5, 46, 24, "SAVE", false, false);
+    registerClickableRegion(CANVAS_WIDTH - 150, 5, 46, 24, saveWorldState);
 
-    const resMode = rctRenderer.getResolutionName ? rctRenderer.getResolutionName() : "100%";
-    const resTxt = "RES:" + resMode;
-    drawNESButton(CANVAS_WIDTH - 374, 4, 72, 24, resTxt, resMode !== "100%", false);
-    registerClickableRegion(CANVAS_WIDTH - 374, 4, 72, 24, () => rctRenderer.toggleResolution());
+    const isGenAct = currentMode === "GENERATOR";
+    drawNESButton(CANVAS_WIDTH - 100, 5, 46, 24, "GEN", isGenAct, false);
+    registerClickableRegion(CANVAS_WIDTH - 100, 5, 46, 24, () => {
+      currentMode = currentMode === "GENERATOR" ? "MAP" : "GENERATOR";
+      modalScroll = 0;
+    });
+
+    const modeTxt = is3DMode ? "3D" : "2D";
+    drawNESButton(CANVAS_WIDTH - 50, 5, 44, 24, modeTxt, is3DMode, false);
+    registerClickableRegion(CANVAS_WIDTH - 50, 5, 44, 24, toggle3DMode);
   }
 }
 
 function renderBottomToolbar() {
-  drawNESBox(0, CANVAS_HEIGHT - 36, CANVAS_WIDTH, 36);
+  const isMobile = CANVAS_WIDTH <= 680;
+  const barH = isMobile ? 42 : 36;
+  drawNESBox(0, CANVAS_HEIGHT - barH, CANVAS_WIDTH, barH);
 
-  const buttons = [
-    { label: "DOSSIER", mode: "INSPECT" },
-    { label: "ENTITIES", mode: "ENTITIES" },
-    { label: "GROUPS", mode: "GROUPS" },
-    { label: "LOGS", mode: "LOGS" },
-    {
-      label: "EDITOR",
-      isEditorBtn: true,
-      action: () => {
-        isEditorOpen = !isEditorOpen;
-        if (isEditorOpen) {
-          if (!editorTool) editorTool = "PAINT";
-        } else {
-          editorTool = null;
-          editorActiveSpawner = null;
-          isPainting = false;
+  if (!isMobile) {
+    const buttons = [
+      { label: "DOSSIER", mode: "INSPECT" },
+      { label: "ENTITIES", mode: "ENTITIES" },
+      { label: "GROUPS", mode: "GROUPS" },
+      { label: "LOGS", mode: "LOGS" },
+      {
+        label: "EDITOR",
+        isEditorBtn: true,
+        action: () => {
+          isEditorOpen = !isEditorOpen;
+          if (isEditorOpen) {
+            if (!editorTool) editorTool = "PAINT";
+          } else {
+            editorTool = null;
+            editorActiveSpawner = null;
+            isPainting = false;
+          }
+        }
+      },
+      {
+        label: "MAP",
+        isMapBtn: true,
+        action: () => {
+          toggle3DMode();
         }
       }
-    },
-    {
-      label: "MAP",
-      isMapBtn: true,
-      action: () => {
-        toggle3DMode();
-      }
+    ];
+
+    let btnX = 8;
+    for (const b of buttons) {
+      const isAct = b.isEditorBtn ? isEditorOpen : b.isMapBtn ? !is3DMode : currentMode === b.mode;
+      const bw = b.label.length * 8 + 18;
+      drawNESButton(btnX, CANVAS_HEIGHT - 30, bw, 24, b.label, isAct, false);
+
+      const targetMode = b.mode;
+      const targetAction = b.action;
+      registerClickableRegion(btnX, CANVAS_HEIGHT - 30, bw, 24, () => {
+        if (targetAction) {
+          targetAction();
+        } else if (targetMode) {
+          currentMode = currentMode === targetMode ? "MAP" : targetMode;
+          modalScroll = 0;
+          inspectingLogEvent = null;
+        }
+      });
+
+      btnX += bw + 6;
     }
-  ];
 
-  let btnX = 8;
-  for (const b of buttons) {
-    const isAct = b.isEditorBtn ? isEditorOpen : b.isMapBtn ? !is3DMode : currentMode === b.mode;
-    const bw = b.label.length * 8 + 18;
-    drawNESButton(btnX, CANVAS_HEIGHT - 30, bw, 24, b.label, isAct, false);
+    // Simulation Speed / Time Control Interface
+    const timeCtlX = btnX + 16;
+    drawNESButton(timeCtlX, CANVAS_HEIGHT - 30, 20, 24, "-", false, false);
+    registerClickableRegion(timeCtlX, CANVAS_HEIGHT - 30, 20, 24, decreaseSimSpeed);
 
-    const targetMode = b.mode;
-    const targetAction = b.action;
-    registerClickableRegion(btnX, CANVAS_HEIGHT - 30, bw, 24, () => {
-      if (targetAction) {
-        targetAction();
-      } else if (targetMode) {
-        currentMode = currentMode === targetMode ? "MAP" : targetMode;
-        modalScroll = 0;
-        inspectingLogEvent = null;
+    const speedStr = `${simSpeed}X (${Math.round(60 * simSpeed)}TPS)`;
+    drawText8x8(speedStr, timeCtlX + 26, CANVAS_HEIGHT - 22, "#f8b800", 1);
+    registerClickableRegion(timeCtlX + 26, CANVAS_HEIGHT - 30, speedStr.length * 8 + 4, 24, cycleSimSpeed);
+
+    const plusX = timeCtlX + 32 + speedStr.length * 8;
+    drawNESButton(plusX, CANVAS_HEIGHT - 30, 20, 24, "+", false, false);
+    registerClickableRegion(plusX, CANVAS_HEIGHT - 30, 20, 24, increaseSimSpeed);
+
+    // RUN / PAUSE Button
+    const pauseBtnX = plusX + 26;
+    const pauseTxt = isPaused ? "PAUSE" : "RUN";
+    drawNESButton(pauseBtnX, CANVAS_HEIGHT - 30, 56, 24, pauseTxt, !isPaused, isPaused);
+    registerClickableRegion(pauseBtnX, CANVAS_HEIGHT - 30, 56, 24, togglePause);
+
+    // Coordinates [X, Y] on bottom right
+    if (world) {
+      const hoverTile = getEditorHoverTile();
+      const coordStr = `[${hoverTile.x}, ${hoverTile.y}]`;
+      drawText8x8(coordStr, CANVAS_WIDTH - coordStr.length * 8 - 14, CANVAS_HEIGHT - 22, "#58d854", 1);
+    }
+  } else {
+    // Mobile Navigation Bar (5 thumb-friendly tabs)
+    const mobTabs = [
+      { label: "DOSSIER", mode: "INSPECT" },
+      { label: "ENTITIES", mode: "ENTITIES" },
+      { label: "CLANS", mode: "GROUPS" },
+      { label: "LOGS", mode: "LOGS" },
+      {
+        label: "EDIT",
+        isEditorBtn: true,
+        action: () => {
+          isEditorOpen = !isEditorOpen;
+          if (isEditorOpen) {
+            if (!editorTool) editorTool = "PAINT";
+          } else {
+            editorTool = null;
+            editorActiveSpawner = null;
+            isPainting = false;
+          }
+        }
       }
-    });
+    ];
 
-    btnX += bw + 6;
-  }
+    const tabCount = mobTabs.length;
+    const tabW = Math.floor((CANVAS_WIDTH - 12 - (tabCount - 1) * 4) / tabCount);
+    let curX = 6;
 
-  // Simulation Speed / Time Control Interface (with RUN/PAUSE button beside speed controls)
-  const timeCtlX = btnX + 16;
-  drawNESButton(timeCtlX, CANVAS_HEIGHT - 30, 20, 24, "-", false, false);
-  registerClickableRegion(timeCtlX, CANVAS_HEIGHT - 30, 20, 24, decreaseSimSpeed);
+    for (const b of mobTabs) {
+      const isAct = b.isEditorBtn ? isEditorOpen : currentMode === b.mode;
+      drawNESButton(curX, CANVAS_HEIGHT - 36, tabW, 30, b.label, isAct, false);
 
-  const speedStr = `${simSpeed}X (${Math.round(60 * simSpeed)}TPS)`;
-  drawText8x8(speedStr, timeCtlX + 26, CANVAS_HEIGHT - 22, "#f8b800", 1);
-  registerClickableRegion(timeCtlX + 26, CANVAS_HEIGHT - 30, speedStr.length * 8 + 4, 24, cycleSimSpeed);
+      const targetMode = b.mode;
+      const targetAction = b.action;
+      registerClickableRegion(curX, CANVAS_HEIGHT - 36, tabW, 30, () => {
+        if (targetAction) {
+          targetAction();
+        } else if (targetMode) {
+          currentMode = currentMode === targetMode ? "MAP" : targetMode;
+          modalScroll = 0;
+          inspectingLogEvent = null;
+        }
+      });
+      curX += tabW + 4;
+    }
 
-  const plusX = timeCtlX + 32 + speedStr.length * 8;
-  drawNESButton(plusX, CANVAS_HEIGHT - 30, 20, 24, "+", false, false);
-  registerClickableRegion(plusX, CANVAS_HEIGHT - 30, 20, 24, increaseSimSpeed);
+    // Floating mobile time speed pill (only when playing on map)
+    if (currentMode === "MAP" && !isEditorOpen) {
+      const pillW = 164;
+      const pillX = CANVAS_WIDTH - pillW - 8;
+      const pillY = CANVAS_HEIGHT - 74;
+      drawNESBox(pillX, pillY, pillW, 28);
 
-  // RUN / PAUSE Button placed directly beside time speed controls
-  const pauseBtnX = plusX + 26;
-  const pauseTxt = isPaused ? "PAUSE" : "RUN";
-  drawNESButton(pauseBtnX, CANVAS_HEIGHT - 30, 56, 24, pauseTxt, !isPaused, isPaused);
-  registerClickableRegion(pauseBtnX, CANVAS_HEIGHT - 30, 56, 24, togglePause);
+      drawNESButton(pillX + 4, pillY + 3, 22, 22, "-", false, false);
+      registerClickableRegion(pillX + 4, pillY + 3, 22, 22, decreaseSimSpeed);
 
-  // Coordinates [X, Y] on bottom right (Tile name removed as requested)
-  if (renderer && world) {
-    const zoom = renderer.getCameraZoom();
-    const tileSize = 16.0 * zoom;
-    const cx = renderer.getCameraX();
-    const cy = renderer.getCameraY();
-    const hoverTileX = Math.floor(cx + (mouseX - CANVAS_WIDTH / 2) / tileSize);
-    const hoverTileY = Math.floor(cy + (mouseY - CANVAS_HEIGHT / 2) / tileSize);
+      const speedTxt = `${simSpeed}X`;
+      drawText8x8(speedTxt, pillX + 32, pillY + 10, "#f8b800", 1);
+      registerClickableRegion(pillX + 30, pillY + 3, 30, 22, cycleSimSpeed);
 
-    const coordStr = `[${hoverTileX}, ${hoverTileY}]`;
-    drawText8x8(coordStr, CANVAS_WIDTH - coordStr.length * 8 - 14, CANVAS_HEIGHT - 22, "#58d854", 1);
+      drawNESButton(pillX + 62, pillY + 3, 22, 22, "+", false, false);
+      registerClickableRegion(pillX + 62, pillY + 3, 22, 22, increaseSimSpeed);
+
+      const pTxt = isPaused ? "PAUSE" : "RUN";
+      drawNESButton(pillX + 90, pillY + 3, 68, 22, pTxt, !isPaused, isPaused);
+      registerClickableRegion(pillX + 90, pillY + 3, 68, 22, togglePause);
+    }
   }
 }
 
@@ -1907,10 +1991,11 @@ function renderBottomToolbar() {
 // ---------------------------------------------------------------------------
 
 function renderDossierModal() {
-  const mx = 40;
-  const my = 40;
-  const mw = CANVAS_WIDTH - 80;
-  const mh = CANVAS_HEIGHT - 86;
+  const isMobile = CANVAS_WIDTH <= 680;
+  const mx = isMobile ? 6 : 40;
+  const my = isMobile ? 36 : 40;
+  const mw = isMobile ? CANVAS_WIDTH - 12 : CANVAS_WIDTH - 80;
+  const mh = isMobile ? CANVAS_HEIGHT - 44 : CANVAS_HEIGHT - 86;
 
   ctx.save();
   ctx.fillStyle = "rgba(0, 0, 0, 0.9)";
@@ -2010,12 +2095,7 @@ function renderDossierModal() {
     drawText8x8(`DOMAIN: ${domainStr}`, mx + 440, my + 88, "#58d854", 1);
 
     const lineageY = my + 114;
-    drawNESBox(mx + 10, lineageY, mw - 20, 52);
-    drawText8x8("FAMILY & LINEAGE:", mx + 20, lineageY + 8, "#f8b800", 1);
-
-    const orientStr = props.homosexual ? "HOMOSEXUAL" : props.bisexual ? "BISEXUAL" : "HETEROSEXUAL";
-    const orientCol = props.homosexual ? "#ff60a0" : props.bisexual ? "#d3869b" : "#3cbcfc";
-    drawText8x8(`ORIENTATION: ${orientStr}`, mx + 450, lineageY + 8, orientCol, 1);
+    drawNESBox(mx + 10, lineageY, mw - 20, 56);
 
     // Perks & Traits
     const perks = [];
@@ -2023,38 +2103,44 @@ function renderDossierModal() {
     if (props.gullible) perks.push("GULLIBLE 🥺");
     if (props.schizophrenic) perks.push("SCHIZOPHRENIC 🌀");
     if (props.liar) perks.push(props.liar.type === "believer" ? "BELIEVER 🤥" : "LIAR 🤥");
+
+    const orientStr = props.homosexual ? "HOMOSEXUAL" : props.bisexual ? "BISEXUAL" : "HETEROSEXUAL";
+    const orientCol = props.homosexual ? "#ff60a0" : props.bisexual ? "#d3869b" : "#3cbcfc";
+
+    drawText8x8("FAMILY & LINEAGE:", mx + 20, lineageY + 8, "#f8b800", 1);
+    drawText8x8(`ORIENTATION: ${orientStr}`, mx + 180, lineageY + 8, orientCol, 1);
     if (perks.length > 0) {
-      drawText8x8(`PERKS: [${perks.join(" | ")}]`, mx + 20, lineageY + 8, "#ffd700", 1);
+      drawText8x8(`PERKS: [${perks.join(" | ")}]`, mx + 420, lineageY + 8, "#ffd700", 1);
     }
 
     // Father
     const fatherId = props.fatherId !== undefined ? props.fatherId : props.life?.fatherId;
     if (fatherId !== null && fatherId !== undefined) {
       const father = entityRegistry.get(fatherId);
-      const fName = (father?.properties?.name || `Entity #${fatherId}`).toUpperCase().slice(0, 16);
-      drawText8x8("FATHER:", mx + 20, lineageY + 28, "#bcbcbc", 1);
-      drawNESButton(mx + 80, lineageY + 22, 140, 20, fName, false, false);
-      registerClickableRegion(mx + 80, lineageY + 22, 140, 20, () => {
+      const fName = (father?.properties?.name || `Entity #${fatherId}`).toUpperCase().slice(0, 14);
+      drawText8x8("FATHER:", mx + 20, lineageY + 30, "#bcbcbc", 1);
+      drawNESButton(mx + 80, lineageY + 24, 130, 22, fName, false, false);
+      registerClickableRegion(mx + 80, lineageY + 24, 130, 22, () => {
         lastSelectedId = fatherId;
         modalScroll = 0;
       });
     } else {
-      drawText8x8("FATHER: Deus ex machina", mx + 20, lineageY + 28, "#7c7c7c", 1);
+      drawText8x8("FATHER: Deus ex machina", mx + 20, lineageY + 30, "#7c7c7c", 1);
     }
 
     // Mother
     const motherId = props.motherId !== undefined ? props.motherId : props.life?.motherId;
     if (motherId !== null && motherId !== undefined) {
       const mother = entityRegistry.get(motherId);
-      const mName = (mother?.properties?.name || `Entity #${motherId}`).toUpperCase().slice(0, 16);
-      drawText8x8("MOTHER:", mx + 235, lineageY + 28, "#bcbcbc", 1);
-      drawNESButton(mx + 295, lineageY + 22, 140, 20, mName, false, false);
-      registerClickableRegion(mx + 295, lineageY + 22, 140, 20, () => {
+      const mName = (mother?.properties?.name || `Entity #${motherId}`).toUpperCase().slice(0, 14);
+      drawText8x8("MOTHER:", mx + 230, lineageY + 30, "#bcbcbc", 1);
+      drawNESButton(mx + 290, lineageY + 24, 130, 22, mName, false, false);
+      registerClickableRegion(mx + 290, lineageY + 24, 130, 22, () => {
         lastSelectedId = motherId;
         modalScroll = 0;
       });
     } else {
-      drawText8x8("MOTHER: Deus ex machina", mx + 235, lineageY + 28, "#7c7c7c", 1);
+      drawText8x8("MOTHER: Deus ex machina", mx + 230, lineageY + 30, "#7c7c7c", 1);
     }
 
     // Partner
@@ -2062,18 +2148,18 @@ function renderDossierModal() {
     if (partnerId) {
       const partner = entityRegistry.get(partnerId);
       const pName = (partner?.properties?.name || `Entity #${partnerId}`).toUpperCase().slice(0, 14);
-      drawText8x8("PARTNER:", mx + 450, lineageY + 28, "#bcbcbc", 1);
-      drawNESButton(mx + 520, lineageY + 22, 150, 20, `${pName} ❤️`, false, false);
-      registerClickableRegion(mx + 520, lineageY + 22, 150, 20, () => {
+      drawText8x8("PARTNER:", mx + 440, lineageY + 30, "#bcbcbc", 1);
+      drawNESButton(mx + 510, lineageY + 24, 140, 22, `${pName} ❤️`, false, false);
+      registerClickableRegion(mx + 510, lineageY + 24, 140, 22, () => {
         lastSelectedId = partnerId;
         modalScroll = 0;
       });
     } else {
-      drawText8x8("PARTNER: Single", mx + 450, lineageY + 28, "#7c7c7c", 1);
+      drawText8x8("PARTNER: Single", mx + 440, lineageY + 30, "#7c7c7c", 1);
     }
 
     // 3. Vital Gauges
-    let gaugeY = lineageY + 56;
+    let gaugeY = lineageY + 62;
     if (props.life) {
       drawNESProgressBar(mx + 10, gaugeY, mw - 20, 16, props.life.energy, props.life.max || 100, "HP ENERGY", "#58d854");
       gaugeY += 20;
@@ -2335,10 +2421,11 @@ function getFilteredEntities() {
 }
 
 function renderEntitiesModal() {
-  const mx = 30;
-  const my = 40;
-  const mw = CANVAS_WIDTH - 60;
-  const mh = CANVAS_HEIGHT - 86;
+  const isMobile = CANVAS_WIDTH <= 680;
+  const mx = isMobile ? 6 : 30;
+  const my = isMobile ? 36 : 40;
+  const mw = isMobile ? CANVAS_WIDTH - 12 : CANVAS_WIDTH - 60;
+  const mh = isMobile ? CANVAS_HEIGHT - 44 : CANVAS_HEIGHT - 86;
 
   ctx.save();
   ctx.fillStyle = "rgba(0, 0, 0, 0.9)";
@@ -2355,15 +2442,17 @@ function renderEntitiesModal() {
   // Filter Buttons
   const filters = ["ALL", "LIVING", "HUMANOID", "BEAST", "FLORA", "ITEMS"];
   let fx = mx + 16;
+  const fw = isMobile ? Math.floor((mw - 32) / 6) : 64;
   for (const f of filters) {
     const isAct = entityFilter === f;
-    const fw = f.length * 8 + 16;
-    drawNESButton(fx, my + 36, fw, 22, f, isAct, false);
-    registerClickableRegion(fx, my + 36, fw, 22, () => {
+    const flabel = isMobile ? f.slice(0, 4) : f;
+    const btnW = isMobile ? fw : f.length * 8 + 16;
+    drawNESButton(fx, my + 36, btnW, 22, flabel, isAct, false);
+    registerClickableRegion(fx, my + 36, btnW, 22, () => {
       entityFilter = f;
       modalScroll = 0;
     });
-    fx += fw + 6;
+    fx += btnW + (isMobile ? 2 : 6);
   }
 
   // Table Box
@@ -2372,13 +2461,20 @@ function renderEntitiesModal() {
   drawNESBox(mx + 10, tableY, mw - 20, tableH);
 
   // Column Headers
-  drawText8x8("ID", mx + 20, tableY + 12, "#f8b800", 1);
-  drawText8x8("NAME", mx + 65, tableY + 12, "#f8b800", 1);
-  drawText8x8("SPECIES", mx + 250, tableY + 12, "#f8b800", 1);
-  drawText8x8("POS", mx + 380, tableY + 12, "#f8b800", 1);
-  drawText8x8("HP", mx + 470, tableY + 12, "#f8b800", 1);
-  drawText8x8("STATUS", mx + 550, tableY + 12, "#f8b800", 1);
-  drawText8x8("CLAN", mx + 635, tableY + 12, "#f8b800", 1);
+  if (!isMobile) {
+    drawText8x8("ID", mx + 20, tableY + 12, "#f8b800", 1);
+    drawText8x8("NAME", mx + 75, tableY + 12, "#f8b800", 1);
+    drawText8x8("SPECIES", mx + 275, tableY + 12, "#f8b800", 1);
+    drawText8x8("POS", mx + 400, tableY + 12, "#f8b800", 1);
+    drawText8x8("HP", mx + 500, tableY + 12, "#f8b800", 1);
+    drawText8x8("STATUS", mx + 580, tableY + 12, "#f8b800", 1);
+    drawText8x8("CLAN", mx + 665, tableY + 12, "#f8b800", 1);
+  } else {
+    drawText8x8("ID", mx + 18, tableY + 12, "#f8b800", 1);
+    drawText8x8("NAME", mx + 64, tableY + 12, "#f8b800", 1);
+    drawText8x8("HP", mx + mw - 116, tableY + 12, "#f8b800", 1);
+    drawText8x8("STATUS", mx + mw - 68, tableY + 12, "#f8b800", 1);
+  }
 
   ctx.strokeStyle = "#ffffff";
   ctx.lineWidth = 1;
@@ -2388,8 +2484,8 @@ function renderEntitiesModal() {
   ctx.stroke();
 
   // Rows
-  const rowH = 20;
-  const visibleRows = Math.floor((tableH - 28) / rowH);
+  const rowH = 22;
+  const visibleRows = Math.floor((tableH - 30) / rowH);
   const maxScroll = Math.max(0, list.length - visibleRows);
   modalScroll = Math.max(0, Math.min(maxScroll, modalScroll));
 
@@ -2405,18 +2501,26 @@ function renderEntitiesModal() {
     }
 
     const cursorPrefix = isSelected || isHover ? "▶" : " ";
-    drawText8x8(`${cursorPrefix}#${ent.id}`, mx + 16, rowY + 2, isSelected || isHover ? "#f8b800" : "#ffffff", 1);
-    drawText8x8((ent.properties.name || "ENTITY").slice(0, 18).toUpperCase(), mx + 65, rowY + 2, "#ffffff", 1);
-    drawText8x8((ent.properties.species || "-").slice(0, 10).toUpperCase(), mx + 250, rowY + 2, "#3cbcfc", 1);
-    drawText8x8(`[${ent.x},${ent.y}]`, mx + 380, rowY + 2, "#bcbcbc", 1);
-
     const energyStr = ent.properties.life ? `${Math.round(ent.properties.life.energy)}` : "-";
-    drawText8x8(energyStr, mx + 470, rowY + 2, "#58d854", 1);
-
     const statusStr = ent.properties.life ? (ent.properties.life.energy > 0 ? "LIVE" : "DEAD") : "ITEM";
     const statusCol = ent.properties.life ? (ent.properties.life.energy > 0 ? "#58d854" : "#f83800") : "#f8b800";
-    drawText8x8(statusStr, mx + 550, rowY + 2, statusCol, 1);
-    drawText8x8((ent.properties.group?.name || "-").slice(0, 9).toUpperCase(), mx + 635, rowY + 2, "#d3869b", 1);
+
+    if (!isMobile) {
+      drawText8x8(`${cursorPrefix}#${ent.id}`, mx + 16, rowY + 3, isSelected || isHover ? "#f8b800" : "#ffffff", 1);
+      drawText8x8((ent.properties.name || "ENTITY").slice(0, 22).toUpperCase(), mx + 75, rowY + 3, "#ffffff", 1);
+      drawText8x8((ent.properties.species || "-").slice(0, 12).toUpperCase(), mx + 275, rowY + 3, "#3cbcfc", 1);
+      drawText8x8(`[${ent.x},${ent.y}]`, mx + 400, rowY + 3, "#bcbcbc", 1);
+      drawText8x8(energyStr, mx + 500, rowY + 3, "#58d854", 1);
+      drawText8x8(statusStr, mx + 580, rowY + 3, statusCol, 1);
+      const maxClanChars = Math.max(10, Math.floor((mw - 700) / 8));
+      drawText8x8((ent.properties.group?.name || "-").slice(0, maxClanChars).toUpperCase(), mx + 665, rowY + 3, "#d3869b", 1);
+    } else {
+      drawText8x8(`${cursorPrefix}#${ent.id}`, mx + 16, rowY + 3, isSelected || isHover ? "#f8b800" : "#ffffff", 1);
+      const maxMobileName = Math.max(8, Math.floor((mw - 190) / 8));
+      drawText8x8((ent.properties.name || "ENTITY").slice(0, maxMobileName).toUpperCase(), mx + 64, rowY + 3, "#ffffff", 1);
+      drawText8x8(energyStr, mx + mw - 116, rowY + 3, "#58d854", 1);
+      drawText8x8(statusStr, mx + mw - 68, rowY + 3, statusCol, 1);
+    }
 
     const curEnt = ent;
     registerClickableRegion(mx + 12, rowY - 4, mw - 24, rowH, () => {
@@ -2451,10 +2555,11 @@ function getAllGroups() {
 }
 
 function renderGroupsModal() {
-  const mx = 40;
-  const my = 40;
-  const mw = CANVAS_WIDTH - 80;
-  const mh = CANVAS_HEIGHT - 86;
+  const isMobile = CANVAS_WIDTH <= 680;
+  const mx = isMobile ? 6 : 40;
+  const my = isMobile ? 36 : 40;
+  const mw = isMobile ? CANVAS_WIDTH - 12 : CANVAS_WIDTH - 80;
+  const mh = isMobile ? CANVAS_HEIGHT - 44 : CANVAS_HEIGHT - 86;
 
   ctx.save();
   ctx.fillStyle = "rgba(0, 0, 0, 0.9)";
@@ -2484,7 +2589,8 @@ function renderGroupsModal() {
   }
 
   const groups = getAllGroups();
-  drawText8x8(`CLANS & FACTIONS (${groups.length}) - CLICK DETAILS TO INSPECT`, mx + 16, my + 14, "#f8b800", 1);
+  const titleStr = isMobile ? `CLANS (${groups.length})` : `CLANS & FACTIONS (${groups.length}) - CLICK DETAILS TO INSPECT`;
+  drawText8x8(titleStr, mx + 16, my + 14, "#f8b800", 1);
 
   if (groups.length === 0) {
     drawText8x8("NO FACTIONS FOUNDED YET.", mx + 20, my + 50, "#ffffff", 1);
@@ -2493,11 +2599,11 @@ function renderGroupsModal() {
   }
 
   const cardW = mw - 24;
-  const cardH = 88;
-  const cardGap = 6;
+  const cardH = isMobile ? 120 : 98;
+  const cardGap = 8;
   let cardY = my + 38;
 
-  const visibleClanCount = 4;
+  const visibleClanCount = isMobile ? 2 : 3;
   const maxScroll = Math.max(0, groups.length - visibleClanCount);
   modalScroll = Math.max(0, Math.min(maxScroll, modalScroll));
 
@@ -2542,11 +2648,12 @@ function renderGroupsModal() {
       }
     }
 
-    drawText8x8(`* ${(g.name || "CLAN").toUpperCase()}`, mx + 50, cardY + 14, gFgColor, 1);
-    drawText8x8(`${livingMembers}/${g.members.length} ALIVE`, mx + cardW - 325, cardY + 14, "#58d854", 1);
+    const maxClanTitle = isMobile ? Math.max(10, Math.floor((cardW - 140) / 8)) : 30;
+    drawText8x8(`* ${(g.name || "CLAN").slice(0, maxClanTitle).toUpperCase()}`, mx + 50, cardY + 14, gFgColor, 1);
+    drawText8x8(`${livingMembers}/${g.members.length} ALIVE`, mx + cardW - (isMobile ? 110 : 335), cardY + 14, "#58d854", 1);
 
-    drawText8x8(`LEADER: ${leaderEnt ? leaderEnt.properties.name.toUpperCase() : `MEMBER #${g.members[0]}`}`, mx + 24, cardY + 34, "#ffffff", 1);
-    drawText8x8(`TERRITORY: ${g.claimedZones?.join(", ") || "NONE"} (${(g.claimedZones?.length || 0) * 64} TILES)`, mx + 24, cardY + 48, "#bcbcbc", 1);
+    drawText8x8(`LEADER: ${leaderEnt ? leaderEnt.properties.name.slice(0, 18).toUpperCase() : `MEMBER #${g.members[0]}`}`, mx + 24, cardY + 34, "#ffffff", 1);
+    drawText8x8(`TERRITORY: ${g.claimedZones?.join(", ") || "NONE"} (${(g.claimedZones?.length || 0) * 64} TILES)`, mx + 24, cardY + 50, "#bcbcbc", 1);
 
     // Stockpile Summary
     const stockEntries = Object.entries(stockpile.items);
@@ -2559,51 +2666,94 @@ function renderGroupsModal() {
       stockStr = stockStr.slice(0, maxStockLen - 3) + "...";
     }
 
-    drawText8x8(`STOCKPILE (${stockpile.totalCount} ITEMS): ${stockStr.toUpperCase()}`, mx + 24, cardY + 54, "#ffd700", 1);
-    drawText8x8(`LOCATION: [GROUND: ${stockpile.breakdown.ground} | MEMBERS: ${stockpile.breakdown.members} | STORAGE: ${stockpile.breakdown.storage}]`, mx + 24, cardY + 68, "#3cbcfc", 1);
+    drawText8x8(`STOCKPILE (${stockpile.totalCount} ITEMS): ${stockStr.toUpperCase()}`, mx + 24, cardY + 66, "#ffd700", 1);
 
-    // Full Details Button
-    const curG = g;
-    drawNESButton(mx + cardW - 255, cardY + 24, 80, 22, "DETAILS", false, false);
-    registerClickableRegion(mx + cardW - 255, cardY + 24, 80, 22, () => {
-      inspectingGroup = curG;
-      groupDetailTab = "OVERVIEW";
-      modalScroll = 0;
-    });
+    if (!isMobile) {
+      drawText8x8(`LOCATION: [GROUND: ${stockpile.breakdown.ground} | MEMBERS: ${stockpile.breakdown.members} | STORAGE: ${stockpile.breakdown.storage}]`, mx + 24, cardY + 82, "#3cbcfc", 1);
 
-    // View Claimed Territory Button
-    const isViewing = visualizedGroupId === g.id;
-    drawNESButton(mx + cardW - 170, cardY + 24, 80, 22, isViewing ? "ZONE*" : "ZONE", isViewing, false);
-    registerClickableRegion(mx + cardW - 170, cardY + 24, 80, 22, () => {
-      visualizedGroupId = (visualizedGroupId === g.id) ? null : g.id;
-      if (visualizedGroupId !== null) {
-        let sumX = 0, sumY = 0, count = 0;
-        for (const zk of g.claimedZones || []) {
-          const coords = parseZoneCoords(zk);
-          if (coords) {
-            sumX += coords.centerX;
-            sumY += coords.centerY;
-            count++;
+      // Desktop Buttons on top-right of card
+      const curG = g;
+      drawNESButton(mx + cardW - 255, cardY + 24, 80, 22, "DETAILS", false, false);
+      registerClickableRegion(mx + cardW - 255, cardY + 24, 80, 22, () => {
+        inspectingGroup = curG;
+        groupDetailTab = "OVERVIEW";
+        modalScroll = 0;
+      });
+
+      const isViewing = visualizedGroupId === g.id;
+      drawNESButton(mx + cardW - 170, cardY + 24, 80, 22, isViewing ? "ZONE*" : "ZONE", isViewing, false);
+      registerClickableRegion(mx + cardW - 170, cardY + 24, 80, 22, () => {
+        visualizedGroupId = (visualizedGroupId === g.id) ? null : g.id;
+        if (visualizedGroupId !== null) {
+          let sumX = 0, sumY = 0, count = 0;
+          for (const zk of g.claimedZones || []) {
+            const coords = parseZoneCoords(zk);
+            if (coords) {
+              sumX += coords.centerX;
+              sumY += coords.centerY;
+              count++;
+            }
           }
+          if (count > 0) {
+            if (renderer) renderer.setCamera(sumX / count, sumY / count, 1.5);
+            if (rctRenderer) rctRenderer.setCamera(sumX / count, sumY / count, 1.5);
+          }
+          currentMode = "GAME";
         }
-        if (count > 0) {
-          if (renderer) renderer.setCamera(sumX / count, sumY / count, 1.5);
-          if (rctRenderer) rctRenderer.setCamera(sumX / count, sumY / count, 1.5);
-        }
-        currentMode = "GAME";
-      }
-    });
+      });
 
-    // Focus Leader Button
-    drawNESButton(mx + cardW - 85, cardY + 24, 75, 22, "LEADER", false, false);
-    registerClickableRegion(mx + cardW - 85, cardY + 24, 75, 22, () => {
-      if (leaderEnt && renderer) {
-        lastSelectedId = leaderEnt.id;
-        renderer.selectEntity(leaderEnt.id);
-        renderer.setCamera(leaderEnt.x, leaderEnt.y, renderer.getCameraZoom());
-        currentMode = "MAP";
-      }
-    });
+      drawNESButton(mx + cardW - 85, cardY + 24, 75, 22, "LEADER", false, false);
+      registerClickableRegion(mx + cardW - 85, cardY + 24, 75, 22, () => {
+        if (leaderEnt && renderer) {
+          lastSelectedId = leaderEnt.id;
+          renderer.selectEntity(leaderEnt.id);
+          renderer.setCamera(leaderEnt.x, leaderEnt.y, renderer.getCameraZoom());
+          currentMode = "MAP";
+        }
+      });
+    } else {
+      // Mobile Buttons row on bottom of card
+      const btnW = Math.floor((cardW - 48) / 3);
+      const curG = g;
+      drawNESButton(mx + 20, cardY + 86, btnW, 24, "DETAILS", false, false);
+      registerClickableRegion(mx + 20, cardY + 86, btnW, 24, () => {
+        inspectingGroup = curG;
+        groupDetailTab = "OVERVIEW";
+        modalScroll = 0;
+      });
+
+      const isViewing = visualizedGroupId === g.id;
+      drawNESButton(mx + 20 + btnW + 4, cardY + 86, btnW, 24, isViewing ? "ZONE*" : "ZONE", isViewing, false);
+      registerClickableRegion(mx + 20 + btnW + 4, cardY + 86, btnW, 24, () => {
+        visualizedGroupId = (visualizedGroupId === g.id) ? null : g.id;
+        if (visualizedGroupId !== null) {
+          let sumX = 0, sumY = 0, count = 0;
+          for (const zk of g.claimedZones || []) {
+            const coords = parseZoneCoords(zk);
+            if (coords) {
+              sumX += coords.centerX;
+              sumY += coords.centerY;
+              count++;
+            }
+          }
+          if (count > 0) {
+            if (renderer) renderer.setCamera(sumX / count, sumY / count, 1.5);
+            if (rctRenderer) rctRenderer.setCamera(sumX / count, sumY / count, 1.5);
+          }
+          currentMode = "GAME";
+        }
+      });
+
+      drawNESButton(mx + 20 + (btnW + 4) * 2, cardY + 86, btnW, 24, "LEADER", false, false);
+      registerClickableRegion(mx + 20 + (btnW + 4) * 2, cardY + 86, btnW, 24, () => {
+        if (leaderEnt && renderer) {
+          lastSelectedId = leaderEnt.id;
+          renderer.selectEntity(leaderEnt.id);
+          renderer.setCamera(leaderEnt.x, leaderEnt.y, renderer.getCameraZoom());
+          currentMode = "MAP";
+        }
+      });
+    }
 
     cardY += cardH + cardGap;
   }
@@ -2945,10 +3095,11 @@ function getFilteredLogs() {
 }
 
 function renderLogsModal() {
-  const mx = 40;
-  const my = 40;
-  const mw = CANVAS_WIDTH - 80;
-  const mh = CANVAS_HEIGHT - 86;
+  const isMobile = CANVAS_WIDTH <= 680;
+  const mx = isMobile ? 6 : 40;
+  const my = isMobile ? 36 : 40;
+  const mw = isMobile ? CANVAS_WIDTH - 12 : CANVAS_WIDTH - 80;
+  const mh = isMobile ? CANVAS_HEIGHT - 44 : CANVAS_HEIGHT - 86;
 
   ctx.save();
   ctx.fillStyle = "rgba(0, 0, 0, 0.9)";
@@ -2970,17 +3121,21 @@ function renderLogsModal() {
   }
 
   const list = getFilteredLogs();
-  drawText8x8(`WORLD LOG (${list.length}) - CLICK EVENT TO INSPECT`, mx + 16, my + 14, "#f8b800", 1);
+  const titleStr = isMobile ? `WORLD LOG (${list.length})` : `WORLD LOG (${list.length}) - CLICK EVENT TO INSPECT`;
+  drawText8x8(titleStr, mx + 16, my + 14, "#f8b800", 1);
 
   // Filter Buttons
   const filters = ["ALL", "KILL", "ATTACK", "RELATION", "DIALOGUE", "AMPUTATION", "BIRTH", "DEATH", "SPROUT", "MINE", "BUILD"];
   let fx = mx + 16;
   for (const f of filters) {
+    if (fx + 40 > mx + mw - 16) break; // Don't overflow filters off screen
     const isAct = logFilter === f;
-    const fw = f.length * 8 + 12;
-    drawNESButton(fx, my + 36, fw, 22, f, isAct, false);
+    const flabel = isMobile ? f.slice(0, 4) : f;
+    const fw = flabel.length * 8 + 12;
+    drawNESButton(fx, my + 36, fw, 22, flabel, isAct, false);
+    const filterKey = f;
     registerClickableRegion(fx, my + 36, fw, 22, () => {
-      logFilter = f;
+      logFilter = filterKey;
       modalScroll = 0;
     });
     fx += fw + 4;
@@ -2991,7 +3146,7 @@ function renderLogsModal() {
   const tableH = mh - 74;
   drawNESBox(mx + 10, tableY, mw - 20, tableH);
 
-  const rowH = 20;
+  const rowH = 22;
   const visibleRows = Math.floor((tableH - 16) / rowH);
   const maxScroll = Math.max(0, list.length - visibleRows);
   modalScroll = Math.max(0, Math.min(maxScroll, modalScroll));
@@ -3007,14 +3162,22 @@ function renderLogsModal() {
     }
 
     const ts = ev.timestamp ? `D${ev.timestamp.day} ${String(ev.timestamp.hour).padStart(2,"0")}:${String(ev.timestamp.minute).padStart(2,"0")}` : `T${ev.tick}`;
-    drawText8x8(ts, mx + 18, rowY + 2, "#bcbcbc", 1);
+    drawText8x8(ts, mx + 18, rowY + 3, "#bcbcbc", 1);
 
     const typeColor = ev.type === "KILL" ? "#ff2040" : ev.type === "DEATH" ? "#9c5050" : ev.type === "ATTACK" ? "#f8b800" : ev.type === "AMPUTATION" ? "#e40058" : ev.type === "RELATION" ? "#d3869b" : ev.type === "DIALOGUE" ? "#3cbcfc" : ev.type === "BIRTH" ? "#f8b800" : ev.type === "SPROUT" ? "#58d854" : "#ffffff";
-    drawText8x8(`[${ev.type}]`, mx + 115, rowY + 2, typeColor, 1);
-
-    const locStr = ev.location ? `[${ev.location.x},${ev.location.y}] ` : "";
-    const shortDesc = `${locStr}${ev.description}`.slice(0, 52).toUpperCase();
-    drawText8x8(shortDesc, mx + 235, rowY + 2, "#ffffff", 1);
+    
+    if (!isMobile) {
+      drawText8x8(`[${ev.type}]`, mx + 115, rowY + 3, typeColor, 1);
+      const locStr = ev.location ? `[${ev.location.x},${ev.location.y}] ` : "";
+      const maxDescChars = Math.floor((mw - 260) / 8);
+      const shortDesc = `${locStr}${ev.description}`.slice(0, maxDescChars).toUpperCase();
+      drawText8x8(shortDesc, mx + 235, rowY + 3, "#ffffff", 1);
+    } else {
+      drawText8x8(`[${ev.type.slice(0, 4)}]`, mx + 86, rowY + 3, typeColor, 1);
+      const maxDescChars = Math.max(8, Math.floor((mw - 156) / 8));
+      const shortDesc = (ev.description || "").slice(0, maxDescChars).toUpperCase();
+      drawText8x8(shortDesc, mx + 140, rowY + 3, "#ffffff", 1);
+    }
 
     // Detail click
     const curEv = ev;
@@ -3168,10 +3331,11 @@ function renderLogDetailView(mx, my, mw, mh, ev) {
 function renderCompactEditorPanel() {
   if (!isEditorOpen || currentMode !== "MAP") return;
 
-  const pw = 232;
-  const ph = 362;
-  const px = CANVAS_WIDTH - pw - 10;
-  const py = 38;
+  const isMobile = CANVAS_WIDTH <= 680;
+  const pw = isMobile ? CANVAS_WIDTH - 16 : 232;
+  const ph = isMobile ? 260 : 362;
+  const px = isMobile ? 8 : CANVAS_WIDTH - pw - 10;
+  const py = isMobile ? CANVAS_HEIGHT - ph - 48 : 38;
 
   // 1. Outer NES Window Box
   drawNESBox(px, py, pw, ph);
@@ -3188,22 +3352,23 @@ function renderCompactEditorPanel() {
 
   // 3. Category Tabs: [TILE] [MOB] [ITEM] [TOOL]
   const tabs = [
-    { id: "TILES", label: "TILE", w: 50 },
-    { id: "CREATURES", label: "MOB", w: 48 },
-    { id: "ITEMS", label: "ITEM", w: 50 },
-    { id: "TOOLS", label: "TOOL", w: 50 }
+    { id: "TILES", label: "TILE" },
+    { id: "CREATURES", label: "MOB" },
+    { id: "ITEMS", label: "ITEM" },
+    { id: "TOOLS", label: "TOOL" }
   ];
 
+  const tabW = Math.floor((pw - 28) / 4);
   let tabX = px + 8;
   for (const t of tabs) {
     const isAct = editorTab === t.id;
-    drawNESButton(tabX, py + 26, t.w, 20, t.label, isAct, false);
+    drawNESButton(tabX, py + 26, tabW, 20, t.label, isAct, false);
     const tabId = t.id;
-    registerClickableRegion(tabX, py + 26, t.w, 20, () => {
+    registerClickableRegion(tabX, py + 26, tabW, 20, () => {
       editorTab = tabId;
       editorPage = 0;
     });
-    tabX += t.w + 4;
+    tabX += tabW + 4;
   }
 
   const contentY = py + 52;
@@ -3716,10 +3881,11 @@ function renderCreatureEventLogPanel() {
 // ---------------------------------------------------------------------------
 
 function renderGeneratorModal() {
-  const mx = 30;
-  const my = 36;
-  const mw = CANVAS_WIDTH - 60;
-  const mh = CANVAS_HEIGHT - 72;
+  const isMobile = CANVAS_WIDTH <= 680;
+  const mx = isMobile ? 6 : 30;
+  const my = isMobile ? 36 : 36;
+  const mw = isMobile ? CANVAS_WIDTH - 12 : CANVAS_WIDTH - 60;
+  const mh = isMobile ? CANVAS_HEIGHT - 44 : CANVAS_HEIGHT - 72;
 
   ctx.save();
   ctx.fillStyle = "rgba(0, 0, 0, 0.94)";
@@ -4071,7 +4237,10 @@ canvas.addEventListener("touchstart", (e) => {
     lastTouchClientY = t.clientY;
     touchScrollAccumulator = 0;
 
-    if (renderer) {
+    if (is3DMode && rctRenderer) {
+      dragCameraStartX = rctRenderer.camX;
+      dragCameraStartY = rctRenderer.camY;
+    } else if (renderer) {
       dragCameraStartX = renderer.getCameraX();
       dragCameraStartY = renderer.getCameraY();
     }
@@ -4145,21 +4314,33 @@ canvas.addEventListener("touchmove", (e) => {
       return;
     }
 
-    // Single-finger camera pan
-    if (touchMoved && renderer && !isPainting && currentMode === "MAP") {
-      const zoom = renderer.getCameraZoom();
-      const rect = canvas.getBoundingClientRect();
-      const pixelScale = rect.width / CANVAS_WIDTH;
-      const tileSizeScreen = 16.0 * zoom * pixelScale;
+    // Single-finger camera pan (Supports 2D and 3D)
+    if (touchMoved && !isPainting && currentMode === "MAP") {
+      if (is3DMode && rctRenderer) {
+        const zoom = rctRenderer.zoom;
+        const rect = canvas.getBoundingClientRect();
+        const pixelScale = rect.width / CANVAS_WIDTH;
+        const baseSpeed = 0.045 / (zoom * pixelScale);
+        const scrDx = t.clientX - dragStartClientX;
+        const scrDy = t.clientY - dragStartClientY;
+        const worldDx = (scrDx - scrDy) * baseSpeed;
+        const worldDy = (scrDx + scrDy) * baseSpeed;
+        rctRenderer.setCamera(dragCameraStartX - worldDx, dragCameraStartY - worldDy, zoom);
+      } else if (renderer) {
+        const zoom = renderer.getCameraZoom();
+        const rect = canvas.getBoundingClientRect();
+        const pixelScale = rect.width / CANVAS_WIDTH;
+        const tileSizeScreen = 16.0 * zoom * pixelScale;
 
-      if (tileSizeScreen > 0.2) {
-        const dx = (t.clientX - dragStartClientX) / tileSizeScreen;
-        const dy = (t.clientY - dragStartClientY) / tileSizeScreen;
-        renderer.setCamera(dragCameraStartX - dx, dragCameraStartY - dy, zoom);
+        if (tileSizeScreen > 0.2) {
+          const dx = (t.clientX - dragStartClientX) / tileSizeScreen;
+          const dy = (t.clientY - dragStartClientY) / tileSizeScreen;
+          renderer.setCamera(dragCameraStartX - dx, dragCameraStartY - dy, zoom);
+        }
       }
     }
-  } else if (e.touches.length === 2 && touchPinchDist && renderer) {
-    // 2-Finger Pinch Zooming
+  } else if (e.touches.length === 2 && touchPinchDist) {
+    // 2-Finger Pinch Zooming (Supports 2D and 3D)
     touchMoved = true;
     const t1 = e.touches[0];
     const t2 = e.touches[1];
@@ -4167,9 +4348,15 @@ canvas.addEventListener("touchmove", (e) => {
     const factor = newDist / touchPinchDist;
 
     if (Math.abs(factor - 1.0) > 0.01) {
-      let curZoom = renderer.getCameraZoom();
-      curZoom = Math.max(0.15, Math.min(8.0, curZoom * factor));
-      renderer.setCamera(renderer.getCameraX(), renderer.getCameraY(), curZoom);
+      if (is3DMode && rctRenderer) {
+        let curZoom = rctRenderer.zoom;
+        curZoom = Math.max(0.25, Math.min(6.0, curZoom * factor));
+        rctRenderer.setCamera(rctRenderer.camX, rctRenderer.camY, curZoom);
+      } else if (renderer) {
+        let curZoom = renderer.getCameraZoom();
+        curZoom = Math.max(0.15, Math.min(8.0, curZoom * factor));
+        renderer.setCamera(renderer.getCameraX(), renderer.getCameraY(), curZoom);
+      }
       touchPinchDist = newDist;
     }
   }
@@ -4194,9 +4381,14 @@ canvas.addEventListener("touchend", (e) => {
         }
       }
 
-      // 2. Check Map Selection
-      if (!clickedUi && renderer && currentMode === "MAP" && coords.inside && coords.y > 32 && coords.y < CANVAS_HEIGHT - 36) {
-        const foundId = renderer.selectAt(coords.x, coords.y, entities);
+      // 2. Check Map Selection (2D & 3D)
+      if (!clickedUi && currentMode === "MAP" && coords.inside && coords.y > 32 && coords.y < CANVAS_HEIGHT - 36) {
+        let foundId = -1;
+        if (is3DMode && rctRenderer) {
+          foundId = rctRenderer.selectAt(touchStartX, touchStartY, entities, world);
+        } else if (renderer) {
+          foundId = renderer.selectAt(coords.x, coords.y, entities);
+        }
         lastSelectedId = foundId;
       }
     }
@@ -4210,7 +4402,10 @@ canvas.addEventListener("touchend", (e) => {
     const t = e.touches[0];
     dragStartClientX = t.clientX;
     dragStartClientY = t.clientY;
-    if (renderer) {
+    if (is3DMode && rctRenderer) {
+      dragCameraStartX = rctRenderer.camX;
+      dragCameraStartY = rctRenderer.camY;
+    } else if (renderer) {
       dragCameraStartX = renderer.getCameraX();
       dragCameraStartY = renderer.getCameraY();
     }
