@@ -911,36 +911,7 @@ function createStandingTorchUnlitGeometry() {
   return mergeBufferGeometries(parts);
 }
 
-// Stone Firepit (Chunky Stone Brick Ring with Wood Fuel inside)
-function createStoneCampfireGeometry() {
-  const parts = [];
 
-  // 1. Outer Stone Cobblestone Ring (8 Flat-Topped Rectangular Stone Bricks)
-  for (let i = 0; i < 8; i++) {
-    const angle = (i / 8) * Math.PI * 2;
-    const sx = Math.cos(angle) * 0.34;
-    const sz = Math.sin(angle) * 0.34;
-    const stone = new THREE.BoxGeometry(0.18, 0.12, 0.10);
-    stone.rotateY(angle + Math.PI / 2);
-    stone.translate(sx, 0.06, sz);
-    parts.push(stone);
-  }
-
-  // 2. Central Crossed Wood Fuel Logs inside the pit
-  const log1 = new THREE.CylinderGeometry(0.04, 0.04, 0.46, 6);
-  log1.rotateZ(Math.PI / 2);
-  log1.rotateY(0.4);
-  log1.translate(0, 0.05, 0);
-  parts.push(log1);
-
-  const log2 = new THREE.CylinderGeometry(0.04, 0.04, 0.46, 6);
-  log2.rotateZ(Math.PI / 2);
-  log2.rotateY(-0.4);
-  log2.translate(0, 0.09, 0);
-  parts.push(log2);
-
-  return mergeBufferGeometries(parts);
-}
 
 // Wood Campfire (Cross-Stacked Wood Logs)
 function createWoodCampfireGeometry() {
@@ -1081,7 +1052,7 @@ export class RCT3DRenderer {
 
     // Dynamic Night Point Light Pool (Placed strictly at intelligent creatures, houses, and walls)
     this.maxNightLights = 28;
-    this.maxShadowPointLights = 16;
+    this.maxShadowPointLights = 4;
     this.nightLightPool = [];
     for (let i = 0; i < this.maxNightLights; i++) {
       const pl = new THREE.PointLight(0xffaa44, 0, 12, 1.8);
@@ -1257,6 +1228,11 @@ export class RCT3DRenderer {
       }),
       campfireFlame: new THREE.MeshBasicMaterial({
         color: 0xff8800
+      }),
+      road: new THREE.MeshLambertMaterial({
+        map: createTintedTexture("Feature_Stone_B.png", 0xc8bcac, 0x5a5044, 1.0),
+        dithering: true,
+        side: THREE.DoubleSide
       })
     };
 
@@ -1460,12 +1436,7 @@ export class RCT3DRenderer {
     this.instTorchesUnlit.castShadow = true;
     this.instTorchesUnlit.receiveShadow = true;
 
-    // 3D Campfires (Stone Firepit, Wood Campfire, Flames)
-    const stoneCampfireGeo = createStoneCampfireGeometry();
-    this.instStoneCampfires = new THREE.InstancedMesh(stoneCampfireGeo, this.materials.stoneWall, 600);
-    this.instStoneCampfires.castShadow = true;
-    this.instStoneCampfires.receiveShadow = true;
-
+    // 3D Wood Campfires & Flames
     const woodCampfireGeo = createWoodCampfireGeometry();
     this.instWoodCampfires = new THREE.InstancedMesh(woodCampfireGeo, this.materials.woodWall, 600);
     this.instWoodCampfires.castShadow = true;
@@ -1473,6 +1444,12 @@ export class RCT3DRenderer {
 
     const campfireFlameGeo = createCampfireFlameGeometry();
     this.instCampfireFlames = new THREE.InstancedMesh(campfireFlameGeo, this.materials.campfireFlame, 600);
+
+    // 3D Roads (Paved Flat Gravel / Cobblestone Path Slabs)
+    const roadGeo = new THREE.BoxGeometry(0.96, 0.04, 0.96);
+    roadGeo.translate(0, 0.02, 0);
+    this.instRoads = new THREE.InstancedMesh(roadGeo, this.materials.road, 1600);
+    this.instRoads.receiveShadow = true;
 
     // Disable Frustum Culling on Instanced Meshes (Manual Viewport Spatial Grid Culling is active)
     this.instOakTrunks.frustumCulled = false;
@@ -1506,9 +1483,9 @@ export class RCT3DRenderer {
     this.instStoneItems.frustumCulled = false;
     this.instTorches.frustumCulled = false;
     this.instTorchesUnlit.frustumCulled = false;
-    this.instStoneCampfires.frustumCulled = false;
     this.instWoodCampfires.frustumCulled = false;
     this.instCampfireFlames.frustumCulled = false;
+    this.instRoads.frustumCulled = false;
 
     this.instancedGroup = new THREE.Group();
     this.instancedGroup.add(
@@ -1526,7 +1503,8 @@ export class RCT3DRenderer {
       this.instGrassTufts,
       this.instWoodLogs, this.instStoneItems,
       this.instTorches, this.instTorchesUnlit,
-      this.instStoneCampfires, this.instWoodCampfires, this.instCampfireFlames
+      this.instWoodCampfires, this.instCampfireFlames,
+      this.instRoads
     );
     this.scene.add(this.instancedGroup);
 
@@ -2811,9 +2789,9 @@ export class RCT3DRenderer {
     let stage3Count = 0;
     let torchCount = 0;
     let torchUnlitCount = 0;
-    let stoneCampfireCount = 0;
     let woodCampfireCount = 0;
     let campfireFlameCount = 0;
+    let roadCount = 0;
 
     const mMatrix = new THREE.Matrix4();
     const scaleMatrix = new THREE.Matrix4();
@@ -2850,21 +2828,22 @@ export class RCT3DRenderer {
       }
 
       const r = e.properties.render;
-      const isCampfire = !e.properties.life && (!!e.properties.campfire || e.properties.name?.includes("Campfire") || e.properties.name?.includes("Fogueira"));
-      const isTorch = !e.properties.life && !isCampfire && (!!e.properties.torch || e.properties.name?.includes("Torch") || e.properties.name?.includes("Tocha"));
-      const isWarehouse = !e.properties.life && (!!e.properties.warehouse || e.properties.name?.includes("Armazém"));
-      const isDoor = !e.properties.life && !isWarehouse && !isTorch && !isCampfire && !!e.properties.door;
-      const isHouse = !e.properties.life && !isWarehouse && !isTorch && !isCampfire && (!!e.properties.house || r.skin === "Overworld_House.png" || e.properties.name?.includes("Casa") || e.properties.name?.includes("Ossuário") || e.properties.name?.includes("Castelo") || e.properties.name?.includes("Cabana"));
-      const isWall = !e.properties.life && !isDoor && !isHouse && !isWarehouse && !isTorch && !isCampfire && (e.properties.structure || r.skin?.startsWith("Wall_") || e.properties.name?.includes("Muralha") || e.properties.name?.includes("Paliçada") || e.properties.name?.includes("Muro") || e.properties.name?.includes("Wall"));
+      const isRoad = !e.properties.life && (!!e.properties.road || e.properties.name?.includes("Estrada") || e.properties.name?.includes("Rua"));
+      const isCampfire = !e.properties.life && !isRoad && (!!e.properties.campfire || e.properties.name?.includes("Campfire") || e.properties.name?.includes("Fogueira"));
+      const isTorch = !e.properties.life && !isRoad && !isCampfire && (!!e.properties.torch || e.properties.name?.includes("Torch") || e.properties.name?.includes("Tocha"));
+      const isWarehouse = !e.properties.life && !isRoad && (!!e.properties.warehouse || e.properties.name?.includes("Armazém"));
+      const isDoor = !e.properties.life && !isWarehouse && !isTorch && !isCampfire && !isRoad && !!e.properties.door;
+      const isHouse = !e.properties.life && !isWarehouse && !isTorch && !isCampfire && !isRoad && (!!e.properties.house || r.skin === "Overworld_House.png" || e.properties.name?.includes("Casa") || e.properties.name?.includes("Ossuário") || e.properties.name?.includes("Castelo") || e.properties.name?.includes("Cabana"));
+      const isWall = !e.properties.life && !isDoor && !isHouse && !isWarehouse && !isTorch && !isCampfire && !isRoad && (e.properties.structure || r.skin?.startsWith("Wall_") || e.properties.name?.includes("Muralha") || e.properties.name?.includes("Paliçada") || e.properties.name?.includes("Muro") || e.properties.name?.includes("Wall"));
       const isCactus = e.properties.species === "cactus" || e.properties.name?.toLowerCase().includes("cactus") || e.properties.name?.toLowerCase().includes("cacto");
       const isTree = !isCactus && (e.properties.species === "oak" || e.properties.species === "pine" || e.properties.species === "willow" || e.properties.species === "tree" || !!e.properties.tree || (r.skin && r.skin.toLowerCase().includes("tree")));
       const isPine = isTree && (e.properties.species === "pine" || (r.skin && r.skin.toLowerCase().includes("pine")));
 
-      const isWoodLog = !e.properties.life && (e.properties.resourceType === "wood" || e.properties.name?.includes("Wood Log") || e.properties.name?.includes("Madeira") || r.skin === "Item_Wood.png") && !isHouse && !isWall && !isDoor && !isTree && !isWarehouse && !isTorch && !isCampfire;
-      const isStoneItem = !e.properties.life && (e.properties.resourceType === "stone" || e.properties.name?.includes("Stone Block") || e.properties.name?.includes("Pedra")) && !isHouse && !isWall && !isDoor && !isWarehouse && !isTorch && !isCampfire;
-      const isItem = !e.properties.life && !isTorch && !isCampfire && (!!e.properties.edible || !!e.properties.resourceType || !!e.properties.germination || e.properties.species === "item");
+      const isWoodLog = !e.properties.life && (e.properties.resourceType === "wood" || e.properties.name?.includes("Wood Log") || e.properties.name?.includes("Madeira") || r.skin === "Item_Wood.png") && !isHouse && !isWall && !isDoor && !isTree && !isWarehouse && !isTorch && !isCampfire && !isRoad;
+      const isStoneItem = !e.properties.life && (e.properties.resourceType === "stone" || e.properties.name?.includes("Stone Block") || e.properties.name?.includes("Pedra")) && !isHouse && !isWall && !isDoor && !isWarehouse && !isTorch && !isCampfire && !isRoad;
+      const isItem = !e.properties.life && !isTorch && !isCampfire && !isRoad && (!!e.properties.edible || !!e.properties.resourceType || !!e.properties.germination || e.properties.species === "item");
 
-      const isPlantOrItem = isTree || isCactus || isWoodLog || isStoneItem || isTorch || isCampfire;
+      const isPlantOrItem = isTree || isCactus || isWoodLog || isStoneItem || isTorch || isCampfire || isRoad;
       const isBuilding = isHouse || isWall || isDoor || isWarehouse;
       const surfaceH = isBuilding
         ? this.getTileSurfaceHeight(map, Math.floor(e.x), Math.floor(e.y))
@@ -2921,20 +2900,25 @@ export class RCT3DRenderer {
           this.instTorchesUnlit.setMatrixAt(torchUnlitCount++, mMatrix);
         }
       }
-      // --- 3D CAMPFIRES (Stone Firepit / Wood Campfire + Dynamic Flame) ---
+      // --- 3D WOOD CAMPFIRE (Cross-Stacked Wood Logs + Dynamic Flame) ---
       else if (isCampfire) {
-        const isStone = e.properties?.campfire?.style === "stone";
-        const isLit = e.properties?.campfire?.isLit !== false && (e.properties?.campfire?.fuel || 0) > 0;
+        const curHour = world?.clock ? (world.clock.hour + (world.clock.minute || 0) / 60) : 12;
+        const isNight = (curHour >= 17.5 || curHour < 5.8);
+        const isLit = isNight && e.properties?.campfire?.isLit && (e.properties?.campfire?.fuel || 0) > 0;
         mMatrix.identity();
         mMatrix.setPosition(e.x + 0.5, surfaceH, e.y + 0.5);
-        if (isStone && stoneCampfireCount < 600) {
-          this.instStoneCampfires.setMatrixAt(stoneCampfireCount++, mMatrix);
-        } else if (!isStone && woodCampfireCount < 600) {
+        if (woodCampfireCount < 600) {
           this.instWoodCampfires.setMatrixAt(woodCampfireCount++, mMatrix);
         }
         if (isLit && campfireFlameCount < 600) {
           this.instCampfireFlames.setMatrixAt(campfireFlameCount++, mMatrix);
         }
+      }
+      // --- 3D PAVED ROADS & STREETS (Flat Ground Slabs) ---
+      else if (isRoad && roadCount < 1600) {
+        mMatrix.identity();
+        mMatrix.setPosition(e.x + 0.5, surfaceH, e.y + 0.5);
+        this.instRoads.setMatrixAt(roadCount++, mMatrix);
       }
       // --- 3D WALLS (Stone, Wood, Mixed & Slope/Ramp Adaptive) ---
       else if (isWall) {
@@ -3348,9 +3332,9 @@ export class RCT3DRenderer {
           continue;
         }
 
-        // 2. Campfires (Stone & Wood) (Only when lit with fuel)
+        // 2. Wood Campfire (Only when lit with fuel at night - illuminates a full 1 zone radius)
         const isCampfire = !!e.properties?.campfire;
-        if (isCampfire && e.properties?.campfire?.isLit !== false && (e.properties?.campfire?.fuel || 0) > 0) {
+        if (isCampfire && e.properties?.campfire?.isLit && (e.properties?.campfire?.fuel || 0) > 0) {
           const sH = this.getSurfaceElevation(map, e.x + 0.5, e.y + 0.5);
           const dx = (e.x + 0.5) - focusX;
           const dy = (e.y + 0.5) - focusY;
@@ -3359,9 +3343,9 @@ export class RCT3DRenderer {
             y: sH + 0.40,
             z: e.y + 0.5,
             color: 0xff8822,
-            distance: 17.0,
-            decay: 1.3,
-            intensity: nightGlow * 3.8,
+            distance: 20.0, // 1 Zone Radius (8x8 tiles)
+            decay: 1.2,
+            intensity: nightGlow * 4.6,
             priority: 1, // Top priority for campfires
             distSq: dx * dx + dy * dy
           });
@@ -3521,12 +3505,13 @@ export class RCT3DRenderer {
     this.instTorchesUnlit.count = torchUnlitCount;
     this.instTorchesUnlit.instanceMatrix.needsUpdate = true;
 
-    this.instStoneCampfires.count = stoneCampfireCount;
-    this.instStoneCampfires.instanceMatrix.needsUpdate = true;
     this.instWoodCampfires.count = woodCampfireCount;
     this.instWoodCampfires.instanceMatrix.needsUpdate = true;
     this.instCampfireFlames.count = campfireFlameCount;
     this.instCampfireFlames.instanceMatrix.needsUpdate = true;
+
+    this.instRoads.count = roadCount;
+    this.instRoads.instanceMatrix.needsUpdate = true;
 
     // Clean inactive dynamic billboards
     for (const [id, spr] of this.entitySprites.entries()) {
