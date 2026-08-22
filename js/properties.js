@@ -599,39 +599,39 @@ export function createDoorEntity(x, y, ownerIds = []) {
 }
 
 export function createHouseEntity(x, y, ownerId = null, ownerName = null, style = "mixed", boneOwnerName = null) {
-  let condition = 3500;
-  let defense = 65;
-  let woodCost = 3;
-  let stoneCost = 2;
+  let condition = 5500;
+  let defense = 75;
+  let woodCost = 6;
+  let stoneCost = 6;
   let boneCost = 0;
   let color = 0xffe8d8c8;
   let backcolor = 0xff402818;
   let houseTypeLabel = "Casa";
 
   if (style === "wood") {
-    condition = 2000;
-    defense = 40;
-    woodCost = 4;
+    condition = 3200;
+    defense = 45;
+    woodCost = 8;
     stoneCost = 0;
     boneCost = 0;
     color = 0xffd4a373;
     backcolor = 0xff3b271a;
     houseTypeLabel = "Cabana de Madeira";
   } else if (style === "stone") {
-    condition = 5500;
-    defense = 85;
+    condition = 8500;
+    defense = 95;
     woodCost = 0;
-    stoneCost = 5;
+    stoneCost = 12;
     boneCost = 0;
     color = 0xffcbd5e1;
     backcolor = 0xff1e293b;
     houseTypeLabel = "Castelo de Pedra";
   } else if (style === "bone") {
-    condition = 3000;
-    defense = 60;
+    condition = 4200;
+    defense = 65;
     woodCost = 0;
     stoneCost = 0;
-    boneCost = 4;
+    boneCost = 8;
     color = 0xfff4f1e8;
     backcolor = 0xff2d2a24;
     houseTypeLabel = boneOwnerName ? `Ossuário dos Restos de ${boneOwnerName}` : "Ossuário de Ossos";
@@ -655,11 +655,11 @@ export function createHouseEntity(x, y, ownerId = null, ownerName = null, style 
       woodCost: woodCost,
       stoneCost: stoneCost,
       boneCost: boneCost,
-      woodCurrent: woodCost,
-      stoneCurrent: stoneCost,
-      boneCurrent: boneCost,
-      isCompleted: true,
-      foodStorage: [] // Stored home food reserves (up to 4 foods)
+      woodCurrent: 0,
+      stoneCurrent: 0,
+      boneCurrent: 0,
+      isCompleted: false,
+      foodStorage: [] // Stored home food reserves (up to 6 foods)
     },
     blocking: true,
     render: {
@@ -684,13 +684,13 @@ export function createWarehouseEntity(x, y, group = null) {
         groupId: group?.id || null,
         groupName: gName,
         items: [],
-        woodCost: 4,
-        stoneCost: 4,
-        woodCurrent: 4,
-        stoneCurrent: 4,
-        isCompleted: true
+        woodCost: 8,
+        stoneCost: 8,
+        woodCurrent: 0,
+        stoneCurrent: 0,
+        isCompleted: false
       },
-      structure: { condition: 8000, maxCondition: 8000, defense: 95 },
+      structure: { condition: 12000, maxCondition: 12000, defense: 100 },
       render: { skin: "Feature_Wood.png", color: 0xffd4a373, backcolor: 0xff3b271a },
       blocking: true
     },
@@ -4230,9 +4230,11 @@ export function createGroupMemberProp() {
             return;
           }
 
-          // C. Just-In-Time Tree Chopping (Conscious Logging: ONLY if wood is actively needed!)
+          // C. Just-In-Time Tree Chopping (Conscious Logging: ONLY wild trees or when village orchard is safe!)
           if (shouldFellTrees) {
-            const nearbyTree = getEntitiesInRadius(ent.x, ent.y, 1).find(e => !e.destroyed && (e.properties.photosynthesis || e.properties.deep_root || e.properties.species === "oak" || e.properties.species === "willow" || e.properties.species === "pine" || e.properties.species === "tree"));
+            const territoryTrees = getEntitiesInRadius(ent.x, ent.y, 35).filter(e => !e.destroyed && isTileInClaimedZones(e.x, e.y, group.claimedZones) && (e.properties.photosynthesis || e.properties.deep_root || e.properties.species === "oak" || e.properties.species === "willow" || e.properties.species === "pine" || e.properties.species === "tree"));
+            const nearbyTree = getEntitiesInRadius(ent.x, ent.y, 1).find(e => !e.destroyed && (e.properties.photosynthesis || e.properties.deep_root || e.properties.species === "oak" || e.properties.species === "willow" || e.properties.species === "pine" || e.properties.species === "tree") && (!isTileInClaimedZones(e.x, e.y, group.claimedZones) || territoryTrees.length > 5));
+
             if (nearbyTree && this.actionTimer >= 1.0) {
               this.actionTimer = 0;
               const treeSpecies = nearbyTree.properties.species || "oak";
@@ -4243,10 +4245,22 @@ export function createGroupMemberProp() {
               // Pick up 1 wood log directly
               freeArm.heldItem = { name: "Wood Log", resourceType: "wood", weight: 1 };
 
-              // Drop 1 extra loose wood log
+              // Drop 1 extra loose wood log and 1 fertile seed for replanting
               if (entities) {
                 const extraLog = createWoodItem(treeX, treeY);
                 entities.push(extraLog);
+
+                const seedEntity = createEntity(
+                  {
+                    name: `Seed (${treeSpecies})`,
+                    resourceType: "seed",
+                    render: { skin: "Item_Egg.png", color: 0xffa0783c, backcolor: 0x00000000 },
+                    germination: createSeedGerminationProp(treeSpecies, 8.0, 0.15)
+                  },
+                  treeX,
+                  treeY
+                );
+                entities.push(seedEntity);
               }
               return;
             }
@@ -5886,12 +5900,14 @@ export function createLocomotionProp() {
                 const shouldFellTrees = needsWood || storedWood < 4;
 
                 if (shouldFellTrees) {
-                  // Look for trees, prioritizing territory trees first!
-                  const trees = getEntitiesInRadius(ent.x, ent.y, 35).filter(e => !e.destroyed && (e.properties.photosynthesis || e.properties.deep_root || e.properties.species === "oak" || e.properties.species === "willow" || e.properties.species === "pine" || e.properties.species === "tree"));
+                  // Look for trees, prioritizing wild trees outside claimed territory to preserve settlement orchards!
+                  const trees = getEntitiesInRadius(ent.x, ent.y, 45).filter(e => !e.destroyed && (e.properties.photosynthesis || e.properties.deep_root || e.properties.species === "oak" || e.properties.species === "willow" || e.properties.species === "pine" || e.properties.species === "tree"));
+                  const territoryTreesCount = trees.filter(t => isTileInClaimedZones(t.x, t.y, group.claimedZones)).length;
                   
-                  let nearbyTree = trees.find(t => isTileInClaimedZones(t.x, t.y, group.claimedZones));
-                  if (!nearbyTree && trees.length > 0) {
-                    nearbyTree = trees[0];
+                  // Prioritize wild trees outside territory to preserve domestic food trees
+                  let nearbyTree = trees.find(t => !isTileInClaimedZones(t.x, t.y, group.claimedZones));
+                  if (!nearbyTree && territoryTreesCount > 5) {
+                    nearbyTree = trees.find(t => isTileInClaimedZones(t.x, t.y, group.claimedZones));
                   }
 
                   if (nearbyTree) {
