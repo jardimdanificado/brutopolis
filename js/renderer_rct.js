@@ -522,6 +522,120 @@ function createWoodCabinRoofGeometry() {
   return mergeBufferGeometries(parts);
 }
 
+// -----------------------------------------------------------------------------
+// Large Central Stockpile Warehouse & Bone Ossuary Geometries
+// -----------------------------------------------------------------------------
+
+// Large Central Clan Stockpile / Warehouse Geometry (Grand Galpão Comunal)
+function createWarehouseGeometry() {
+  const parts = [];
+  // Main wide building body
+  const body = new THREE.BoxGeometry(1.82, 1.30, 1.82);
+  body.translate(0, 0.65, 0);
+  parts.push(body);
+
+  // Broad Overhanging Timber Barn Roof
+  const roof = createPitchedRoofGeometry(2.04, 2.04, 0.88);
+  roof.translate(0, 1.30, 0);
+  parts.push(roof);
+
+  // Front Porch Awning & Beams
+  const awning = new THREE.BoxGeometry(1.90, 0.12, 0.40);
+  awning.translate(0, 1.30, 1.00);
+  parts.push(awning);
+
+  const post1 = new THREE.CylinderGeometry(0.08, 0.08, 1.30, 6);
+  post1.translate(-0.85, 0.65, 1.05);
+  parts.push(post1);
+
+  const post2 = new THREE.CylinderGeometry(0.08, 0.08, 1.30, 6);
+  post2.translate(0.85, 0.65, 1.05);
+  parts.push(post2);
+
+  // Side stacked crates & barrel detail
+  const crate1 = new THREE.BoxGeometry(0.35, 0.35, 0.35);
+  crate1.translate(-1.02, 0.175, 0.20);
+  parts.push(crate1);
+
+  const crate2 = new THREE.BoxGeometry(0.30, 0.30, 0.30);
+  crate2.translate(-1.02, 0.45, 0.20);
+  parts.push(crate2);
+
+  // Flagpole on roof apex
+  const mast = new THREE.CylinderGeometry(0.05, 0.05, 0.85, 5);
+  mast.translate(0, 1.30 + 0.88 + 0.40, 0);
+  parts.push(mast);
+
+  return mergeBufferGeometries(parts);
+}
+
+// Bone Ossuary House Walls Geometry (Bone Pillars & Skull Corners)
+function createBoneHouseWallGeometry() {
+  const parts = [];
+  const body = new THREE.BoxGeometry(1.50, 1.15, 1.50);
+  body.translate(0, 0.575, 0);
+  parts.push(body);
+
+  // 4 Corner Skull & Bone Pillars
+  const pillarGeo = new THREE.CylinderGeometry(0.12, 0.14, 1.35, 6);
+  const p1 = pillarGeo.clone(); p1.translate(-0.70, 0.675, -0.70); parts.push(p1);
+  const p2 = pillarGeo.clone(); p2.translate( 0.70, 0.675, -0.70); parts.push(p2);
+  const p3 = pillarGeo.clone(); p3.translate(-0.70, 0.675,  0.70); parts.push(p3);
+  const p4 = pillarGeo.clone(); p4.translate( 0.70, 0.675,  0.70); parts.push(p4);
+
+  // Skull corner finials
+  const skullGeo = new THREE.SphereGeometry(0.14, 6, 6);
+  const sk1 = skullGeo.clone(); sk1.translate(-0.70, 1.42, -0.70); parts.push(sk1);
+  const sk2 = skullGeo.clone(); sk2.translate( 0.70, 1.42, -0.70); parts.push(sk2);
+  const sk3 = skullGeo.clone(); sk3.translate(-0.70, 1.42,  0.70); parts.push(sk3);
+  const sk4 = skullGeo.clone(); sk4.translate( 0.70, 1.42,  0.70); parts.push(sk4);
+
+  return mergeBufferGeometries(parts);
+}
+
+// Bone Ossuary House Roof Geometry (Rib Dome & Skull Pinnacle)
+function createBoneHouseRoofGeometry() {
+  const parts = [];
+  // Rib dome roof
+  const dome = createPitchedRoofGeometry(1.68, 1.68, 0.75);
+  dome.translate(0, 1.15, 0);
+  parts.push(dome);
+
+  // Central Top Skull Totem
+  const topSkull = new THREE.SphereGeometry(0.18, 6, 6);
+  topSkull.translate(0, 1.15 + 0.75 + 0.15, 0);
+  parts.push(topSkull);
+
+  const mast = new THREE.CylinderGeometry(0.04, 0.04, 0.60, 5);
+  mast.translate(0, 1.15 + 0.75 + 0.45, 0);
+  parts.push(mast);
+
+  return mergeBufferGeometries(parts);
+}
+
+// Bone Wall Geometry (Rib Cage Palisade with Impaled Skulls)
+function createBoneWallGeometry() {
+  const parts = [];
+  const skirt = new THREE.BoxGeometry(1.02, 0.50, 0.40);
+  skirt.translate(0, -0.12, 0);
+  parts.push(skirt);
+
+  // Vertical Bone Posts
+  for (let i = -1.5; i <= 1.5; i += 1.0) {
+    const bone = new THREE.CylinderGeometry(0.10, 0.11, 1.10, 6);
+    bone.translate(i * 0.25, 0.55, 0);
+    parts.push(bone);
+
+    // Skulls on top of center posts
+    if (Math.abs(i) < 1.0) {
+      const skull = new THREE.SphereGeometry(0.13, 6, 6);
+      skull.translate(i * 0.25, 1.10 + 0.10, 0);
+      parts.push(skull);
+    }
+  }
+  return mergeBufferGeometries(parts);
+}
+
 // Fortified Stone Wall Geometry (Slope-Adaptive Base Skirt + Crenellated Battlements)
 function createStoneWallGeometry() {
   const parts = [];
@@ -922,6 +1036,22 @@ export class RCT3DRenderer {
       gateBlueprint: new THREE.MeshLambertMaterial({
         map: createTintedTexture("Feature_Wood.png", 0xc89858, 0x482c18, 1.0),
         side: THREE.DoubleSide
+      }),
+      warehouse: new THREE.MeshLambertMaterial({
+        map: createTintedTexture("Feature_Wood.png", 0xc89858, 0x482c18, 1.0),
+        side: THREE.DoubleSide
+      }),
+      boneHouseWall: new THREE.MeshLambertMaterial({
+        map: createTintedTexture("Feature_Stone_B.png", 0xf5f3ea, 0x5a554a, 1.0),
+        side: THREE.DoubleSide
+      }),
+      boneHouseRoof: new THREE.MeshLambertMaterial({
+        map: createTintedTexture("Feature_Stone_B.png", 0xe6e2d3, 0x3d3830, 1.0),
+        side: THREE.DoubleSide
+      }),
+      boneWall: new THREE.MeshLambertMaterial({
+        map: createTintedTexture("Feature_Stone_B.png", 0xf5f3ea, 0x5a554a, 1.0),
+        side: THREE.DoubleSide
       })
     };
 
@@ -1047,6 +1177,29 @@ export class RCT3DRenderer {
     this.instStoneHouseRoofs.castShadow = true;
     this.instStoneHouseRoofs.receiveShadow = true;
 
+    // Bone Ossuary Houses (Pillars & Skull Roof)
+    const boneHouseWallGeo = createBoneHouseWallGeometry();
+    this.instBoneHouseWalls = new THREE.InstancedMesh(boneHouseWallGeo, this.materials.boneHouseWall, 400);
+    this.instBoneHouseWalls.castShadow = true;
+    this.instBoneHouseWalls.receiveShadow = true;
+
+    const boneHouseRoofGeo = createBoneHouseRoofGeometry();
+    this.instBoneHouseRoofs = new THREE.InstancedMesh(boneHouseRoofGeo, this.materials.boneHouseRoof, 400);
+    this.instBoneHouseRoofs.castShadow = true;
+    this.instBoneHouseRoofs.receiveShadow = true;
+
+    // Bone Wall (Rib Fence + Skulls)
+    const boneWallGeo = createBoneWallGeometry();
+    this.instBoneWalls = new THREE.InstancedMesh(boneWallGeo, this.materials.boneWall, this.maxInstances);
+    this.instBoneWalls.castShadow = true;
+    this.instBoneWalls.receiveShadow = true;
+
+    // Large Clan Stockpile Warehouse
+    const warehouseGeo = createWarehouseGeometry();
+    this.instWarehouses = new THREE.InstancedMesh(warehouseGeo, this.materials.warehouse, 200);
+    this.instWarehouses.castShadow = true;
+    this.instWarehouses.receiveShadow = true;
+
     // Progressive Construction Stages
     // Stage 0: Pegs & String Layout (0 materials)
     const pegsGeo = createHousePegsGeometry();
@@ -1095,16 +1248,20 @@ export class RCT3DRenderer {
     this.instWalls.frustumCulled = false;
     this.instWoodWalls.frustumCulled = false;
     this.instMixedWalls.frustumCulled = false;
+    this.instBoneWalls.frustumCulled = false;
     this.instWallsStage1.frustumCulled = false;
     this.instGatesClosed.frustumCulled = false;
     this.instGatesOpen.frustumCulled = false;
     this.instGatesStage1.frustumCulled = false;
+    this.instWarehouses.frustumCulled = false;
     this.instHouseWalls.frustumCulled = false;
     this.instHouseRoofs.frustumCulled = false;
     this.instWoodHouseWalls.frustumCulled = false;
     this.instWoodHouseRoofs.frustumCulled = false;
     this.instStoneHouseWalls.frustumCulled = false;
     this.instStoneHouseRoofs.frustumCulled = false;
+    this.instBoneHouseWalls.frustumCulled = false;
+    this.instBoneHouseRoofs.frustumCulled = false;
     this.instHousePegs.frustumCulled = false;
     this.instHouseStage1.frustumCulled = false;
     this.instHouseStage2.frustumCulled = false;
@@ -1117,11 +1274,13 @@ export class RCT3DRenderer {
     this.instancedGroup.add(
       this.instOakTrunks, this.instOakLeaves,
       this.instPineTrunks, this.instPineLeaves,
-      this.instCacti, this.instWalls, this.instWoodWalls, this.instMixedWalls, this.instWallsStage1,
+      this.instCacti, this.instWalls, this.instWoodWalls, this.instMixedWalls, this.instBoneWalls, this.instWallsStage1,
       this.instGatesClosed, this.instGatesOpen, this.instGatesStage1,
+      this.instWarehouses,
       this.instHouseWalls, this.instHouseRoofs,
       this.instWoodHouseWalls, this.instWoodHouseRoofs,
       this.instStoneHouseWalls, this.instStoneHouseRoofs,
+      this.instBoneHouseWalls, this.instBoneHouseRoofs,
       this.instHousePegs, this.instHouseStage1,
       this.instHouseStage2, this.instHouseStage3,
       this.instGrassTufts,
@@ -2329,13 +2488,16 @@ export class RCT3DRenderer {
     let wallCount = 0;
     let woodWallCount = 0;
     let mixedWallCount = 0;
+    let boneWallCount = 0;
     let wallStage1Count = 0;
     let gateClosedCount = 0;
     let gateOpenCount = 0;
     let gateStage1Count = 0;
+    let warehouseCount = 0;
     let houseCount = 0;
     let woodHouseCount = 0;
     let stoneHouseCount = 0;
+    let boneHouseCount = 0;
     let pegsCount = 0;
     let stage1Count = 0;
     let stage2Count = 0;
@@ -2376,18 +2538,19 @@ export class RCT3DRenderer {
       }
 
       const r = e.properties.render;
-      const isDoor = !e.properties.life && !!e.properties.door;
-      const isHouse = !e.properties.life && (!!e.properties.house || r.skin === "Overworld_House.png" || e.properties.name?.includes("Casa"));
-      const isWall = !e.properties.life && !isDoor && !isHouse && (e.properties.structure || r.skin?.startsWith("Wall_") || e.properties.name?.includes("Muralha") || e.properties.name?.includes("Paliçada") || e.properties.name?.includes("Muro") || e.properties.name?.includes("Wall"));
+      const isWarehouse = !e.properties.life && (!!e.properties.warehouse || e.properties.name?.includes("Armazém"));
+      const isDoor = !e.properties.life && !isWarehouse && !!e.properties.door;
+      const isHouse = !e.properties.life && !isWarehouse && (!!e.properties.house || r.skin === "Overworld_House.png" || e.properties.name?.includes("Casa") || e.properties.name?.includes("Ossuário") || e.properties.name?.includes("Castelo") || e.properties.name?.includes("Cabana"));
+      const isWall = !e.properties.life && !isDoor && !isHouse && !isWarehouse && (e.properties.structure || r.skin?.startsWith("Wall_") || e.properties.name?.includes("Muralha") || e.properties.name?.includes("Paliçada") || e.properties.name?.includes("Muro") || e.properties.name?.includes("Wall"));
       const isCactus = e.properties.species === "cactus" || e.properties.name?.toLowerCase().includes("cactus") || e.properties.name?.toLowerCase().includes("cacto");
       const isTree = !isCactus && (e.properties.species === "oak" || e.properties.species === "pine" || e.properties.species === "willow" || e.properties.species === "tree" || !!e.properties.tree || (r.skin && r.skin.toLowerCase().includes("tree")));
       const isPine = isTree && (e.properties.species === "pine" || (r.skin && r.skin.toLowerCase().includes("pine")));
 
-      const isWoodLog = !e.properties.life && (e.properties.resourceType === "wood" || e.properties.name?.includes("Wood Log") || e.properties.name?.includes("Madeira") || r.skin === "Item_Wood.png") && !isHouse && !isWall && !isDoor && !isTree;
-      const isStoneItem = !e.properties.life && (e.properties.resourceType === "stone" || e.properties.name?.includes("Stone Block") || e.properties.name?.includes("Pedra")) && !isHouse && !isWall && !isDoor;
+      const isWoodLog = !e.properties.life && (e.properties.resourceType === "wood" || e.properties.name?.includes("Wood Log") || e.properties.name?.includes("Madeira") || r.skin === "Item_Wood.png") && !isHouse && !isWall && !isDoor && !isTree && !isWarehouse;
+      const isStoneItem = !e.properties.life && (e.properties.resourceType === "stone" || e.properties.name?.includes("Stone Block") || e.properties.name?.includes("Pedra")) && !isHouse && !isWall && !isDoor && !isWarehouse;
       const isItem = !e.properties.life && (!!e.properties.edible || !!e.properties.resourceType || !!e.properties.germination || e.properties.species === "item");
 
-      const isStructureOrPlant = isTree || isHouse || isWall || isDoor || isCactus || isWoodLog || isStoneItem;
+      const isStructureOrPlant = isTree || isHouse || isWall || isDoor || isCactus || isWoodLog || isStoneItem || isWarehouse;
       const surfaceH = isStructureOrPlant
         ? this.getTileSurfaceHeight(map, Math.floor(e.x), Math.floor(e.y))
         : this.getSurfaceElevation(map, e.x, e.y);
@@ -2451,7 +2614,9 @@ export class RCT3DRenderer {
 
         const wallStyle = e.wallStyle || e.properties?.wallStyle || "stone";
         if (isCompleted) {
-          if (wallStyle === "wood" && woodWallCount < this.maxInstances) {
+          if (wallStyle === "bone" && boneWallCount < this.maxInstances) {
+            this.instBoneWalls.setMatrixAt(boneWallCount++, mMatrix);
+          } else if (wallStyle === "wood" && woodWallCount < this.maxInstances) {
             this.instWoodWalls.setMatrixAt(woodWallCount++, mMatrix);
           } else if (wallStyle === "mixed" && mixedWallCount < this.maxInstances) {
             this.instMixedWalls.setMatrixAt(mixedWallCount++, mMatrix);
@@ -2460,6 +2625,20 @@ export class RCT3DRenderer {
           }
         } else if (!isCompleted && wallStage1Count < this.maxInstances) {
           this.instWallsStage1.setMatrixAt(wallStage1Count++, mMatrix);
+        }
+      }
+      // --- 3D CENTRAL CLAN WAREHOUSE (Stockpile Building) ---
+      else if (isWarehouse) {
+        occupiedHouseTiles.add(`${Math.floor(e.x)}_${Math.floor(e.y)}`);
+        const isCompleted = e.properties?.warehouse ? (e.properties.warehouse.isCompleted !== false) : true;
+        mMatrix.identity();
+        mMatrix.makeRotationY(0);
+        mMatrix.setPosition(e.x + 0.5, surfaceH, e.y + 0.5);
+
+        if (isCompleted && warehouseCount < 200) {
+          this.instWarehouses.setMatrixAt(warehouseCount++, mMatrix);
+        } else if (!isCompleted && stage2Count < 400) {
+          this.instHouseStage2.setMatrixAt(stage2Count++, mMatrix);
         }
       }
       // --- 3D FORTIFIED GATES (Wood & Iron Archway + Open/Closed States) ---
@@ -2499,8 +2678,8 @@ export class RCT3DRenderer {
         occupiedHouseTiles.add(`${Math.floor(e.x)}_${Math.floor(e.y)}`);
         const h = e.properties.house;
         const isCompleted = h ? (h.isCompleted !== false) : true;
-        const totalCost = (h?.woodCost || 3) + (h?.stoneCost || 2);
-        const curMaterials = (h?.woodCurrent || 0) + (h?.stoneCurrent || 0);
+        const totalCost = (h?.woodCost || 3) + (h?.stoneCost || 2) + (h?.boneCost || 0);
+        const curMaterials = (h?.woodCurrent || 0) + (h?.stoneCurrent || 0) + (h?.boneCurrent || 0);
         const progress = isCompleted ? 1.0 : (curMaterials / Math.max(1, totalCost));
 
         // Deterministic Cardinal Rotation per House (0, 90, 180, 270 deg)
@@ -2515,7 +2694,11 @@ export class RCT3DRenderer {
 
         if (isCompleted) {
           const houseStyle = h?.style || "mixed";
-          if (houseStyle === "wood" && woodHouseCount < 400) {
+          if (houseStyle === "bone" && boneHouseCount < 400) {
+            this.instBoneHouseWalls.setMatrixAt(boneHouseCount, mMatrix);
+            this.instBoneHouseRoofs.setMatrixAt(boneHouseCount, mMatrix);
+            boneHouseCount++;
+          } else if (houseStyle === "wood" && woodHouseCount < 400) {
             this.instWoodHouseWalls.setMatrixAt(woodHouseCount, mMatrix);
             this.instWoodHouseRoofs.setMatrixAt(woodHouseCount, mMatrix);
             woodHouseCount++;
@@ -2855,6 +3038,8 @@ export class RCT3DRenderer {
     this.instWoodWalls.instanceMatrix.needsUpdate = true;
     this.instMixedWalls.count = mixedWallCount;
     this.instMixedWalls.instanceMatrix.needsUpdate = true;
+    this.instBoneWalls.count = boneWallCount;
+    this.instBoneWalls.instanceMatrix.needsUpdate = true;
     this.instWallsStage1.count = wallStage1Count;
     this.instWallsStage1.instanceMatrix.needsUpdate = true;
 
@@ -2864,6 +3049,9 @@ export class RCT3DRenderer {
     this.instGatesOpen.instanceMatrix.needsUpdate = true;
     this.instGatesStage1.count = gateStage1Count;
     this.instGatesStage1.instanceMatrix.needsUpdate = true;
+
+    this.instWarehouses.count = warehouseCount;
+    this.instWarehouses.instanceMatrix.needsUpdate = true;
 
     this.instHouseWalls.count = houseCount;
     this.instHouseWalls.instanceMatrix.needsUpdate = true;
@@ -2879,6 +3067,11 @@ export class RCT3DRenderer {
     this.instStoneHouseWalls.instanceMatrix.needsUpdate = true;
     this.instStoneHouseRoofs.count = stoneHouseCount;
     this.instStoneHouseRoofs.instanceMatrix.needsUpdate = true;
+
+    this.instBoneHouseWalls.count = boneHouseCount;
+    this.instBoneHouseWalls.instanceMatrix.needsUpdate = true;
+    this.instBoneHouseRoofs.count = boneHouseCount;
+    this.instBoneHouseRoofs.instanceMatrix.needsUpdate = true;
 
     this.instHousePegs.count = pegsCount;
     this.instHousePegs.instanceMatrix.needsUpdate = true;

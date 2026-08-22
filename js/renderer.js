@@ -592,12 +592,15 @@ export class Renderer {
           entBg = rgba32(255, 255, 255);
         }
 
-        // Walls, Doors/Gates, Houses and Structures rendering
-        const isDoor = !!e.properties.door;
-        const isHouse = !!e.properties.house || r.skin === "Overworld_House.png";
-        const isWall = !isDoor && !isHouse && (e.properties.structure || r.skin?.startsWith("Wall_") || e.properties.name?.includes("Muralha") || e.properties.name?.includes("Wall"));
+        // Walls, Doors/Gates, Houses, Warehouses and Structures rendering
+        const isWarehouse = !!e.properties.warehouse || e.properties.name?.includes("Armazém");
+        const isDoor = !isWarehouse && !!e.properties.door;
+        const isHouse = !isWarehouse && (!!e.properties.house || r.skin === "Overworld_House.png");
+        const isWall = !isDoor && !isHouse && !isWarehouse && (e.properties.structure || r.skin?.startsWith("Wall_") || e.properties.name?.includes("Muralha") || e.properties.name?.includes("Wall"));
         let entSkin = r.skin || "Human_Knight_M.png";
-        if (isDoor) {
+        if (isWarehouse) {
+          entSkin = "Feature_Wood.png";
+        } else if (isDoor) {
           if (e.isConstructed === false) {
             entSkin = "Feature_Wood.png";
           } else {
@@ -605,13 +608,16 @@ export class Renderer {
           }
         } else if (isHouse) {
           const hStyle = e.properties?.house?.style || "mixed";
-          if (hStyle === "wood") entSkin = "Feature_Wood.png";
+          if (hStyle === "bone") entSkin = "Feature_Stone_B.png";
+          else if (hStyle === "wood") entSkin = "Feature_Wood.png";
           else if (hStyle === "stone") entSkin = "Feature_Brick_A.png";
           else entSkin = "Overworld_House.png";
         } else if (isWall) {
           const wStyle = e.wallStyle || e.properties?.wallStyle || "stone";
           if (e.isConstructed === false) {
             entSkin = "Feature_Brick_A.png";
+          } else if (wStyle === "bone") {
+            entSkin = "Feature_Stone_B.png";
           } else if (wStyle === "wood") {
             entSkin = "Feature_Wood.png";
           } else if (wStyle === "mixed") {

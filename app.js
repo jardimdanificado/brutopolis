@@ -2772,7 +2772,7 @@ function renderGroupsModal() {
             if (renderer) renderer.setCamera(sumX / count, sumY / count, 1.5);
             if (rctRenderer) rctRenderer.setCamera(sumX / count, sumY / count, 1.5);
           }
-          currentMode = "GAME";
+          currentMode = "MAP";
         }
       });
 
@@ -2814,7 +2814,7 @@ function renderGroupsModal() {
             if (renderer) renderer.setCamera(sumX / count, sumY / count, 1.5);
             if (rctRenderer) rctRenderer.setCamera(sumX / count, sumY / count, 1.5);
           }
-          currentMode = "GAME";
+          currentMode = "MAP";
         }
       });
 
@@ -2920,7 +2920,7 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
         if (renderer) renderer.setCamera(sumX / count, sumY / count, 1.5);
         if (rctRenderer) rctRenderer.setCamera(sumX / count, sumY / count, 1.5);
       }
-      currentMode = "GAME";
+      currentMode = "MAP";
     }
   });
 
@@ -4186,12 +4186,17 @@ function frame(time) {
   handleCameraKeys(dt);
   activeUiRegions = [];
 
-  // Automatic Camera Tracking / Follow Mode
-  if (isFollowMode && lastSelectedId > 0 && renderer) {
+  // Automatic Camera Tracking / Follow Mode (2D and 3D)
+  if (isFollowMode && lastSelectedId > 0) {
     const target = getEntityById(lastSelectedId);
     if (target && !target.destroyed) {
-      const curZoom = renderer.getCameraZoom();
-      renderer.setCamera(target.x, target.y, curZoom);
+      if (is3DMode && rctRenderer) {
+        rctRenderer.setCamera(target.x, target.y);
+      }
+      if (renderer) {
+        const curZoom = renderer.getCameraZoom();
+        renderer.setCamera(target.x, target.y, curZoom);
+      }
     } else {
       isFollowMode = false;
     }
