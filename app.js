@@ -118,6 +118,7 @@ import {
   createHumanHunter,
   createHumanExplorer,
   createStoneWallEntity,
+  createWaterWellEntity,
   createFarmerProp,
   createScatologicalProp,
   createEmbarkParty,
@@ -777,6 +778,7 @@ const EDITOR_ITEMS = [
   { label: "WOOD ITEM", fn: (x, y) => createWoodItem(x, y) },
   { label: "STONE ITEM", fn: (x, y) => createStoneItem(x, y) },
   { label: "STONE WALL", fn: (x, y) => createStoneWallEntity(x, y) },
+  { label: "WATER WELL", fn: (x, y) => createWaterWellEntity(x, y) },
   { label: "OAK SEED", fn: (x, y) => createSeedEntity(x, y, "large", "oak") },
   { label: "FRUIT", fn: (x, y) => createFruit(x, y, "large", "oak") }
 ];

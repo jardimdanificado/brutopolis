@@ -206,7 +206,7 @@ export function createFlyingProp(speedBonus = 2.0) {
 /**
  * Life / Basal Metabolic Energy, Age & Biological Lineage
  */
-export function createLifeProp(energy = 8000, max = 8000, basalRate = 0.05, initialAge = 1440.0, fatherId = null, motherId = null) {
+export function createLifeProp(energy = 4000, max = 4000, basalRate = 1.8, initialAge = 1440.0, fatherId = null, motherId = null) {
   return {
     energy,
     max,
@@ -794,6 +794,35 @@ export function createWarehouseEntity(x, y, group = null) {
 }
 
 /**
+ * Water Well Building Entity (Poço de Água da Aldeia)
+ * Village infrastructure that provides fresh drinking water to settlers.
+ */
+export function createWaterWellEntity(x, y, group = null) {
+  const gName = group?.name || "Clã";
+  return createEntity(
+    {
+      name: `Poço de Água de ${gName}`,
+      species: "structure",
+      well: {
+        groupId: group?.id || null,
+        groupName: gName,
+        stoneCost: 4,
+        woodCost: 2,
+        stoneCurrent: 0,
+        woodCurrent: 0,
+        isCompleted: false
+      },
+      isWell: true,
+      structure: { condition: 8000, maxCondition: 8000, defense: 80 },
+      render: { skin: "Feature_Cauldron.png", color: 0xff3cbcfc, backcolor: 0xff284064 },
+      blocking: true
+    },
+    x,
+    y
+  );
+}
+
+/**
  * Road / Paved Street Structure Entity (Estrada e Rua de Aldeia)
  * Increases traversal speed and serves as precomputed waypoint route.
  */
@@ -900,7 +929,7 @@ export function createStomachProp(capacity = 4, diet = { meat: 1.0, plant: 0.8, 
 /**
  * Bladder (Water Storage)
  */
-export function createBladderProp(water = 3000, maxWater = 3000) {
+export function createBladderProp(water = 1000, maxWater = 1000) {
   return {
     water,
     maxWater
@@ -910,7 +939,7 @@ export function createBladderProp(water = 3000, maxWater = 3000) {
 /**
  * Kidney (Water consumption ratio per energy spent)
  */
-export function createKidneyProp(ratio = 0.75) {
+export function createKidneyProp(ratio = 1.0) {
   return {
     ratio,
     condition: 100,
@@ -921,11 +950,21 @@ export function createKidneyProp(ratio = 0.75) {
       if (!ent.properties.bladder) return;
 
       const mult = getDamagedEnergyMultiplier(this.condition, this.maxCondition);
-      const waterDrain = 1.0 * this.ratio * mult * dt;
+      // Exertion increases water consumption via perspiration / body heat
+      let exertionMult = 1.0;
+      if (ent.motor === 5 || ent.properties.combat?.inCombat) exertionMult += 0.8;
+      if (ent.motor === 1) exertionMult += 0.25;
+
+      const waterDrain = 1.35 * this.ratio * mult * exertionMult * dt;
       ent.properties.bladder.water = Math.max(0, ent.properties.bladder.water - waterDrain);
 
-      if (ent.properties.bladder.water <= 0 && ent.properties.life) {
-        ent.properties.life.energy = Math.max(0, ent.properties.life.energy - dt * 15.0);
+      if (ent.properties.bladder.water <= 0) {
+        if (ent.properties.life) {
+          ent.properties.life.energy = Math.max(0, ent.properties.life.energy - dt * 25.0);
+        }
+        if (ent.properties.brain) {
+          ent.properties.brain.condition = Math.max(0, ent.properties.brain.condition - dt * 0.75);
+        }
       }
     }
   };
@@ -1879,6 +1918,16 @@ export function createGenitaliaProp(type = "penis", isPregnant = false) {
           }
 
           if (canMate) {
+            // Check shelter and clan food security before pregnancy in civilized/clan species
+            if (causesPregnancy && ent.properties.group) {
+              const group = ent.properties.group;
+              const hasCompletedHouse = entities.some(e => !e.destroyed && e.properties?.house?.isCompleted && (e.properties.house.ownerId === ent.id || e.properties.house.partnerId === ent.id || e.properties.house.ownerId === mate.id));
+              const hasWarehouseStock = (group.storage && group.storage.length >= 2);
+              if (!hasCompletedHouse && !hasWarehouseStock && (group.members?.length || 0) >= 2) {
+                causesPregnancy = false; // Postpone pregnancy until the couple has shelter or village food
+              }
+            }
+
             // 1. Biological Pregnancy
             if (causesPregnancy) {
               this.isPregnant = true;
@@ -2341,7 +2390,43 @@ export function getClanBlueprintTiles(group) {
     return tiles; // Return ONLY warehouse & campfire
   }
 
-  // 3. Keep all existing house entities in territory pinned first!
+  // 3. Central Village Water Well (Poço de Água da Aldeia)
+  let wellEnt = null;
+  for (const e of entityRegistry.values()) {
+    if (!e.destroyed && e.properties?.well && isTileInClaimedZones(e.x, e.y, group.claimedZones)) {
+      wellEnt = e;
+      break;
+    }
+  }
+
+  if (wellEnt) {
+    tiles.push({ x: wellEnt.x, y: wellEnt.y, type: "well" });
+    occupiedHouseTiles.add(`${wellEnt.x}_${wellEnt.y}`);
+  } else {
+    // Optimal well spot near warehouse & campfire
+    const wellOffsets = [
+      { dx: 0, dy: 2 }, { dx: 0, dy: -2 }, { dx: 2, dy: 0 }, { dx: -2, dy: 0 },
+      { dx: -2, dy: 2 }, { dx: 2, dy: -2 }
+    ];
+    let foundWellSpot = null;
+    for (const off of wellOffsets) {
+      const tx = whX + off.dx;
+      const ty = whY + off.dy;
+      if (isLandTile(tx, ty) && isTileInClaimedZones(tx, ty, group.claimedZones) && !occupiedHouseTiles.has(`${tx}_${ty}`)) {
+        foundWellSpot = { x: tx, y: ty };
+        break;
+      }
+    }
+    if (!foundWellSpot && candidateInteriorTiles.length > 0) {
+      foundWellSpot = candidateInteriorTiles.find(c => !occupiedHouseTiles.has(`${c.x}_${c.y}`));
+    }
+    if (foundWellSpot) {
+      tiles.push({ x: foundWellSpot.x, y: foundWellSpot.y, type: "well" });
+      occupiedHouseTiles.add(`${foundWellSpot.x}_${foundWellSpot.y}`);
+    }
+  }
+
+  // 4. Keep all existing house entities in territory pinned first!
   for (const ent of entityRegistry.values()) {
     if (!ent.destroyed && ent.properties.house && isTileInClaimedZones(ent.x, ent.y, group.claimedZones)) {
       tiles.push({ x: ent.x, y: ent.y, type: "house", ownerId: ent.properties.house.ownerId });
@@ -2349,7 +2434,7 @@ export function getClanBlueprintTiles(group) {
     }
   }
 
-  // 3. Pair homeless members with unowned/vacant houses in territory first
+  // 5. Pair homeless members with unowned/vacant houses in territory first
   if (!group._housePlots) group._housePlots = {};
   for (let mIdx = 0; mIdx < members.length; mIdx++) {
     const ownerId = members[mIdx];
@@ -2373,35 +2458,6 @@ export function getClanBlueprintTiles(group) {
 
       // Filter available candidates not yet occupied
       let available = candidateInteriorTiles.filter(c => !occupiedHouseTiles.has(`${c.x}_${c.y}`));
-      if (available.length === 0) {
-        // Auto-expand zone to provide land for remaining members
-        const maxZX = 64;
-        const maxZY = 64;
-        for (const zk of [...group.claimedZones]) {
-          const [czx, czy] = zk.split("_").map(n => parseInt(n, 10));
-          for (const off of [{dx:1,dy:0}, {dx:-1,dy:0}, {dx:0,dy:1}, {dx:0,dy:-1}]) {
-            const nx = czx + off.dx;
-            const ny = czy + off.dy;
-            if (nx >= 0 && nx < maxZX && ny >= 0 && ny < maxZY) {
-              const cand = `${nx}_${ny}`;
-              if (!group.claimedZones.includes(cand) && isLandTile(nx * sz + Math.floor(sz/2), ny * sz + Math.floor(sz/2))) {
-                group.claimedZones.push(cand);
-                for (let ox = 1; ox < sz - 1; ox++) {
-                  for (let oy = 1; oy < sz - 1; oy++) {
-                    const px = nx * sz + ox;
-                    const py = ny * sz + oy;
-                    if (isLandTile(px, py)) {
-                      candidateInteriorTiles.push({ x: px, y: py, zx: nx, zy: ny });
-                    }
-                  }
-                }
-                break;
-              }
-            }
-          }
-        }
-        available = candidateInteriorTiles.filter(c => !occupiedHouseTiles.has(`${c.x}_${c.y}`));
-      }
 
       if (available.length > 0) {
         // Road Connection Preference: If existing roads exist, prioritize candidate house plots connected to roads (>3 free available)
@@ -4467,6 +4523,61 @@ export function createGroupMemberProp() {
                 return;
               }
             }
+          } else if (bp.type === "well") {
+            const wellEntity = entities.find(e => !e.destroyed && e.properties.well && e.x === bp.x && e.y === bp.y);
+            if (!wellEntity && dist <= 1 && this.actionTimer >= 0.5) {
+              let resType = null;
+              for (const [k, p] of Object.entries(ent.properties)) {
+                if (k.startsWith("arm") && p && (p.heldItem?.resourceType === "stone" || p.heldItem?.resourceType === "wood" || p.heldItem?.resourceType === "bone")) {
+                  resType = p.heldItem.resourceType;
+                  p.heldItem = null;
+                  break;
+                }
+              }
+              this.actionTimer = 0;
+              const well = createWaterWellEntity(bp.x, bp.y, group);
+              well.properties.well.woodCurrent = resType === "wood" ? 1 : 0;
+              well.properties.well.stoneCurrent = (resType === "stone" || resType === "bone") ? 1 : 0;
+              well.properties.well.isCompleted = (well.properties.well.woodCurrent >= well.properties.well.woodCost && well.properties.well.stoneCurrent >= well.properties.well.stoneCost);
+              entities.push(well);
+              registerEntitySpatial(well);
+              return;
+            } else if (wellEntity && !wellEntity.properties.well?.isCompleted && dist <= 1 && this.actionTimer >= 0.5) {
+              const wl = wellEntity.properties.well;
+              let contributed = false;
+              for (const [k, p] of Object.entries(ent.properties)) {
+                if (k.startsWith("arm") && p && p.heldItem) {
+                  if (p.heldItem.resourceType === "wood" && wl.woodCurrent < wl.woodCost) {
+                    wl.woodCurrent++;
+                    p.heldItem = null;
+                    contributed = true;
+                    break;
+                  } else if ((p.heldItem.resourceType === "stone" || p.heldItem.resourceType === "bone") && wl.stoneCurrent < wl.stoneCost) {
+                    wl.stoneCurrent++;
+                    p.heldItem = null;
+                    contributed = true;
+                    break;
+                  }
+                }
+              }
+              if (contributed) {
+                this.actionTimer = 0;
+                if (wl.woodCurrent >= wl.woodCost && wl.stoneCurrent >= wl.stoneCost) {
+                  wl.isCompleted = true;
+                  recordWorldEvent({
+                    opcode: OP_BUILD,
+                    type: "BUILD",
+                    primaryEntityId: ent.id,
+                    location: { x: bp.x, y: bp.y },
+                    description: `${ent.properties.name} concluiu o ${wellEntity.properties.name || "Poço de Água"} do reino '${group.name}'!`,
+                    tick: currentTick,
+                    timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
+                    metadata: { structureName: wellEntity.properties.name, clan: group.name }
+                  });
+                }
+                return;
+              }
+            }
           } else if (bp.type === "gate" || bp.type === "door") {
             const gateEntity = entities.find(e => !e.destroyed && e.properties.door && e.x === bp.x && e.y === bp.y);
             if (!gateEntity && dist <= 1 && this.actionTimer >= 0.5) {
@@ -5977,15 +6088,18 @@ export function createLocomotionProp() {
       const isAquatic = !!ent.properties.aquatic;
       const isTerrestrial = !!ent.properties.terrestrial || (!isAquatic && !isFlying);
 
-      // Continuous ambient hydration: whenever on or adjacent to water, drink to max capacity
-      if (ent.properties.bladder && world) {
-        const offsets = [{ dx: 0, dy: 0 }, { dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 }];
-        for (const off of offsets) {
-          if (world.getTile(ent.x + off.dx, ent.y + off.dy) === 2) {
-            ent.properties.bladder.water = ent.properties.bladder.maxWater;
-            break;
-          }
+      // Active Drinking State: creature pauses to drink and replenish bladder
+      if (ent._drinkingTimer && ent._drinkingTimer > 0) {
+        ent._drinkingTimer -= dt;
+        if (ent.properties.bladder) {
+          ent.properties.bladder.water = Math.min(ent.properties.bladder.maxWater, ent.properties.bladder.water + dt * 350);
         }
+        ent.emote = 2; // Happy / Drinking satisfaction
+        if (!ent.properties.bladder || ent.properties.bladder.water >= ent.properties.bladder.maxWater || ent._drinkingTimer <= 0) {
+          ent._drinkingTimer = 0;
+          ent._waterGoal = null;
+        }
+        return; // Halt movement while actively drinking
       }
 
       let totalLegPower = 0;
@@ -6015,7 +6129,11 @@ export function createLocomotionProp() {
         speciesSpeed *= ent.properties.locomotion.speedBonus;
       }
 
-      const speedFactor = (isFlying ? 2.2 : (isAquatic && legCount === 0 ? 1.6 : (totalLegPower / Math.max(1, legCount)))) * speciesSpeed;
+      const waterRatio = ent.properties.bladder ? (ent.properties.bladder.water / ent.properties.bladder.maxWater) : 1.0;
+      let speedFactor = (isFlying ? 2.2 : (isAquatic && legCount === 0 ? 1.6 : (totalLegPower / Math.max(1, legCount)))) * speciesSpeed;
+      if (waterRatio <= 0.15) {
+        speedFactor *= 0.65; // Sluggish / fatigued when severely dehydrated
+      }
       const moveInterval = Math.max(0.10, 0.85 / Math.max(0.1, speedFactor));
 
       this.stepTimer = (this.stepTimer || 0) + dt;
@@ -6023,7 +6141,6 @@ export function createLocomotionProp() {
       this.stepTimer = 0;
 
       const energyRatio = ent.properties.life ? (ent.properties.life.energy / ent.properties.life.max) : 1.0;
-      const waterRatio = ent.properties.bladder ? (ent.properties.bladder.water / ent.properties.bladder.maxWater) : 1.0;
       const viewRange = ent.properties.eye_left?.viewRange || ent.properties.eye_right?.viewRange || 10;
 
       let chosenDx = 0;
@@ -6178,21 +6295,56 @@ export function createLocomotionProp() {
       }
 
       // -----------------------------------------------------------------------
-      // Priority 4: Urgent Thirst (Water <= 35%) -> Drink from adjacent water or seek shore
+      // Priority 4: Thirst & Hydration (Preventive at <= 50%, Urgent at <= 25%)
       // -----------------------------------------------------------------------
-      if (!hasIntention && waterRatio <= 0.35 && world) {
-        let adjacentWater = false;
+      if (!hasIntention && waterRatio <= 0.50 && world) {
+        let isNearWaterSource = false;
+        
+        // 1. Check adjacent water tiles
         for (const off of [{ dx: 0, dy: 0 }, { dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 }]) {
           if (world.getTile(ent.x + off.dx, ent.y + off.dy) === 2) {
-            adjacentWater = true;
-            if (ent.properties.bladder) ent.properties.bladder.water = ent.properties.bladder.maxWater;
-            ent._waterGoal = null;
+            isNearWaterSource = true;
             break;
           }
         }
 
-        if (!adjacentWater) {
-          if (!ent._waterGoal || Math.abs(ent._waterGoal.x - ent.x) + Math.abs(ent._waterGoal.y - ent.y) > 40) {
+        // 2. Check adjacent completed wells
+        if (!isNearWaterSource && entities) {
+          for (const e of entities) {
+            if (!e.destroyed && (e.properties?.well?.isCompleted || e.properties?.isWell) && (Math.abs(e.x - ent.x) + Math.abs(e.y - ent.y) <= 1)) {
+              isNearWaterSource = true;
+              break;
+            }
+          }
+        }
+
+        if (isNearWaterSource) {
+          // Initiate active drinking action!
+          ent._drinkingTimer = 3.0;
+          ent.emote = 2; // Happy
+          ent._waterGoal = null;
+          return;
+        }
+
+        // Not adjacent yet -> seek nearest well in territory or nearest shore/water tile!
+        if (!ent._waterGoal || Math.abs(ent._waterGoal.x - ent.x) + Math.abs(ent._waterGoal.y - ent.y) > 40) {
+          let bestWell = null;
+          let minWellDist = 999;
+          if (entities) {
+            for (const e of entities) {
+              if (!e.destroyed && (e.properties?.well?.isCompleted || e.properties?.isWell)) {
+                const wd = Math.abs(e.x - ent.x) + Math.abs(e.y - ent.y);
+                if (wd < minWellDist && wd <= 35) {
+                  minWellDist = wd;
+                  bestWell = e;
+                }
+              }
+            }
+          }
+
+          if (bestWell) {
+            ent._waterGoal = { x: bestWell.x, y: bestWell.y };
+          } else {
             const shoreTarget = isTerrestrial && !isAquatic
               ? findNearestShoreTile(world, ent.x, ent.y, 40)
               : findNearestWaterTile(world, ent.x, ent.y, 40);
@@ -6200,13 +6352,14 @@ export function createLocomotionProp() {
               ent._waterGoal = { x: shoreTarget.x, y: shoreTarget.y };
             }
           }
-          if (ent._waterGoal) {
-            chosenDx = Math.sign(ent._waterGoal.x - ent.x);
-            chosenDy = Math.sign(ent._waterGoal.y - ent.y);
-            hasIntention = true;
-          }
         }
-      } else if (waterRatio > 0.40) {
+
+        if (ent._waterGoal) {
+          chosenDx = Math.sign(ent._waterGoal.x - ent.x);
+          chosenDy = Math.sign(ent._waterGoal.y - ent.y);
+          hasIntention = true;
+        }
+      } else if (waterRatio > 0.65) {
         ent._waterGoal = null;
       }
 
@@ -7447,17 +7600,26 @@ export function createLocomotionProp() {
         ent._locoTracker.stuckTicks = 0;
       }
 
-      // Opportunistic Hydration: drink whenever adjacent to water
-      if (ent.properties.bladder && ent.properties.bladder.water < ent.properties.bladder.maxWater * 0.85 && world) {
-        let isNearWater = false;
+      // Opportunistic Hydration: initiate active drinking when passing near water or well
+      if (ent.properties.bladder && ent.properties.bladder.water < ent.properties.bladder.maxWater * 0.70 && world) {
+        let isNearWaterSource = false;
         for (const off of [{dx:0,dy:0}, {dx:1,dy:0}, {dx:-1,dy:0}, {dx:0,dy:1}, {dx:0,dy:-1}]) {
           if (world.getTile(ent.x + off.dx, ent.y + off.dy) === 2) {
-            isNearWater = true;
+            isNearWaterSource = true;
             break;
           }
         }
-        if (isNearWater) {
-          ent.properties.bladder.water = ent.properties.bladder.maxWater;
+        if (!isNearWaterSource && entities) {
+          for (const e of entities) {
+            if (!e.destroyed && (e.properties?.well?.isCompleted || e.properties?.isWell) && (Math.abs(e.x - ent.x) + Math.abs(e.y - ent.y) <= 1)) {
+              isNearWaterSource = true;
+              break;
+            }
+          }
+        }
+        if (isNearWaterSource) {
+          ent._drinkingTimer = 2.5;
+          ent.emote = 2; // Happy
           ent._waterGoal = null;
         }
       }
@@ -7511,6 +7673,12 @@ export function createLocomotionProp() {
                 remainingTurns: ed.digestDuration || 45,
                 seed: ed.seed?.type === "small" ? ed.seed : null
               });
+
+              // Dietary Hydration: juicy fruits and succulent plants hydrate the creature directly!
+              if (ent.properties.bladder && (ed.foodType === "fruit" || ed.foodType === "plant")) {
+                const waterGain = ed.foodType === "fruit" ? 220 : 100;
+                ent.properties.bladder.water = Math.min(ent.properties.bladder.maxWater, ent.properties.bladder.water + waterGain);
+              }
 
               // Extract and save viable seed for agriculture
               if (ed.seed) {
@@ -8128,7 +8296,7 @@ export function createCreatureFromArchetype(speciesKey, x, y, customOpts = {}) {
       ear_left: createEarProp("left"),
       ear_right: createEarProp("right"),
       stomach: createStomachProp(4, { meat: 1.0, plant: 1.0, fruit: 1.1, organ: 0.9, bone: 0.2 }),
-      bladder: createBladderProp(3500, 3500),
+      bladder: createBladderProp(1200, 1200),
       kidney: createKidneyProp(0.75),
       body_regen: createBodyRegenerationProp(1.0, 4, 10),
       combat: createCombatProp(1.1, 3),
@@ -8164,7 +8332,7 @@ export function createCreatureFromArchetype(speciesKey, x, y, customOpts = {}) {
       ear_left: createEarProp("left"),
       ear_right: createEarProp("right"),
       stomach: createStomachProp(5, { plant: 1.4, fruit: 1.3, meat: 0.5, organ: 0.8 }),
-      bladder: createBladderProp(3000, 3000),
+      bladder: createBladderProp(1400, 1400),
       kidney: createKidneyProp(0.7),
       combat: createCombatProp(1.1, 3),
       tusks: createArmProp("tusks", 1.2, 100, 100, { name: generateUniqueWeaponName("Boar Tusks"), damage: 32 }),
@@ -8197,7 +8365,7 @@ export function createCreatureFromArchetype(speciesKey, x, y, customOpts = {}) {
       ear_left: createEarProp("left"),
       ear_right: createEarProp("right"),
       stomach: createStomachProp(4, { plant: 1.5, fruit: 1.4, meat: 0.0 }),
-      bladder: createBladderProp(2200, 2200),
+      bladder: createBladderProp(1100, 1100),
       kidney: createKidneyProp(0.7),
       combat: createCombatProp(0.8, 2),
       paw_front_left: createPawProp("front_left", 1.3, 100, 100, 0, 0, 0),
@@ -8226,7 +8394,7 @@ export function createCreatureFromArchetype(speciesKey, x, y, customOpts = {}) {
       heart: createHeartProp(),
       intestines: createIntestineProp(),
       stomach: createStomachProp(2, { meat: 1.5, organ: 1.4 }),
-      bladder: createBladderProp(1500, 1500),
+      bladder: createBladderProp(700, 700),
       kidney: createKidneyProp(0.6),
       combat: createCombatProp(1.2, 2),
       fangs: createArmProp("fangs", 1.2, 100, 100, { name: generateUniqueWeaponName("Venomous Fangs"), damage: 38 }),
@@ -8257,7 +8425,7 @@ export function createCreatureFromArchetype(speciesKey, x, y, customOpts = {}) {
       ear_left: createEarProp("left"),
       ear_right: createEarProp("right"),
       stomach: createStomachProp(3, { meat: 1.4, plant: 0.1, fruit: 0.3, organ: 1.3, bone: 0.6 }),
-      bladder: createBladderProp(2000, 2000),
+      bladder: createBladderProp(1000, 1000),
       kidney: createKidneyProp(0.7),
       body_regen: createBodyRegenerationProp(1.0, 4, 9),
       combat: createCombatProp(1.0, 3),
@@ -8291,7 +8459,7 @@ export function createCreatureFromArchetype(speciesKey, x, y, customOpts = {}) {
       ear_left: createEarProp("left"),
       ear_right: createEarProp("right"),
       stomach: createStomachProp(6, { meat: 1.3, plant: 0.9, fruit: 1.4, organ: 1.2, bone: 0.5 }),
-      bladder: createBladderProp(5000, 5000),
+      bladder: createBladderProp(2200, 2200),
       kidney: createKidneyProp(0.75),
       body_regen: createBodyRegenerationProp(1.0, 6, 11),
       combat: createCombatProp(1.2, 3),
@@ -8319,7 +8487,7 @@ export function createCreatureFromArchetype(speciesKey, x, y, customOpts = {}) {
       communication: createCommunicationProp(3.0),
       brain: createBrainProp(12, { bravery: 0.4, curiosity: 0.9, aggression: 0.3 }, 1.0),
       stomach: createStomachProp(2, { meat: 1.3, plant: 0.2, fruit: 0.5, organ: 1.4, bone: 0.4 }),
-      bladder: createBladderProp(1500, 1500),
+      bladder: createBladderProp(600, 600),
       kidney: createKidneyProp(0.6),
       body_regen: createBodyRegenerationProp(1.0, 3, 8),
       combat: createCombatProp(1.0, 2),
@@ -8352,7 +8520,7 @@ export function createCreatureFromArchetype(speciesKey, x, y, customOpts = {}) {
       wings: createWingsProp(1.0, 100, 100, 15.0),
       brain: createBrainProp(10, { bravery: 0.3, curiosity: 0.8, aggression: 0.2 }, 0.8),
       stomach: createStomachProp(2, { meat: 0.5, fruit: 1.4, organ: 1.0 }),
-      bladder: createBladderProp(1000, 1000),
+      bladder: createBladderProp(450, 450),
       kidney: createKidneyProp(0.6),
       paw_back_left: createPawProp("back_left", 0.9, 100, 100, 3, 3, 12),
       paw_back_right: createPawProp("back_right", 0.9, 100, 100, 3, 3, 12),
@@ -8376,7 +8544,7 @@ export function createCreatureFromArchetype(speciesKey, x, y, customOpts = {}) {
       communication: createCommunicationProp(3.5),
       brain: createBrainProp(14, { bravery: 0.7, curiosity: 0.6, aggression: 0.7 }, 1.2),
       stomach: createStomachProp(4, { meat: 1.4, organ: 1.3, bone: 0.4 }),
-      bladder: createBladderProp(4000, 4000),
+      bladder: createBladderProp(2000, 2000),
       kidney: createKidneyProp(0.5),
       body_regen: createBodyRegenerationProp(1.0, 5, 9),
       combat: createCombatProp(1.1, 3),
@@ -8402,7 +8570,7 @@ export function createCreatureFromArchetype(speciesKey, x, y, customOpts = {}) {
       communication: createCommunicationProp(2.0),
       brain: createBrainProp(24, { bravery: 1.0, curiosity: 0.4, aggression: 0.9 }, 1.8),
       stomach: createStomachProp(8, { meat: 1.5, plant: 0.1, fruit: 0.2, organ: 1.5, bone: 1.0 }),
-      bladder: createBladderProp(12000, 12000),
+      bladder: createBladderProp(3500, 3500),
       kidney: createKidneyProp(0.8),
       body_regen: createBodyRegenerationProp(1.0, 8, 12),
       combat: createCombatProp(1.0, 4),
@@ -8433,7 +8601,7 @@ export function createCreatureFromArchetype(speciesKey, x, y, customOpts = {}) {
       communication: createCommunicationProp(4.0),
       brain: createBrainProp(8, { bravery: 0.2, curiosity: 0.9, aggression: 0.02 }, 1.0),
       stomach: createStomachProp(4, { plant: 1.6, fruit: 1.4, meat: 0.0 }),
-      bladder: createBladderProp(3000, 3000),
+      bladder: createBladderProp(1200, 1200),
       kidney: createKidneyProp(0.7),
       paw_front_left: createPawProp("front_left", 1.0, 100, 100, 0, 0, 0),
       paw_front_right: createPawProp("front_right", 1.0, 100, 100, 0, 0, 0),
@@ -8459,7 +8627,7 @@ export function createCreatureFromArchetype(speciesKey, x, y, customOpts = {}) {
       communication: createCommunicationProp(3.5),
       brain: createBrainProp(7, { bravery: 0.2, curiosity: 0.4, aggression: 0.05 }, 0.9),
       stomach: createStomachProp(6, { plant: 1.8, fruit: 1.2, meat: 0.0 }),
-      bladder: createBladderProp(4500, 4500),
+      bladder: createBladderProp(2500, 2500),
       kidney: createKidneyProp(0.7),
       paw_front_left: createPawProp("front_left", 1.2, 100, 100, 0, 0, 0),
       paw_front_right: createPawProp("front_right", 1.2, 100, 100, 0, 0, 0),
@@ -8485,7 +8653,7 @@ export function createCreatureFromArchetype(speciesKey, x, y, customOpts = {}) {
       communication: createCommunicationProp(2.0),
       brain: createBrainProp(6, { bravery: 0.1, curiosity: 0.9, aggression: 0.05 }, 0.8),
       stomach: createStomachProp(2, { plant: 1.4, fruit: 1.5, meat: 0.2 }),
-      bladder: createBladderProp(600, 600),
+      bladder: createBladderProp(400, 400),
       kidney: createKidneyProp(0.5),
       beak: createArmProp("beak", 0.6, 100, 100, { name: "Bico", damage: 6 }),
       paw_back_left: createPawProp("back_left", 0.7, 100, 100, 2, 2, 6),
@@ -8511,7 +8679,7 @@ export function createCreatureFromArchetype(speciesKey, x, y, customOpts = {}) {
       communication: createCommunicationProp(2.5),
       brain: createBrainProp(6, { bravery: 0.2, curiosity: 0.9, aggression: 0.02 }, 0.9),
       stomach: createStomachProp(2, { plant: 1.5, fruit: 1.4, meat: 0.4 }),
-      bladder: createBladderProp(800, 800),
+      bladder: createBladderProp(500, 500),
       kidney: createKidneyProp(0.5),
       paw_back_left: createPawProp("back_left", 0.7, 100, 100, 2, 2, 6),
       paw_back_right: createPawProp("back_right", 0.7, 100, 100, 2, 2, 6),
@@ -8536,7 +8704,7 @@ export function createCreatureFromArchetype(speciesKey, x, y, customOpts = {}) {
       communication: createCommunicationProp(3.0),
       brain: createBrainProp(6, { bravery: 0.1, curiosity: 0.8, aggression: 0.05 }, 0.8),
       stomach: createStomachProp(2, { meat: 1.2, plant: 0.8, fruit: 0.5 }),
-      bladder: createBladderProp(700, 700),
+      bladder: createBladderProp(450, 450),
       kidney: createKidneyProp(0.5),
       paw_front_left: createPawProp("front_left", 0.7, 100, 100, 0, 0, 0),
       paw_front_right: createPawProp("front_right", 0.7, 100, 100, 0, 0, 0),
@@ -8562,7 +8730,7 @@ export function createCreatureFromArchetype(speciesKey, x, y, customOpts = {}) {
       communication: createCommunicationProp(3.5),
       brain: createBrainProp(8, { bravery: 0.1, curiosity: 0.95, aggression: 0.01 }, 1.3),
       stomach: createStomachProp(2, { plant: 1.6, fruit: 1.5, meat: 0.0 }),
-      bladder: createBladderProp(1000, 1000),
+      bladder: createBladderProp(450, 450),
       kidney: createKidneyProp(0.6),
       paw_front_left: createPawProp("front_left", 0.8, 100, 100, 0, 0, 0),
       paw_front_right: createPawProp("front_right", 0.8, 100, 100, 0, 0, 0),
