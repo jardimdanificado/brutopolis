@@ -659,6 +659,8 @@ export function createCampfireEntity(x, y, ownerId = null) {
       defense: 15
     },
     woodCost: 3,
+    woodCurrent: 0,
+    isConstructed: false,
     render: {
       skin: "Feature_Campfire.png",
       color: 0xffffffff,
@@ -673,7 +675,7 @@ export function createCampfireEntity(x, y, ownerId = null) {
       ownerId: ownerId
     },
     effect(ent, dt, world, entities) {
-      if (this.campfire) {
+      if (this.campfire && ent.isConstructed !== false) {
         const curHour = world?.clock ? (world.clock.hour + (world.clock.minute || 0) / 60) : 12;
         const isNight = (curHour >= 17.5 || curHour < 5.8);
         if (isNight && (this.campfire.fuel || 0) > 0) {
@@ -1760,31 +1762,20 @@ export function createGenitaliaProp(type = "penis", isPregnant = false) {
           baby.properties.genitalia = createGenitaliaProp(babyGender === "female" ? "vagina" : "penis", false);
 
           // Faction assignment rule:
-          // Filho -> Father's faction
-          // Filha -> Mother's faction
-          // Else: 95% Mother's faction, 5% Father's faction
-          let targetClan = null;
-          if (nameInfo.isFilho) {
-            targetClan = father?.properties?.group || ent.properties.group;
-          } else if (nameInfo.isFilha) {
-            targetClan = ent.properties.group || father?.properties?.group;
-          } else {
-            targetClan = (Math.random() < 0.95)
-              ? (ent.properties.group || father?.properties?.group)
-              : (father?.properties?.group || ent.properties.group);
+          // 1. Faction Inheritance: Baby unconditionally enters the faction of the parents!
+          const motherClan = ent.properties.group || (world?.groups || []).find(g => g.members?.includes(ent.id));
+          const fatherClan = father?.properties?.group || (world?.groups || []).find(g => g.members?.includes(father?.id));
+          
+          let targetClan = motherClan || fatherClan;
+          if (fatherClan && motherClan && fatherClan !== motherClan) {
+            targetClan = nameInfo.isFilho ? fatherClan : motherClan;
           }
 
           if (!targetClan && entities) {
-            for (const nearby of entities) {
-              if (nearby !== ent && !nearby.destroyed && nearby.properties.group && nearby.properties.species === babySpecies) {
-                const ndist = Math.abs(nearby.x - ent.x) + Math.abs(nearby.y - ent.y);
-                if (ndist <= 24) {
-                  targetClan = nearby.properties.group;
-                  ent.properties.group = targetClan;
-                  ent.properties.group_member = createGroupMemberProp();
-                  if (!targetClan.members.includes(ent.id)) targetClan.members.push(ent.id);
-                  break;
-                }
+            for (const g of (world?.groups || [])) {
+              if (isTileInClaimedZones(ent.x, ent.y, g.claimedZones)) {
+                targetClan = g;
+                break;
               }
             }
           }
@@ -1794,6 +1785,11 @@ export function createGenitaliaProp(type = "penis", isPregnant = false) {
             baby.properties.group_member = createGroupMemberProp();
             if (!targetClan.members.includes(baby.id)) {
               targetClan.members.push(baby.id);
+            }
+            if (!ent.properties.group) {
+              ent.properties.group = targetClan;
+              ent.properties.group_member = createGroupMemberProp();
+              if (!targetClan.members.includes(ent.id)) targetClan.members.push(ent.id);
             }
           }
 
@@ -2294,7 +2290,58 @@ export function getClanBlueprintTiles(group) {
     return tiles; // Return ONLY warehouse blueprint tile
   }
 
-  // 2. Keep all existing house entities in territory pinned first!
+  // 2. Central Campfire Blueprint (Fogueira da Aldeia) - 2nd building right after Stockpile!
+  let campfireEnt = null;
+  for (const e of entityRegistry.values()) {
+    if (!e.destroyed && e.properties?.campfire && isTileInClaimedZones(e.x, e.y, group.claimedZones)) {
+      campfireEnt = e;
+      break;
+    }
+  }
+
+  const whX = warehouseEnt.x;
+  const whY = warehouseEnt.y;
+  let cfX = whX;
+  let cfY = whY;
+
+  if (campfireEnt) {
+    cfX = campfireEnt.x;
+    cfY = campfireEnt.y;
+    tiles.push({ x: cfX, y: cfY, type: "campfire" });
+    occupiedHouseTiles.add(`${cfX}_${cfY}`);
+  } else {
+    // Find optimal campfire spot 2 blocks away from warehouse
+    const cfOffsets = [
+      { dx: 2, dy: 0 }, { dx: -2, dy: 0 }, { dx: 0, dy: 2 }, { dx: 0, dy: -2 },
+      { dx: 2, dy: 2 }, { dx: -2, dy: -2 }, { dx: 2, dy: -2 }, { dx: -2, dy: 2 }
+    ];
+    let foundCfSpot = null;
+    for (const off of cfOffsets) {
+      const tx = whX + off.dx;
+      const ty = whY + off.dy;
+      if (isLandTile(tx, ty) && isTileInClaimedZones(tx, ty, group.claimedZones) && !occupiedHouseTiles.has(`${tx}_${ty}`)) {
+        foundCfSpot = { x: tx, y: ty };
+        break;
+      }
+    }
+    if (!foundCfSpot && candidateInteriorTiles.length > 0) {
+      foundCfSpot = candidateInteriorTiles.find(c => !occupiedHouseTiles.has(`${c.x}_${c.y}`));
+    }
+    if (foundCfSpot) {
+      cfX = foundCfSpot.x;
+      cfY = foundCfSpot.y;
+      tiles.push({ x: cfX, y: cfY, type: "campfire" });
+      occupiedHouseTiles.add(`${cfX}_${cfY}`);
+    }
+  }
+
+  // Campfire Second Rule: If the campfire is not yet completed, return ONLY warehouse + campfire!
+  const isCampfireCompleted = !!campfireEnt && campfireEnt.isConstructed !== false;
+  if (!isCampfireCompleted) {
+    return tiles; // Return ONLY warehouse & campfire
+  }
+
+  // 3. Keep all existing house entities in territory pinned first!
   for (const ent of entityRegistry.values()) {
     if (!ent.destroyed && ent.properties.house && isTileInClaimedZones(ent.x, ent.y, group.claimedZones)) {
       tiles.push({ x: ent.x, y: ent.y, type: "house", ownerId: ent.properties.house.ownerId });
@@ -2720,45 +2767,64 @@ export function getGroupStockpile(group, entities) {
   };
 }
 
-export function tryJoinGroup(candidate, group, entities) {
+export function tryJoinGroup(candidate, group, entities, sponsor = null) {
   if (!candidate || !group || !candidate.properties.brain) return false;
   if (candidate.properties.group === group) return true;
 
-  // 1. Calculate candidate's average affinity with living group members
+  // 1. Calculate candidate's relationship with group members
   let sumAff = 0;
-  let memberCount = 0;
-  const livingMembers = [];
+  let knownMembersCount = 0;
+  let hasHostileMember = false;
+  let maxFriendAffinity = sponsor?.properties?.brain?.affinities?.[candidate.id] || 0;
 
-  for (const mid of group.members) {
-    const mem = entities?.find(e => e.id === mid && !e.destroyed);
-    if (mem && mem.properties.brain) {
-      livingMembers.push(mem);
-      const memAff = mem.properties.brain.affinities?.[candidate.id] || 0;
-      sumAff += memAff;
-      memberCount++;
+  for (const mid of (group.members || [])) {
+    const mem = entityRegistry.get(mid) || entities?.find(e => e.id === mid && !e.destroyed);
+    if (mem && mem.properties?.brain?.affinities) {
+      const memAff = mem.properties.brain.affinities[candidate.id];
+      if (memAff !== undefined) {
+        sumAff += memAff;
+        knownMembersCount++;
+        if (memAff > maxFriendAffinity) maxFriendAffinity = memAff;
+        if (memAff < -15) {
+          hasHostileMember = true; // Hostility/feud in the clan blocks joining
+        }
+      }
     }
   }
 
-  if (memberCount === 0) {
+  // If clan has members with hatred against candidate, reject
+  if (hasHostileMember) return false;
+
+  // Eligibility:
+  // - Sponsoring close friend with affinity >= 20
+  // - OR known members average affinity >= 10
+  // - OR group has no living members
+  const canJoin = (maxFriendAffinity >= 20) || (knownMembersCount === 0) || (sumAff / Math.max(1, knownMembersCount) >= 10);
+  if (!canJoin) return false;
+
+  // 2. Add candidate to group
+  if (!group.members.includes(candidate.id)) {
     group.members.push(candidate.id);
-    candidate.properties.group = group;
-    return true;
   }
-
-  const avgAff = sumAff / memberCount;
-  if (avgAff < 25) return false; // Need good average affinity to join
-
-  // 2. Add candidate to group if welcomed
-  group.members.push(candidate.id);
   candidate.properties.group = group;
   candidate.properties.group_member = createGroupMemberProp();
 
+  // Establish positive initial rapport with other clan members
+  if (candidate.properties.brain?.affinities) {
+    for (const mid of group.members) {
+      if (mid !== candidate.id) {
+        candidate.properties.brain.affinities[mid] = Math.max(25, candidate.properties.brain.affinities[mid] || 25);
+      }
+    }
+  }
+
   recordWorldEvent({
-    type: "BIRTH",
+    opcode: OP_RELATION,
+    type: "JOIN_CLAN",
     primaryEntityId: candidate.id,
     secondaryEntityId: group.id,
     location: { x: candidate.x, y: candidate.y },
-    description: `${candidate.properties.name} joined the clan '${group.name}'!`,
+    description: `${candidate.properties.name} entrou para a facção '${group.name}' ao lado de seus amigos!`,
     tick: currentTick
   });
 
@@ -2780,6 +2846,21 @@ export function handlePassByInteraction(ent, other, world, entities) {
 
   if (!ent._lastSpokeWith) ent._lastSpokeWith = {};
   if (!other._lastSpokeWith) other._lastSpokeWith = {};
+
+  // Check if one has a group and the other is factionless with good affinity
+  if (ent.properties.group && !other.properties.group) {
+    const aff = ent.properties.brain?.affinities?.[other.id] || 0;
+    const otherAff = other.properties.brain?.affinities?.[ent.id] || 0;
+    if (aff >= 20 || otherAff >= 20) {
+      tryJoinGroup(other, ent.properties.group, entities, ent);
+    }
+  } else if (!ent.properties.group && other.properties.group) {
+    const aff = ent.properties.brain?.affinities?.[other.id] || 0;
+    const otherAff = other.properties.brain?.affinities?.[ent.id] || 0;
+    if (aff >= 20 || otherAff >= 20) {
+      tryJoinGroup(ent, other.properties.group, entities, other);
+    }
+  }
 
   // Pair cooldown of 60 ticks between interactions
   if (ent._lastSpokeWith[other.id] && (currentTick - ent._lastSpokeWith[other.id] < 60)) return;
@@ -3156,36 +3237,39 @@ export function gossipBetweenCreatures(speaker, listener, world, entities) {
     lisBrain.affinities[speaker.id] = Math.min(100, (lisBrain.affinities[speaker.id] || 0) + 0.2);
   }
 
-  // 3. Group Formation: If both have mutual affinity >= 45 and neither has a group
-  if (spkAffToLis >= 45 && lisAffToSpk >= 45 && Math.random() < 0.20) {
-    if (!speaker.properties.group && !listener.properties.group) {
-      const zx0 = Math.floor(speaker.x / currentZoneSize);
-      const zy0 = Math.floor(speaker.y / currentZoneSize);
-      const newGrp = createGroup(gerarNomeGrupo(speaker.properties.name), speaker, [zx0, zy0]);
-      newGrp.members.push(listener.id);
-      speaker.properties.group = newGrp;
-      speaker.properties.group_member = createGroupMemberProp();
-      listener.properties.group = newGrp;
-      listener.properties.group_member = createGroupMemberProp();
-
-      recordWorldEvent({
-        opcode: OP_RELATION,
-        primaryEntityId: speaker.id,
-        secondaryEntityId: listener.id,
-        location: { x: speaker.x, y: speaker.y },
-        description: `${speaker.properties.name} e ${listener.properties.name} uniram laços e fundaram a facção '${newGrp.name}'!`,
-        tick: currentTick,
-        timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
-        metadata: { primaryName: speaker.properties.name, secondaryName: listener.properties.name }
-      });
-      return;
-    } else if (speaker.properties.group && !listener.properties.group) {
-      tryJoinGroup(listener, speaker.properties.group, entities);
-      return;
-    } else if (!speaker.properties.group && listener.properties.group) {
-      tryJoinGroup(speaker, listener.properties.group, entities);
-      return;
+  // 3. Group Recruitment & Joining Friends
+  if (speaker.properties.group && !listener.properties.group) {
+    if (spkAffToLis >= 20 || lisAffToSpk >= 20) {
+      tryJoinGroup(listener, speaker.properties.group, entities, speaker);
     }
+  } else if (!speaker.properties.group && listener.properties.group) {
+    if (spkAffToLis >= 20 || lisAffToSpk >= 20) {
+      tryJoinGroup(speaker, listener.properties.group, entities, listener);
+    }
+  }
+
+  // 4. Group Formation: If both have mutual affinity >= 45 and neither has a group
+  if (!speaker.properties.group && !listener.properties.group && spkAffToLis >= 45 && lisAffToSpk >= 45 && Math.random() < 0.25) {
+    const zx0 = Math.floor(speaker.x / currentZoneSize);
+    const zy0 = Math.floor(speaker.y / currentZoneSize);
+    const newGrp = createGroup(gerarNomeGrupo(speaker.properties.name), speaker, [zx0, zy0]);
+    newGrp.members.push(listener.id);
+    speaker.properties.group = newGrp;
+    speaker.properties.group_member = createGroupMemberProp();
+    listener.properties.group = newGrp;
+    listener.properties.group_member = createGroupMemberProp();
+
+    recordWorldEvent({
+      opcode: OP_RELATION,
+      primaryEntityId: speaker.id,
+      secondaryEntityId: listener.id,
+      location: { x: speaker.x, y: speaker.y },
+      description: `${speaker.properties.name} e ${listener.properties.name} uniram laços e fundaram a facção '${newGrp.name}'!`,
+      tick: currentTick,
+      timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
+      metadata: { primaryName: speaker.properties.name, secondaryName: listener.properties.name }
+    });
+    return;
   }
 
   // 4. Deep Social & Romantic Interactions (Admiration, Flattery, Jealousy, Consolation, Gossip, Territory Sharing)
@@ -4329,6 +4413,55 @@ export function createGroupMemberProp() {
                     tick: currentTick,
                     timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
                     metadata: { structureName: warehouseEntity.properties.name, clan: group.name }
+                  });
+                }
+                return;
+              }
+            }
+          } else if (bp.type === "campfire") {
+            const campfireEntity = entities.find(e => !e.destroyed && e.properties.campfire && e.x === bp.x && e.y === bp.y);
+            if (!campfireEntity && dist <= 1 && this.actionTimer >= 0.5) {
+              let resType = null;
+              for (const [k, p] of Object.entries(ent.properties)) {
+                if (k.startsWith("arm") && p && (p.heldItem?.resourceType === "wood" || p.heldItem?.resourceType === "stone" || p.heldItem?.resourceType === "bone")) {
+                  resType = p.heldItem.resourceType;
+                  p.heldItem = null;
+                  break;
+                }
+              }
+              this.actionTimer = 0;
+              const cf = createCampfireEntity(bp.x, bp.y, group.id);
+              cf.woodCurrent = (resType === "wood" ? 1 : 0);
+              cf.woodCost = 3;
+              cf.isConstructed = cf.woodCurrent >= cf.woodCost;
+              if (cf.isConstructed) cf.properties.campfire.isLit = true;
+              entities.push(cf);
+              registerEntitySpatial(cf);
+              return;
+            } else if (campfireEntity && !campfireEntity.isConstructed && dist <= 1 && this.actionTimer >= 0.5) {
+              let contributed = false;
+              for (const [k, p] of Object.entries(ent.properties)) {
+                if (k.startsWith("arm") && p && p.heldItem?.resourceType === "wood") {
+                  p.heldItem = null;
+                  campfireEntity.woodCurrent = (campfireEntity.woodCurrent || 1) + 1;
+                  contributed = true;
+                  break;
+                }
+              }
+              if (contributed) {
+                this.actionTimer = 0;
+                if (campfireEntity.woodCurrent >= (campfireEntity.woodCost || 3)) {
+                  campfireEntity.isConstructed = true;
+                  campfireEntity.properties.campfire.isLit = true;
+                  recordWorldEvent({
+                    opcode: OP_BUILD,
+                    type: "BUILD",
+                    primaryEntityId: ent.id,
+                    location: { x: bp.x, y: bp.y },
+                    description: `${ent.properties.name} construiu a Fogueira Central do reino '${group.name}' (3 madeiras)!`,
+                    tick: currentTick,
+                    timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
+                    metadata: { structureName: "Fogueira Central", clan: group.name }
                   });
                 }
                 return;
@@ -5547,6 +5680,21 @@ export function createCombatProp(attackInterval = 1.2, aggroRange = 3) {
           }
         }
       }
+
+      // 7. Factionless Creature Joining Nearby Close Friends' Clan
+      if (!ent.properties.group && ent.properties.brain?.affinities && entities && Math.random() < 0.12) {
+        const nearbyEntities = getEntitiesInRadius(ent.x, ent.y, 8);
+        for (const friend of nearbyEntities) {
+          if (friend !== ent && !friend.destroyed && friend.properties?.group && friend.properties?.brain) {
+            const aff = ent.properties.brain.affinities[friend.id] || 0;
+            const friendAff = friend.properties.brain.affinities?.[ent.id] || 0;
+            if (aff >= 20 || friendAff >= 20) {
+              const joined = tryJoinGroup(ent, friend.properties.group, entities, friend);
+              if (joined) break;
+            }
+          }
+        }
+      }
     }
   };
 }
@@ -6303,6 +6451,23 @@ export function createLocomotionProp() {
                   targetBuild = { x: bp.x, y: bp.y, type: "warehouse" };
                 }
               }
+            } else if (bp.type === "campfire") {
+              const cf = entities.find(e => !e.destroyed && e.properties.campfire && e.x === bp.x && e.y === bp.y);
+              let needsThisMat = false;
+              if (!cf) {
+                if (heldResType === "wood") needsThisMat = true;
+              } else if (cf.isConstructed === false) {
+                const wCost = cf.woodCost ?? 3;
+                if (heldResType === "wood" && (cf.woodCurrent || 0) < wCost) needsThisMat = true;
+              }
+
+              if (needsThisMat) {
+                const dist = Math.abs(bp.x - ent.x) + Math.abs(bp.y - ent.y);
+                if (dist < minBuildDist) {
+                  minBuildDist = dist;
+                  targetBuild = { x: bp.x, y: bp.y, type: "campfire" };
+                }
+              }
             } else if (bp.type === "house") {
               const houseEnt = entities.find(e => !e.destroyed && e.properties.house && e.x === bp.x && e.y === bp.y);
               let needsThisMat = false;
@@ -6471,6 +6636,14 @@ export function createLocomotionProp() {
                 const sCost = w.stoneCost ?? 4;
                 if ((w.woodCurrent || 0) < wCost) needsWood = true;
                 if ((w.stoneCurrent || 0) < sCost) needsStone = true;
+              }
+            } else if (bp.type === "campfire") {
+              const cf = entities.find(e => !e.destroyed && e.properties.campfire && e.x === bp.x && e.y === bp.y);
+              if (!cf) {
+                needsWood = true;
+              } else if (cf.isConstructed === false) {
+                const wCost = cf.woodCost ?? 3;
+                if ((cf.woodCurrent || 0) < wCost) needsWood = true;
               }
             } else if (bp.type === "house") {
               const houseEnt = entities.find(e => !e.destroyed && e.properties.house && e.x === bp.x && e.y === bp.y);
