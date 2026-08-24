@@ -2325,7 +2325,12 @@ export class RCT3DRenderer {
       knownCount = knownZones.size;
     }
 
-    if (curTileX === this.lastBuiltCamTileX && curTileY === this.lastBuiltCamTileY &&
+    // Rebuild only when camera moves outside the cached inner buffer margin (6 tiles buffer)
+    const distCamX = Math.abs(curTileX - this.lastBuiltCamTileX);
+    const distCamY = Math.abs(curTileY - this.lastBuiltCamTileY);
+    const inBufferMargin = distCamX < 6 && distCamY < 6;
+
+    if (inBufferMargin &&
         curZoom === this.lastBuiltZoom && curVisionZx === this.lastVisionZoneX &&
         curVisionZy === this.lastVisionZoneY && knownCount === this.lastVisionKnownCount &&
         this.lastBuiltFullWorld === this.renderFullWorld &&
@@ -2453,7 +2458,7 @@ export class RCT3DRenderer {
         bucket.colors.push(zoneMult * ao11, zoneMult * ao11, zoneMult * ao11);
         bucket.colors.push(zoneMult * ao10, zoneMult * ao10, zoneMult * ao10);
 
-        if (tType !== TILE_WATER) {
+        if (tType !== TILE_WATER && this.zoom >= 0.45) {
           gridLinePositions.push(
             tx, h00 + lineElevOffset, ty,
             tx + 1, h10 + lineElevOffset, ty
@@ -2542,13 +2547,12 @@ export class RCT3DRenderer {
 
       const mat = this.materials[matKey] || this.materials[TILE_FLOOR];
       const mesh = new THREE.Mesh(geom, mat);
+      mesh.receiveShadow = true;
+      mesh.castShadow = false; // Ground plane receives shadows from creatures/buildings, avoiding duplicate shadow pass
 
       if (matKey === String(TILE_WATER)) {
-        mesh.receiveShadow = true;
         this.waterGroup.add(mesh);
       } else {
-        mesh.receiveShadow = true;
-        mesh.castShadow = true;
         this.terrainGroup.add(mesh);
       }
     }
@@ -2718,9 +2722,8 @@ export class RCT3DRenderer {
     if (!this.width || !this.height || !world) return;
     this.currentMap = world.map;
 
-    if (!this.isPaused && (typeof simSpeed !== "number" || simSpeed > 0)) {
-      const spd = (typeof simSpeed === "number") ? simSpeed : 1.0;
-      this.waterTime += dt * spd;
+    if (!this.isPaused) {
+      this.waterTime += dt * 1.0;
 
       const waterMat = this.materials[TILE_WATER];
       if (waterMat && waterMat.map) {
@@ -2744,9 +2747,9 @@ export class RCT3DRenderer {
       maxTy = MAP_HEIGHT - 1;
     } else {
       const aspect = this.width / this.height;
-      const viewSize = Math.min(80, 28 / this.zoom);
+      const viewSize = Math.min(65, 28 / this.zoom);
       const diagonal = Math.hypot(viewSize * aspect, viewSize);
-      const radius = Math.min(80, Math.ceil(diagonal * 1.4) + 4);
+      const radius = Math.min(65, Math.ceil(diagonal * 1.25) + 3);
 
       minTx = Math.max(0, Math.floor(this.camX - radius));
       maxTx = Math.min(MAP_WIDTH - 1, Math.ceil(this.camX + radius));
@@ -2824,13 +2827,10 @@ export class RCT3DRenderer {
     const occupiedHouseTiles = new Set();
     const clanGroups = new Map();
 
-    if (entities && Array.isArray(entities)) {
-      for (let i = 0; i < entities.length; i++) {
-        const ent = entities[i];
-        if (!ent || ent.destroyed) continue;
-        if (ent.properties?.group?.id) {
-          clanGroups.set(ent.properties.group.id, ent.properties.group);
-        }
+    if (world?.groups && Array.isArray(world.groups)) {
+      for (let i = 0; i < world.groups.length; i++) {
+        const g = world.groups[i];
+        if (g && g.id) clanGroups.set(g.id, g);
       }
     }
 

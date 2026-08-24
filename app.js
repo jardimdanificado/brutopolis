@@ -17,6 +17,8 @@ import {
   resetEngineTicks,
   incrementEngineTick,
   rebuildSpatialGrid,
+  registerEntitySpatial,
+  updateEntitySpatial,
   getEntityAtTile,
   getEntitiesInRadius,
   getEntitiesInViewport,
@@ -36,7 +38,8 @@ import {
   restoreWorldEvents,
   recordWorldEvent,
   OP_RELATION,
-  allEvents
+  allEvents,
+  eventsById
 } from "./js/event_log.js";
 import {
   createLifeProp,
@@ -130,6 +133,172 @@ import {
   getGroupStockpile,
   setActiveWorld
 } from "./js/properties.js";
+
+// Initialize Web Worker for Background Simulation Thread
+let simWorker = null;
+
+function initSimWorker() {
+  if (simWorker) return;
+  simWorker = new Worker("./js/sim_worker.js", { type: "module" });
+
+  simWorker.onmessage = (e) => {
+    const data = e.data;
+    if (!data || !data.type) return;
+
+    switch (data.type) {
+      case "WORLD_INIT": {
+        if (!world) {
+          world = new World(data.preset || 0, data.seed || 1337);
+        }
+        world.width = data.width || 256;
+        world.height = data.height || 256;
+        setZoneSize(data.zoneSize || 8);
+        if (data.map) {
+          world.map = new Uint8Array(data.map);
+        }
+        if (data.clock) {
+          world.clock.day = data.clock.day;
+          world.clock.hour = data.clock.hour;
+          world.clock.minute = data.clock.minute;
+          world.clock.globalLight = data.clock.globalLight;
+          world.clock.totalSeconds = data.clock.totalSeconds;
+        }
+        setActiveWorld(world);
+        if (Array.isArray(data.groups)) {
+          world.groups = data.groups;
+        }
+        updateLocalEntities(data.entities, data.registry);
+        if (Array.isArray(data.events)) {
+          restoreWorldEvents(data.events);
+        }
+
+        if (data.startX !== undefined && data.startY !== undefined) {
+          const zoomFactor = data.width <= 128 ? 3.0 : data.width <= 256 ? 2.0 : 1.5;
+          if (renderer) renderer.setCamera(data.startX, data.startY, zoomFactor);
+          if (rctRenderer) rctRenderer.setCamera(data.startX, data.startY, zoomFactor);
+        }
+        if (data.firstLeaderId && data.firstLeaderId > 0) {
+          lastSelectedId = data.firstLeaderId;
+          if (renderer) renderer.selectEntity(lastSelectedId);
+          if (rctRenderer) rctRenderer.selectEntity(lastSelectedId);
+        }
+        if (rctRenderer) rctRenderer.lastBuiltCamTileX = -9999;
+        currentMode = "MAP";
+        break;
+      }
+
+      case "SIM_UPDATE": {
+        if (world && data.clock) {
+          world.clock.day = data.clock.day;
+          world.clock.hour = data.clock.hour;
+          world.clock.minute = data.clock.minute;
+          world.clock.globalLight = data.clock.globalLight;
+          world.clock.totalSeconds = data.clock.totalSeconds;
+        }
+        if (Array.isArray(data.groups) && world) {
+          world.groups = data.groups;
+        }
+        if (data.entities) {
+          updateLocalEntities(data.entities, data.registry);
+        }
+        if (Array.isArray(data.events) && data.events.length > 0) {
+          for (const ev of data.events) {
+            allEvents.push(ev);
+            eventsById.set(ev.id, ev);
+          }
+        }
+        break;
+      }
+
+      case "TILES_UPDATED": {
+        if (world && Array.isArray(data.tiles)) {
+          for (const t of data.tiles) {
+            world.setTile(t.x, t.y, t.tile);
+          }
+        }
+        if (rctRenderer) rctRenderer.lastBuiltCamTileX = -9999;
+        break;
+      }
+
+      case "SAVE_DATA_READY": {
+        if (data.saveData) {
+          const customWorld = data.saveData.world;
+          const filename = downloadWorldSaveJSON(customWorld, entities, currentTick, entityRegistry, world.groups || [], data.saveData.camera, genSeed, currentPreset);
+          try {
+            localStorage.setItem("brutopolis_quicksave", JSON.stringify(data.saveData));
+          } catch (e) {
+            console.warn("Could not save to localStorage:", e);
+          }
+        }
+        break;
+      }
+    }
+  };
+}
+
+function updateLocalEntities(entitiesData, registryData) {
+  if (Array.isArray(registryData)) {
+    for (const regData of registryData) {
+      if (!regData) continue;
+      let ent = entityRegistry.get(regData.id);
+      if (!ent) {
+        ent = { id: regData.id, properties: {} };
+        entityRegistry.set(ent.id, ent);
+      }
+      ent.x = regData.x;
+      ent.y = regData.y;
+      ent.birthTick = regData.birthTick;
+      ent.deathTick = regData.deathTick;
+      ent.destroyed = regData.destroyed;
+      ent.emote = regData.emote;
+      ent.motor = regData.motor;
+      ent.combatFlash = regData.combatFlash;
+      ent.isConstructed = regData.isConstructed;
+      ent.wallStyle = regData.wallStyle;
+      ent.properties = regData.properties || {};
+    }
+  }
+
+  if (Array.isArray(entitiesData)) {
+    const curEntities = [];
+    const zSize = getZoneSize();
+    for (const entData of entitiesData) {
+      if (!entData) continue;
+      let ent = entityRegistry.get(entData.id);
+      if (!ent) {
+        ent = { id: entData.id, x: entData.x, y: entData.y, targetX: entData.x, targetY: entData.y, properties: {} };
+        entityRegistry.set(ent.id, ent);
+        registerEntitySpatial(ent, zSize);
+      }
+      if (ent.targetX === undefined) ent.targetX = entData.x;
+      if (ent.targetY === undefined) ent.targetY = entData.y;
+
+      // Teleport if position jump is large (>3 tiles), else set interpolation target
+      const dist = Math.hypot(entData.x - ent.x, entData.y - ent.y);
+      if (dist > 3.0) {
+        ent.x = entData.x;
+        ent.y = entData.y;
+        updateEntitySpatial(ent, zSize);
+      }
+      ent.targetX = entData.x;
+      ent.targetY = entData.y;
+
+      ent.birthTick = entData.birthTick;
+      ent.deathTick = entData.deathTick;
+      ent.destroyed = entData.destroyed;
+      ent.emote = entData.emote;
+      ent.motor = entData.motor;
+      ent.combatFlash = entData.combatFlash;
+      ent.isConstructed = entData.isConstructed;
+      ent.wallStyle = entData.wallStyle;
+      ent.properties = entData.properties || {};
+      if (!ent.destroyed) {
+        curEntities.push(ent);
+      }
+    }
+    entities = curEntities;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // 1. Embedded 8x8 Bitmap Font (All 256 Characters: Exact Match with C/WASM Engine)
@@ -681,6 +850,7 @@ function increaseSimSpeed() {
   if (renderer) {
     renderer.setTps(Math.round(60 * simSpeed));
   }
+  if (simWorker) simWorker.postMessage({ type: "SET_SPEED", simSpeed });
 }
 
 function decreaseSimSpeed() {
@@ -693,6 +863,7 @@ function decreaseSimSpeed() {
   if (renderer) {
     renderer.setTps(Math.round(60 * simSpeed));
   }
+  if (simWorker) simWorker.postMessage({ type: "SET_SPEED", simSpeed });
 }
 
 function cycleSimSpeed() {
@@ -701,6 +872,7 @@ function cycleSimSpeed() {
   if (renderer) {
     renderer.setTps(Math.round(60 * simSpeed));
   }
+  if (simWorker) simWorker.postMessage({ type: "SET_SPEED", simSpeed });
 }
 
 let currentPreset = 0;
@@ -816,71 +988,59 @@ function getEditorHoverTile() {
 function applyEditorActionAt(tileX, tileY) {
   if (!world || tileX < 0 || tileX >= (world.width || 512) || tileY < 0 || tileY >= (world.height || 512)) return;
 
-  if (editorTool === "PAINT") {
-    applyTileBrush(tileX, tileY, editorSelectedTile, editorBrushSize);
-    if (rctRenderer) rctRenderer.lastBuiltCamTileX = -9999;
-  } else if (editorTool === "SPAWN" && editorActiveSpawner) {
-    const ent = editorActiveSpawner.fn(tileX, tileY);
-    if (ent) {
-      // Auto-assign to clan if spawned within active clan's claimed territory
-      const allActiveClans = getAllGroups();
-      const targetClan = allActiveClans.find(g => isTileInClaimedZones(tileX, tileY, g.claimedZones));
-
-      if (targetClan) {
-        ent.properties.group = targetClan;
-        if (!ent.properties.group_member) {
-          ent.properties.group_member = createGroupMemberProp();
-        }
-        if (!targetClan.members) targetClan.members = [];
-        if (!targetClan.members.includes(ent.id)) targetClan.members.push(ent.id);
-
-        if (ent.properties.brain) {
-          if (!ent.properties.brain.affinities) ent.properties.brain.affinities = {};
-          for (const mid of targetClan.members) {
-            if (mid !== ent.id) {
-              ent.properties.brain.affinities[mid] = 40;
-              const peerEnt = getEntityById(mid);
-              const peer = (peerEnt && !peerEnt.destroyed) ? peerEnt : null;
-              if (peer && peer.properties?.brain) {
-                if (!peer.properties.brain.affinities) peer.properties.brain.affinities = {};
-                peer.properties.brain.affinities[ent.id] = 40;
-              }
-            }
-          }
-        }
-
-        // Inherit clan surname if humanoid
-        if (targetClan.founderSurname && ent.properties.surname) {
-          ent.properties.surname = targetClan.founderSurname;
-        }
-
-        recordWorldEvent({
-          opcode: OP_RELATION,
-          type: "RELATION",
-          primaryEntityId: ent.id,
-          location: { x: tileX, y: tileY },
-          description: `${ent.properties.name} joined the '${targetClan.name}' faction in their territory!`,
-          tick: currentTick,
-          timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
-          metadata: { clan: targetClan.name }
-        });
-      }
-
-      entities.push(ent);
-      if (typeof registerEntitySpatial === "function") {
-        registerEntitySpatial(ent);
-      }
+  if (simWorker) {
+    let spawnerKey = null;
+    if (editorTool === "SPAWN" && editorActiveSpawner?.label) {
+      const lbl = editorActiveSpawner.label.toUpperCase();
+      if (lbl.includes("HUMAN")) spawnerKey = "HUMAN";
+      else if (lbl.includes("ELF")) spawnerKey = "ELF";
+      else if (lbl.includes("DWARF")) spawnerKey = "DWARF";
+      else if (lbl.includes("ORC")) spawnerKey = "ORC";
+      else if (lbl.includes("GOBLIN")) spawnerKey = "GOBLIN";
+      else if (lbl.includes("BOAR")) spawnerKey = "BOAR";
+      else if (lbl.includes("DEER")) spawnerKey = "DEER";
+      else if (lbl.includes("SPIDER")) spawnerKey = "SPIDER";
+      else if (lbl.includes("WOLF")) spawnerKey = "WOLF";
+      else if (lbl.includes("BEAR")) spawnerKey = "BEAR";
+      else if (lbl.includes("CAT")) spawnerKey = "CAT";
+      else if (lbl.includes("GOAT")) spawnerKey = "GOAT";
+      else if (lbl.includes("BAT")) spawnerKey = "BAT";
+      else if (lbl.includes("SCORPION")) spawnerKey = "SCORPION";
+      else if (lbl.includes("LIZARD")) spawnerKey = "LIZARD";
+      else if (lbl.includes("DRAGON")) spawnerKey = "DRAGON";
+      else if (lbl.includes("SERPENT")) spawnerKey = "SERPENT";
+      else if (lbl.includes("TREE") || lbl.includes("OAK")) spawnerKey = "OAK_TREE";
+      else if (lbl.includes("PINE")) spawnerKey = "PINE_TREE";
+      else if (lbl.includes("WILLOW")) spawnerKey = "WILLOW_TREE";
+      else if (lbl.includes("CACTUS")) spawnerKey = "CACTUS";
+      else if (lbl.includes("SHRUB")) spawnerKey = "SHRUB";
+      else if (lbl.includes("LILY")) spawnerKey = "LILY";
+      else if (lbl.includes("SEAWEED")) spawnerKey = "SEAWEED";
+      else if (lbl.includes("WOOD")) spawnerKey = "LOG";
+      else if (lbl.includes("STONE WALL")) spawnerKey = "WALL";
+      else if (lbl.includes("STONE")) spawnerKey = "STONE";
+      else if (lbl.includes("WELL")) spawnerKey = "WELL";
+      else if (lbl.includes("SEED")) spawnerKey = "SEED";
+      else if (lbl.includes("FRUIT")) spawnerKey = "FRUIT";
+      else spawnerKey = "HUMAN";
     }
-  } else if (editorTool === "BULLDOZER") {
-    const tileBucket = tileEntityMap.get(`${tileX}_${tileY}`);
-    const targets = tileBucket ? Array.from(tileBucket).filter(e => !e.destroyed) : [];
-    for (const t of targets) {
-      destroyEntity(t, entities);
+
+    if (editorTool === "EYEDROPPER") {
+      const sampled = world.getTile(tileX, tileY);
+      editorSelectedTile = sampled;
+      editorTool = "PAINT";
+      return;
     }
-  } else if (editorTool === "EYEDROPPER") {
-    const sampled = world.getTile(tileX, tileY);
-    editorSelectedTile = sampled;
-    editorTool = "PAINT";
+
+    simWorker.postMessage({
+      type: "APPLY_EDITOR_ACTION",
+      tool: editorTool,
+      tileX,
+      tileY,
+      selectedTile: editorSelectedTile,
+      brushSize: editorBrushSize,
+      spawnerLabel: spawnerKey
+    });
   }
 }
 
@@ -1024,190 +1184,34 @@ let genSpawnPioneers = true;
 let genEmbarkCount = Math.floor(Math.random() * 5) + 3; // Random 3 to 7 Embarks by default
 
 function generateConfiguredWorld() {
-  if (!renderer || !world) return;
-  currentPreset = genPreset;
-  setZoneSize(genZoneSize);
-  const seed = genSeed || (Math.floor(Math.random() * 1000000) + 1);
-
-  world.generate(genPreset, seed);
+  if (simWorker) {
+    simWorker.postMessage({
+      type: "GENERATE_WORLD",
+      preset: genPreset,
+      width: genWidth,
+      height: genHeight,
+      zoneSize: genZoneSize,
+      seed: genSeed,
+      creatureDensity: genCreatureDensity,
+      plantDensity: genPlantDensity,
+      spawnPioneers: genSpawnPioneers,
+      embarkCount: genEmbarkCount
+    });
+  } else {
+    world.generate(genPreset, genSeed);
+  }
 
   resetEngineTicks();
   resetWorldEvents();
-  world.refresh();
+  if (world) world.refresh();
   entities = [];
   lastSelectedId = -1;
   modalScroll = 0;
   inspectingLogEvent = null;
 
-  // Active Playable Box centered within 1024x1024 buffer
-  const minX = Math.floor((1024 - genWidth) / 2);
-  const maxX = minX + genWidth;
-  const minY = Math.floor((1024 - genHeight) / 2);
-  const maxY = minY + genHeight;
-
-  // Fill void outside active world
-  if (genWidth < 1024 || genHeight < 1024) {
-    for (let y = 0; y < 1024; y++) {
-      for (let x = 0; x < 1024; x++) {
-        if (x < minX || x >= maxX || y < minY || y >= maxY) {
-          world.setTile(x, y, 5); // Void border
-        }
-      }
-    }
-  }
-
-  // Area-proportional density scaling
-  const areaRatio = (genWidth * genHeight) / (512 * 512);
-
-  const plantMult = (genPlantDensity === "SPARSE" ? 0.4 : genPlantDensity === "DENSE" ? 2.0 : 1.0) * areaRatio;
-  const creatureMult = (genCreatureDensity === "NONE" ? 0 : genCreatureDensity === "LOW" ? 0.4 : genCreatureDensity === "HIGH" ? 2.0 : 1.0) * areaRatio;
-
-  const inBounds = (x, y) => x >= minX && x < maxX && y >= minY && y < maxY;
-  const spawnBounds = { minX, maxX, minY, maxY };
-
-  // Flora & Trees
-  const floraCount = (base) => Math.max(1, Math.round(base * plantMult));
-  spawnRandomGlobal(floraCount(80), createOakTree, (x, y) => inBounds(x, y) && world.getTile(x, y) === 0, spawnBounds);
-  spawnRandomGlobal(floraCount(60), createWillowTree, (x, y) => inBounds(x, y) && (world.getTile(x, y) === 0 || world.getTile(x, y) === 3), spawnBounds);
-  spawnRandomGlobal(floraCount(65), createCactus, (x, y) => inBounds(x, y) && world.getTile(x, y) === 3, spawnBounds);
-  spawnRandomGlobal(floraCount(50), createAlpineShrub, (x, y) => inBounds(x, y) && (world.getTile(x, y) === 4 || world.getTile(x, y) === 1), spawnBounds);
-  spawnRandomGlobal(floraCount(55), createPineTree, (x, y) => inBounds(x, y) && (world.getTile(x, y) === 4 || world.getTile(x, y) === 0), spawnBounds);
-  spawnRandomGlobal(floraCount(80), createWaterLily, (x, y) => inBounds(x, y) && world.getTile(x, y) === 2, spawnBounds);
-  spawnRandomGlobal(floraCount(100), createSeaweed, (x, y) => inBounds(x, y) && world.getTile(x, y) === 2, spawnBounds);
-
-  // Items & Resources
-  spawnRandomGlobal(floraCount(60), (x, y) => createSeedEntity(x, y, "large", "oak"), (x, y) => inBounds(x, y) && world.getTile(x, y) === 0, spawnBounds);
-  spawnRandomGlobal(floraCount(40), (x, y) => createSeedEntity(x, y, "small", "willow"), (x, y) => inBounds(x, y) && (world.getTile(x, y) === 0 || world.getTile(x, y) === 3), spawnBounds);
-  spawnRandomGlobal(floraCount(30), (x, y) => createFruit(x, y, "large", "cactus"), (x, y) => inBounds(x, y) && world.getTile(x, y) === 3, spawnBounds);
-  spawnRandomGlobal(floraCount(40), (x, y) => createFruit(x, y, "large", "oak"), (x, y) => inBounds(x, y) && world.isWalkable(x, y), spawnBounds);
-  spawnRandomGlobal(floraCount(50), createWoodItem, (x, y) => inBounds(x, y) && world.getTile(x, y) === 0, spawnBounds);
-  spawnRandomGlobal(floraCount(50), createStoneItem, (x, y) => inBounds(x, y) && (world.getTile(x, y) === 4 || world.getTile(x, y) === 1), spawnBounds);
-
-  // Determine spawn position near center of playable area
-  let centerPlayX = minX + Math.floor(genWidth / 2);
-  let centerPlayY = minY + Math.floor(genHeight / 2);
-  let startX = centerPlayX;
-  let startY = centerPlayY;
-  const maxSearchRadius = Math.floor(Math.min(genWidth, genHeight) / 2) - 2;
-
-  for (let r = 0; r < maxSearchRadius; r++) {
-    let found = false;
-    for (let dy = -r; dy <= r; dy++) {
-      for (let dx = -r; dx <= r; dx++) {
-        if (world.isWalkable(centerPlayX + dx, centerPlayY + dy)) {
-          startX = centerPlayX + dx;
-          startY = centerPlayY + dy;
-          found = true;
-          break;
-        }
-      }
-      if (found) break;
-    }
-    if (found) break;
-  }
-
-  // Fauna & Diverse Wildlife
-  if (creatureMult > 0) {
-    const mobCount = (base) => Math.max(1, Math.round(base * creatureMult));
-    const outsideSettlement = (x, y) => inBounds(x, y) && (Math.abs(x - startX) + Math.abs(y - startY)) > Math.min(28, Math.floor(genWidth / 8));
-
-    // Real-World Dumb / Ambient Animals (Grasslands, Plains, Meadows)
-    spawnRandomGlobal(mobCount(28), (x, y) => createCapybara(x, y), (x, y) => inBounds(x, y) && (world.getTile(x, y) === 0 || world.getTile(x, y) === 2), spawnBounds);
-    spawnRandomGlobal(mobCount(32), (x, y) => createCow(x, y), (x, y) => inBounds(x, y) && world.getTile(x, y) === 0, spawnBounds);
-    spawnRandomGlobal(mobCount(45), (x, y) => createChicken(x, y), (x, y) => inBounds(x, y) && world.getTile(x, y) === 0, spawnBounds);
-    spawnRandomGlobal(mobCount(40), (x, y) => createRabbit(x, y), (x, y) => inBounds(x, y) && world.getTile(x, y) === 0, spawnBounds);
-    spawnRandomGlobal(mobCount(28), (x, y) => createDeer(x, y), (x, y) => inBounds(x, y) && world.getTile(x, y) === 0, spawnBounds);
-    spawnRandomGlobal(mobCount(22), (x, y) => createBoar(x, y), (x, y) => inBounds(x, y) && (world.getTile(x, y) === 0 || world.getTile(x, y) === 4), spawnBounds);
-
-    // Water & Amphibious Wildlife (Lakes, Rivers, Coast)
-    spawnRandomGlobal(mobCount(35), (x, y) => createDuck(x, y), (x, y) => inBounds(x, y) && (world.getTile(x, y) === 2 || world.getTile(x, y) === 0), spawnBounds);
-    spawnRandomGlobal(mobCount(40), (x, y) => createFrog(x, y), (x, y) => inBounds(x, y) && (world.getTile(x, y) === 2 || world.getTile(x, y) === 0), spawnBounds);
-    spawnRandomGlobal(mobCount(20), createSeaSerpent, (x, y) => inBounds(x, y) && world.getTile(x, y) === 2, spawnBounds);
-
-    // Deserts, Caves & Mountain Wildlife
-    spawnRandomGlobal(mobCount(25), createScorpion, (x, y) => inBounds(x, y) && world.getTile(x, y) === 3, spawnBounds);
-    spawnRandomGlobal(mobCount(22), createLizard, (x, y) => inBounds(x, y) && (world.getTile(x, y) === 3 || world.getTile(x, y) === 0), spawnBounds);
-    spawnRandomGlobal(mobCount(20), createMountainGoat, (x, y) => inBounds(x, y) && (world.getTile(x, y) === 4 || world.getTile(x, y) === 1), spawnBounds);
-    spawnRandomGlobal(mobCount(25), createBat, (x, y) => inBounds(x, y), spawnBounds);
-    spawnRandomGlobal(mobCount(3), createDragon, (x, y) => inBounds(x, y) && (world.getTile(x, y) === 1 || world.getTile(x, y) === 4) && outsideSettlement(x, y), spawnBounds);
-
-    // Varied Humanoids & Nomadic Species
-    spawnRandomGlobal(mobCount(22), (x, y) => createKobold(x, y), (x, y) => inBounds(x, y) && (world.getTile(x, y) === 1 || world.getTile(x, y) === 4) && outsideSettlement(x, y), spawnBounds);
-    spawnRandomGlobal(mobCount(20), (x, y) => createLizardfolk(x, y), (x, y) => inBounds(x, y) && (world.getTile(x, y) === 3 || world.getTile(x, y) === 2 || world.getTile(x, y) === 0) && outsideSettlement(x, y), spawnBounds);
-    spawnRandomGlobal(mobCount(18), (x, y) => createCatfolk(x, y), (x, y) => inBounds(x, y) && world.getTile(x, y) === 0 && outsideSettlement(x, y), spawnBounds);
-    spawnRandomGlobal(mobCount(15), (x, y) => createCentaur(x, y), (x, y) => inBounds(x, y) && world.getTile(x, y) === 0 && outsideSettlement(x, y), spawnBounds);
-    spawnRandomGlobal(mobCount(18), (x, y) => createDwarf(x, y), (x, y) => inBounds(x, y) && (world.getTile(x, y) === 1 || world.getTile(x, y) === 4) && outsideSettlement(x, y), spawnBounds);
-    spawnRandomGlobal(mobCount(18), (x, y) => createElf(x, y), (x, y) => inBounds(x, y) && world.getTile(x, y) === 0 && outsideSettlement(x, y), spawnBounds);
-    spawnRandomGlobal(mobCount(18), (x, y) => createOrc(x, y), (x, y) => inBounds(x, y) && (world.getTile(x, y) === 0 || world.getTile(x, y) === 4) && outsideSettlement(x, y), spawnBounds);
-    spawnRandomGlobal(mobCount(20), createGoblin, (x, y) => inBounds(x, y) && (world.getTile(x, y) === 0 || world.getTile(x, y) === 4) && outsideSettlement(x, y), spawnBounds);
-    spawnRandomGlobal(mobCount(14), createWolf, (x, y) => inBounds(x, y) && (world.getTile(x, y) === 0 || world.getTile(x, y) === 4) && outsideSettlement(x, y), spawnBounds);
-    spawnRandomGlobal(mobCount(8), createBear, (x, y) => inBounds(x, y) && world.getTile(x, y) === 0 && outsideSettlement(x, y), spawnBounds);
-  }
-
-  // Founding Pioneers Clans / Multiple Diverse Embark Parties (3 to 7 Embarks)
-  if (genSpawnPioneers && genEmbarkCount > 0) {
-    const minDistanceBetweenEmbarks = Math.max(28, Math.floor(Math.min(genWidth, genHeight) / (genEmbarkCount + 1)));
-    const spawnedEmbarkCenters = [];
-
-    // Helper to find a suitable walkable terrain spot for an embark party
-    function findSuitableEmbarkSpot(targetX, targetY, searchRadius) {
-      for (let r = 0; r < searchRadius; r += 2) {
-        for (let dy = -r; dy <= r; dy += 2) {
-          for (let dx = -r; dx <= r; dx += 2) {
-            const cx = targetX + dx;
-            const cy = targetY + dy;
-            if (inBounds(cx, cy) && world.isWalkable(cx, cy)) {
-              // Check separation from existing embarks
-              let tooClose = false;
-              for (const [ex, ey] of spawnedEmbarkCenters) {
-                if (Math.hypot(cx - ex, cy - ey) < minDistanceBetweenEmbarks) {
-                  tooClose = true;
-                  break;
-                }
-              }
-              if (!tooClose) return { x: cx, y: cy };
-            }
-          }
-        }
-      }
-      return null;
-    }
-
-    const EMBARK_THEMES = ["diverse", "dwarf", "elf", "orc", "goblin", "lizardfolk", "human", "catfolk", "centaur", "random"];
-    // Shuffle themes
-    const shuffledThemes = [...EMBARK_THEMES].sort(() => Math.random() - 0.5);
-
-    for (let k = 0; k < genEmbarkCount; k++) {
-      let embarkSpot = null;
-      if (k === 0) {
-        // First embark at primary spawn
-        embarkSpot = { x: startX, y: startY };
-      } else {
-        // Distribute other embarks around playable quadrants/regions
-        const angle = (k / genEmbarkCount) * Math.PI * 2 + (Math.random() * 0.4 - 0.2);
-        const dist = (Math.min(genWidth, genHeight) * 0.25) + Math.random() * (Math.min(genWidth, genHeight) * 0.15);
-        const approxX = Math.floor(centerPlayX + Math.cos(angle) * dist);
-        const approxY = Math.floor(centerPlayY + Math.sin(angle) * dist);
-
-        embarkSpot = findSuitableEmbarkSpot(approxX, approxY, 60) || findSuitableEmbarkSpot(centerPlayX, centerPlayY, maxSearchRadius);
-      }
-
-      if (embarkSpot) {
-        spawnedEmbarkCenters.push([embarkSpot.x, embarkSpot.y]);
-        const theme = shuffledThemes[k % shuffledThemes.length];
-        const res = createEmbarkParty(embarkSpot.x, embarkSpot.y, world, entities, { theme });
-        if (k === 0 && res.members.length > 0) {
-          lastSelectedId = res.members[0].id;
-          renderer.selectEntity(lastSelectedId);
-        }
-      }
-    }
-  }
-
-  // Rebuild Spatial Hash Grid across all active entities
-  rebuildSpatialGrid(entities, getZoneSize());
-
   const zoomFactor = genWidth <= 128 ? 3.0 : genWidth <= 256 ? 2.0 : 1.5;
+  const startX = 256;
+  const startY = 256;
   renderer.setCamera(startX, startY, zoomFactor);
   if (rctRenderer) {
     rctRenderer.setCamera(startX, startY, zoomFactor);
@@ -1218,9 +1222,42 @@ function generateConfiguredWorld() {
 
 function resetWorld(presetId = 0) {
   genPreset = presetId;
-  genSeed = Math.floor(Math.random() * 1000000) + 1;
+  const seed = Math.floor(Math.random() * 1000000) + 1;
+  genSeed = seed;
   genEmbarkCount = Math.floor(Math.random() * 5) + 3; // Random 3 to 7 Embarks on map reset
-  generateConfiguredWorld();
+  if (simWorker) {
+    simWorker.postMessage({
+      type: "GENERATE_WORLD",
+      preset: genPreset,
+      width: genWidth,
+      height: genHeight,
+      zoneSize: genZoneSize,
+      seed,
+      creatureDensity: genCreatureDensity,
+      plantDensity: genPlantDensity,
+      spawnPioneers: genSpawnPioneers,
+      embarkCount: genEmbarkCount
+    });
+  } else {
+    world.generate(genPreset, seed);
+  }
+
+  resetEngineTicks();
+  resetWorldEvents();
+  if (world) world.refresh();
+  entities = [];
+  lastSelectedId = -1;
+  modalScroll = 0;
+  inspectingLogEvent = null;
+
+  const zoomFactor = genWidth <= 128 ? 3.0 : genWidth <= 256 ? 2.0 : 1.5;
+  const startX = 256;
+  const startY = 256;
+  renderer.setCamera(startX, startY, zoomFactor);
+  if (rctRenderer) {
+    rctRenderer.setCamera(startX, startY, zoomFactor);
+  }
+  currentMode = "MAP";
 }
 
 function saveWorldState() {
@@ -1230,137 +1267,33 @@ function saveWorldState() {
   const zoom = renderer.getCameraZoom();
   const camera = { x: cx, y: cy, zoom };
 
-  const customWorld = {
-    width: genWidth,
-    height: genHeight,
-    zoneSize: getZoneSize(),
-    map: world.map,
-    clock: world.clock
-  };
-
-  const filename = downloadWorldSaveJSON(customWorld, entities, currentTick, entityRegistry, world.groups || [], camera, genSeed, currentPreset);
-
-  try {
-    const saveObj = exportWorldSaveJSON(customWorld, entities, currentTick, entityRegistry, world.groups || [], camera, genSeed, currentPreset);
-    localStorage.setItem("brutopolis_quicksave", JSON.stringify(saveObj));
-  } catch (e) {
-    console.warn("Could not save to localStorage (storage quota full):", e);
+  if (simWorker) {
+    simWorker.postMessage({ type: "SAVE_WORLD", camera });
+  } else {
+    const customWorld = {
+      width: genWidth,
+      height: genHeight,
+      zoneSize: getZoneSize(),
+      map: world.map,
+      clock: world.clock
+    };
+    const filename = downloadWorldSaveJSON(customWorld, entities, currentTick, entityRegistry, world.groups || [], camera, genSeed, currentPreset);
+    try {
+      const saveObj = exportWorldSaveJSON(customWorld, entities, currentTick, entityRegistry, world.groups || [], camera, genSeed, currentPreset);
+      localStorage.setItem("brutopolis_quicksave", JSON.stringify(saveObj));
+    } catch (e) {
+      console.warn("Could not save to localStorage:", e);
+    }
   }
 }
 
 function loadWorldState(saveData) {
-  if (!saveData || !world || !renderer) {
+  if (!saveData) {
     alert("Invalid save file!");
     return;
   }
-
-  try {
-    // 1. Reset current state
-    entities = [];
-    entityRegistry.clear();
-    lastSelectedId = -1;
-    modalScroll = 0;
-    inspectingLogEvent = null;
-
-    // 2. Restore Terrain
-    if (saveData.world?.terrain) {
-      const binaryStr = atob(saveData.world.terrain);
-      const mapW = world.width || 1024;
-      for (let i = 0; i < binaryStr.length; i++) {
-        const tileVal = binaryStr.charCodeAt(i);
-        const x = i % mapW;
-        const y = Math.floor(i / mapW);
-        world.setTile(x, y, tileVal);
-      }
-    }
-
-    // 3. Restore Zone Size & Dimensions
-    if (saveData.world?.zoneSize) {
-      setZoneSize(saveData.world.zoneSize);
-      genZoneSize = getZoneSize();
-    }
-    if (saveData.world?.width && saveData.world?.height) {
-      genWidth = saveData.world.width;
-      genHeight = saveData.world.height;
-    }
-
-    // 4. Restore Clock & Simulation Tick
-    if (saveData.world?.clock) {
-      world.clock.day = saveData.world.clock.day || 0;
-      world.clock.hour = saveData.world.clock.hour || 0;
-      world.clock.minute = saveData.world.clock.minute || 0;
-      world.clock.globalLight = saveData.world.clock.globalLight !== undefined ? saveData.world.clock.globalLight : 1.0;
-      world.clock.totalSeconds = saveData.world.clock.totalSeconds || 0;
-
-      // clock updated
-    }
-
-    if (saveData.world?.tick !== undefined) {
-      resetEngineTicks();
-      for (let i = 0; i < saveData.world.tick; i++) {
-        incrementEngineTick();
-      }
-    }
-
-    // 5. Restore Groups / Clans
-    world.groups = saveData.groups || [];
-
-    // 6. Restore Entities
-    if (Array.isArray(saveData.entities)) {
-      for (const entData of saveData.entities) {
-        if (!entData) continue;
-        const ent = {
-          id: entData.id,
-          x: entData.x,
-          y: entData.y,
-          birthTick: entData.birthTick,
-          deathTick: entData.deathTick,
-          destroyed: entData.destroyed,
-          renderable: entData.renderable,
-          properties: entData.properties || {}
-        };
-        rebindEntityMethods(ent);
-        entities.push(ent);
-        entityRegistry.set(ent.id, ent);
-      }
-    }
-
-    // 7. Restore Historical Registry (dead ancestors)
-    if (Array.isArray(saveData.registry)) {
-      for (const regData of saveData.registry) {
-        if (!regData || entityRegistry.has(regData.id)) continue;
-        const ent = {
-          id: regData.id,
-          x: regData.x,
-          y: regData.y,
-          birthTick: regData.birthTick,
-          deathTick: regData.deathTick,
-          destroyed: true,
-          renderable: regData.renderable,
-          properties: regData.properties || {}
-        };
-        entityRegistry.set(ent.id, ent);
-      }
-    }
-
-    // 8. Restore Events
-    if (Array.isArray(saveData.events)) {
-      restoreWorldEvents(saveData.events);
-    }
-
-    // 9. Restore Camera
-    if (saveData.camera) {
-      renderer.setCamera(saveData.camera.x || 256, saveData.camera.y || 256, saveData.camera.zoom || 1.0);
-    }
-
-    currentPreset = saveData.world?.preset || 0;
-    genSeed = saveData.world?.seed || 12345;
-    rebuildSpatialGrid(entities, getZoneSize());
-    currentMode = "MAP";
-    console.log("✓ Brutopolis world save restored successfully!");
-  } catch (err) {
-    console.error("Failed to load save file:", err);
-    alert("Error loading save file: " + err.message);
+  if (simWorker) {
+    simWorker.postMessage({ type: "LOAD_WORLD", saveData });
   }
 }
 
@@ -1388,14 +1321,13 @@ function openSaveFilePicker() {
   document.body.removeChild(input);
 }
 
-function spawnEntityAtCamera(factoryFn) {
+function spawnEntityAtCamera(spawnerLabel) {
   if (!renderer || !world) return;
   const cx = Math.floor(renderer.getCameraX());
   const cy = Math.floor(renderer.getCameraY());
-  const ent = factoryFn(cx, cy);
-  entities.push(ent);
-  lastSelectedId = ent.id;
-  renderer.selectEntity(ent.id);
+  if (simWorker) {
+    simWorker.postMessage({ type: "SPAWN_ENTITY", spawnerLabel, x: cx, y: cy });
+  }
 }
 
 function cycleNextLivingEntity() {
@@ -1426,6 +1358,7 @@ function togglePause() {
   if (!renderer || !world) return;
   isPaused = !isPaused;
   renderer.setPaused(isPaused ? 1 : 0);
+  if (simWorker) simWorker.postMessage({ type: "SET_PAUSED", isPaused });
 }
 
 // ---------------------------------------------------------------------------
@@ -1633,12 +1566,10 @@ window.addEventListener("keydown", (e) => {
     centerCamera();
   } else if (e.code === "KeyK") {
     if (lastSelectedId > 0) {
-      const ent = getEntityById(lastSelectedId);
-      if (ent) {
-        explodeEntityOnDeath(ent, entities, world);
-        destroyEntity(ent, entities);
-        cycleNextLivingEntity();
+      if (simWorker) {
+        simWorker.postMessage({ type: "KILL_ENTITY", entityId: lastSelectedId });
       }
+      cycleNextLivingEntity();
     }
   } else if (e.code === "KeyF") {
     toggleFollowMode();
@@ -1688,15 +1619,15 @@ window.addEventListener("keydown", (e) => {
     increaseSimSpeed();
   } else if (e.code === "Minus" || e.code === "NumpadSubtract" || e.code === "BracketLeft") {
     decreaseSimSpeed();
-  } else if (e.code === "Digit1") spawnEntityAtCamera(createKnight);
-  else if (e.code === "Digit2") spawnEntityAtCamera(createArcher);
-  else if (e.code === "Digit3") spawnEntityAtCamera(createWolf);
-  else if (e.code === "Digit4") spawnEntityAtCamera(createBear);
-  else if (e.code === "Digit5") spawnEntityAtCamera(createCat);
-  else if (e.code === "Digit6") spawnEntityAtCamera(createGoblin);
-  else if (e.code === "Digit7") spawnEntityAtCamera(createBat);
-  else if (e.code === "Digit8") spawnEntityAtCamera(createSeaSerpent);
-  else if (e.code === "Digit9") spawnEntityAtCamera(createDragon);
+  } else if (e.code === "Digit1") spawnEntityAtCamera("KNIGHT");
+  else if (e.code === "Digit2") spawnEntityAtCamera("ARCHER");
+  else if (e.code === "Digit3") spawnEntityAtCamera("WOLF");
+  else if (e.code === "Digit4") spawnEntityAtCamera("BEAR");
+  else if (e.code === "Digit5") spawnEntityAtCamera("CAT");
+  else if (e.code === "Digit6") spawnEntityAtCamera("GOBLIN");
+  else if (e.code === "Digit7") spawnEntityAtCamera("BAT");
+  else if (e.code === "Digit8") spawnEntityAtCamera("SERPENT");
+  else if (e.code === "Digit9") spawnEntityAtCamera("DRAGON");
 });
 
 window.addEventListener("keyup", (e) => {
@@ -2110,8 +2041,9 @@ function renderDossierModal() {
 
     drawNESButton(mx + mw - 112, my + 6, 75, 24, "KILL", false, true);
     registerClickableRegion(mx + mw - 112, my + 6, 75, 24, () => {
-      explodeEntityOnDeath(target, entities, world);
-      destroyEntity(target, entities);
+      if (simWorker) {
+        simWorker.postMessage({ type: "KILL_ENTITY", entityId: target.id });
+      }
       cycleNextLivingEntity();
     });
   }
@@ -4211,26 +4143,27 @@ function frame(time) {
   }
 
   if (renderer && world) {
-    // 1. Tick Simulation if not paused
-    if (!isPaused) {
-      if (typeof simSpeed === "number" && simSpeed > 1.0) {
-        const subTicks = Math.min(Math.round(simSpeed), 6);
-        const subDt = (0.05 * simSpeed) / subTicks;
-        for (let s = 0; s < subTicks; s++) {
-          world.clock.tick(subDt);
-          incrementEngineTick();
-          tickEntities(entities, subDt, world);
-          tpsCounter++;
-        }
-      } else {
-        const speedVal = typeof simSpeed === "number" ? simSpeed : 1.0;
-        const effectiveDt = Math.min(dt, 0.1) * speedVal;
-        world.clock.tick(effectiveDt);
-        incrementEngineTick();
-        tickEntities(entities, effectiveDt, world);
-        tpsCounter++;
+    // 1. Main-thread entity position lerp for 60 FPS smooth rendering independent of worker tick rate
+    const lerpAlpha = Math.min(1.0, dt * 15.0);
+    const zSize = getZoneSize();
+    for (let i = 0; i < entities.length; i++) {
+      const e = entities[i];
+      if (!e || e.destroyed) continue;
+      let moved = false;
+      if (e.targetX !== undefined && Math.abs(e.targetX - e.x) > 0.001) {
+        e.x += (e.targetX - e.x) * lerpAlpha;
+        moved = true;
+      }
+      if (e.targetY !== undefined && Math.abs(e.targetY - e.y) > 0.001) {
+        e.y += (e.targetY - e.y) * lerpAlpha;
+        moved = true;
+      }
+      if (moved) {
+        updateEntitySpatial(e, zSize);
       }
     }
+
+    tpsCounter++;
 
     if (time - lastTpsUpdate >= 1000) {
       measuredTps = Math.round(tpsCounter * (1000 / Math.max(1, time - lastTpsUpdate)));
@@ -4298,8 +4231,20 @@ async function init() {
     await renderer.initPromise;
     world = new World(0, genSeed);
     setActiveWorld(world);
-    resetWorld(0);
-    console.log("✓ Brutopolis (Pure JavaScript & Canvas 2D Engine) initialized successfully!");
+    initSimWorker();
+    simWorker.postMessage({
+      type: "INIT_WORLD",
+      preset: 0,
+      width: genWidth,
+      height: genHeight,
+      zoneSize: genZoneSize,
+      seed: genSeed,
+      creatureDensity: genCreatureDensity,
+      plantDensity: genPlantDensity,
+      spawnPioneers: genSpawnPioneers,
+      embarkCount: genEmbarkCount
+    });
+    console.log("✓ Brutopolis (Worker Simulation & Pure JS Canvas Renderer) initialized successfully!");
     requestAnimationFrame(frame);
   } catch (err) {
     console.error("Failed to load Brutopolis:", err);

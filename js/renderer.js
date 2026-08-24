@@ -399,8 +399,7 @@ export class Renderer {
     }
 
     if (!this.isPaused) {
-      const speedVal = typeof simSpeed === "number" ? simSpeed : 32.0;
-      this.waterTime += Math.min(dt, 0.1) * speedVal;
+      this.waterTime += Math.min(dt, 0.1) * 2.0;
     }
 
     const buf32 = this.buf32;
@@ -460,10 +459,8 @@ export class Renderer {
         if (t === TILE_WATER) {
           tex = texWater;
 
-          // Velocidade e comprimento da onda adaptados a velocidade da simulacao
-          const speedNum = typeof simSpeed === "number" ? simSpeed : 32.0;
-          // Quanto mais rapido, menor o comprimento da onda (frequencia espacial maior)
-          const spatialFreq = 0.5 + Math.min(2.0, Math.log2(Math.max(0.5, speedNum)) * 0.35);
+          // Animacao de onda fluida independente da velocidade da simulacao
+          const spatialFreq = 0.8;
           
           const wave = Math.sin(this.waterTime * 2.0 + tx * spatialFreq + ty * (spatialFreq * 0.6)) * 0.1;
           const waveScale = Math.max(0.5, Math.min(1.5, 1.0 + wave));
