@@ -218,7 +218,9 @@ export function createTintedTexture(skinName, fgHex = 0xffffff, bgHex = 0x000000
 export function applyRetroDitherToMaterial(mat, steps = 24.0, intensity = 0.50) {
   if (!mat) return;
   mat.dithering = true;
+  const prevCompile = mat.onBeforeCompile;
   mat.onBeforeCompile = (shader) => {
+    if (prevCompile) prevCompile(shader);
     shader.fragmentShader = `
       float getBayer4x4(vec2 p) {
         vec2 m = mod(floor(p), 4.0);
@@ -256,6 +258,76 @@ export function applyRetroDitherToMaterial(mat, steps = 24.0, intensity = 0.50) 
       float bayer = (getBayer4x4(gl_FragCoord.xy) - 0.5) * ${intensity.toFixed(2)};
       float dSteps = ${steps.toFixed(1)};
       gl_FragColor.rgb = floor(gl_FragColor.rgb * dSteps + bayer + 0.5) / dSteps;
+      `
+    );
+  };
+}
+
+export function applyWindFoliageShader(mat, deformScale = 0.20) {
+  if (!mat) return;
+  mat.userData.foliageShader = null;
+  const prevCompile = mat.onBeforeCompile;
+  mat.onBeforeCompile = (shader) => {
+    if (prevCompile) prevCompile(shader);
+    shader.uniforms.uSimTick = { value: 0.0 };
+    mat.userData.foliageShader = shader;
+
+    shader.vertexShader = `
+      uniform float uSimTick;
+    ` + shader.vertexShader;
+
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <project_vertex>',
+      `
+      // Solid discrete shape morph / distortion on interval trigger
+      vec4 worldInstPos = instanceMatrix * vec4(position, 1.0);
+      float randSeed = fract(sin(dot(worldInstPos.xz, vec2(12.9898, 78.233))) * 43758.5453);
+      
+      // Variable interval of 15 to 25 simulation frames between shape changes
+      float interval = 15.0 + floor(randSeed * 10.0);
+      float localTick = uSimTick + randSeed * 100.0;
+      
+      // Determine which discrete epoch/state the tree is in
+      float epoch = floor(localTick / interval);
+      
+      // Generate unique pseudo-random distortion parameters for each state
+      float morphSeedA = fract(sin(dot(vec2(epoch, randSeed * 13.37), vec2(23.1406, 2.665))) * 43758.5453);
+      float morphSeedB = fract(sin(dot(vec2(epoch, randSeed * 29.11), vec2(17.913, 9.441))) * 43758.5453);
+      float morphSeedC = fract(sin(dot(vec2(epoch, randSeed * 47.19), vec2(31.415, 6.283))) * 43758.5453);
+      
+      // 3 distinct asymmetrical shape distortion profiles:
+      // State 0: Lean and stretch East-West
+      // State 1: Squash and bulge North-South
+      // State 2: Puff / Expand top canopy
+      int state = int(mod(epoch, 3.0));
+      
+      vec3 morphedPos = position;
+      float heightFactor = max(0.0, position.y - 0.25);
+      
+      if (state == 0) {
+        // Skew & sideways stretch
+        float dir = morphSeedA > 0.5 ? 1.0 : -1.0;
+        morphedPos.x += dir * ${deformScale.toFixed(4)} * heightFactor;
+        morphedPos.z += (morphSeedB - 0.5) * ${(deformScale * 0.8).toFixed(4)} * heightFactor;
+        morphedPos.y += (morphSeedC - 0.5) * ${(deformScale * 0.4).toFixed(4)} * heightFactor;
+      } else if (state == 1) {
+        // Asymmetric squash & bulge
+        morphedPos.x += (position.x > 0.0 ? 1.0 : -0.7) * ${(deformScale * 0.9).toFixed(4)} * heightFactor;
+        morphedPos.z += (morphSeedA > 0.5 ? 1.0 : -1.0) * ${(deformScale * 0.9).toFixed(4)} * heightFactor;
+        morphedPos.y -= ${(deformScale * 0.35).toFixed(4)} * heightFactor;
+      } else {
+        // Top canopy lift / puff
+        morphedPos.y += ${(deformScale * 0.6).toFixed(4)} * heightFactor;
+        morphedPos.x += (morphSeedB - 0.5) * ${(deformScale * 0.7).toFixed(4)} * heightFactor;
+        morphedPos.z += (morphSeedC - 0.5) * ${(deformScale * 0.7).toFixed(4)} * heightFactor;
+      }
+      
+      vec4 mvPosition = vec4( morphedPos, 1.0 );
+      #ifdef USE_INSTANCING
+        mvPosition = instanceMatrix * mvPosition;
+      #endif
+      mvPosition = modelViewMatrix * mvPosition;
+      gl_Position = projectionMatrix * mvPosition;
       `
     );
   };
@@ -1052,21 +1124,11 @@ export class RCT3DRenderer {
 
     // Dynamic Night Point Light Pool (Placed strictly at intelligent creatures, houses, and walls)
     this.maxNightLights = 28;
-    this.maxShadowPointLights = 4;
+    this.maxShadowPointLights = 0; // Point lights do direct local shading; sun/moon provides directional shadows
     this.nightLightPool = [];
     for (let i = 0; i < this.maxNightLights; i++) {
       const pl = new THREE.PointLight(0xffaa44, 0, 12, 1.8);
-      if (i < this.maxShadowPointLights) {
-        pl.castShadow = true;
-        pl.shadow.mapSize.width = 512;
-        pl.shadow.mapSize.height = 512;
-        pl.shadow.camera.near = 0.2;
-        pl.shadow.camera.far = 16.0;
-        pl.shadow.bias = -0.0002;
-        pl.shadow.normalBias = 0.06;
-      } else {
-        pl.castShadow = false;
-      }
+      pl.castShadow = false;
       this.scene.add(pl);
       this.nightLightPool.push(pl);
     }
@@ -1259,10 +1321,13 @@ export class RCT3DRenderer {
       })
     };
 
-    // Apply Bayer ordered dithering to materials
+    // Apply Bayer ordered dithering & GPU Wind Vertex sway to foliage
     for (const mat of Object.values(this.materials)) {
       applyRetroDitherToMaterial(mat);
     }
+    applyWindFoliageShader(this.materials.oakLeaves, 0.055);
+    applyWindFoliageShader(this.materials.pineLeaves, 0.038);
+    applyWindFoliageShader(this.materials.grassFoliage, 0.025);
 
     // Dark Quad Grid Material (RCT Style)
     this.rctGridMaterial = new THREE.LineBasicMaterial({
@@ -1642,12 +1707,14 @@ export class RCT3DRenderer {
   }
 
   toggleResolution() {
-    if (this.scaleFactor === 0.5) {
-      this.scaleFactor = 0.75;
-    } else if (this.scaleFactor === 0.75) {
+    if (this.scaleFactor === 0.25) {
       this.scaleFactor = 1.0;
-    } else {
+    } else if (this.scaleFactor === 0.5) {
+      this.scaleFactor = 0.25;
+    } else if (this.scaleFactor === 0.75) {
       this.scaleFactor = 0.5;
+    } else {
+      this.scaleFactor = 0.75;
     }
     this.updateRendererResolution();
     return this.getResolutionName();
@@ -1656,6 +1723,7 @@ export class RCT3DRenderer {
   getResolutionName() {
     if (this.scaleFactor === 0.75) return "75%";
     if (this.scaleFactor === 0.5) return "50%";
+    if (this.scaleFactor === 0.25) return "25%";
     return "100%";
   }
 
@@ -1696,11 +1764,6 @@ export class RCT3DRenderer {
     this.shadowsEnabled = !this.shadowsEnabled;
     this.renderer.shadowMap.enabled = this.shadowsEnabled;
     this.sunLight.castShadow = this.shadowsEnabled;
-    for (let i = 0; i < this.nightLightPool.length; i++) {
-      if (i < this.maxShadowPointLights) {
-        this.nightLightPool[i].castShadow = this.shadowsEnabled;
-      }
-    }
     this.scene.traverse((obj) => {
       if (obj.material) {
         if (Array.isArray(obj.material)) obj.material.forEach(m => m.needsUpdate = true);
@@ -2734,6 +2797,18 @@ export class RCT3DRenderer {
         waterMat.userData.shader.uniforms.uWaterTime.value = this.waterTime;
       }
       this.waterGroup.position.y = Math.sin(this.waterTime * 2.8) * 0.035;
+
+      // Update GPU Wind Vertex Sway on tree leaves & grass strictly synchronized with simulation ticks
+      const currentTickVal = this.simTick || 0;
+      if (this.materials.oakLeaves?.userData?.foliageShader) {
+        this.materials.oakLeaves.userData.foliageShader.uniforms.uSimTick.value = currentTickVal;
+      }
+      if (this.materials.pineLeaves?.userData?.foliageShader) {
+        this.materials.pineLeaves.userData.foliageShader.uniforms.uSimTick.value = currentTickVal;
+      }
+      if (this.materials.grassFoliage?.userData?.foliageShader) {
+        this.materials.grassFoliage.userData.foliageShader.uniforms.uSimTick.value = currentTickVal;
+      }
     }
 
     this.updateCamera();
@@ -3434,11 +3509,6 @@ export class RCT3DRenderer {
         pl.decay = c.decay;
         pl.intensity = c.intensity;
         pl.position.set(c.x, c.y, c.z);
-        if (lightIdx < this.maxShadowPointLights) {
-          pl.castShadow = this.shadowsEnabled;
-        } else {
-          pl.castShadow = false;
-        }
         lightIdx++;
       }
     }
@@ -3447,7 +3517,6 @@ export class RCT3DRenderer {
     while (lightIdx < this.maxNightLights) {
       const pl = this.nightLightPool[lightIdx++];
       pl.intensity = 0;
-      pl.castShadow = false;
     }
 
     // Flush Instanced Counts to GPU

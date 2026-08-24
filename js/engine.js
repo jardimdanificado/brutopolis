@@ -252,6 +252,10 @@ export function incrementEngineTick() {
   currentTick++;
 }
 
+export function setEngineTick(t) {
+  currentTick = t;
+}
+
 /**
  * Creates a pure JavaScript Entity with a flat Property Bag
  */

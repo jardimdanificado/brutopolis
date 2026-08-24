@@ -16,6 +16,7 @@ import {
   currentTick,
   resetEngineTicks,
   incrementEngineTick,
+  setEngineTick,
   rebuildSpatialGrid,
   registerEntitySpatial,
   updateEntitySpatial,
@@ -188,6 +189,10 @@ function initSimWorker() {
       }
 
       case "SIM_UPDATE": {
+        if (data.tick !== undefined) {
+          setEngineTick(data.tick);
+          if (rctRenderer) rctRenderer.simTick = data.tick;
+        }
         if (world && data.clock) {
           world.clock.day = data.clock.day;
           world.clock.hour = data.clock.hour;
