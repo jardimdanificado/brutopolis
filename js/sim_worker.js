@@ -73,6 +73,7 @@ import {
   createSeedEntity,
   createStoneWallEntity,
   createWaterWellEntity,
+  createRoadEntity,
   createEmbarkParty,
   rebindEntityMethods,
   getZoneSize,
@@ -129,7 +130,9 @@ const SPAWNERS = {
   LOG: (x, y) => createWoodItem(x, y),
   STONE: (x, y) => createStoneItem(x, y),
   WALL: (x, y) => createStoneWallEntity(x, y),
-  WELL: (x, y) => createWaterWellEntity(x, y)
+  WELL: (x, y) => createWaterWellEntity(x, y),
+  "DIRT ROAD": (x, y) => createRoadEntity(x, y, null, false),
+  "ROAD SNAP POINT": (x, y) => createRoadEntity(x, y, null, true)
 };
 
 function getAllGroups() {

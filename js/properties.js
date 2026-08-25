@@ -695,8 +695,8 @@ export function createCampfireEntity(x, y, ownerId = null) {
 export function createHouseEntity(x, y, ownerId = null, ownerName = null, style = "mixed", boneOwnerName = null) {
   let condition = 5500;
   let defense = 75;
-  let woodCost = 6;
-  let stoneCost = 6;
+  let woodCost = 3;
+  let stoneCost = 2;
   let boneCost = 0;
   let color = 0xffe8d8c8;
   let backcolor = 0xff402818;
@@ -705,7 +705,7 @@ export function createHouseEntity(x, y, ownerId = null, ownerName = null, style 
   if (style === "wood") {
     condition = 3200;
     defense = 45;
-    woodCost = 8;
+    woodCost = 4;
     stoneCost = 0;
     boneCost = 0;
     color = 0xffd4a373;
@@ -715,7 +715,7 @@ export function createHouseEntity(x, y, ownerId = null, ownerName = null, style 
     condition = 8500;
     defense = 95;
     woodCost = 0;
-    stoneCost = 12;
+    stoneCost = 4;
     boneCost = 0;
     color = 0xffcbd5e1;
     backcolor = 0xff1e293b;
@@ -725,7 +725,7 @@ export function createHouseEntity(x, y, ownerId = null, ownerName = null, style 
     defense = 65;
     woodCost = 0;
     stoneCost = 0;
-    boneCost = 8;
+    boneCost = 4;
     color = 0xfff4f1e8;
     backcolor = 0xff2d2a24;
     houseTypeLabel = boneOwnerName ? `Ossuário dos Restos de ${boneOwnerName}` : "Ossuário de Ossos";
@@ -823,23 +823,31 @@ export function createWaterWellEntity(x, y, group = null) {
 }
 
 /**
- * Road / Paved Street Structure Entity (Estrada e Rua de Aldeia)
- * Increases traversal speed and serves as precomputed waypoint route.
+ * Road / Paved Street Structure Entity (Rua de Barro Normal e Ponto de Encaixe)
+ * 2 Tipos:
+ * 1. Rua de Barro Normal: estrada convencional onde casas podem ser construídas nas bordas.
+ * 2. Ponto de Encaixe: nó de interligação viária onde NENHUMA casa/estrutura pode ser construída nas 4 tiles adjacentes.
  */
-export function createRoadEntity(x, y, group = null) {
+export function createRoadEntity(x, y, group = null, isSnapPoint = false) {
   const gName = group?.name || "Território Neutro";
+  const name = isSnapPoint ? `Ponto de Encaixe de ${gName}` : `Rua de Barro de ${gName}`;
   return createEntity(
     {
-      name: `Estrada de ${gName}`,
+      name: name,
       species: "structure",
       road: {
         groupId: group?.id || null,
         groupName: gName,
         speedBoost: 1.45,
-        isCompleted: true
+        isCompleted: true,
+        isSnapPoint: !!isSnapPoint
       },
       structure: { condition: 8000, maxCondition: 8000, defense: 60 },
-      render: { skin: "Feature_Stone_B.png", color: 0xffa89f91, backcolor: 0x00000000 },
+      render: {
+        skin: isSnapPoint ? "Feature_Pebbles.png" : "Feature_Stone_B.png",
+        color: isSnapPoint ? 0xffc8a060 : 0xffa88564,
+        backcolor: 0x00000000
+      },
       blocking: false
     },
     x,
@@ -849,6 +857,73 @@ export function createRoadEntity(x, y, group = null) {
 
 export function isRoadTile(x, y) {
   return globalRoadCoords.has(getTileKey(x, y));
+}
+
+export function isSnapPointTile(x, y) {
+  const tk = getTileKey(x, y);
+  const bucket = tileEntityMap.get(tk);
+  if (!bucket || bucket.size === 0) return false;
+  for (const ent of bucket) {
+    if (!ent.destroyed && ent.properties?.road?.isSnapPoint) return true;
+  }
+  return false;
+}
+
+/**
+ * Checks if the specified tile (x, y) has any orthogonal adjacent tile that is a snap point.
+ * Snap Point rule: houses and other structures (excluding roads/snap points) CANNOT be built on the 4 tiles adjacent to a snap point.
+ */
+export function isAdjacentToSnapPoint(x, y, group = null) {
+  const offsets = [{ dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 }];
+  for (const off of offsets) {
+    const nx = x + off.dx;
+    const ny = y + off.dy;
+
+    // 1. Check active snap point entity in world
+    if (isSnapPointTile(nx, ny)) return true;
+
+    // 2. Check planned road blueprints
+    if (group && group._plannedRoads) {
+      if (group._plannedRoads.some(r => r.isSnapPoint && r.x === nx && r.y === ny)) {
+        return true;
+      }
+    } else if (activeWorld && activeWorld.groups) {
+      for (const g of activeWorld.groups) {
+        if (g._plannedRoads && g._plannedRoads.some(r => r.isSnapPoint && r.x === nx && r.y === ny)) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * Checks if the specified tile (x, y) is orthogonally adjacent to at least one normal road tile.
+ */
+export function isAdjacentToNormalRoad(x, y, group = null) {
+  const offsets = [{ dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 }];
+  for (const off of offsets) {
+    const nx = x + off.dx;
+    const ny = y + off.dy;
+
+    // 1. Check active normal road entity in world
+    if (isRoadTile(nx, ny) && !isSnapPointTile(nx, ny)) return true;
+
+    // 2. Check planned normal road in group blueprints
+    if (group && group._plannedRoads) {
+      if (group._plannedRoads.some(r => !r.isSnapPoint && r.x === nx && r.y === ny)) {
+        return true;
+      }
+    } else if (activeWorld && activeWorld.groups) {
+      for (const g of activeWorld.groups) {
+        if (g._plannedRoads && g._plannedRoads.some(r => !r.isSnapPoint && r.x === nx && r.y === ny)) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
 }
 
 export function applyRandomPersonalityPerks(ent, isFemale = null) {
@@ -2202,45 +2277,8 @@ export function createGroup(name, founder, baseZone = null, claimedZones = null)
   const maxZY = Math.max(1, Math.floor((activeWorld?.height || 512) / sz));
 
   zx = Math.max(0, Math.min(maxZX - 1, zx));
-  zy = Math.max(0, Math.min(maxZY - 1, zy));
-
-  // Organic random expansion of initial zones adjacent to base zone within map boundaries
+  // Group begins with a single core territory zone (expands strictly on-demand)
   const defaultZones = [`${zx}_${zy}`];
-  const initialCount = 3;
-  const offsets = [{ dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 }];
-
-  while (defaultZones.length < initialCount) {
-    const fromZk = defaultZones[Math.floor(Math.random() * defaultZones.length)];
-    const [czx, czy] = fromZk.split("_").map(n => parseInt(n, 10));
-    const shuffled = [...offsets].sort(() => Math.random() - 0.5);
-    let added = false;
-    for (const off of shuffled) {
-      const nx = czx + off.dx;
-      const ny = czy + off.dy;
-      if (nx >= 0 && nx < maxZX && ny >= 0 && ny < maxZY) {
-        const k = `${nx}_${ny}`;
-        if (!defaultZones.includes(k) && isLandTile(nx * sz + Math.floor(sz / 2), ny * sz + Math.floor(sz / 2))) {
-          defaultZones.push(k);
-          added = true;
-          break;
-        }
-      }
-    }
-    if (!added) {
-      for (const off of shuffled) {
-        const nx = czx + off.dx;
-        const ny = czy + off.dy;
-        if (nx >= 0 && nx < maxZX && ny >= 0 && ny < maxZY) {
-          const k = `${nx}_${ny}`;
-          if (!defaultZones.includes(k)) {
-            defaultZones.push(k);
-            break;
-          }
-        }
-      }
-      break;
-    }
-  }
 
   const group = {
     id: nextGroupId++,
@@ -2260,18 +2298,357 @@ export function createGroup(name, founder, baseZone = null, claimedZones = null)
     createdTick: currentTick,
     color: groupColor,
     backcolor: groupBackColor,
-    flagSkin: flagSkin
+    flagSkin: flagSkin,
+    _plannedRoads: null,
+    _plaza: null,
+    _housePlots: {}
   };
+
+  // Pre-initialize road network (3 initial dirt roads interconnected by snap points) and central plaza (stockpile, well, campfire)
+  initClanRoadNetwork(group);
+  initClanPlaza(group);
+
   return group;
 }
 
 /**
- * Returns blueprint grid positions and types (warehouse, house, wall, gate) for clan buildings (Memoized)
+ * Initializes at least 3 dirt roads interconnected by snap points for a newly formed clan.
+ * Road types:
+ * - Normal road: can have house plots on its adjacent borders.
+ * - Snap Point: crossing/connection node where NO house or structure can be built on the 4 adjacent tiles.
+ */
+export function initClanRoadNetwork(group) {
+  if (!group) return [];
+  if (group._plannedRoads && group._plannedRoads.length > 0) {
+    return group._plannedRoads;
+  }
+
+  const sz = currentZoneSize || 8;
+  const firstZone = group.claimedZones?.[0] || "32_32";
+  const zp = firstZone.includes("_") ? firstZone.split("_") : firstZone.split(",");
+  const baseZx = parseInt(zp[0], 10) || 32;
+  const baseZy = parseInt(zp[1], 10) || 32;
+  const baseX = baseZx * sz + Math.floor(sz / 2);
+  const baseY = baseZy * sz + Math.floor(sz / 2);
+
+  const planned = [];
+  const roadMap = new Map();
+
+  function setTile(x, y, isSnap) {
+    const k = `${x}_${y}`;
+    if (!roadMap.has(k)) {
+      const entry = { x, y, type: "road", isSnapPoint: !!isSnap, groupId: group.id };
+      roadMap.set(k, entry);
+      planned.push(entry);
+    } else {
+      if (isSnap) {
+        const entry = roadMap.get(k);
+        entry.isSnapPoint = true;
+      }
+    }
+  }
+
+  // Initial Snap Point S0 at village center
+  setTile(baseX, baseY, true);
+
+  const cardDirs = [
+    { dx: 1, dy: 0 },
+    { dx: -1, dy: 0 },
+    { dx: 0, dy: 1 },
+    { dx: 0, dy: -1 }
+  ];
+
+  function maybeClaimZone(x, y) {
+    const zx = Math.floor(x / sz);
+    const zy = Math.floor(y / sz);
+    const zk = `${zx}_${zy}`;
+    if (!group.claimedZones.includes(zk) && isLandTile(x, y)) {
+      group.claimedZones.push(zk);
+    }
+  }
+
+  // Road 1: Starts at S0 in random direction (Longer segments: 8 to 12 tiles)
+  const dir1 = cardDirs[Math.floor(Math.random() * cardDirs.length)];
+  const len1 = Math.floor(Math.random() * 5) + 8; // 8 to 12 tiles
+  let cx1 = baseX;
+  let cy1 = baseY;
+  for (let s = 1; s <= len1; s++) {
+    const nx = baseX + dir1.dx * s;
+    const ny = baseY + dir1.dy * s;
+    if (!isLandTile(nx, ny)) {
+      setTile(cx1, cy1, true);
+      break;
+    }
+    cx1 = nx;
+    cy1 = ny;
+    maybeClaimZone(cx1, cy1);
+    const isSnap = (s === len1 || s === Math.floor(len1 / 2));
+    setTile(cx1, cy1, isSnap);
+  }
+
+  // Road 2: Starts at a random snap point in an available perpendicular/opposite direction
+  const snapsAfterR1 = planned.filter(r => r.isSnapPoint);
+  const startSnap2 = snapsAfterR1[Math.floor(Math.random() * snapsAfterR1.length)] || { x: baseX, y: baseY };
+  const availableDirs2 = cardDirs.filter(d => !(startSnap2.x === baseX && startSnap2.y === baseY && d.dx === dir1.dx && d.dy === dir1.dy));
+  const dir2 = availableDirs2[Math.floor(Math.random() * availableDirs2.length)] || cardDirs[0];
+  const len2 = Math.floor(Math.random() * 5) + 8;
+  let cx2 = startSnap2.x;
+  let cy2 = startSnap2.y;
+  for (let s = 1; s <= len2; s++) {
+    const nx = startSnap2.x + dir2.dx * s;
+    const ny = startSnap2.y + dir2.dy * s;
+    if (!isLandTile(nx, ny)) {
+      setTile(cx2, cy2, true);
+      break;
+    }
+    cx2 = nx;
+    cy2 = ny;
+    maybeClaimZone(cx2, cy2);
+    const isSnap = (s === len2 || s === Math.floor(len2 / 2));
+    setTile(cx2, cy2, isSnap);
+  }
+
+  // Road 3: Starts at a random snap point
+  const snapsAfterR2 = planned.filter(r => r.isSnapPoint);
+  const startSnap3 = snapsAfterR2[Math.floor(Math.random() * snapsAfterR2.length)] || { x: baseX, y: baseY };
+  const dir3 = cardDirs[Math.floor(Math.random() * cardDirs.length)];
+  const len3 = Math.floor(Math.random() * 5) + 8;
+  let cx3 = startSnap3.x;
+  let cy3 = startSnap3.y;
+  for (let s = 1; s <= len3; s++) {
+    const nx = startSnap3.x + dir3.dx * s;
+    const ny = startSnap3.y + dir3.dy * s;
+    if (!isLandTile(nx, ny)) {
+      setTile(cx3, cy3, true);
+      break;
+    }
+    cx3 = nx;
+    cy3 = ny;
+    maybeClaimZone(cx3, cy3);
+    const isSnap = (s === len3 || s === Math.floor(len3 / 2));
+    setTile(cx3, cy3, isSnap);
+  }
+
+  group._plannedRoads = planned;
+  return planned;
+}
+
+/**
+ * Expands the clan road network by digging 3 more dirt roads starting from random existing snap points.
+ */
+export function expandClanRoadNetwork(group, count = 3) {
+  if (!group) return [];
+  if (!group._plannedRoads || group._plannedRoads.length === 0) {
+    return initClanRoadNetwork(group);
+  }
+
+  const sz = currentZoneSize || 8;
+  const planned = group._plannedRoads;
+  const roadMap = new Map();
+  for (const r of planned) {
+    roadMap.set(`${r.x}_${r.y}`, r);
+  }
+
+  function setTile(x, y, isSnap) {
+    const k = `${x}_${y}`;
+    if (!roadMap.has(k)) {
+      const entry = { x, y, type: "road", isSnapPoint: !!isSnap, groupId: group.id };
+      roadMap.set(k, entry);
+      planned.push(entry);
+    } else {
+      if (isSnap) {
+        const entry = roadMap.get(k);
+        entry.isSnapPoint = true;
+      }
+    }
+  }
+
+  function maybeClaimZone(x, y) {
+    const zx = Math.floor(x / sz);
+    const zy = Math.floor(y / sz);
+    const zk = `${zx}_${zy}`;
+    if (!group.claimedZones.includes(zk) && isLandTile(x, y)) {
+      group.claimedZones.push(zk);
+    }
+  }
+
+  const cardDirs = [
+    { dx: 1, dy: 0 },
+    { dx: -1, dy: 0 },
+    { dx: 0, dy: 1 },
+    { dx: 0, dy: -1 }
+  ];
+
+  for (let i = 0; i < count; i++) {
+    const snapPoints = planned.filter(r => r.isSnapPoint);
+    if (snapPoints.length === 0) break;
+    const startSnap = snapPoints[Math.floor(Math.random() * snapPoints.length)];
+    const dir = cardDirs[Math.floor(Math.random() * cardDirs.length)];
+    const len = Math.floor(Math.random() * 5) + 8; // 8 to 12 tiles
+
+    let cx = startSnap.x;
+    let cy = startSnap.y;
+    for (let s = 1; s <= len; s++) {
+      const nx = startSnap.x + dir.dx * s;
+      const ny = startSnap.y + dir.dy * s;
+      if (!isLandTile(nx, ny)) {
+        setTile(cx, cy, true);
+        break;
+      }
+
+      // Ensure road NEVER intersects with any existing house, warehouse, well, campfire, or structure
+      let hasOccupyingBuilding = false;
+      for (const e of entityRegistry.values()) {
+        if (!e.destroyed && e.x === nx && e.y === ny && (e.properties?.house || e.properties?.warehouse || e.properties?.well || e.properties?.campfire || e.properties?.door || (e.properties?.structure && !e.properties?.road))) {
+          hasOccupyingBuilding = true;
+          break;
+        }
+      }
+      if (hasOccupyingBuilding) {
+        setTile(cx, cy, true);
+        break;
+      }
+
+      cx = nx;
+      cy = ny;
+      maybeClaimZone(cx, cy);
+      const isSnap = (s === len || s === Math.floor(len / 2));
+      setTile(cx, cy, isSnap);
+    }
+  }
+
+  return planned;
+}
+
+/**
+ * Defines the central village square (Praça) consisting of:
+ * 1. Estoque (Warehouse / Stockpile)
+ * 2. Poço (Water Well)
+ * 3. Fogueira (Campfire)
+ * Constraint: NONE of these 3 structures can be built on a road or within the 4 adjacent tiles of any snap point!
+ * Spacing: Each structure is comfortably spaced out with at least 3 tiles distance between each other.
+ */
+export function initClanPlaza(group) {
+  if (!group) return null;
+  if (group._plaza && group._plaza.warehouse && group._plaza.campfire && group._plaza.well) {
+    return group._plaza;
+  }
+
+  // Ensure road network is initialized first
+  initClanRoadNetwork(group);
+
+  const sz = currentZoneSize || 8;
+  const firstZone = group.claimedZones?.[0] || "32_32";
+  const zp = firstZone.includes("_") ? firstZone.split("_") : firstZone.split(",");
+  const baseZx = parseInt(zp[0], 10) || 32;
+  const baseZy = parseInt(zp[1], 10) || 32;
+  const baseX = baseZx * sz + Math.floor(sz / 2);
+  const baseY = baseZy * sz + Math.floor(sz / 2);
+
+  const plannedRoadSet = new Set((group._plannedRoads || []).map(r => `${r.x}_${r.y}`));
+
+  // Check if any praça entities already exist in the world
+  let existingWh = null, existingCf = null, existingWell = null;
+  for (const e of entityRegistry.values()) {
+    if (!e.destroyed && isTileInClaimedZones(e.x, e.y, group.claimedZones)) {
+      if (e.properties?.warehouse && !existingWh) existingWh = { x: e.x, y: e.y };
+      if (e.properties?.campfire && !existingCf) existingCf = { x: e.x, y: e.y };
+      if (e.properties?.well && !existingWell) existingWell = { x: e.x, y: e.y };
+    }
+  }
+
+  const validTiles = [];
+  for (let r = 2; r <= 16; r++) {
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
+        const tx = baseX + dx;
+        const ty = baseY + dy;
+        const tk = `${tx}_${ty}`;
+        if (!isLandTile(tx, ty)) continue;
+        if (!isTileInClaimedZones(tx, ty, group.claimedZones)) continue;
+        if (plannedRoadSet.has(tk) || isRoadTile(tx, ty)) continue;
+        if (isAdjacentToSnapPoint(tx, ty, group)) continue; // NO building adjacent to snap point!
+        validTiles.push({ x: tx, y: ty });
+      }
+    }
+    if (validTiles.length >= 8) break;
+  }
+
+  if (validTiles.length < 3) {
+    for (let ox = 1; ox < sz - 1; ox++) {
+      for (let oy = 1; oy < sz - 1; oy++) {
+        const tx = baseZx * sz + ox;
+        const ty = baseZy * sz + oy;
+        const tk = `${tx}_${ty}`;
+        if (isLandTile(tx, ty) && !plannedRoadSet.has(tk) && !isRoadTile(tx, ty) && !isAdjacentToSnapPoint(tx, ty, group)) {
+          if (!validTiles.some(t => t.x === tx && t.y === ty)) {
+            validTiles.push({ x: tx, y: ty });
+          }
+        }
+      }
+    }
+  }
+
+  // Select 3 spacious plaza locations with at least 3 tiles distance between each other
+  const plazaPicks = [];
+  if (existingWh) plazaPicks.push(existingWh);
+  if (existingCf) plazaPicks.push(existingCf);
+  if (existingWell) plazaPicks.push(existingWell);
+
+  for (const t of validTiles) {
+    if (plazaPicks.every(p => Math.max(Math.abs(t.x - p.x), Math.abs(t.y - p.y)) >= 3)) {
+      plazaPicks.push(t);
+      if (plazaPicks.length === 3) break;
+    }
+  }
+
+  const whPos = existingWh || plazaPicks[0] || validTiles[0] || { x: baseX + 2, y: baseY + 2 };
+  const cfPos = existingCf || plazaPicks[1] || validTiles[1] || { x: baseX - 2, y: baseY + 2 };
+  const wellPos = existingWell || plazaPicks[2] || validTiles[2] || { x: baseX + 2, y: baseY - 2 };
+
+  group._plaza = {
+    warehouse: whPos,
+    campfire: cfPos,
+    well: wellPos
+  };
+  return group._plaza;
+}
+
+/**
+ * Checks if the entire central village square (warehouse, campfire, and well) is completed.
+ */
+export function isPraçaCompleted(group) {
+  if (!group || !group.claimedZones) return false;
+  const plaza = group._plaza || initClanPlaza(group);
+  if (!plaza) return false;
+
+  let whDone = false;
+  let cfDone = false;
+  let wellDone = false;
+
+  for (const e of entityRegistry.values()) {
+    if (!e.destroyed && isTileInClaimedZones(e.x, e.y, group.claimedZones)) {
+      if (e.properties?.warehouse && e.properties.warehouse.isCompleted) whDone = true;
+      if (e.properties?.campfire && e.isConstructed !== false) cfDone = true;
+      if (e.properties?.well && e.properties.well.isCompleted) wellDone = true;
+    }
+  }
+
+  return whDone && cfDone && wellDone;
+}
+
+/**
+ * Returns blueprint grid positions and types for clan buildings (Memoized).
+ * Enforces:
+ * 1. Praça First (Warehouse, Campfire, Well).
+ * 2. Only after Praça is built: plan houses along normal road borders (NOT adjacent to snap points).
+ * 3. Expands roads by 3 whenever road occupancy reaches >= 50%.
  */
 export function getClanBlueprintTiles(group) {
   if (!group || !group.claimedZones) return [];
 
-  // Fast Memoization Check: Check version key and cached tick
+  // Fast Memoization Check
   const versionKey = `${group.claimedZones.join(",")}_${(group.members || []).length}`;
   if (group._cachedBlueprint && group._cachedBlueprintKey === versionKey && (currentTick - (group._cachedBlueprintTick || 0) < 30)) {
     return group._cachedBlueprint;
@@ -2280,162 +2657,114 @@ export function getClanBlueprintTiles(group) {
   const tiles = [];
   const sz = currentZoneSize;
   const members = group.members || [];
+  const occupiedTiles = new Set();
 
-  // 1. Individual House Plots inside the Kingdom Zones (Organic random scatter avoiding perimeter edges, water & trees)
+  initClanRoadNetwork(group);
+  const plaza = initClanPlaza(group);
+
+  // 1. Central Praça Blueprints (Warehouse, Campfire, Well)
+  let warehouseEnt = null;
+  let campfireEnt = null;
+  let wellEnt = null;
+
+  for (const e of entityRegistry.values()) {
+    if (!e.destroyed && isTileInClaimedZones(e.x, e.y, group.claimedZones)) {
+      if (e.properties?.warehouse && !warehouseEnt) warehouseEnt = e;
+      if (e.properties?.campfire && !campfireEnt) campfireEnt = e;
+      if (e.properties?.well && !wellEnt) wellEnt = e;
+    }
+  }
+
+  // Praça Warehouse
+  const whX = warehouseEnt ? warehouseEnt.x : plaza.warehouse.x;
+  const whY = warehouseEnt ? warehouseEnt.y : plaza.warehouse.y;
+  tiles.push({ x: whX, y: whY, type: "warehouse" });
+  occupiedTiles.add(`${whX}_${whY}`);
+
+  // Praça Campfire
+  const cfX = campfireEnt ? campfireEnt.x : plaza.campfire.x;
+  const cfY = campfireEnt ? campfireEnt.y : plaza.campfire.y;
+  tiles.push({ x: cfX, y: cfY, type: "campfire" });
+  occupiedTiles.add(`${cfX}_${cfY}`);
+
+  // Praça Well
+  const wellX = wellEnt ? wellEnt.x : plaza.well.x;
+  const wellY = wellEnt ? wellEnt.y : plaza.well.y;
+  tiles.push({ x: wellX, y: wellY, type: "well" });
+  occupiedTiles.add(`${wellX}_${wellY}`);
+
+  // 2. Track existing houses in territory
+  for (const ent of entityRegistry.values()) {
+    if (!ent.destroyed && ent.properties.house && isTileInClaimedZones(ent.x, ent.y, group.claimedZones)) {
+      tiles.push({ x: ent.x, y: ent.y, type: "house", ownerId: ent.properties.house.ownerId });
+      occupiedTiles.add(`${ent.x}_${ent.y}`);
+    }
+  }
+
+  // 3. Check Road Occupancy (If >= 50% occupied, dig 3 more roads!)
+  const normalRoads = (group._plannedRoads || []).filter(r => !r.isSnapPoint);
+  if (normalRoads.length > 0) {
+    const occupiedRoadCount = normalRoads.filter(r => {
+      for (const off of [{dx:1,dy:0}, {dx:-1,dy:0}, {dx:0,dy:1}, {dx:0,dy:-1}]) {
+        if (occupiedTiles.has(`${r.x + off.dx}_${r.y + off.dy}`)) return true;
+      }
+      return false;
+    }).length;
+
+    if ((occupiedRoadCount / normalRoads.length) >= 0.5) {
+      expandClanRoadNetwork(group, 3);
+    }
+  }
+
+  // 4. Find all candidate house plots along road edges (adjacent to normal roads and NOT adjacent to snap points)
+  const plannedRoadSet = new Set((group._plannedRoads || []).map(r => `${r.x}_${r.y}`));
+  const candidatePlots = [];
+
+  for (const zk of group.claimedZones) {
+    const zp = zk.includes("_") ? zk.split("_") : zk.split(",");
+    const zx = parseInt(zp[0], 10);
+    const zy = parseInt(zp[1], 10);
+
+    for (let ox = 0; ox < sz; ox++) {
+      for (let oy = 0; oy < sz; oy++) {
+        const px = zx * sz + ox;
+        const py = zy * sz + oy;
+        const tk = `${px}_${py}`;
+
+        if (!isLandTile(px, py)) continue;
+        if (plannedRoadSet.has(tk) || isRoadTile(px, py)) continue;
+        if (occupiedTiles.has(tk)) continue;
+
+        // Rule: Must NOT be adjacent to any snap point!
+        if (isAdjacentToSnapPoint(px, py, group)) continue;
+        // Rule: Must be adjacent to a normal road!
+        if (!isAdjacentToNormalRoad(px, py, group)) continue;
+
+        candidatePlots.push({ x: px, y: py });
+      }
+    }
+  }
+
+  // 5. Assign house plots to members (Enforcing at least 2 tiles distance between each house)
+  if (!group._housePlots) group._housePlots = {};
+  const memberSet = new Set(members);
+
+  function isFarEnoughFromBuildings(x, y, currentTiles, minDist = 3) {
+    for (const t of currentTiles) {
+      if (t.type === "house" || t.type === "warehouse" || t.type === "campfire" || t.type === "well") {
+        const chebDist = Math.max(Math.abs(x - t.x), Math.abs(y - t.y));
+        if (chebDist < minDist) return false;
+      }
+    }
+    return true;
+  }
+
   function pseudoRandomPos(seedA, seedB, limit) {
     let h = (seedA * 374761393 + seedB * 668265263) ^ 0x5bf03635;
     h = Math.imul(h ^ (h >>> 13), 1274126177);
     return Math.abs(h ^ (h >>> 16)) % limit;
   }
 
-  // Find all valid interior land candidate tiles inside claimed zones
-  const candidateInteriorTiles = [];
-  for (const zk of group.claimedZones) {
-    const zp = zk.includes("_") ? zk.split("_") : zk.split(",");
-    const zx = parseInt(zp[0], 10);
-    const zy = parseInt(zp[1], 10);
-
-    // Inner coordinates (avoid outer zone boundary walls/gates)
-    for (let ox = 1; ox < sz - 1; ox++) {
-      for (let oy = 1; oy < sz - 1; oy++) {
-        const px = zx * sz + ox;
-        const py = zy * sz + oy;
-        if (isLandTile(px, py)) {
-          candidateInteriorTiles.push({ x: px, y: py, zx, zy });
-        }
-      }
-    }
-  }
-
-  const occupiedHouseTiles = new Set();
-  const memberSet = new Set(members);
-
-  // 1. Central Warehouse / Stockpile Blueprint (Grande Armazém do Clã)
-  let warehouseEnt = null;
-  for (const e of entityRegistry.values()) {
-    if (!e.destroyed && e.properties?.warehouse && isTileInClaimedZones(e.x, e.y, group.claimedZones)) {
-      warehouseEnt = e;
-      break;
-    }
-  }
-  if (warehouseEnt) {
-    tiles.push({ x: warehouseEnt.x, y: warehouseEnt.y, type: "warehouse" });
-    occupiedHouseTiles.add(`${warehouseEnt.x}_${warehouseEnt.y}`);
-  } else if (candidateInteriorTiles.length > 0) {
-    const firstZone = group.claimedZones?.[0] || "32_32";
-    const zp = firstZone.includes("_") ? firstZone.split("_") : firstZone.split(",");
-    const czx = parseInt(zp[0], 10);
-    const czy = parseInt(zp[1], 10);
-    const preferredCandidate = candidateInteriorTiles.find(c => c.zx === czx && c.zy === czy) || candidateInteriorTiles[0];
-    if (preferredCandidate) {
-      tiles.push({ x: preferredCandidate.x, y: preferredCandidate.y, type: "warehouse" });
-      occupiedHouseTiles.add(`${preferredCandidate.x}_${preferredCandidate.y}`);
-    }
-  }
-
-  // Stockpile First Rule: If the clan does not have a completed warehouse, return ONLY the warehouse blueprint!
-  const isWarehouseCompleted = !!warehouseEnt && !!warehouseEnt.properties.warehouse?.isCompleted;
-  if (!isWarehouseCompleted) {
-    return tiles; // Return ONLY warehouse blueprint tile
-  }
-
-  // 2. Central Campfire Blueprint (Fogueira da Aldeia) - 2nd building right after Stockpile!
-  let campfireEnt = null;
-  for (const e of entityRegistry.values()) {
-    if (!e.destroyed && e.properties?.campfire && isTileInClaimedZones(e.x, e.y, group.claimedZones)) {
-      campfireEnt = e;
-      break;
-    }
-  }
-
-  const whX = warehouseEnt.x;
-  const whY = warehouseEnt.y;
-  let cfX = whX;
-  let cfY = whY;
-
-  if (campfireEnt) {
-    cfX = campfireEnt.x;
-    cfY = campfireEnt.y;
-    tiles.push({ x: cfX, y: cfY, type: "campfire" });
-    occupiedHouseTiles.add(`${cfX}_${cfY}`);
-  } else {
-    // Find optimal campfire spot 2 blocks away from warehouse
-    const cfOffsets = [
-      { dx: 2, dy: 0 }, { dx: -2, dy: 0 }, { dx: 0, dy: 2 }, { dx: 0, dy: -2 },
-      { dx: 2, dy: 2 }, { dx: -2, dy: -2 }, { dx: 2, dy: -2 }, { dx: -2, dy: 2 }
-    ];
-    let foundCfSpot = null;
-    for (const off of cfOffsets) {
-      const tx = whX + off.dx;
-      const ty = whY + off.dy;
-      if (isLandTile(tx, ty) && isTileInClaimedZones(tx, ty, group.claimedZones) && !occupiedHouseTiles.has(`${tx}_${ty}`)) {
-        foundCfSpot = { x: tx, y: ty };
-        break;
-      }
-    }
-    if (!foundCfSpot && candidateInteriorTiles.length > 0) {
-      foundCfSpot = candidateInteriorTiles.find(c => !occupiedHouseTiles.has(`${c.x}_${c.y}`));
-    }
-    if (foundCfSpot) {
-      cfX = foundCfSpot.x;
-      cfY = foundCfSpot.y;
-      tiles.push({ x: cfX, y: cfY, type: "campfire" });
-      occupiedHouseTiles.add(`${cfX}_${cfY}`);
-    }
-  }
-
-  // Campfire Second Rule: If the campfire is not yet completed, return ONLY warehouse + campfire!
-  const isCampfireCompleted = !!campfireEnt && campfireEnt.isConstructed !== false;
-  if (!isCampfireCompleted) {
-    return tiles; // Return ONLY warehouse & campfire
-  }
-
-  // 3. Central Village Water Well (Poço de Água da Aldeia)
-  let wellEnt = null;
-  for (const e of entityRegistry.values()) {
-    if (!e.destroyed && e.properties?.well && isTileInClaimedZones(e.x, e.y, group.claimedZones)) {
-      wellEnt = e;
-      break;
-    }
-  }
-
-  if (wellEnt) {
-    tiles.push({ x: wellEnt.x, y: wellEnt.y, type: "well" });
-    occupiedHouseTiles.add(`${wellEnt.x}_${wellEnt.y}`);
-  } else {
-    // Optimal well spot near warehouse & campfire
-    const wellOffsets = [
-      { dx: 0, dy: 2 }, { dx: 0, dy: -2 }, { dx: 2, dy: 0 }, { dx: -2, dy: 0 },
-      { dx: -2, dy: 2 }, { dx: 2, dy: -2 }
-    ];
-    let foundWellSpot = null;
-    for (const off of wellOffsets) {
-      const tx = whX + off.dx;
-      const ty = whY + off.dy;
-      if (isLandTile(tx, ty) && isTileInClaimedZones(tx, ty, group.claimedZones) && !occupiedHouseTiles.has(`${tx}_${ty}`)) {
-        foundWellSpot = { x: tx, y: ty };
-        break;
-      }
-    }
-    if (!foundWellSpot && candidateInteriorTiles.length > 0) {
-      foundWellSpot = candidateInteriorTiles.find(c => !occupiedHouseTiles.has(`${c.x}_${c.y}`));
-    }
-    if (foundWellSpot) {
-      tiles.push({ x: foundWellSpot.x, y: foundWellSpot.y, type: "well" });
-      occupiedHouseTiles.add(`${foundWellSpot.x}_${foundWellSpot.y}`);
-    }
-  }
-
-  // 4. Keep all existing house entities in territory pinned first!
-  for (const ent of entityRegistry.values()) {
-    if (!ent.destroyed && ent.properties.house && isTileInClaimedZones(ent.x, ent.y, group.claimedZones)) {
-      tiles.push({ x: ent.x, y: ent.y, type: "house", ownerId: ent.properties.house.ownerId });
-      occupiedHouseTiles.add(`${ent.x}_${ent.y}`);
-    }
-  }
-
-  // 5. Pair homeless members with unowned/vacant houses in territory first
-  if (!group._housePlots) group._housePlots = {};
   for (let mIdx = 0; mIdx < members.length; mIdx++) {
     const ownerId = members[mIdx];
     const hasHouse = tiles.some(t => t.type === "house" && t.ownerId === ownerId);
@@ -2446,51 +2775,60 @@ export function getClanBlueprintTiles(group) {
         continue;
       }
 
-      // Check persistent assigned plot
+      // Check persistent assigned plot (must satisfy at least 3 tiles distance rule)
       if (group._housePlots[ownerId]) {
         const p = group._housePlots[ownerId];
-        if (isLandTile(p.x, p.y) && isTileInClaimedZones(p.x, p.y, group.claimedZones)) {
+        if (isLandTile(p.x, p.y) && isTileInClaimedZones(p.x, p.y, group.claimedZones) && !isAdjacentToSnapPoint(p.x, p.y, group) && isAdjacentToNormalRoad(p.x, p.y, group) && isFarEnoughFromBuildings(p.x, p.y, tiles, 3)) {
           tiles.push({ x: p.x, y: p.y, type: "house", ownerId });
-          occupiedHouseTiles.add(`${p.x}_${p.y}`);
+          occupiedTiles.add(`${p.x}_${p.y}`);
           continue;
+        } else {
+          delete group._housePlots[ownerId];
         }
       }
 
-      // Filter available candidates not yet occupied
-      let available = candidateInteriorTiles.filter(c => !occupiedHouseTiles.has(`${c.x}_${c.y}`));
+      // Pick from available candidate plots respecting >= 3 tiles distance from any other house/building
+      let available = candidatePlots.filter(c => !occupiedTiles.has(`${c.x}_${c.y}`) && isFarEnoughFromBuildings(c.x, c.y, tiles, 3));
+
+      // If no valid spaced plots remain on current roads, expand road network by 3 roads to create more plots!
+      if (available.length === 0) {
+        expandClanRoadNetwork(group, 3);
+        // Refresh candidate plots with newly expanded roads
+        for (const zk of group.claimedZones) {
+          const zp = zk.includes("_") ? zk.split("_") : zk.split(",");
+          const zx = parseInt(zp[0], 10);
+          const zy = parseInt(zp[1], 10);
+          for (let ox = 0; ox < sz; ox++) {
+            for (let oy = 0; oy < sz; oy++) {
+              const px = zx * sz + ox;
+              const py = zy * sz + oy;
+              const tk = `${px}_${py}`;
+              if (!isLandTile(px, py)) continue;
+              if (isRoadTile(px, py) || isAdjacentToSnapPoint(px, py, group) || !isAdjacentToNormalRoad(px, py, group)) continue;
+              if (!candidatePlots.some(cp => cp.x === px && cp.y === py)) {
+                candidatePlots.push({ x: px, y: py });
+              }
+            }
+          }
+        }
+        available = candidatePlots.filter(c => !occupiedTiles.has(`${c.x}_${c.y}`) && isFarEnoughFromBuildings(c.x, c.y, tiles, 3));
+      }
 
       if (available.length > 0) {
-        // Road Connection Preference: If existing roads exist, prioritize candidate house plots connected to roads (>3 free available)
-        const existingRoadTiles = [];
-        for (const e of entityRegistry.values()) {
-          if (!e.destroyed && e.properties?.road && isTileInClaimedZones(e.x, e.y, group.claimedZones)) {
-            existingRoadTiles.push(e);
-          }
-        }
-        if (existingRoadTiles.length > 0) {
-          const roadAdjacentCandidates = available.filter(c => {
-            return existingRoadTiles.some(r => Math.abs(r.x - c.x) + Math.abs(r.y - c.y) === 1);
-          });
-          if (roadAdjacentCandidates.length > 3) {
-            available = roadAdjacentCandidates;
-          }
-        }
-
         const pickIdx = pseudoRandomPos(group.id, ownerId, available.length);
         const chosen = available[pickIdx];
         group._housePlots[ownerId] = { x: chosen.x, y: chosen.y };
         tiles.push({ x: chosen.x, y: chosen.y, type: "house", ownerId });
-        occupiedHouseTiles.add(`${chosen.x}_${chosen.y}`);
+        occupiedTiles.add(`${chosen.x}_${chosen.y}`);
       }
     }
   }
 
-  // 4. Perimeter Walls and Kingdom Gates (LUXURY ACCESSORY: ONLY generated for established realms with >= 9 claimed zones & all houses completed!)
+  // 6. Perimeter Walls & Gates for luxury kingdoms (>= 16 zones & all houses completed), respecting !isAdjacentToSnapPoint
   const livingMemberIds = members.filter(id => {
     const m = entityRegistry.get(id);
     return m && !m.destroyed;
   });
-
   const housedMembers = new Set();
   for (const ent of entityRegistry.values()) {
     if (!ent.destroyed && ent.properties.house?.isCompleted && isTileInClaimedZones(ent.x, ent.y, group.claimedZones)) {
@@ -2513,7 +2851,7 @@ export function getClanBlueprintTiles(group) {
           const py = zy * sz + oy;
           const isPerim = isPerimeterEdge(zx, zy, ox, oy, group.claimedZones);
 
-          if (isPerim && isLandTile(px, py)) {
+          if (isPerim && isLandTile(px, py) && !isRoadTile(px, py) && !plannedRoadSet.has(`${px}_${py}`) && !isAdjacentToSnapPoint(px, py, group)) {
             const isGateway = (oy === 0 && (ox === 3 || ox === 4)) ||
                               (oy === sz - 1 && (ox === 3 || ox === 4)) ||
                               (ox === 0 && (oy === 3 || oy === 4)) ||
@@ -2537,10 +2875,6 @@ export function getClanBlueprintTiles(group) {
 
 /**
  * Checks diplomatic eligibility for building an inter-village highway between Group A and Group B.
- * Rules:
- * - Neither group is at war with each other.
- * - At least 2 pairs of members know each other with non-negative affinity (affinity >= 0).
- * - NO ONE between the two groups has negative affinity (hatred / feud).
  */
 export function canBuildInterVillageRoad(groupA, groupB) {
   if (!groupA || !groupB || groupA.id === groupB.id) return false;
@@ -2564,7 +2898,7 @@ export function canBuildInterVillageRoad(groupA, groupB) {
       const affBtoA = entB.properties?.brain?.affinities ? entB.properties.brain.affinities[idA] : undefined;
 
       if (affAtoB !== undefined) {
-        if (affAtoB < 0) return false; // Any mutual hatred blocks highway!
+        if (affAtoB < 0) return false;
         if (affAtoB >= 0) knownPositivePairs++;
       }
       if (affBtoA !== undefined) {
@@ -2578,68 +2912,29 @@ export function canBuildInterVillageRoad(groupA, groupB) {
 }
 
 /**
- * Generates road network blueprints for a clan (Shared Main Avenue, Branch Lanes, and Inter-Village Highways).
- * Connects all houses and village centers to the central warehouse with minimal spam.
+ * Generates road network blueprints for a clan (3 Initial Dirt Roads + Snap Points + Inter-Village Highways).
  */
 export function getClanRoadBlueprints(group, allGroups = null) {
   if (!group || !group.claimedZones || group.claimedZones.length === 0) return [];
-  const sz = currentZoneSize || 8;
-
-  // Base center calculation
-  const firstZone = group.claimedZones[0];
-  const zp = firstZone.includes("_") ? firstZone.split("_") : firstZone.split(",");
-  const baseZx = parseInt(zp[0], 10) || 32;
-  const baseZy = parseInt(zp[1], 10) || 32;
-  let baseX = baseZx * sz + Math.floor(sz / 2);
-  let baseY = baseZy * sz + Math.floor(sz / 2);
-
-  // Find clan warehouse if completed
-  for (const e of entityRegistry.values()) {
-    if (!e.destroyed && e.properties?.warehouse && isTileInClaimedZones(e.x, e.y, group.claimedZones)) {
-      baseX = e.x;
-      baseY = e.y;
-      break;
-    }
+  if (!group._plannedRoads || group._plannedRoads.length === 0) {
+    initClanRoadNetwork(group);
   }
 
   const roadTiles = new Map();
-
-  // 1. Calculate bounding box of claimed zones
-  let minTx = 9999, maxTx = -9999;
-  for (const zk of group.claimedZones) {
-    const [zx, zy] = zk.split("_").map(n => parseInt(n, 10));
-    minTx = Math.min(minTx, zx * sz + 1);
-    maxTx = Math.max(maxTx, (zx + 1) * sz - 2);
+  for (const r of (group._plannedRoads || [])) {
+    roadTiles.set(`${r.x}_${r.y}`, r);
   }
 
-  const mainAvenueY = baseY;
-
-  // 2. Main Avenue: Straight horizontal artery passing directly across base territory
-  for (let tx = minTx; tx <= maxTx; tx++) {
-    if (isLandTile(tx, mainAvenueY) && isTileInClaimedZones(tx, mainAvenueY, group.claimedZones)) {
-      roadTiles.set(`${tx}_${mainAvenueY}`, { x: tx, y: mainAvenueY, type: "road", groupId: group.id });
-    }
-  }
-
-  // 3. Branch Lanes: Connect each completed/planned house directly to the Main Avenue
-  const blueprints = getClanBlueprintTiles(group);
-  for (const bp of blueprints) {
-    if (bp.type === "house") {
-      const hx = bp.x;
-      const hy = bp.y;
-      const stepY = Math.sign(mainAvenueY - hy);
-      if (stepY !== 0) {
-        for (let cy = hy; cy !== mainAvenueY; cy += stepY) {
-          if (isLandTile(hx, cy) && isTileInClaimedZones(hx, cy, group.claimedZones)) {
-            roadTiles.set(`${hx}_${cy}`, { x: hx, y: cy, type: "road", groupId: group.id });
-          }
-        }
-      }
-    }
-  }
-
-  // 4. Inter-Village Highways (Shared Neutral Highways)
+  // Inter-Village Highways (Shared Neutral Highways)
   if (allGroups && Array.isArray(allGroups)) {
+    const sz = currentZoneSize || 8;
+    const firstZone = group.claimedZones[0];
+    const zp = firstZone.includes("_") ? firstZone.split("_") : firstZone.split(",");
+    const baseZx = parseInt(zp[0], 10) || 32;
+    const baseZy = parseInt(zp[1], 10) || 32;
+    let baseX = baseZx * sz + Math.floor(sz / 2);
+    let baseY = baseZy * sz + Math.floor(sz / 2);
+
     for (const otherGroup of allGroups) {
       if (otherGroup.id !== group.id && canBuildInterVillageRoad(group, otherGroup)) {
         const otherFirstZone = otherGroup.claimedZones?.[0] || "32_32";
@@ -2648,14 +2943,6 @@ export function getClanRoadBlueprints(group, allGroups = null) {
         const otherZy = parseInt(otherZp[1], 10) || 32;
         let otherBaseX = otherZx * sz + Math.floor(sz / 2);
         let otherBaseY = otherZy * sz + Math.floor(sz / 2);
-
-        for (const e of entityRegistry.values()) {
-          if (!e.destroyed && e.properties?.warehouse && isTileInClaimedZones(e.x, e.y, otherGroup.claimedZones)) {
-            otherBaseX = e.x;
-            otherBaseY = e.y;
-            break;
-          }
-        }
 
         let cx = baseX;
         let cy = baseY;
@@ -2669,9 +2956,11 @@ export function getClanRoadBlueprints(group, allGroups = null) {
           const inGroupA = isTileInClaimedZones(cx, cy, group.claimedZones);
           const inGroupB = isTileInClaimedZones(cx, cy, otherGroup.claimedZones);
 
-          // Group cannot build inside another group's zone, but CAN build in neutral territory!
           if (!inGroupB && isLandTile(cx, cy)) {
-            roadTiles.set(`${cx}_${cy}`, { x: cx, y: cy, type: "road", groupId: inGroupA ? group.id : null, isHighway: true });
+            const k = `${cx}_${cy}`;
+            if (!roadTiles.has(k)) {
+              roadTiles.set(k, { x: cx, y: cy, type: "road", isSnapPoint: false, groupId: inGroupA ? group.id : null, isHighway: true });
+            }
           }
         }
       }
@@ -4085,49 +4374,6 @@ export function manageCreatureTorches(ent, group, world, entities, dt = 0.1) {
     }
   }
 
-  // 4. Campfire Placement (Strictly 1 campfire for every 4 territory zones)
-  const numZones = group.claimedZones?.length || 1;
-  const maxCampfires = Math.max(1, Math.floor(numZones / 4));
-
-  if (activeCampfires.length < maxCampfires && Math.random() < 0.04 && group.claimedZones && group.claimedZones.length > 0) {
-    const randomZone = group.claimedZones[Math.floor(Math.random() * group.claimedZones.length)];
-    const zp = randomZone.includes("_") ? randomZone.split("_") : randomZone.split(",");
-    const zx = parseInt(zp[0], 10);
-    const zy = parseInt(zp[1], 10);
-    const tx = zx * sz + Math.floor(sz / 2);
-    const ty = zy * sz + Math.floor(sz / 2);
-
-    if (tx >= 0 && ty >= 0 && (!world || (tx < world.width && ty < world.height)) && (!world || world.getTile(tx, ty) !== TILE_WATER)) {
-      let hasCampfireNearby = false;
-      let isOccupied = false;
-      for (const e of entityRegistry.values()) {
-        if (!e.destroyed) {
-          if (e.properties?.campfire && Math.abs(e.x - tx) <= sz && Math.abs(e.y - ty) <= sz) {
-            hasCampfireNearby = true;
-          }
-          if (e.x === tx && e.y === ty && (e.properties?.structure || e.properties?.house || e.properties?.tree || e.properties?.cactus || e.properties?.torch || e.properties?.campfire)) {
-            isOccupied = true;
-          }
-          if (hasCampfireNearby || isOccupied) break;
-        }
-      }
-
-      if (!hasCampfireNearby && !isOccupied) {
-        const cf = createCampfireEntity(tx, ty, ent.id);
-        entities.push(cf);
-        registerEntitySpatial(cf);
-        recordWorldEvent({
-          type: "BUILD",
-          primaryEntityId: ent.id,
-          location: { x: tx, y: ty },
-          description: `${ent.properties.name} construiu uma fogueira para iluminar o distrito da aldeia!`,
-          tick: currentTick,
-          timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
-        });
-      }
-    }
-  }
-
   // 5. Campfire Refueling (Keep active campfires replenished with wood)
   for (const cf of activeCampfires) {
     if (Math.abs(cf.x - ent.x) <= 4 && Math.abs(cf.y - ent.y) <= 4 && ((cf.properties.campfire.fuel || 0) < 250 || !cf.properties.campfire.isLit)) {
@@ -4237,69 +4483,6 @@ export function createGroupMemberProp() {
       const residentialRooms = (group.rooms || []).filter(r => r.type === "residential");
       let unhousedMembers = livingMems.filter(m => !residentialRooms.some(r => r.assignedMembers && r.assignedMembers.includes(m.id)));
       
-      const sz = currentZoneSize;
-      const maxZX = Math.max(1, Math.floor((world?.width || activeWorld?.width || 512) / sz));
-      const maxZY = Math.max(1, Math.floor((world?.height || activeWorld?.height || 512) / sz));
-
-      while (unhousedMembers.length > 0) {
-        let newZone = null;
-        const shuffledZones = [...(group.claimedZones || ["32_32"])].sort(() => Math.random() - 0.5);
-        for (const zk of shuffledZones) {
-          const zp = zk.includes("_") ? zk.split("_") : zk.split(",");
-          const cx = parseInt(zp[0], 10);
-          const cy = parseInt(zp[1], 10);
-          const shuffledOffs = [{ dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 }].sort(() => Math.random() - 0.5);
-          for (const off of shuffledOffs) {
-            const nx = cx + off.dx;
-            const ny = cy + off.dy;
-            if (nx >= 0 && nx < maxZX && ny >= 0 && ny < maxZY) {
-              const cand = `${nx}_${ny}`;
-              if (!group.claimedZones.includes(cand) && isLandTile(nx * sz + Math.floor(sz / 2), ny * sz + Math.floor(sz / 2))) {
-                newZone = cand;
-                break;
-              }
-            }
-          }
-          if (newZone) break;
-        }
-
-        if (!newZone) break;
-
-        group.claimedZones.push(newZone);
-        const nzParts = newZone.split("_");
-        const nzx = parseInt(nzParts[0], 10);
-        const nzy = parseInt(nzParts[1], 10);
-
-        // Assign up to 4 unhoused members to new rooms in this new zone
-        const toHouse = unhousedMembers.slice(0, 4);
-        if (!group.rooms) group.rooms = [];
-        for (const mem of toHouse) {
-          const roomId = (group.rooms?.length || 0) + 1;
-          group.rooms.push({
-            id: roomId,
-            type: "residential",
-            zx: nzx,
-            zy: nzy,
-            name: `Quarto de ${mem.properties.name}`,
-            assignedMembers: [mem.id]
-          });
-        }
-
-        recordWorldEvent({
-          type: "TERRITORY_EXPANSION",
-          primaryEntityId: ent.id,
-          location: { x: nzx * 8 + 4, y: nzy * 8 + 4 },
-          description: `'${group.name}' expanded territory and claimed Zone [${nzx}, ${nzy}] to provide private rooms for all settlers!`,
-          tick: currentTick,
-          timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
-          metadata: { newZone }
-        });
-
-        // Re-evaluate unhoused
-        const currentResidential = (group.rooms || []).filter(r => r.type === "residential");
-        unhousedMembers = livingMems.filter(m => !currentResidential.some(r => r.assignedMembers && r.assignedMembers.includes(m.id)));
-      }
-
       // Periodically evaluate clan needs and allocate dynamic profession roles
       if (ent.id === group.leaderId || Math.random() < 0.08) {
         evaluateAndAssignClanRoles(group, entities, world);
@@ -4411,10 +4594,23 @@ export function createGroupMemberProp() {
       }
 
       // ---------------------------------------------------------------------
-      // 2. ACTIVE ACTIONS WITH HELD ITEMS (Just-in-Time Construction)
+      // 2. ACTIVE ACTIONS WITH HELD ITEMS (Just-in-Time Road Digging & Construction)
       // ---------------------------------------------------------------------
 
-      // A. Building Blueprint Warehouse, Walls, Kingdom Gates & Houses (if holding Stone, Wood or Bone)
+      // A. Road & Street Digging (Immediate dirt road digging when adjacent to unbuilt road blueprint)
+      const allGroups = world?.groups || (activeWorld?.groups || []);
+      const roadBlueprints = getClanRoadBlueprints(group, allGroups);
+      const unbuiltRoadNear = roadBlueprints.find(bp => !isRoadTile(bp.x, bp.y) && (Math.abs(bp.x - ent.x) + Math.abs(bp.y - ent.y) <= 1));
+      if (unbuiltRoadNear && this.actionTimer >= 0.25) {
+        this.actionTimer = 0;
+        const roadEnt = createRoadEntity(unbuiltRoadNear.x, unbuiltRoadNear.y, unbuiltRoadNear.groupId ? group : null, unbuiltRoadNear.isSnapPoint);
+        entities.push(roadEnt);
+        registerEntitySpatial(roadEnt);
+        ent.emote = 2;
+        return;
+      }
+
+      // B. Building Blueprint Warehouse, Walls, Kingdom Gates & Houses (if holding Stone, Wood or Bone)
       if (isCarryingMat) {
         const blueprint = getClanBlueprintTiles(group);
         for (const bp of blueprint) {
@@ -4437,6 +4633,7 @@ export function createGroupMemberProp() {
               warehouse.properties.warehouse.stoneCurrent = (resType === "stone" || resType === "bone") ? 1 : 0;
               warehouse.properties.warehouse.isCompleted = (warehouse.properties.warehouse.woodCurrent >= warehouse.properties.warehouse.woodCost && warehouse.properties.warehouse.stoneCurrent >= warehouse.properties.warehouse.stoneCost);
               entities.push(warehouse);
+              registerEntitySpatial(warehouse);
               return;
             } else if (warehouseEntity && !warehouseEntity.properties.warehouse?.isCompleted && dist <= 1 && this.actionTimer >= 0.5) {
               const wh = warehouseEntity.properties.warehouse;
@@ -4472,6 +4669,29 @@ export function createGroupMemberProp() {
                   });
                 }
                 return;
+              }
+            } else if (warehouseEntity && warehouseEntity.properties.warehouse?.isCompleted && dist <= 1 && this.actionTimer >= 0.35) {
+              // Deposit held resource into completed warehouse
+              let deposited = false;
+              for (const [k, p] of Object.entries(ent.properties)) {
+                if (k.startsWith("arm") && p && p.heldItem && p.heldItem.resourceType) {
+                  warehouseEntity.properties.warehouse.items.push(p.heldItem);
+                  p.heldItem = null;
+                  deposited = true;
+                  break;
+                }
+              }
+              // Or withdraw needed resource to build well or houses
+              if (!deposited) {
+                const freeArm = Object.entries(ent.properties).find(([k, p]) => k.startsWith("arm") && p && !p.heldItem);
+                if (freeArm && warehouseEntity.properties.warehouse.items && warehouseEntity.properties.warehouse.items.length > 0) {
+                  const itemIdx = warehouseEntity.properties.warehouse.items.findIndex(i => (needsWood && (i.resourceType === "wood" || i.name?.includes("Wood"))) || (needsStone && (i.resourceType === "stone" || i.resourceType === "bone" || i.name?.includes("Stone"))));
+                  if (itemIdx >= 0) {
+                    const item = warehouseEntity.properties.warehouse.items.splice(itemIdx, 1)[0];
+                    freeArm[1].heldItem = item;
+                    this.actionTimer = 0;
+                  }
+                }
               }
             }
           } else if (bp.type === "campfire") {
@@ -4685,6 +4905,7 @@ export function createGroupMemberProp() {
               newHouse.properties.house.boneCurrent = resType === "bone" ? 1 : 0;
               newHouse.properties.house.isCompleted = (newHouse.properties.house.woodCurrent >= (newHouse.properties.house.woodCost ?? 6) && newHouse.properties.house.stoneCurrent >= (newHouse.properties.house.stoneCost ?? 6) && (newHouse.properties.house.boneCurrent || 0) >= (newHouse.properties.house.boneCost ?? 0));
               entities.push(newHouse);
+              registerEntitySpatial(newHouse);
               return;
             } else if (houseEntity && !houseEntity.properties.house?.isCompleted && dist <= 1 && this.actionTimer >= 0.5) {
               const h = houseEntity.properties.house;
@@ -4924,16 +5145,47 @@ export function createGroupMemberProp() {
         }
       }
 
-      // D. Storing in Clan Warehouse (Food, Materials, Weapons, Artifacts)
+      // D. Storing Surplus & Withdrawing Needed Building Materials from Clan Warehouse
       const completedWarehouse = entities.find(e => !e.destroyed && e.properties.warehouse?.isCompleted && (e.properties.warehouse.groupId === group.id || isTileInClaimedZones(e.x, e.y, group.claimedZones)));
       if (completedWarehouse) {
         const distToWh = Math.abs(completedWarehouse.x - ent.x) + Math.abs(completedWarehouse.y - ent.y);
         if (distToWh <= 1) {
+          const blueprint = getClanBlueprintTiles(group);
+          let needsWood = false;
+          let needsStone = false;
+          for (const bp of blueprint) {
+            if (bp.type === "campfire") {
+              const cf = entities.find(e => !e.destroyed && e.properties.campfire && e.x === bp.x && e.y === bp.y);
+              if (!cf || cf.isConstructed === false) needsWood = true;
+            } else if (bp.type === "well") {
+              const wl = entities.find(e => !e.destroyed && e.properties.well && e.x === bp.x && e.y === bp.y);
+              if (!wl || !wl.properties.well?.isCompleted) { needsWood = true; needsStone = true; }
+            } else if (bp.type === "house") {
+              const hs = entities.find(e => !e.destroyed && e.properties.house && e.x === bp.x && e.y === bp.y);
+              if (!hs || !hs.properties.house?.isCompleted) { needsWood = true; needsStone = true; }
+            }
+          }
+
+          // Deposit surplus items only (when hands hold items not immediately needed)
           for (const [k, p] of Object.entries(ent.properties)) {
             if (k.startsWith("arm") && p && p.heldItem && p.heldItem.resourceType !== "torch" && p.heldItem.resourceType !== "seed") {
-              completedWarehouse.properties.warehouse.items = completedWarehouse.properties.warehouse.items || [];
-              completedWarehouse.properties.warehouse.items.push(p.heldItem);
-              p.heldItem = null;
+              const rType = p.heldItem.resourceType;
+              const isNeededNow = (rType === "wood" && needsWood) || ((rType === "stone" || rType === "bone") && needsStone);
+              if (!isNeededNow) {
+                completedWarehouse.properties.warehouse.items = completedWarehouse.properties.warehouse.items || [];
+                completedWarehouse.properties.warehouse.items.push(p.heldItem);
+                p.heldItem = null;
+              }
+            }
+          }
+
+          // Withdraw needed materials if hands are free
+          if (freeArm && !freeArm.heldItem && (needsWood || needsStone)) {
+            const whItems = completedWarehouse.properties.warehouse.items || [];
+            const matIdx = whItems.findIndex(i => (needsWood && (i.resourceType === "wood" || i.name?.includes("Wood"))) || (needsStone && (i.resourceType === "stone" || i.resourceType === "bone" || i.name?.includes("Stone"))));
+            if (matIdx !== -1) {
+              const takenItem = whItems.splice(matIdx, 1)[0];
+              freeArm.heldItem = takenItem;
             }
           }
         }
@@ -4981,75 +5233,6 @@ export function createGroupMemberProp() {
           entities.push(plantedTree);
           registerEntitySpatial(plantedTree);
           ent.emote = 2;
-
-          // Auto-claim new zones whenever members lack private residential rooms (Continuous Housing Expansion)
-          const livingMems = (group.members || []).map(id => getEntityById(id)).filter(e => e && !e.destroyed);
-          const residentialRooms = (group.rooms || []).filter(r => r.type === "residential");
-          let unhousedMembers = livingMems.filter(m => !residentialRooms.some(r => r.assignedMembers && r.assignedMembers.includes(m.id)));
-          
-          const sz = currentZoneSize;
-          const maxZX = Math.max(1, Math.floor((world?.width || activeWorld?.width || 512) / sz));
-          const maxZY = Math.max(1, Math.floor((world?.height || activeWorld?.height || 512) / sz));
-
-          while (unhousedMembers.length > 0) {
-            let newZone = null;
-            const shuffledZones = [...(group.claimedZones || ["32_32"])].sort(() => Math.random() - 0.5);
-            for (const zk of shuffledZones) {
-              const zp = zk.includes("_") ? zk.split("_") : zk.split(",");
-              const cx = parseInt(zp[0], 10);
-              const cy = parseInt(zp[1], 10);
-              const shuffledOffs = [{ dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 }].sort(() => Math.random() - 0.5);
-              for (const off of shuffledOffs) {
-                const nx = cx + off.dx;
-                const ny = cy + off.dy;
-                if (nx >= 0 && nx < maxZX && ny >= 0 && ny < maxZY) {
-                  const cand = `${nx}_${ny}`;
-                  if (!group.claimedZones.includes(cand) && isLandTile(nx * sz + Math.floor(sz / 2), ny * sz + Math.floor(sz / 2))) {
-                    newZone = cand;
-                    break;
-                  }
-                }
-              }
-              if (newZone) break;
-            }
-
-            if (!newZone) break;
-
-            group.claimedZones.push(newZone);
-            const nzParts = newZone.split("_");
-            const nzx = parseInt(nzParts[0], 10);
-            const nzy = parseInt(nzParts[1], 10);
-
-            // Assign unhoused members according to clan's territorial expansion rate
-            const capacityPerZone = group.membersPerZone || 4;
-            const toHouse = unhousedMembers.slice(0, capacityPerZone);
-            if (!group.rooms) group.rooms = [];
-            for (const mem of toHouse) {
-              const roomId = (group.rooms?.length || 0) + 1;
-              group.rooms.push({
-                id: roomId,
-                type: "residential",
-                zx: nzx,
-                zy: nzy,
-                name: `Quarto de ${mem.properties.name}`,
-                assignedMembers: [mem.id]
-              });
-            }
-
-            recordWorldEvent({
-              type: "TERRITORY_EXPANSION",
-              primaryEntityId: ent.id,
-              location: { x: nzx * 8 + 4, y: nzy * 8 + 4 },
-              description: `'${group.name}' expanded territory and claimed Zone [${nzx}, ${nzy}] to provide private rooms for all settlers!`,
-              tick: currentTick,
-              timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
-              metadata: { newZone }
-            });
-
-            // Re-evaluate unhoused
-            const currentResidential = (group.rooms || []).filter(r => r.type === "residential");
-            unhousedMembers = livingMems.filter(m => !currentResidential.some(r => r.assignedMembers && r.assignedMembers.includes(m.id)));
-          }
           return;
         }
       }
@@ -5096,6 +5279,22 @@ export function createGroupMemberProp() {
               const w = wh?.properties?.warehouse;
               if ((w?.woodCurrent || 0) < (w?.woodCost ?? 4)) needsWood = true;
               if ((w?.stoneCurrent || 0) < (w?.stoneCost ?? 4)) needsStone = true;
+            }
+            return isUnbuilt;
+          } else if (bp.type === "campfire") {
+            const cf = entities.find(e => !e.destroyed && e.properties.campfire && e.x === bp.x && e.y === bp.y);
+            const isUnbuilt = !cf || cf.isConstructed === false;
+            if (isUnbuilt) {
+              if ((cf?.woodCurrent || 0) < (cf?.woodCost ?? 3)) needsWood = true;
+            }
+            return isUnbuilt;
+          } else if (bp.type === "well") {
+            const wl = entities.find(e => !e.destroyed && e.properties.well && e.x === bp.x && e.y === bp.y);
+            const isUnbuilt = !wl || !wl.properties.well?.isCompleted;
+            if (isUnbuilt) {
+              const wp = wl?.properties?.well;
+              if ((wp?.woodCurrent || 0) < (wp?.woodCost ?? 2)) needsWood = true;
+              if ((wp?.stoneCurrent || 0) < (wp?.stoneCost ?? 4)) needsStone = true;
             }
             return isUnbuilt;
           } else if (bp.type === "gate" || bp.type === "door") {
@@ -6621,6 +6820,26 @@ export function createLocomotionProp() {
                   targetBuild = { x: bp.x, y: bp.y, type: "campfire" };
                 }
               }
+            } else if (bp.type === "well") {
+              const wl = entities.find(e => !e.destroyed && e.properties.well && e.x === bp.x && e.y === bp.y);
+              let needsThisMat = false;
+              if (!wl) {
+                needsThisMat = true;
+              } else if (!wl.properties.well?.isCompleted) {
+                const w = wl.properties.well;
+                const wCost = w.woodCost ?? 2;
+                const sCost = w.stoneCost ?? 4;
+                if (heldResType === "wood" && (w.woodCurrent || 0) < wCost) needsThisMat = true;
+                if ((heldResType === "stone" || heldResType === "bone") && (w.stoneCurrent || 0) < sCost) needsThisMat = true;
+              }
+
+              if (needsThisMat) {
+                const dist = Math.abs(bp.x - ent.x) + Math.abs(bp.y - ent.y);
+                if (dist < minBuildDist) {
+                  minBuildDist = dist;
+                  targetBuild = { x: bp.x, y: bp.y, type: "well" };
+                }
+              }
             } else if (bp.type === "house") {
               const houseEnt = entities.find(e => !e.destroyed && e.properties.house && e.x === bp.x && e.y === bp.y);
               let needsThisMat = false;
@@ -6798,6 +7017,18 @@ export function createLocomotionProp() {
                 const wCost = cf.woodCost ?? 3;
                 if ((cf.woodCurrent || 0) < wCost) needsWood = true;
               }
+            } else if (bp.type === "well") {
+              const wl = entities.find(e => !e.destroyed && e.properties.well && e.x === bp.x && e.y === bp.y);
+              if (!wl) {
+                needsWood = true;
+                needsStone = true;
+              } else if (!wl.properties.well?.isCompleted) {
+                const w = wl.properties.well;
+                const wCost = w.woodCost ?? 2;
+                const sCost = w.stoneCost ?? 4;
+                if ((w.woodCurrent || 0) < wCost) needsWood = true;
+                if ((w.stoneCurrent || 0) < sCost) needsStone = true;
+              }
             } else if (bp.type === "house") {
               const houseEnt = entities.find(e => !e.destroyed && e.properties.house && e.x === bp.x && e.y === bp.y);
               if (!houseEnt) {
@@ -6844,7 +7075,40 @@ export function createLocomotionProp() {
 
           hasUnbuiltStruct = needsWood || needsStone;
 
-          // --- 5.1 Guard Patrol Duty ---
+          // --- 5.1 Road & Street Construction (Pioneers, Builders, Leaders, and Settlers) ---
+          const allGroups = world?.groups || (activeWorld?.groups || []);
+          const roadBlueprints = getClanRoadBlueprints(group, allGroups);
+          const unbuiltRoads = roadBlueprints.filter(bp => !isRoadTile(bp.x, bp.y));
+
+          if (unbuiltRoads.length > 0 && !hasIntention && (isBuilder || isPioneer || (myRole === "Leader") || !hasUnbuiltStruct || Math.random() < 0.65)) {
+            let closestRoad = null;
+            let minRDist = 9999;
+            for (const rbp of unbuiltRoads) {
+              const rd = Math.abs(rbp.x - ent.x) + Math.abs(rbp.y - ent.y);
+              if (rd < minRDist) {
+                minRDist = rd;
+                closestRoad = rbp;
+              }
+            }
+
+            if (closestRoad) {
+              if (minRDist <= 1) {
+                const roadEnt = createRoadEntity(closestRoad.x, closestRoad.y, closestRoad.groupId ? group : null, closestRoad.isSnapPoint);
+                entities.push(roadEnt);
+                registerEntitySpatial(roadEnt);
+                ent.emote = 2;
+                chosenDx = 0;
+                chosenDy = 0;
+                hasIntention = true;
+              } else {
+                chosenDx = Math.sign(closestRoad.x - ent.x);
+                chosenDy = Math.sign(closestRoad.y - ent.y);
+                hasIntention = true;
+              }
+            }
+          }
+
+          // --- 5.2 Guard Patrol Duty ---
           if (isGuard && !hasIntention) {
             const distToBase = Math.abs(ent.x - homeBaseX) + Math.abs(ent.y - homeBaseY);
             if (distToBase > 14) {
@@ -6854,47 +7118,25 @@ export function createLocomotionProp() {
             }
           }
 
-          // --- 5.2 Agriculture / Farming (Farmers, Pioneers, Foragers, Leaders, and Free Settlers) ---
-          if ((isFarmer || isForager || isPioneer || (!hasUnbuiltStruct && energyRatio > 0.40)) && !hasIntention) {
-            let seedTarget = null;
-            if (ent._taskGoal && ent._taskGoal.type === "get_seed") {
-              const lSeed = getEntityById(ent._taskGoal.id);
-              const lockedSeed = (lSeed && !lSeed.destroyed && !lSeed.properties.photosynthesis && !lSeed.properties.deep_root) ? lSeed : null;
-              if (lockedSeed) {
-                seedTarget = lockedSeed;
-              } else {
-                ent._taskGoal = null;
-              }
-            }
-
-            if (!seedTarget) {
-              let minSeedDist = 9999;
-              const nearbySeedCandidates = getEntitiesInRadius(ent.x, ent.y, 45);
-              for (const e of nearbySeedCandidates) {
-                if (!e.destroyed && !e.properties.photosynthesis && !e.properties.deep_root && (e.properties.germination || e.properties.resourceType === "seed" || e.properties.name?.includes("Seed") || e.properties.name?.includes("Semente") || (e.properties.edible?.foodType === "fruit" && e.properties.edible.seed))) {
-                  const sdist = Math.abs(e.x - ent.x) + Math.abs(e.y - ent.y);
-                  if (sdist < minSeedDist) {
-                    minSeedDist = sdist;
-                    seedTarget = e;
-                  }
-                }
-              }
-              if (seedTarget) {
-                ent._taskGoal = { type: "get_seed", id: seedTarget.id };
-              }
-            }
-
-            if (seedTarget) {
-              chosenDx = Math.sign(seedTarget.x - ent.x);
-              chosenDy = Math.sign(seedTarget.y - ent.y);
-              hasIntention = true;
-            }
-          }
-
-          // --- 5.3 Construction & Resource Gathering (Builders, Foragers, Pioneers, Leaders, or any free member when structures need materials) ---
-          if ((isBuilder || isForager || hasUnbuiltStruct) && !hasIntention) {
+          // --- 5.2 Construction & Resource Gathering (Builders, Foragers, Pioneers, Leaders, or any free member when structures need materials) ---
+          if ((isBuilder || isForager || isPioneer || hasUnbuiltStruct) && !hasIntention) {
             let nearestLooseMat = null;
             let minMatDist = 9999;
+
+            // Check if Warehouse already has needed materials stored
+            const completedWh = entities.find(e => !e.destroyed && e.properties.warehouse?.isCompleted && (e.properties.warehouse.groupId === group.id || isTileInClaimedZones(e.x, e.y, group.claimedZones)));
+            if (completedWh && completedWh.properties.warehouse?.items) {
+              const whItems = completedWh.properties.warehouse.items;
+              const hasWhMat = whItems.some(i => (needsWood && (i.resourceType === "wood" || i.name?.includes("Wood"))) || (needsStone && (i.resourceType === "stone" || i.resourceType === "bone" || i.name?.includes("Stone"))));
+              if (hasWhMat) {
+                const distToWh = Math.abs(completedWh.x - ent.x) + Math.abs(completedWh.y - ent.y);
+                if (distToWh < minMatDist) {
+                  minMatDist = distToWh;
+                  nearestLooseMat = completedWh;
+                }
+              }
+            }
+
             const nearbyMats = getEntitiesInRadius(ent.x, ent.y, 40);
             for (const e of nearbyMats) {
               if (!e.destroyed) {
@@ -6912,17 +7154,7 @@ export function createLocomotionProp() {
               chosenDx = Math.sign(nearestLooseMat.x - ent.x);
               chosenDy = Math.sign(nearestLooseMat.y - ent.y);
               hasIntention = true;
-            } else if (needsWood || (isForager && (group.storage || []).filter(i => i === "wood").length < 6)) {
-              // Felling wild trees
-              const trees = getEntitiesInRadius(ent.x, ent.y, 75).filter(e => !e.destroyed && (e.properties.photosynthesis || e.properties.deep_root || e.properties.species === "oak" || e.properties.species === "willow" || e.properties.species === "pine" || e.properties.species === "tree"));
-              let nearbyTree = trees.find(t => !isTileInClaimedZones(t.x, t.y, group.claimedZones)) || trees[0];
-
-              if (nearbyTree) {
-                chosenDx = Math.sign(nearbyTree.x - ent.x);
-                chosenDy = Math.sign(nearbyTree.y - ent.y);
-                hasIntention = true;
-              }
-            } else if (needsStone && world) {
+            } else if (needsStone && (!needsWood || ent.id % 2 === 0) && world) {
               // Mining stone
               const currentTile = world.getTile(ent.x, ent.y);
               let adjacentStone = (currentTile === 4 || currentTile === 1);
@@ -6985,6 +7217,53 @@ export function createLocomotionProp() {
                   hasIntention = true;
                 }
               }
+            } else if (needsWood || (isForager && (group.storage || []).filter(i => i === "wood").length < 6)) {
+              // Felling wild trees
+              const trees = getEntitiesInRadius(ent.x, ent.y, 75).filter(e => !e.destroyed && (e.properties.photosynthesis || e.properties.deep_root || e.properties.species === "oak" || e.properties.species === "willow" || e.properties.species === "pine" || e.properties.species === "tree"));
+              let nearbyTree = trees.find(t => !isTileInClaimedZones(t.x, t.y, group.claimedZones)) || trees[0];
+
+              if (nearbyTree) {
+                chosenDx = Math.sign(nearbyTree.x - ent.x);
+                chosenDy = Math.sign(nearbyTree.y - ent.y);
+                hasIntention = true;
+              }
+            }
+          }
+
+          // --- 5.3 Agriculture / Farming (Farmers, Pioneers, Foragers, Leaders, and Free Settlers) ---
+          if ((isFarmer || (!hasUnbuiltStruct && (isForager || isPioneer || energyRatio > 0.40))) && !hasIntention) {
+            let seedTarget = null;
+            if (ent._taskGoal && ent._taskGoal.type === "get_seed") {
+              const lSeed = getEntityById(ent._taskGoal.id);
+              const lockedSeed = (lSeed && !lSeed.destroyed && !lSeed.properties.photosynthesis && !lSeed.properties.deep_root) ? lSeed : null;
+              if (lockedSeed) {
+                seedTarget = lockedSeed;
+              } else {
+                ent._taskGoal = null;
+              }
+            }
+
+            if (!seedTarget) {
+              let minSeedDist = 9999;
+              const nearbySeedCandidates = getEntitiesInRadius(ent.x, ent.y, 45);
+              for (const e of nearbySeedCandidates) {
+                if (!e.destroyed && !e.properties.photosynthesis && !e.properties.deep_root && (e.properties.germination || e.properties.resourceType === "seed" || e.properties.name?.includes("Seed") || e.properties.name?.includes("Semente") || (e.properties.edible?.foodType === "fruit" && e.properties.edible.seed))) {
+                  const sdist = Math.abs(e.x - ent.x) + Math.abs(e.y - ent.y);
+                  if (sdist < minSeedDist) {
+                    minSeedDist = sdist;
+                    seedTarget = e;
+                  }
+                }
+              }
+              if (seedTarget) {
+                ent._taskGoal = { type: "get_seed", id: seedTarget.id };
+              }
+            }
+
+            if (seedTarget) {
+              chosenDx = Math.sign(seedTarget.x - ent.x);
+              chosenDy = Math.sign(seedTarget.y - ent.y);
+              hasIntention = true;
             }
           }
 
@@ -7048,10 +7327,10 @@ export function createLocomotionProp() {
             }
           }
 
-              // E. Civic & Idle Settler Tasks (ONLY when NO unbuilt warehouse, house or structure is pending!)
-              if (!hasIntention && !hasUnbuiltStruct && energyRatio > 0.40) {
-                // 1. Road & Street Construction (Main Avenue, Residential Lanes, Inter-Village Highways)
-                const allGroups = world?.groups || [];
+              // E. Civic & Idle Settler Tasks (Road digging & civic maintenance)
+              if (!hasIntention && energyRatio > 0.35) {
+                // 1. Road & Street Construction (3 Initial Dirt Roads, Expansion Lanes, Inter-Village Highways)
+                const allGroups = world?.groups || (activeWorld?.groups || []);
                 const roadBlueprints = getClanRoadBlueprints(group, allGroups);
                 const unbuiltRoads = roadBlueprints.filter(bp => !isRoadTile(bp.x, bp.y));
 
@@ -7068,7 +7347,7 @@ export function createLocomotionProp() {
 
                   if (closestRoad) {
                     if (minRDist <= 1) {
-                      const roadEnt = createRoadEntity(closestRoad.x, closestRoad.y, closestRoad.groupId ? group : null);
+                      const roadEnt = createRoadEntity(closestRoad.x, closestRoad.y, closestRoad.groupId ? group : null, closestRoad.isSnapPoint);
                       entities.push(roadEnt);
                       registerEntitySpatial(roadEnt);
 
@@ -9513,15 +9792,34 @@ export function createEmbarkParty(centerX, centerY, world, entities, customOpts 
     });
   }
 
-  // Spawn starter stockpile resources (Doors must be crafted and built by settlers!)
+  // Spawn starter stockpile resources for Praça & initial construction (9 wood, 8 stone, seeds, food)
   if (entities) {
-    entities.push(createWoodItem(centerX + 1, centerY - 1));
-    entities.push(createWoodItem(centerX + 2, centerY));
-    entities.push(createStoneItem(centerX - 1, centerY - 1));
-    entities.push(createStoneItem(centerX - 2, centerY));
-    entities.push(createSeedEntity(centerX, centerY + 2, "large", "oak"));
-    entities.push(createFruit(centerX + 1, centerY + 2, "large", "oak"));
-    entities.push(createFruit(centerX - 1, centerY + 2, "large", "oak"));
+    const starterItems = [
+      createWoodItem(centerX + 1, centerY - 1),
+      createWoodItem(centerX + 2, centerY),
+      createWoodItem(centerX + 2, centerY - 1),
+      createWoodItem(centerX + 1, centerY - 2),
+      createWoodItem(centerX + 2, centerY - 2),
+      createWoodItem(centerX + 3, centerY - 1),
+      createWoodItem(centerX + 3, centerY),
+      createWoodItem(centerX + 3, centerY - 2),
+      createWoodItem(centerX + 1, centerY + 1),
+      createStoneItem(centerX - 1, centerY - 1),
+      createStoneItem(centerX - 2, centerY),
+      createStoneItem(centerX - 2, centerY - 1),
+      createStoneItem(centerX - 1, centerY - 2),
+      createStoneItem(centerX - 2, centerY - 2),
+      createStoneItem(centerX - 3, centerY - 1),
+      createStoneItem(centerX - 3, centerY),
+      createStoneItem(centerX - 3, centerY - 2),
+      createSeedEntity(centerX, centerY + 2, "large", "oak"),
+      createFruit(centerX + 1, centerY + 2, "large", "oak"),
+      createFruit(centerX - 1, centerY + 2, "large", "oak")
+    ];
+    for (const item of starterItems) {
+      entities.push(item);
+      registerEntitySpatial(item);
+    }
   }
 
   // Record World Event

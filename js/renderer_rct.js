@@ -691,6 +691,47 @@ function createWarehouseGeometry() {
   return mergeBufferGeometries(parts);
 }
 
+// 3D Ancient Stone Water Well with Timber Frame & Pitched Roof Canopy
+function createWaterWellGeometry() {
+  const parts = [];
+  // 1. Chiseled Stone Basin / Well Rim (cylindrical base)
+  const basin = new THREE.CylinderGeometry(0.58, 0.62, 0.48, 12);
+  basin.translate(0, 0.24, 0);
+  parts.push(basin);
+
+  // 2. Interior dark water disk
+  const water = new THREE.CylinderGeometry(0.44, 0.44, 0.05, 10);
+  water.translate(0, 0.35, 0);
+  parts.push(water);
+
+  // 3. Wooden Support Pillars (Left & Right)
+  const postL = new THREE.CylinderGeometry(0.05, 0.05, 1.05, 6);
+  postL.translate(-0.44, 0.72, 0);
+  parts.push(postL);
+
+  const postR = new THREE.CylinderGeometry(0.05, 0.05, 1.05, 6);
+  postR.translate(0.44, 0.72, 0);
+  parts.push(postR);
+
+  // 4. Wooden Crossbeam Axle
+  const beam = new THREE.CylinderGeometry(0.04, 0.04, 0.96, 6);
+  beam.rotateZ(Math.PI / 2);
+  beam.translate(0, 1.15, 0);
+  parts.push(beam);
+
+  // 5. Timber Shingled Pitched Canopy / Roof
+  const roof = createPitchedRoofGeometry(1.15, 1.05, 0.38);
+  roof.translate(0, 1.22, 0);
+  parts.push(roof);
+
+  // 6. Suspended Wooden Bucket
+  const bucket = new THREE.CylinderGeometry(0.09, 0.07, 0.16, 6);
+  bucket.translate(0, 0.60, 0);
+  parts.push(bucket);
+
+  return mergeBufferGeometries(parts);
+}
+
 // Bone Ossuary House Walls Geometry (Bone Pillars & Skull Corners)
 function createBoneHouseWallGeometry() {
   const parts = [];
@@ -1315,7 +1356,17 @@ export class RCT3DRenderer {
         color: 0xff8800
       }),
       road: new THREE.MeshLambertMaterial({
-        map: createTintedTexture("Feature_Stone_B.png", 0xc8bcac, 0x5a5044, 1.0),
+        map: createTintedTexture("Feature_Stone_B.png", 0x9b7653, 0x4a3520, 1.0),
+        dithering: true,
+        side: THREE.DoubleSide
+      }),
+      roadSnap: new THREE.MeshLambertMaterial({
+        map: createTintedTexture("Feature_Pebbles.png", 0xd8ba80, 0x6a5024, 1.0),
+        dithering: true,
+        side: THREE.DoubleSide
+      }),
+      waterWell: new THREE.MeshLambertMaterial({
+        map: createTintedTexture("Feature_Stone_B.png", 0xd0c4b4, 0x3d352e, 1.0),
         dithering: true,
         side: THREE.DoubleSide
       })
@@ -1474,6 +1525,12 @@ export class RCT3DRenderer {
     this.instWarehouses.castShadow = true;
     this.instWarehouses.receiveShadow = true;
 
+    // 3D Ancient Stone Water Well
+    const waterWellGeo = createWaterWellGeometry();
+    this.instWaterWells = new THREE.InstancedMesh(waterWellGeo, this.materials.waterWell, 200);
+    this.instWaterWells.castShadow = true;
+    this.instWaterWells.receiveShadow = true;
+
     // Progressive Construction Stages
     // Stage 0: Pegs & String Layout (0 materials)
     const pegsGeo = createHousePegsGeometry();
@@ -1533,11 +1590,16 @@ export class RCT3DRenderer {
     const campfireFlameGeo = createCampfireFlameGeometry();
     this.instCampfireFlames = new THREE.InstancedMesh(campfireFlameGeo, this.materials.campfireFlame, 600);
 
-    // 3D Roads (Paved Flat Gravel / Cobblestone Path Slabs)
+    // 3D Roads & Snap Points (Paved Flat Mud / Dirt Path Slabs & Cobblestone Snap Points)
     const roadGeo = new THREE.BoxGeometry(0.96, 0.04, 0.96);
     roadGeo.translate(0, 0.02, 0);
     this.instRoads = new THREE.InstancedMesh(roadGeo, this.materials.road, 1600);
     this.instRoads.receiveShadow = true;
+
+    const roadSnapGeo = new THREE.BoxGeometry(0.96, 0.05, 0.96);
+    roadSnapGeo.translate(0, 0.025, 0);
+    this.instRoadSnaps = new THREE.InstancedMesh(roadSnapGeo, this.materials.roadSnap, 1600);
+    this.instRoadSnaps.receiveShadow = true;
 
     // Disable Frustum Culling on Instanced Meshes (Manual Viewport Spatial Grid Culling is active)
     this.instOakTrunks.frustumCulled = false;
@@ -1554,6 +1616,7 @@ export class RCT3DRenderer {
     this.instGatesOpen.frustumCulled = false;
     this.instGatesStage1.frustumCulled = false;
     this.instWarehouses.frustumCulled = false;
+    this.instWaterWells.frustumCulled = false;
     this.instHouseWalls.frustumCulled = false;
     this.instHouseRoofs.frustumCulled = false;
     this.instWoodHouseWalls.frustumCulled = false;
@@ -1574,6 +1637,7 @@ export class RCT3DRenderer {
     this.instWoodCampfires.frustumCulled = false;
     this.instCampfireFlames.frustumCulled = false;
     this.instRoads.frustumCulled = false;
+    this.instRoadSnaps.frustumCulled = false;
 
     this.instancedGroup = new THREE.Group();
     this.instancedGroup.add(
@@ -1581,7 +1645,7 @@ export class RCT3DRenderer {
       this.instPineTrunks, this.instPineLeaves,
       this.instCacti, this.instWalls, this.instWoodWalls, this.instMixedWalls, this.instBoneWalls, this.instWallsStage1,
       this.instGatesClosed, this.instGatesOpen, this.instGatesStage1,
-      this.instWarehouses,
+      this.instWarehouses, this.instWaterWells,
       this.instHouseWalls, this.instHouseRoofs,
       this.instWoodHouseWalls, this.instWoodHouseRoofs,
       this.instStoneHouseWalls, this.instStoneHouseRoofs,
@@ -1592,7 +1656,7 @@ export class RCT3DRenderer {
       this.instWoodLogs, this.instStoneItems,
       this.instTorches, this.instTorchesUnlit,
       this.instWoodCampfires, this.instCampfireFlames,
-      this.instRoads
+      this.instRoads, this.instRoadSnaps
     );
     this.scene.add(this.instancedGroup);
 
@@ -2880,6 +2944,7 @@ export class RCT3DRenderer {
     let gateOpenCount = 0;
     let gateStage1Count = 0;
     let warehouseCount = 0;
+    let waterWellCount = 0;
     let houseCount = 0;
     let woodHouseCount = 0;
     let stoneHouseCount = 0;
@@ -2893,6 +2958,7 @@ export class RCT3DRenderer {
     let woodCampfireCount = 0;
     let campfireFlameCount = 0;
     let roadCount = 0;
+    let roadSnapCount = 0;
 
     const mMatrix = this._mMatrix;
     const scaleMatrix = this._scaleMatrix;
@@ -2926,23 +2992,26 @@ export class RCT3DRenderer {
       }
 
       const r = e.properties.render;
-      const isRoad = !e.properties.life && (!!e.properties.road || e.properties.name?.includes("Estrada") || e.properties.name?.includes("Rua"));
+      const isRoad = !e.properties.life && (!!e.properties.road || e.properties.name?.includes("Estrada") || e.properties.name?.includes("Rua") || e.properties.name?.includes("Encaixe"));
       const isCampfire = !e.properties.life && !isRoad && (!!e.properties.campfire || e.properties.name?.includes("Campfire") || e.properties.name?.includes("Fogueira"));
       const isTorch = !e.properties.life && !isRoad && !isCampfire && (!!e.properties.torch || e.properties.name?.includes("Torch") || e.properties.name?.includes("Tocha"));
       const isWarehouse = !e.properties.life && !isRoad && (!!e.properties.warehouse || e.properties.name?.includes("Armazém"));
-      const isDoor = !e.properties.life && !isWarehouse && !isTorch && !isCampfire && !isRoad && !!e.properties.door;
-      const isHouse = !e.properties.life && !isWarehouse && !isTorch && !isCampfire && !isRoad && (!!e.properties.house || r.skin === "Overworld_House.png" || e.properties.name?.includes("Casa") || e.properties.name?.includes("Ossuário") || e.properties.name?.includes("Castelo") || e.properties.name?.includes("Cabana"));
-      const isWall = !e.properties.life && !isDoor && !isHouse && !isWarehouse && !isTorch && !isCampfire && !isRoad && (e.properties.structure || r.skin?.startsWith("Wall_") || e.properties.name?.includes("Muralha") || e.properties.name?.includes("Paliçada") || e.properties.name?.includes("Muro") || e.properties.name?.includes("Wall"));
+      const isWell = !e.properties.life && !isRoad && !isWarehouse && (!!e.properties.well || !!e.properties.isWell || e.properties.name?.includes("Poço") || e.properties.name?.includes("Well"));
+      const isDoor = !e.properties.life && !isWarehouse && !isWell && !isTorch && !isCampfire && !isRoad && !!e.properties.door;
+
       const isCactus = e.properties.species === "cactus" || e.properties.name?.toLowerCase().includes("cactus") || e.properties.name?.toLowerCase().includes("cacto");
       const isTree = !isCactus && (e.properties.species === "oak" || e.properties.species === "pine" || e.properties.species === "willow" || e.properties.species === "tree" || !!e.properties.tree || (r.skin && r.skin.toLowerCase().includes("tree")));
       const isPine = isTree && (e.properties.species === "pine" || (r.skin && r.skin.toLowerCase().includes("pine")));
 
-      const isWoodLog = !e.properties.life && (e.properties.resourceType === "wood" || e.properties.name?.includes("Wood Log") || e.properties.name?.includes("Madeira") || r.skin === "Item_Wood.png") && !isHouse && !isWall && !isDoor && !isTree && !isWarehouse && !isTorch && !isCampfire && !isRoad;
-      const isStoneItem = !e.properties.life && (e.properties.resourceType === "stone" || e.properties.name?.includes("Stone Block") || e.properties.name?.includes("Pedra")) && !isHouse && !isWall && !isDoor && !isWarehouse && !isTorch && !isCampfire && !isRoad;
-      const isItem = !e.properties.life && !isTorch && !isCampfire && !isRoad && (!!e.properties.edible || !!e.properties.resourceType || !!e.properties.germination || e.properties.species === "item");
+      const isWoodLog = !e.properties.life && !isDoor && !isWarehouse && !isTorch && !isCampfire && !isRoad && (e.properties.resourceType === "wood" || e.properties.name?.includes("Wood Log") || e.properties.name?.includes("Madeira") || r.skin === "Item_Wood.png");
+      const isStoneItem = !e.properties.life && !isDoor && !isWarehouse && !isTorch && !isCampfire && !isRoad && (e.properties.resourceType === "stone" || e.properties.name?.includes("Stone Block") || e.properties.name?.includes("Pedra"));
+      const isItem = !e.properties.life && !isDoor && !isTorch && !isCampfire && !isRoad && (!!e.properties.edible || !!e.properties.resourceType || !!e.properties.germination || e.properties.species === "item" || !!e.properties.weapon || !!e.properties.armor || !!e.properties.tool || !!e.properties.material);
+
+      const isHouse = !e.properties.life && !isItem && !isWoodLog && !isStoneItem && !isTree && !isCactus && !isWarehouse && !isWell && !isTorch && !isCampfire && !isRoad && (!!e.properties.house || (e.properties.species === "structure" && (r.skin === "Overworld_House.png" || e.properties.name?.includes("Casa") || e.properties.name?.includes("Ossuário") || e.properties.name?.includes("Castelo") || e.properties.name?.includes("Cabana"))));
+      const isWall = !e.properties.life && !isDoor && !isHouse && !isWarehouse && !isWell && !isTorch && !isCampfire && !isRoad && !isItem && !isWoodLog && !isStoneItem && !isTree && !isCactus && (r.skin?.startsWith("Wall_") || e.properties.name?.includes("Muralha") || e.properties.name?.includes("Paliçada") || e.properties.name?.includes("Muro") || (e.properties.structure && !e.properties.edible && !e.properties.resourceType));
 
       const isPlantOrItem = isTree || isCactus || isWoodLog || isStoneItem || isTorch || isCampfire || isRoad;
-      const isBuilding = isHouse || isWall || isDoor || isWarehouse;
+      const isBuilding = isHouse || isWall || isDoor || isWarehouse || isWell;
       const surfaceH = isBuilding
         ? this.getTileSurfaceHeight(map, Math.floor(e.x), Math.floor(e.y))
         : this.getSurfaceElevation(map, isPlantOrItem ? e.x + 0.5 : e.x, isPlantOrItem ? e.y + 0.5 : e.y);
@@ -3012,11 +3081,18 @@ export class RCT3DRenderer {
           this.instCampfireFlames.setMatrixAt(campfireFlameCount++, mMatrix);
         }
       }
-      // --- 3D PAVED ROADS & STREETS (Flat Ground Slabs) ---
-      else if (isRoad && roadCount < 1600) {
-        mMatrix.identity();
-        mMatrix.setPosition(e.x + 0.5, surfaceH, e.y + 0.5);
-        this.instRoads.setMatrixAt(roadCount++, mMatrix);
+      // --- 3D PAVED ROADS & SNAP POINTS (Flat Ground Slabs) ---
+      else if (isRoad) {
+        const isSnap = !!e.properties?.road?.isSnapPoint || e.properties?.name?.includes("Encaixe") || e.properties?.name?.includes("Snap");
+        if (isSnap && roadSnapCount < 1600) {
+          mMatrix.identity();
+          mMatrix.setPosition(e.x + 0.5, surfaceH, e.y + 0.5);
+          this.instRoadSnaps.setMatrixAt(roadSnapCount++, mMatrix);
+        } else if (!isSnap && roadCount < 1600) {
+          mMatrix.identity();
+          mMatrix.setPosition(e.x + 0.5, surfaceH, e.y + 0.5);
+          this.instRoads.setMatrixAt(roadCount++, mMatrix);
+        }
       }
       // --- 3D WALLS (Stone, Wood, Mixed & Slope/Ramp Adaptive) ---
       else if (isWall) {
@@ -3062,6 +3138,19 @@ export class RCT3DRenderer {
           this.instWarehouses.setMatrixAt(warehouseCount++, mMatrix);
         } else if (!isCompleted && stage2Count < 400) {
           this.instHouseStage2.setMatrixAt(stage2Count++, mMatrix);
+        }
+      }
+      // --- 3D ANCIENT STONE WATER WELL ---
+      else if (isWell) {
+        occupiedHouseTiles.add(`${Math.floor(e.x)}_${Math.floor(e.y)}`);
+        const isCompleted = e.properties?.well ? (e.properties.well.isCompleted !== false) : true;
+        mMatrix.identity();
+        mMatrix.setPosition(e.x + 0.5, surfaceH, e.y + 0.5);
+
+        if (isCompleted && waterWellCount < 200) {
+          this.instWaterWells.setMatrixAt(waterWellCount++, mMatrix);
+        } else if (!isCompleted && stage1Count < 400) {
+          this.instHouseStage1.setMatrixAt(stage1Count++, mMatrix);
         }
       }
       // --- 3D FORTIFIED GATES (Wood & Iron Archway + Open/Closed States) ---
@@ -3560,6 +3649,9 @@ export class RCT3DRenderer {
     this.instWarehouses.count = warehouseCount;
     this.instWarehouses.instanceMatrix.needsUpdate = true;
 
+    this.instWaterWells.count = waterWellCount;
+    this.instWaterWells.instanceMatrix.needsUpdate = true;
+
     this.instHouseWalls.count = houseCount;
     this.instHouseWalls.instanceMatrix.needsUpdate = true;
     this.instHouseRoofs.count = houseCount;
@@ -3604,6 +3696,8 @@ export class RCT3DRenderer {
 
     this.instRoads.count = roadCount;
     this.instRoads.instanceMatrix.needsUpdate = true;
+    this.instRoadSnaps.count = roadSnapCount;
+    this.instRoadSnaps.instanceMatrix.needsUpdate = true;
 
     // Clean inactive dynamic billboards
     for (const [id, spr] of this.entitySprites.entries()) {

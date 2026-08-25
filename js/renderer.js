@@ -589,14 +589,26 @@ export class Renderer {
           entBg = rgba32(255, 255, 255);
         }
 
-        // Walls, Doors/Gates, Houses, Warehouses and Structures rendering
-        const isWarehouse = !!e.properties.warehouse || e.properties.name?.includes("Armazém");
-        const isDoor = !isWarehouse && !!e.properties.door;
-        const isHouse = !isWarehouse && (!!e.properties.house || r.skin === "Overworld_House.png");
-        const isWall = !isDoor && !isHouse && !isWarehouse && (e.properties.structure || r.skin?.startsWith("Wall_") || e.properties.name?.includes("Muralha") || e.properties.name?.includes("Wall"));
+        // Walls, Doors/Gates, Houses, Warehouses, Wells, Campfires, Roads and Structures rendering
+        const isRoad = !e.properties.life && (!!e.properties.road || e.properties.name?.includes("Estrada") || e.properties.name?.includes("Rua") || e.properties.name?.includes("Encaixe"));
+        const isWarehouse = !isRoad && (!!e.properties.warehouse || e.properties.name?.includes("Armazém"));
+        const isWell = !isRoad && !isWarehouse && (!!e.properties.well || !!e.properties.isWell || e.properties.name?.includes("Poço") || e.properties.name?.includes("Well"));
+        const isCampfire = !isRoad && !isWarehouse && !isWell && (!!e.properties.campfire || e.properties.name?.includes("Campfire") || e.properties.name?.includes("Fogueira"));
+        const isDoor = !isWarehouse && !isWell && !isCampfire && !isRoad && !!e.properties.door;
+        const isHouse = !isWarehouse && !isWell && !isCampfire && !isRoad && !e.properties.edible && !e.properties.resourceType && !e.properties.germination && e.properties.species !== "item" && (!!e.properties.house || (e.properties.species === "structure" && r.skin === "Overworld_House.png"));
+        const isWall = !isDoor && !isHouse && !isWarehouse && !isWell && !isCampfire && !isRoad && !e.properties.edible && !e.properties.resourceType && !e.properties.germination && (r.skin?.startsWith("Wall_") || e.properties.name?.includes("Muralha") || e.properties.name?.includes("Wall") || (e.properties.structure && !e.properties.isWell && !e.properties.well));
         let entSkin = r.skin || "Human_Knight_M.png";
-        if (isWarehouse) {
+        if (isRoad) {
+          const isSnap = !!e.properties?.road?.isSnapPoint || e.properties?.name?.includes("Encaixe");
+          entSkin = isSnap ? "Feature_Pebbles.png" : "Feature_Stone_B.png";
+          entFg = isSnap ? rgba32(216, 186, 128) : rgba32(155, 118, 83);
+        } else if (isWarehouse) {
           entSkin = "Feature_Wood.png";
+        } else if (isWell) {
+          entSkin = "Feature_Cauldron.png";
+          entFg = rgba32(60, 188, 252);
+        } else if (isCampfire) {
+          entSkin = "Feature_Campfire.png";
         } else if (isDoor) {
           if (e.isConstructed === false) {
             entSkin = "Feature_Wood.png";

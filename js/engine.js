@@ -72,7 +72,7 @@ export function registerEntitySpatial(entity, zoneSize = activeZoneSize) {
     globalRoadCoords.add(tk);
   }
 
-  const isWall = (entity.properties?.render?.skin?.startsWith("Wall_") || entity.properties?.name?.includes("Muralha") || entity.properties?.name?.includes("Wall") || (entity.properties?.structure && !entity.properties?.door && !entity.properties?.house));
+  const isWall = !entity.properties?.road && !entity.properties?.warehouse && !entity.properties?.well && !entity.properties?.campfire && !entity.properties?.torch && (entity.properties?.render?.skin?.startsWith("Wall_") || entity.properties?.name?.includes("Muralha") || entity.properties?.name?.includes("Wall") || (entity.properties?.structure && !entity.properties?.door && !entity.properties?.house && !entity.properties?.isWell && !entity.properties?.resourceType && !entity.properties?.edible));
   if (isWall) {
     globalWallCoords.add(`${entity.x},${entity.y}`);
   }
@@ -100,7 +100,7 @@ export function unregisterEntitySpatial(entity, zoneSize = activeZoneSize) {
     globalRoadCoords.delete(tk);
   }
 
-  const isWall = (entity.properties?.render?.skin?.startsWith("Wall_") || entity.properties?.name?.includes("Muralha") || entity.properties?.name?.includes("Wall") || (entity.properties?.structure && !entity.properties?.door && !entity.properties?.house));
+  const isWall = !entity.properties?.road && !entity.properties?.warehouse && !entity.properties?.well && !entity.properties?.campfire && !entity.properties?.torch && (entity.properties?.render?.skin?.startsWith("Wall_") || entity.properties?.name?.includes("Muralha") || entity.properties?.name?.includes("Wall") || (entity.properties?.structure && !entity.properties?.door && !entity.properties?.house && !entity.properties?.isWell && !entity.properties?.resourceType && !entity.properties?.edible));
   if (isWall) {
     globalWallCoords.delete(`${lastX},${lastY}`);
   }

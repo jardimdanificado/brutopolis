@@ -123,6 +123,7 @@ import {
   createHumanExplorer,
   createStoneWallEntity,
   createWaterWellEntity,
+  createRoadEntity,
   createFarmerProp,
   createScatologicalProp,
   createEmbarkParty,
@@ -956,6 +957,8 @@ const EDITOR_ITEMS = [
   { label: "STONE ITEM", fn: (x, y) => createStoneItem(x, y) },
   { label: "STONE WALL", fn: (x, y) => createStoneWallEntity(x, y) },
   { label: "WATER WELL", fn: (x, y) => createWaterWellEntity(x, y) },
+  { label: "DIRT ROAD", fn: (x, y) => createRoadEntity(x, y, null, false) },
+  { label: "ROAD SNAP POINT", fn: (x, y) => createRoadEntity(x, y, null, true) },
   { label: "OAK SEED", fn: (x, y) => createSeedEntity(x, y, "large", "oak") },
   { label: "FRUIT", fn: (x, y) => createFruit(x, y, "large", "oak") }
 ];
