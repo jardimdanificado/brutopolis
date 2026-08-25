@@ -1758,9 +1758,7 @@ function renderTopHudBar() {
     drawText8x8(timeStr, 188, 13, "#ffffff", 1);
     drawText8x8(`SUN:${Math.round(clock.globalLight * 100)}%`, 276, 13, "#3cbcfc", 1);
 
-    const presetNames = ["ARCHIPELAGO", "CONTINENT", "HIGHLANDS"];
-    drawText8x8(presetNames[currentPreset] || "WORLD", 352, 13, "#58d854", 1);
-    drawText8x8(`${currentFps}FPS`, 456, 13, "#bcbcbc", 1);
+    drawText8x8(`${currentFps}FPS`, 360, 13, "#bcbcbc", 1);
 
     // NEW WORLD Generator Button
     const isGenAct = currentMode === "GENERATOR";

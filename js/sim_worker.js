@@ -95,6 +95,7 @@ let genWidth = 256;
 let genHeight = 256;
 let genZoneSize = 8;
 let lastEventCountPosted = 0;
+let groupsDirty = false;
 
 const SPAWNERS = {
   HUMAN: (x, y) => createHuman(x, y),
