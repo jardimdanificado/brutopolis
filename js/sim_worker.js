@@ -451,12 +451,9 @@ function serializeRegistry() {
 }
 
 let cachedGroups = null;
-let groupsDirty = true;
-
 function serializeGroups() {
-  if (!groupsDirty && cachedGroups) return cachedGroups;
   const groups = getAllGroups();
-  cachedGroups = groups.map(g => ({
+  return groups.map(g => ({
     id: g.id,
     name: g.name,
     color: g.color,
@@ -465,10 +462,11 @@ function serializeGroups() {
     claimedZones: g.claimedZones ? [...g.claimedZones] : [],
     members: g.members ? [...g.members] : [],
     founderSurname: g.founderSurname || null,
-    leaderId: g.leaderId || null
+    leaderId: g.leaderId || null,
+    _plannedRoads: g._plannedRoads ? g._plannedRoads.map(r => ({ x: r.x, y: r.y, isSnapPoint: !!r.isSnapPoint, roadType: r.roadType || 0 })) : null,
+    _plaza: g._plaza ? { warehouse: { ...g._plaza.warehouse }, campfire: { ...g._plaza.campfire }, well: { ...g._plaza.well } } : null,
+    _housePlots: g._housePlots ? { ...g._housePlots } : null
   }));
-  groupsDirty = false;
-  return cachedGroups;
 }
 
 function serializeEvents() {

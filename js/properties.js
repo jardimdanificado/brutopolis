@@ -2701,21 +2701,6 @@ export function getClanBlueprintTiles(group) {
     }
   }
 
-  // 3. Check Road Occupancy (If >= 50% occupied, dig 3 more roads!)
-  const normalRoads = (group._plannedRoads || []).filter(r => !r.isSnapPoint);
-  if (normalRoads.length > 0) {
-    const occupiedRoadCount = normalRoads.filter(r => {
-      for (const off of [{dx:1,dy:0}, {dx:-1,dy:0}, {dx:0,dy:1}, {dx:0,dy:-1}]) {
-        if (occupiedTiles.has(`${r.x + off.dx}_${r.y + off.dy}`)) return true;
-      }
-      return false;
-    }).length;
-
-    if ((occupiedRoadCount / normalRoads.length) >= 0.5) {
-      expandClanRoadNetwork(group, 3);
-    }
-  }
-
   // 4. Find all candidate house plots along road edges (adjacent to normal roads and NOT adjacent to snap points)
   const plannedRoadSet = new Set((group._plannedRoads || []).map(r => `${r.x}_${r.y}`));
   const candidatePlots = [];
@@ -2745,7 +2730,14 @@ export function getClanBlueprintTiles(group) {
     }
   }
 
-  // 5. Assign house plots to members (Enforcing at least 2 tiles distance between each house)
+  // Sort candidate plots deterministically by distance from central plaza warehouse
+  candidatePlots.sort((a, b) => {
+    const da = Math.abs(a.x - whX) + Math.abs(a.y - whY);
+    const db = Math.abs(b.x - whX) + Math.abs(b.y - whY);
+    return da - db;
+  });
+
+  // 5. Assign permanent house plots to members (Enforcing at least 3 tiles distance between each house)
   if (!group._housePlots) group._housePlots = {};
   const memberSet = new Set(members);
 
@@ -2757,12 +2749,6 @@ export function getClanBlueprintTiles(group) {
       }
     }
     return true;
-  }
-
-  function pseudoRandomPos(seedA, seedB, limit) {
-    let h = (seedA * 374761393 + seedB * 668265263) ^ 0x5bf03635;
-    h = Math.imul(h ^ (h >>> 13), 1274126177);
-    return Math.abs(h ^ (h >>> 16)) % limit;
   }
 
   for (let mIdx = 0; mIdx < members.length; mIdx++) {
@@ -2778,7 +2764,7 @@ export function getClanBlueprintTiles(group) {
       // Check persistent assigned plot (must satisfy at least 3 tiles distance rule)
       if (group._housePlots[ownerId]) {
         const p = group._housePlots[ownerId];
-        if (isLandTile(p.x, p.y) && isTileInClaimedZones(p.x, p.y, group.claimedZones) && !isAdjacentToSnapPoint(p.x, p.y, group) && isAdjacentToNormalRoad(p.x, p.y, group) && isFarEnoughFromBuildings(p.x, p.y, tiles, 3)) {
+        if (isLandTile(p.x, p.y) && !plannedRoadSet.has(`${p.x}_${p.y}`) && !isRoadTile(p.x, p.y) && !isAdjacentToSnapPoint(p.x, p.y, group) && isAdjacentToNormalRoad(p.x, p.y, group) && isFarEnoughFromBuildings(p.x, p.y, tiles, 3)) {
           tiles.push({ x: p.x, y: p.y, type: "house", ownerId });
           occupiedTiles.add(`${p.x}_${p.y}`);
           continue;
@@ -2788,35 +2774,10 @@ export function getClanBlueprintTiles(group) {
       }
 
       // Pick from available candidate plots respecting >= 3 tiles distance from any other house/building
-      let available = candidatePlots.filter(c => !occupiedTiles.has(`${c.x}_${c.y}`) && isFarEnoughFromBuildings(c.x, c.y, tiles, 3));
-
-      // If no valid spaced plots remain on current roads, expand road network by 3 roads to create more plots!
-      if (available.length === 0) {
-        expandClanRoadNetwork(group, 3);
-        // Refresh candidate plots with newly expanded roads
-        for (const zk of group.claimedZones) {
-          const zp = zk.includes("_") ? zk.split("_") : zk.split(",");
-          const zx = parseInt(zp[0], 10);
-          const zy = parseInt(zp[1], 10);
-          for (let ox = 0; ox < sz; ox++) {
-            for (let oy = 0; oy < sz; oy++) {
-              const px = zx * sz + ox;
-              const py = zy * sz + oy;
-              const tk = `${px}_${py}`;
-              if (!isLandTile(px, py)) continue;
-              if (isRoadTile(px, py) || isAdjacentToSnapPoint(px, py, group) || !isAdjacentToNormalRoad(px, py, group)) continue;
-              if (!candidatePlots.some(cp => cp.x === px && cp.y === py)) {
-                candidatePlots.push({ x: px, y: py });
-              }
-            }
-          }
-        }
-        available = candidatePlots.filter(c => !occupiedTiles.has(`${c.x}_${c.y}`) && isFarEnoughFromBuildings(c.x, c.y, tiles, 3));
-      }
+      const available = candidatePlots.filter(c => !occupiedTiles.has(`${c.x}_${c.y}`) && isFarEnoughFromBuildings(c.x, c.y, tiles, 3));
 
       if (available.length > 0) {
-        const pickIdx = pseudoRandomPos(group.id, ownerId, available.length);
-        const chosen = available[pickIdx];
+        const chosen = available[0];
         group._housePlots[ownerId] = { x: chosen.x, y: chosen.y };
         tiles.push({ x: chosen.x, y: chosen.y, type: "house", ownerId });
         occupiedTiles.add(`${chosen.x}_${chosen.y}`);
@@ -4613,7 +4574,24 @@ export function createGroupMemberProp() {
       // B. Building Blueprint Warehouse, Walls, Kingdom Gates & Houses (if holding Stone, Wood or Bone)
       if (isCarryingMat) {
         const blueprint = getClanBlueprintTiles(group);
-        for (const bp of blueprint) {
+        let bp = null;
+        if (ent._buildTarget) {
+          const targetDist = Math.abs(ent._buildTarget.x - ent.x) + Math.abs(ent._buildTarget.y - ent.y);
+          if (targetDist <= 1) {
+            bp = ent._buildTarget;
+          }
+        }
+        if (!bp) {
+          for (const b of blueprint) {
+            const d = Math.abs(b.x - ent.x) + Math.abs(b.y - ent.y);
+            if (d <= 1) {
+              bp = b;
+              break;
+            }
+          }
+        }
+
+        if (bp) {
           const dist = Math.abs(bp.x - ent.x) + Math.abs(bp.y - ent.y);
 
           if (bp.type === "warehouse") {
@@ -6712,40 +6690,23 @@ export function createLocomotionProp() {
           }
         }
 
-        // 1. If carrying seed: cultivate and plant inside territory with spacing (Agriculture Highest Priority)
+        // 1. If carrying seed: cultivate and plant inside territory with spacing
         if (!hasIntention && isCarryingSeed) {
-          const sz = currentZoneSize || 8;
           let targetPlot = null;
-          let minPlotDist = 9999;
-
-          for (const zk of group.claimedZones || []) {
-            const zp = zk.includes("_") ? zk.split("_") : zk.split(",");
-            const zx = parseInt(zp[0], 10);
-            const zy = parseInt(zp[1], 10);
-            for (let ox = 0; ox < sz; ox++) {
-              for (let oy = 0; oy < sz; oy++) {
-                const px = zx * sz + ox;
-                const py = zy * sz + oy;
-                const t = world ? world.getTile(px, py) : 0;
-                const isLand = (t !== 2 && t !== 5 && t !== 1 && t !== 4);
-                if (isLand && !isRoadTile(px, py)) {
-                  let isOccupied = false;
-                  for (const e of entityRegistry.values()) {
-                    if (!e.destroyed && e.x === px && e.y === py && (e.properties?.structure || e.properties?.house || e.properties?.door || e.properties?.photosynthesis || e.properties?.deep_root || e.properties?.tree || e.properties?.cactus || e.properties?.torch || e.properties?.campfire)) {
-                      isOccupied = true;
-                      break;
-                    }
-                  }
-                  if (!isOccupied) {
-                    const dist = Math.abs(px - ent.x) + Math.abs(py - ent.y);
-                    if (dist < minPlotDist) {
-                      minPlotDist = dist;
-                      targetPlot = { x: px, y: py };
-                    }
-                  }
+          for (let r = 1; r <= 10; r++) {
+            for (let dy = -r; dy <= r; dy++) {
+              for (let dx = -r; dx <= r; dx++) {
+                if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
+                const px = ent.x + dx;
+                const py = ent.y + dy;
+                if (isTileInClaimedZones(px, py, group.claimedZones) && isLandTile(px, py) && !isRoadTile(px, py) && !isAdjacentToSnapPoint(px, py, group)) {
+                  targetPlot = { x: px, y: py };
+                  break;
                 }
               }
+              if (targetPlot) break;
             }
+            if (targetPlot) break;
           }
 
           if (targetPlot) {
@@ -6927,6 +6888,7 @@ export function createLocomotionProp() {
           }
 
           if (targetBuild) {
+            ent._buildTarget = { x: targetBuild.x, y: targetBuild.y, type: targetBuild.type, ownerId: targetBuild.ownerId };
             if (minBuildDist <= 1) {
               chosenDx = 0;
               chosenDy = 0;
@@ -6937,6 +6899,7 @@ export function createLocomotionProp() {
               hasIntention = true;
             }
           } else {
+            ent._buildTarget = null;
             // Held material/item is not needed by any active construction site: haul it to Warehouse/Stockpile!
             const warehouse = entities.find(e => !e.destroyed && e.properties.warehouse?.isCompleted && (e.properties.warehouse.groupId === group.id || isTileInClaimedZones(e.x, e.y, group.claimedZones)));
             if (warehouse) {
