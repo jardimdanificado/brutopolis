@@ -403,6 +403,30 @@ function getSanitizedProperties(e) {
     e._sanitizedProps.campfire.isLit = !!e.properties.campfire.isLit;
     e._sanitizedProps.campfire.fuel = e.properties.campfire.fuel;
   }
+  if (e.properties.house) {
+    e._sanitizedProps.house = sanitizeForTransfer(e.properties.house);
+  }
+  if (e.properties.warehouse) {
+    e._sanitizedProps.warehouse = sanitizeForTransfer(e.properties.warehouse);
+  }
+  if (e.properties.well) {
+    e._sanitizedProps.well = sanitizeForTransfer(e.properties.well);
+  }
+  if (e.properties.arm_left) {
+    e._sanitizedProps.arm_left = sanitizeForTransfer(e.properties.arm_left);
+  }
+  if (e.properties.arm_right) {
+    e._sanitizedProps.arm_right = sanitizeForTransfer(e.properties.arm_right);
+  }
+  if (e.properties.heldItem !== undefined) {
+    e._sanitizedProps.heldItem = sanitizeForTransfer(e.properties.heldItem);
+  }
+  if (e.properties.role !== undefined) {
+    e._sanitizedProps.role = e.properties.role;
+  }
+  if (e.properties.name !== undefined) {
+    e._sanitizedProps.name = e.properties.name;
+  }
   return e._sanitizedProps;
 }
 
@@ -541,7 +565,20 @@ function postSimSync(force = false) {
 
   let newEvents = null;
   if (allEvents.length > lastEventCountPosted) {
-    newEvents = serializeEvents().slice(lastEventCountPosted);
+    const unposted = allEvents.slice(lastEventCountPosted);
+    newEvents = unposted.map(ev => ({
+      id: ev.id,
+      opcode: ev.opcode,
+      type: ev.type,
+      count: ev.count || 1,
+      tick: ev.tick,
+      timestamp: ev.timestamp || { day: 0, hour: 0, minute: 0 },
+      primaryEntityId: ev.primaryEntityId,
+      secondaryEntityId: ev.secondaryEntityId,
+      location: ev.location ? { x: ev.location.x, y: ev.location.y } : null,
+      description: ev.description,
+      metadata: sanitizeForTransfer(ev.metadata)
+    }));
     lastEventCountPosted = allEvents.length;
   }
 

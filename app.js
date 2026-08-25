@@ -37,6 +37,7 @@ import {
   exportWorldSaveJSON,
   downloadWorldSaveJSON,
   restoreWorldEvents,
+  appendWorldEvents,
   recordWorldEvent,
   OP_RELATION,
   allEvents,
@@ -208,10 +209,7 @@ function initSimWorker() {
           updateLocalEntities(data.entities, data.registry);
         }
         if (Array.isArray(data.events) && data.events.length > 0) {
-          for (const ev of data.events) {
-            allEvents.push(ev);
-            eventsById.set(ev.id, ev);
-          }
+          appendWorldEvents(data.events);
         }
         break;
       }

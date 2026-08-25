@@ -343,7 +343,7 @@ export function getEventsForEntity(entityId, limit = 50) {
   const ids = eventsByEntity.get(entityId);
   if (!ids || ids.length === 0) return [];
   const start = Math.max(0, ids.length - limit);
-  return ids.slice(start).map(id => eventsById.get(id)).filter(Boolean);
+  return ids.slice(start).map(id => eventsById.get(id)).filter(Boolean).reverse();
 }
 
 /**
@@ -353,7 +353,7 @@ export function getEventsByType(type, limit = 50) {
   const ids = eventsByType.get(type);
   if (!ids || ids.length === 0) return [];
   const start = Math.max(0, ids.length - limit);
-  return ids.slice(start).map(id => eventsById.get(id)).filter(Boolean);
+  return ids.slice(start).map(id => eventsById.get(id)).filter(Boolean).reverse();
 }
 
 /**
@@ -761,17 +761,95 @@ export function restoreWorldEvents(eventsList = []) {
       if (!eventsByEntity.has(ev.secondaryEntityId)) eventsByEntity.set(ev.secondaryEntityId, []);
       eventsByEntity.get(ev.secondaryEntityId).push(ev.id);
     }
+    if (ev.type) {
+      if (!eventsByType.has(ev.type)) eventsByType.set(ev.type, []);
+      eventsByType.get(ev.type).push(ev.id);
+    }
     if (ev.opcode) {
       if (!eventsByType.has(ev.opcode)) eventsByType.set(ev.opcode, []);
       eventsByType.get(ev.opcode).push(ev.id);
     }
-    if (ev.metadata?.citedEventId) {
-      if (!eventsByCitedEvent.has(ev.metadata.citedEventId)) eventsByCitedEvent.set(ev.metadata.citedEventId, []);
-      eventsByCitedEvent.get(ev.metadata.citedEventId).push(ev.id);
+    const citedId = ev.metadata?.referencedEventId || ev.metadata?.gossipedEventId || ev.metadata?.realEventId || ev.metadata?.citedEventId;
+    if (citedId !== null && citedId !== undefined) {
+      if (!eventsByCitedEvent.has(citedId)) eventsByCitedEvent.set(citedId, []);
+      eventsByCitedEvent.get(citedId).push(ev.id);
     }
     if (ev.id > maxId) maxId = ev.id;
   }
   nextEventId = maxId + 1;
+}
+
+/**
+ * Ingests a continuous batch of new world events streamed from the simulation worker
+ */
+export function appendWorldEvents(eventsList = []) {
+  if (!Array.isArray(eventsList) || eventsList.length === 0) return;
+  for (const raw of eventsList) {
+    if (!raw) continue;
+
+    // If event already exists (e.g. updated attack count/damage), update it in place
+    if (eventsById.has(raw.id)) {
+      const existing = eventsById.get(raw.id);
+      existing.count = raw.count || existing.count;
+      existing.tick = raw.tick || existing.tick;
+      existing.timestamp = raw.timestamp || existing.timestamp;
+      existing.location = raw.location || existing.location;
+      existing._rawDescription = raw.description || raw._rawDescription || existing._rawDescription;
+      existing.metadata = raw.metadata || existing.metadata;
+      continue;
+    }
+
+    const ev = {
+      id: raw.id,
+      opcode: raw.opcode || TYPE_TO_OPCODE[raw.type] || OP_RELATION,
+      count: raw.count || 1,
+      tick: raw.tick || 0,
+      timestamp: raw.timestamp || { day: 0, hour: 0, minute: 0 },
+      type: raw.type || OPCODE_TO_TYPE[raw.opcode] || "EVENT",
+      primaryEntityId: raw.primaryEntityId ?? null,
+      secondaryEntityId: raw.secondaryEntityId ?? null,
+      location: raw.location ? { x: Math.round(raw.location.x), y: Math.round(raw.location.y) } : { x: 0, y: 0 },
+      _rawDescription: raw.description || raw._rawDescription || "",
+      metadata: raw.metadata || {},
+      get description() {
+        return this._rawDescription || formatEventDescription(this);
+      },
+      set description(val) {
+        this._rawDescription = val;
+      }
+    };
+
+    allEvents.push(ev);
+    eventsById.set(ev.id, ev);
+
+    if (allEvents.length > 5000) {
+      const removed = allEvents.shift();
+      if (removed) eventsById.delete(removed.id);
+    }
+
+    if (ev.primaryEntityId !== null && ev.primaryEntityId !== undefined) {
+      if (!eventsByEntity.has(ev.primaryEntityId)) eventsByEntity.set(ev.primaryEntityId, []);
+      eventsByEntity.get(ev.primaryEntityId).push(ev.id);
+    }
+    if (ev.secondaryEntityId !== null && ev.secondaryEntityId !== undefined) {
+      if (!eventsByEntity.has(ev.secondaryEntityId)) eventsByEntity.set(ev.secondaryEntityId, []);
+      eventsByEntity.get(ev.secondaryEntityId).push(ev.id);
+    }
+    if (ev.type) {
+      if (!eventsByType.has(ev.type)) eventsByType.set(ev.type, []);
+      eventsByType.get(ev.type).push(ev.id);
+    }
+    if (ev.opcode) {
+      if (!eventsByType.has(ev.opcode)) eventsByType.set(ev.opcode, []);
+      eventsByType.get(ev.opcode).push(ev.id);
+    }
+    const citedId = ev.metadata?.referencedEventId || ev.metadata?.gossipedEventId || ev.metadata?.realEventId || ev.metadata?.citedEventId;
+    if (citedId !== null && citedId !== undefined) {
+      if (!eventsByCitedEvent.has(citedId)) eventsByCitedEvent.set(citedId, []);
+      eventsByCitedEvent.get(citedId).push(ev.id);
+    }
+    if (ev.id >= nextEventId) nextEventId = ev.id + 1;
+  }
 }
 
 /**
