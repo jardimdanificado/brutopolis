@@ -224,6 +224,34 @@ export function getEntityAtTile(x, y) {
   return null;
 }
 
+/**
+ * Returns all non-destroyed entities at tile (x, y) using the O(1) spatial hash map.
+ */
+export function getEntitiesAtTile(x, y) {
+  const tk = getTileKey(x, y);
+  const bucket = tileEntityMap.get(tk);
+  if (!bucket || bucket.size === 0) return [];
+  const result = [];
+  for (const ent of bucket) {
+    if (!ent.destroyed) result.push(ent);
+  }
+  return result;
+}
+
+/**
+ * Finds a specific entity at tile (x, y) that has a given property key (O(1) spatial lookup).
+ * Replaces slow `entities.find(e => !e.destroyed && e.properties[propKey] && e.x === x && e.y === y)` patterns.
+ */
+export function getEntityAtTileByProp(x, y, propKey) {
+  const tk = getTileKey(x, y);
+  const bucket = tileEntityMap.get(tk);
+  if (!bucket || bucket.size === 0) return null;
+  for (const ent of bucket) {
+    if (!ent.destroyed && ent.properties && ent.properties[propKey]) return ent;
+  }
+  return null;
+}
+
 export function rebuildSpatialGrid(entities, zoneSize = activeZoneSize) {
   spatialGrid.clear();
   tileEntityMap.clear();

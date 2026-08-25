@@ -1,4 +1,4 @@
-import { createEntity, getEntityById, entityRegistry, currentTick, getEntitiesInRadius, getEntityAtTile, setSpatialZoneSize, tileEntityMap, globalWallCoords, globalRoadCoords, getTileKey, registerEntitySpatial } from "./engine.js";
+import { createEntity, getEntityById, entityRegistry, currentTick, getEntitiesInRadius, getEntityAtTile, getEntityAtTileByProp, setSpatialZoneSize, tileEntityMap, globalWallCoords, globalRoadCoords, getTileKey, registerEntitySpatial } from "./engine.js";
 import { MAP_WIDTH, MAP_HEIGHT, TILE_WATER, TILE_VOID } from "./world_gen.js";
 import {
   recordWorldEvent,
@@ -877,23 +877,34 @@ export function isAdjacentToSnapPoint(x, y, group = null) {
  * Checks if the specified tile (x, y) is orthogonally adjacent to at least one normal road tile.
  */
 export function isAdjacentToNormalRoad(x, y, group = null) {
-  const offsets = [{ dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 }];
-  for (const off of offsets) {
-    const nx = x + off.dx;
-    const ny = y + off.dy;
+  return isNearNormalRoad(x, y, group, 1);
+}
 
-    // 1. Check active normal road entity in world
-    if (isRoadTile(nx, ny) && !isSnapPointTile(nx, ny)) return true;
+/**
+ * Checks if the specified tile (x, y) is within maxDist (1 to 3 tiles) of at least one normal road tile.
+ */
+export function isNearNormalRoad(x, y, group = null, maxDist = 3) {
+  for (let r = 1; r <= maxDist; r++) {
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
+        const nx = x + dx;
+        const ny = y + dy;
 
-    // 2. Check planned normal road in group blueprints
-    if (group && group._plannedRoads) {
-      if (group._plannedRoads.some(r => !r.isSnapPoint && r.x === nx && r.y === ny)) {
-        return true;
-      }
-    } else if (activeWorld && activeWorld.groups) {
-      for (const g of activeWorld.groups) {
-        if (g._plannedRoads && g._plannedRoads.some(r => !r.isSnapPoint && r.x === nx && r.y === ny)) {
-          return true;
+        // 1. Check active normal road entity in world
+        if (isRoadTile(nx, ny) && !isSnapPointTile(nx, ny)) return true;
+
+        // 2. Check planned normal road in group blueprints
+        if (group && group._plannedRoads) {
+          if (group._plannedRoads.some(r => !r.isSnapPoint && r.x === nx && r.y === ny)) {
+            return true;
+          }
+        } else if (activeWorld && activeWorld.groups) {
+          for (const g of activeWorld.groups) {
+            if (g._plannedRoads && g._plannedRoads.some(r => !r.isSnapPoint && r.x === nx && r.y === ny)) {
+              return true;
+            }
+          }
         }
       }
     }
@@ -1355,7 +1366,7 @@ export function createBrainProp(maxPath = 16, personality = { bravery: 0.7, curi
 
       // 7. Housing Dynamics (Teto Próprio, Bônus/Debuff de Moradia, Cura e Despensa de Alimentos)
       if (ent.properties.group && entities) {
-        const ownHouse = entities.find(e => !e.destroyed && e.properties.house && (e.properties.house.ownerId === ent.id || e.properties.house.partnerId === ent.id));
+        const ownHouse = getOwnHouse(ent.id, entities);
         const hasCompletedHome = ownHouse && ownHouse.properties.house?.isCompleted;
 
         // Periodic mood evaluation based on home ownership
@@ -2287,10 +2298,12 @@ export function createGroup(name, founder, baseZone = null, claimedZones = null)
 }
 
 /**
- * Initializes at least 3 dirt roads interconnected by snap points for a newly formed clan.
- * Road types:
- * - Normal road: can have house plots on its adjacent borders.
- * - Snap Point: crossing/connection node where NO house or structure can be built on the 4 adjacent tiles.
+ * Initializes distinct road network archetypes for clans, avoiding water and expanding until land is found.
+ * Archetypes:
+ * 0: Grid (Roman Castrum / Urban Blocks)
+ * 1: Radial (Organic Spoke & Winding Lanes)
+ * 2: Boulevard (Grand Avenue & Perpendicular Alleys)
+ * 3: Plaza Ring (Concentric Square Loop & Garden Spokes)
  */
 export function initClanRoadNetwork(group) {
   if (!group) return [];
@@ -2299,13 +2312,6 @@ export function initClanRoadNetwork(group) {
   }
 
   const sz = currentZoneSize || 8;
-  const firstZone = group.claimedZones?.[0] || "32_32";
-  const zp = firstZone.includes("_") ? firstZone.split("_") : firstZone.split(",");
-  const baseZx = parseInt(zp[0], 10) || 32;
-  const baseZy = parseInt(zp[1], 10) || 32;
-  const baseX = baseZx * sz + Math.floor(sz / 2);
-  const baseY = baseZy * sz + Math.floor(sz / 2);
-
   const planned = [];
   const roadMap = new Map();
 
@@ -2323,16 +2329,6 @@ export function initClanRoadNetwork(group) {
     }
   }
 
-  // Initial Snap Point S0 at village center
-  setTile(baseX, baseY, true);
-
-  const cardDirs = [
-    { dx: 1, dy: 0 },
-    { dx: -1, dy: 0 },
-    { dx: 0, dy: 1 },
-    { dx: 0, dy: -1 }
-  ];
-
   function maybeClaimZone(x, y) {
     const zx = Math.floor(x / sz);
     const zy = Math.floor(y / sz);
@@ -2342,66 +2338,191 @@ export function initClanRoadNetwork(group) {
     }
   }
 
-  // Road 1: Starts at S0 in random direction (Longer segments: 8 to 12 tiles)
-  const dir1 = cardDirs[Math.floor(Math.random() * cardDirs.length)];
-  const len1 = Math.floor(Math.random() * 5) + 8; // 8 to 12 tiles
-  let cx1 = baseX;
-  let cy1 = baseY;
-  for (let s = 1; s <= len1; s++) {
-    const nx = baseX + dir1.dx * s;
-    const ny = baseY + dir1.dy * s;
-    if (!isLandTile(nx, ny)) {
-      setTile(cx1, cy1, true);
-      break;
+  // 1. Find a valid land tile in current claimed zones or expand outward until land is found
+  function findLandInZones(zones) {
+    for (const zk of zones) {
+      const zp = zk.includes("_") ? zk.split("_") : zk.split(",");
+      const zx = parseInt(zp[0], 10) || 32;
+      const zy = parseInt(zp[1], 10) || 32;
+      const cx = zx * sz + Math.floor(sz / 2);
+      const cy = zy * sz + Math.floor(sz / 2);
+      for (let r = 0; r < sz; r++) {
+        for (let dy = -r; dy <= r; dy++) {
+          for (let dx = -r; dx <= r; dx++) {
+            if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
+            const tx = cx + dx;
+            const ty = cy + dy;
+            if (tx >= zx * sz && tx < (zx + 1) * sz && ty >= zy * sz && ty < (zy + 1) * sz) {
+              if (isLandTile(tx, ty)) {
+                return { x: tx, y: ty, zx, zy, zk };
+              }
+            }
+          }
+        }
+      }
     }
-    cx1 = nx;
-    cy1 = ny;
-    maybeClaimZone(cx1, cy1);
-    const isSnap = (s === len1 || s === Math.floor(len1 / 2));
-    setTile(cx1, cy1, isSnap);
+    return null;
   }
 
-  // Road 2: Starts at a random snap point in an available perpendicular/opposite direction
-  const snapsAfterR1 = planned.filter(r => r.isSnapPoint);
-  const startSnap2 = snapsAfterR1[Math.floor(Math.random() * snapsAfterR1.length)] || { x: baseX, y: baseY };
-  const availableDirs2 = cardDirs.filter(d => !(startSnap2.x === baseX && startSnap2.y === baseY && d.dx === dir1.dx && d.dy === dir1.dy));
-  const dir2 = availableDirs2[Math.floor(Math.random() * availableDirs2.length)] || cardDirs[0];
-  const len2 = Math.floor(Math.random() * 5) + 8;
-  let cx2 = startSnap2.x;
-  let cy2 = startSnap2.y;
-  for (let s = 1; s <= len2; s++) {
-    const nx = startSnap2.x + dir2.dx * s;
-    const ny = startSnap2.y + dir2.dy * s;
-    if (!isLandTile(nx, ny)) {
-      setTile(cx2, cy2, true);
-      break;
+  let landStart = findLandInZones(group.claimedZones || ["32_32"]);
+
+  // If no land in current claimed zones (e.g. started in ocean/lake): expand outward until finding land!
+  if (!landStart) {
+    const firstZone = group.claimedZones?.[0] || "32_32";
+    const zp = firstZone.includes("_") ? firstZone.split("_") : firstZone.split(",");
+    const startZx = parseInt(zp[0], 10) || 32;
+    const startZy = parseInt(zp[1], 10) || 32;
+
+    for (let r = 1; r <= 24; r++) {
+      for (let dzy = -r; dzy <= r; dzy++) {
+        for (let dzx = -r; dzx <= r; dzx++) {
+          if (Math.abs(dzx) !== r && Math.abs(dzy) !== r) continue;
+          const candidateZx = startZx + dzx;
+          const candidateZy = startZy + dzy;
+          const candidateZk = `${candidateZx}_${candidateZy}`;
+          const found = findLandInZones([candidateZk]);
+          if (found) {
+            if (!group.claimedZones.includes(candidateZk)) {
+              group.claimedZones.push(candidateZk);
+            }
+            landStart = found;
+            break;
+          }
+        }
+        if (landStart) break;
+      }
+      if (landStart) break;
     }
-    cx2 = nx;
-    cy2 = ny;
-    maybeClaimZone(cx2, cy2);
-    const isSnap = (s === len2 || s === Math.floor(len2 / 2));
-    setTile(cx2, cy2, isSnap);
   }
 
-  // Road 3: Starts at a random snap point
-  const snapsAfterR2 = planned.filter(r => r.isSnapPoint);
-  const startSnap3 = snapsAfterR2[Math.floor(Math.random() * snapsAfterR2.length)] || { x: baseX, y: baseY };
-  const dir3 = cardDirs[Math.floor(Math.random() * cardDirs.length)];
-  const len3 = Math.floor(Math.random() * 5) + 8;
-  let cx3 = startSnap3.x;
-  let cy3 = startSnap3.y;
-  for (let s = 1; s <= len3; s++) {
-    const nx = startSnap3.x + dir3.dx * s;
-    const ny = startSnap3.y + dir3.dy * s;
-    if (!isLandTile(nx, ny)) {
-      setTile(cx3, cy3, true);
-      break;
+  const baseX = landStart ? landStart.x : 32 * sz + 4;
+  const baseY = landStart ? landStart.y : 32 * sz + 4;
+
+  // Initial Snap Point S0 at village center on dry land
+  setTile(baseX, baseY, true);
+
+  const cardDirs = [
+    { dx: 1, dy: 0 },
+    { dx: -1, dy: 0 },
+    { dx: 0, dy: 1 },
+    { dx: 0, dy: -1 }
+  ];
+
+  // Distinct Urban Archetype Design
+  const archetype = Math.abs((group.id || 0) + (group.name ? group.name.charCodeAt(0) : 0)) % 4;
+
+  if (archetype === 0) {
+    // ARCHETYPE 0: Grid Castrum (Cross avenues & parallel residential streets)
+    const axes = [
+      { dx: 1, dy: 0, len: 10 },
+      { dx: -1, dy: 0, len: 10 },
+      { dx: 0, dy: 1, len: 10 },
+      { dx: 0, dy: -1, len: 10 }
+    ];
+    for (const ax of axes) {
+      let cx = baseX;
+      let cy = baseY;
+      for (let s = 1; s <= ax.len; s++) {
+        const nx = baseX + ax.dx * s;
+        const ny = baseY + ax.dy * s;
+        if (!isLandTile(nx, ny)) {
+          setTile(cx, cy, true);
+          break;
+        }
+        cx = nx;
+        cy = ny;
+        maybeClaimZone(cx, cy);
+        const isSnap = (s === ax.len || s === 5);
+        setTile(cx, cy, isSnap);
+      }
     }
-    cx3 = nx;
-    cy3 = ny;
-    maybeClaimZone(cx3, cy3);
-    const isSnap = (s === len3 || s === Math.floor(len3 / 2));
-    setTile(cx3, cy3, isSnap);
+  } else if (archetype === 1) {
+    // ARCHETYPE 1: Radial Organic (Branching curves & diagonal-oriented streets)
+    const startDirs = [...cardDirs].sort(() => Math.random() - 0.5);
+    for (let i = 0; i < 3; i++) {
+      const dir = startDirs[i];
+      const len = Math.floor(Math.random() * 5) + 8;
+      let cx = baseX;
+      let cy = baseY;
+      for (let s = 1; s <= len; s++) {
+        const nx = baseX + dir.dx * s;
+        const ny = baseY + dir.dy * s;
+        if (!isLandTile(nx, ny)) {
+          setTile(cx, cy, true);
+          break;
+        }
+        cx = nx;
+        cy = ny;
+        maybeClaimZone(cx, cy);
+        const isSnap = (s === len || s === Math.floor(len / 2));
+        setTile(cx, cy, isSnap);
+      }
+    }
+  } else if (archetype === 2) {
+    // ARCHETYPE 2: Boulevard (Long grand spine + orthogonal side street alleys)
+    const spineDir = cardDirs[Math.floor(Math.random() * cardDirs.length)];
+    const perpDirs = cardDirs.filter(d => (d.dx !== spineDir.dx && d.dx !== -spineDir.dx) || (d.dy !== spineDir.dy && d.dy !== -spineDir.dy));
+
+    let cx = baseX;
+    let cy = baseY;
+    for (let s = 1; s <= 14; s++) {
+      const nx = baseX + spineDir.dx * s;
+      const ny = baseY + spineDir.dy * s;
+      if (!isLandTile(nx, ny)) {
+        setTile(cx, cy, true);
+        break;
+      }
+      cx = nx;
+      cy = ny;
+      maybeClaimZone(cx, cy);
+      const isSnap = (s % 4 === 0);
+      setTile(cx, cy, isSnap);
+
+      // Branch short side street alley from snap
+      if (isSnap && perpDirs.length > 0) {
+        const pDir = perpDirs[(s / 4) % perpDirs.length];
+        let px = cx;
+        let py = cy;
+        for (let ps = 1; ps <= 6; ps++) {
+          const pnx = cx + pDir.dx * ps;
+          const pny = cy + pDir.dy * ps;
+          if (!isLandTile(pnx, pny)) {
+            setTile(px, py, true);
+            break;
+          }
+          px = pnx;
+          py = pny;
+          maybeClaimZone(px, py);
+          setTile(px, py, ps === 6);
+        }
+      }
+    }
+  } else {
+    // ARCHETYPE 3: Plaza Ring (Ring street around the central plaza with radial garden spokes)
+    const ringRadius = 4;
+    for (let ox = -ringRadius; ox <= ringRadius; ox++) {
+      for (let oy = -ringRadius; oy <= ringRadius; oy++) {
+        if (Math.max(Math.abs(ox), Math.abs(oy)) === ringRadius) {
+          const rx = baseX + ox;
+          const ry = baseY + oy;
+          if (isLandTile(rx, ry)) {
+            maybeClaimZone(rx, ry);
+            const isCorner = Math.abs(ox) === ringRadius && Math.abs(oy) === ringRadius;
+            setTile(rx, ry, isCorner);
+          }
+        }
+      }
+    }
+    // Cardinal spoke connector from center to ring
+    for (const dir of cardDirs) {
+      for (let s = 1; s <= ringRadius; s++) {
+        const sx = baseX + dir.dx * s;
+        const sy = baseY + dir.dy * s;
+        if (isLandTile(sx, sy)) {
+          setTile(sx, sy, s === ringRadius);
+        }
+      }
+    }
   }
 
   group._plannedRoads = planned;
@@ -2409,7 +2530,8 @@ export function initClanRoadNetwork(group) {
 }
 
 /**
- * Expands the clan road network by digging 3 more dirt roads starting from random existing snap points.
+ * Expands the clan road network by digging more dirt roads.
+ * If existing snap points cannot expand further (e.g. hit water or boundaries), spawns a new disconnected street on nearby land.
  */
 export function expandClanRoadNetwork(group, count = 3) {
   if (!group) return [];
@@ -2454,41 +2576,89 @@ export function expandClanRoadNetwork(group, count = 3) {
     { dx: 0, dy: -1 }
   ];
 
+  let successfulExpansions = 0;
+
   for (let i = 0; i < count; i++) {
     const snapPoints = planned.filter(r => r.isSnapPoint);
-    if (snapPoints.length === 0) break;
-    const startSnap = snapPoints[Math.floor(Math.random() * snapPoints.length)];
-    const dir = cardDirs[Math.floor(Math.random() * cardDirs.length)];
-    const len = Math.floor(Math.random() * 5) + 8; // 8 to 12 tiles
+    let expanded = false;
 
-    let cx = startSnap.x;
-    let cy = startSnap.y;
-    for (let s = 1; s <= len; s++) {
-      const nx = startSnap.x + dir.dx * s;
-      const ny = startSnap.y + dir.dy * s;
-      if (!isLandTile(nx, ny)) {
-        setTile(cx, cy, true);
+    if (snapPoints.length > 0) {
+      const shuffledSnaps = [...snapPoints].sort(() => Math.random() - 0.5);
+      for (const startSnap of shuffledSnaps) {
+        const availableDirs = cardDirs.filter(d => isLandTile(startSnap.x + d.dx, startSnap.y + d.dy) && !roadMap.has(`${startSnap.x + d.dx}_${startSnap.y + d.dy}`));
+        if (availableDirs.length === 0) continue;
+
+        const dir = availableDirs[Math.floor(Math.random() * availableDirs.length)];
+        const len = Math.floor(Math.random() * 5) + 8; // 8 to 12 tiles
+
+        let cx = startSnap.x;
+        let cy = startSnap.y;
+        for (let s = 1; s <= len; s++) {
+          const nx = startSnap.x + dir.dx * s;
+          const ny = startSnap.y + dir.dy * s;
+          if (!isLandTile(nx, ny)) {
+            setTile(cx, cy, true);
+            break;
+          }
+
+          // Ensure road NEVER intersects with any existing building
+          let hasOccupyingBuilding = false;
+          for (const e of entityRegistry.values()) {
+            if (!e.destroyed && e.x === nx && e.y === ny && (e.properties?.house || e.properties?.warehouse || e.properties?.well || e.properties?.campfire || e.properties?.door || (e.properties?.structure && !e.properties?.road))) {
+              hasOccupyingBuilding = true;
+              break;
+            }
+          }
+          if (hasOccupyingBuilding) {
+            setTile(cx, cy, true);
+            break;
+          }
+
+          cx = nx;
+          cy = ny;
+          maybeClaimZone(cx, cy);
+          const isSnap = (s === len || s === Math.floor(len / 2));
+          setTile(cx, cy, isSnap);
+        }
+        expanded = true;
+        successfulExpansions++;
         break;
       }
+    }
 
-      // Ensure road NEVER intersects with any existing house, warehouse, well, campfire, or structure
-      let hasOccupyingBuilding = false;
-      for (const e of entityRegistry.values()) {
-        if (!e.destroyed && e.x === nx && e.y === ny && (e.properties?.house || e.properties?.warehouse || e.properties?.well || e.properties?.campfire || e.properties?.door || (e.properties?.structure && !e.properties?.road))) {
-          hasOccupyingBuilding = true;
-          break;
+    // Disconnected / Detached Secondary Road Feature:
+    // If existing roads cannot expand further (blocked by water/buildings/edges), start a new detached street in unroaded land!
+    if (!expanded) {
+      for (const zk of group.claimedZones) {
+        const zp = zk.includes("_") ? zk.split("_") : zk.split(",");
+        const zx = parseInt(zp[0], 10) || 32;
+        const zy = parseInt(zp[1], 10) || 32;
+        const zoneHasRoad = planned.some(r => Math.floor(r.x / sz) === zx && Math.floor(r.y / sz) === zy);
+        if (!zoneHasRoad) {
+          // Found a land zone with no roads: start a detached neighborhood street!
+          const cx = zx * sz + Math.floor(sz / 2);
+          const cy = zy * sz + Math.floor(sz / 2);
+          if (isLandTile(cx, cy)) {
+            setTile(cx, cy, true);
+            const dir = cardDirs[Math.floor(Math.random() * cardDirs.length)];
+            let sx = cx;
+            let sy = cy;
+            for (let s = 1; s <= 8; s++) {
+              const nx = cx + dir.dx * s;
+              const ny = cy + dir.dy * s;
+              if (!isLandTile(nx, ny)) {
+                setTile(sx, sy, true);
+                break;
+              }
+              sx = nx;
+              sy = ny;
+              setTile(sx, sy, s === 8 || s === 4);
+            }
+            successfulExpansions++;
+            break;
+          }
         }
       }
-      if (hasOccupyingBuilding) {
-        setTile(cx, cy, true);
-        break;
-      }
-
-      cx = nx;
-      cy = ny;
-      maybeClaimZone(cx, cy);
-      const isSnap = (s === len || s === Math.floor(len / 2));
-      setTile(cx, cy, isSnap);
     }
   }
 
@@ -2623,9 +2793,9 @@ export function isPraçaCompleted(group) {
 export function getClanBlueprintTiles(group) {
   if (!group || !group.claimedZones) return [];
 
-  // Fast Memoization Check
+  // Fast Memoization Check (60 ticks cache)
   const versionKey = `${group.claimedZones.join(",")}_${(group.members || []).length}`;
-  if (group._cachedBlueprint && group._cachedBlueprintKey === versionKey && (currentTick - (group._cachedBlueprintTick || 0) < 30)) {
+  if (group._cachedBlueprint && group._cachedBlueprintKey === versionKey && (currentTick - (group._cachedBlueprintTick || 0) < 60)) {
     return group._cachedBlueprint;
   }
 
@@ -2697,8 +2867,8 @@ export function getClanBlueprintTiles(group) {
 
         // Rule: Must NOT be adjacent to any snap point!
         if (isAdjacentToSnapPoint(px, py, group)) continue;
-        // Rule: Must be adjacent to a normal road!
-        if (!isAdjacentToNormalRoad(px, py, group)) continue;
+        // Rule: Must be within 3 tiles of a normal road (allows organic setback layouts)
+        if (!isNearNormalRoad(px, py, group, 3)) continue;
 
         candidatePlots.push({ x: px, y: py });
       }
@@ -2739,7 +2909,7 @@ export function getClanBlueprintTiles(group) {
       // Check persistent assigned plot (must satisfy at least 3 tiles distance rule)
       if (group._housePlots[ownerId]) {
         const p = group._housePlots[ownerId];
-        if (isLandTile(p.x, p.y) && !plannedRoadSet.has(`${p.x}_${p.y}`) && !isRoadTile(p.x, p.y) && !isAdjacentToSnapPoint(p.x, p.y, group) && isAdjacentToNormalRoad(p.x, p.y, group) && isFarEnoughFromBuildings(p.x, p.y, tiles, 3)) {
+        if (isLandTile(p.x, p.y) && !plannedRoadSet.has(`${p.x}_${p.y}`) && !isRoadTile(p.x, p.y) && !isAdjacentToSnapPoint(p.x, p.y, group) && isNearNormalRoad(p.x, p.y, group, 3) && isFarEnoughFromBuildings(p.x, p.y, tiles, 3)) {
           tiles.push({ x: p.x, y: p.y, type: "house", ownerId });
           occupiedTiles.add(`${p.x}_${p.y}`);
           continue;
@@ -2948,6 +3118,49 @@ export function getPrefabricatedRoadPath(fromX, fromY, toX, toY, group) {
   }
 
   return path.length > 0 ? path : null;
+}
+
+// ---- Per-tick cached lookups to avoid O(N) entity scans in hot loops ----
+
+const _warehouseCache = new Map(); // groupId -> { tick, entity }
+const _ownHouseCache = new Map();  // entityId -> { tick, entity }
+
+/**
+ * Finds the completed warehouse for a group with per-tick caching (O(1) after first call per tick).
+ */
+export function getGroupWarehouse(group, entities) {
+  if (!group) return null;
+  const gid = group.id;
+  const cached = _warehouseCache.get(gid);
+  if (cached && cached.tick === currentTick && cached.entity && !cached.entity.destroyed) {
+    return cached.entity;
+  }
+  for (const e of entityRegistry.values()) {
+    if (!e.destroyed && e.properties.warehouse?.isCompleted && (e.properties.warehouse.groupId === gid || isTileInClaimedZones(e.x, e.y, group.claimedZones))) {
+      _warehouseCache.set(gid, { tick: currentTick, entity: e });
+      return e;
+    }
+  }
+  _warehouseCache.set(gid, { tick: currentTick, entity: null });
+  return null;
+}
+
+/**
+ * Finds the own house for an entity with per-tick caching (O(1) after first call per tick).
+ */
+export function getOwnHouse(entId, entities) {
+  const cached = _ownHouseCache.get(entId);
+  if (cached && cached.tick === currentTick) {
+    if (!cached.entity || !cached.entity.destroyed) return cached.entity;
+  }
+  for (const e of entityRegistry.values()) {
+    if (!e.destroyed && e.properties.house && (e.properties.house.ownerId === entId || e.properties.house.partnerId === entId)) {
+      _ownHouseCache.set(entId, { tick: currentTick, entity: e });
+      return e;
+    }
+  }
+  _ownHouseCache.set(entId, { tick: currentTick, entity: null });
+  return null;
 }
 
 /**
@@ -3444,7 +3657,7 @@ export function gossipBetweenCreatures(speaker, listener, world, entities) {
       const mapH = (world && world.height) ? world.height : 512;
       if (world && targetX >= 0 && targetX < mapW && targetY >= 0 && targetY < mapH) {
         const t = world.getTile(targetX, targetY);
-        const isWall = entities.some(e => !e.destroyed && e.properties.structure && e.x === targetX && e.y === targetY);
+        const isWall = !!getEntityAtTileByProp(targetX, targetY, "structure");
         if (t !== 5 && !isWall) {
           listener.x = targetX;
           listener.y = targetY;
@@ -4544,7 +4757,7 @@ export function createGroupMemberProp() {
       }
 
       // A. Universal Warehouse & Stockpile Deposit for Any Carried Item
-      const warehouse = entities.find(e => !e.destroyed && e.properties.warehouse?.isCompleted && (e.properties.warehouse.groupId === group.id || isTileInClaimedZones(e.x, e.y, group.claimedZones)));
+      const warehouse = getGroupWarehouse(group, entities);
       if (warehouse) {
         const distWh = Math.max(Math.abs(warehouse.x - ent.x), Math.abs(warehouse.y - ent.y));
         if (distWh <= 1 && this.actionTimer >= 0.25) {
@@ -4630,7 +4843,7 @@ export function createGroupMemberProp() {
           const dist = Math.max(Math.abs(bp.x - ent.x), Math.abs(bp.y - ent.y));
 
           if (bp.type === "warehouse") {
-            const warehouseEntity = entities.find(e => !e.destroyed && e.properties.warehouse && e.x === bp.x && e.y === bp.y);
+            const warehouseEntity = getEntityAtTileByProp(bp.x, bp.y, "warehouse");
             if (!warehouseEntity && dist <= 1 && this.actionTimer >= 0.5) {
               let resType = null;
               for (const [k, p] of Object.entries(ent.properties)) {
@@ -4708,7 +4921,7 @@ export function createGroupMemberProp() {
               }
             }
           } else if (bp.type === "campfire") {
-            const campfireEntity = entities.find(e => !e.destroyed && e.properties.campfire && e.x === bp.x && e.y === bp.y);
+            const campfireEntity = getEntityAtTileByProp(bp.x, bp.y, "campfire");
             if (!campfireEntity && dist <= 1 && this.actionTimer >= 0.5) {
               let resType = null;
               for (const [k, p] of Object.entries(ent.properties)) {
@@ -4757,7 +4970,7 @@ export function createGroupMemberProp() {
               }
             }
           } else if (bp.type === "well") {
-            const wellEntity = entities.find(e => !e.destroyed && e.properties.well && e.x === bp.x && e.y === bp.y);
+            const wellEntity = getEntityAtTileByProp(bp.x, bp.y, "well");
             if (!wellEntity && dist <= 1 && this.actionTimer >= 0.5) {
               let resType = null;
               for (const [k, p] of Object.entries(ent.properties)) {
@@ -4812,7 +5025,7 @@ export function createGroupMemberProp() {
               }
             }
           } else if (bp.type === "gate" || bp.type === "door") {
-            const gateEntity = entities.find(e => !e.destroyed && e.properties.door && e.x === bp.x && e.y === bp.y);
+            const gateEntity = getEntityAtTileByProp(bp.x, bp.y, "door");
             if (!gateEntity && dist <= 1 && this.actionTimer >= 0.5) {
               let resType = null;
               for (const [k, p] of Object.entries(ent.properties)) {
@@ -4858,7 +5071,7 @@ export function createGroupMemberProp() {
               }
             }
           } else if (bp.type === "house") {
-            const houseEntity = entities.find(e => !e.destroyed && e.properties.house && e.x === bp.x && e.y === bp.y);
+            const houseEntity = getEntityAtTileByProp(bp.x, bp.y, "house");
             if (!houseEntity && dist <= 1 && this.actionTimer >= 0.5) {
               // Initiate new house construction site
               let resType = null;
@@ -4998,7 +5211,7 @@ export function createGroupMemberProp() {
               }
             }
           } else {
-            const wallEntity = entities.find(e => !e.destroyed && (e.properties.structure && !e.properties.house && !e.properties.door) && e.x === bp.x && e.y === bp.y);
+            const wallEntity = getEntityAtTileByProp(bp.x, bp.y, "structure");
             if (!wallEntity && dist <= 1 && this.actionTimer >= 0.5) {
               let resType = null;
               for (const [k, p] of Object.entries(ent.properties)) {
@@ -5050,22 +5263,22 @@ export function createGroupMemberProp() {
         // Only drop material if hands are holding an unneeded material and 100% of ALL clan blueprints are completed
         const hasAnyUnbuiltBlueprint = blueprint.some(bp => {
           if (bp.type === "warehouse") {
-            const wh = entities.find(e => !e.destroyed && e.properties.warehouse && e.x === bp.x && e.y === bp.y);
+            const wh = getEntityAtTileByProp(bp.x, bp.y, "warehouse");
             return !wh || !wh.properties.warehouse?.isCompleted;
           } else if (bp.type === "campfire") {
-            const cf = entities.find(e => !e.destroyed && e.properties.campfire && e.x === bp.x && e.y === bp.y);
+            const cf = getEntityAtTileByProp(bp.x, bp.y, "campfire");
             return !cf || cf.isConstructed === false;
           } else if (bp.type === "well") {
-            const wl = entities.find(e => !e.destroyed && e.properties.well && e.x === bp.x && e.y === bp.y);
+            const wl = getEntityAtTileByProp(bp.x, bp.y, "well");
             return !wl || !wl.properties.well?.isCompleted;
           } else if (bp.type === "gate" || bp.type === "door") {
-            const g = entities.find(e => !e.destroyed && e.properties.door && e.x === bp.x && e.y === bp.y);
+            const g = getEntityAtTileByProp(bp.x, bp.y, "door");
             return !g || !g.isConstructed;
           } else if (bp.type === "house") {
-            const h = entities.find(e => !e.destroyed && e.properties.house && e.x === bp.x && e.y === bp.y);
+            const h = getEntityAtTileByProp(bp.x, bp.y, "house");
             return !h || !h.properties.house?.isCompleted;
           } else if (bp.type === "wall") {
-            const w = entities.find(e => !e.destroyed && (e.properties.structure && !e.properties.house) && e.x === bp.x && e.y === bp.y);
+            const w = getEntityAtTileByProp(bp.x, bp.y, "structure");
             return !w || !w.isConstructed;
           }
           return false;
@@ -5073,7 +5286,7 @@ export function createGroupMemberProp() {
 
         // Store unneeded materials in Clan Warehouse if present, or ground
         if (!hasAnyUnbuiltBlueprint && (inClaimedZone || distToBase <= 4) && distToBase <= 2) {
-          const warehouse = entities.find(e => !e.destroyed && e.properties.warehouse?.isCompleted && (e.properties.warehouse.groupId === group.id || isTileInClaimedZones(e.x, e.y, group.claimedZones)));
+          const warehouse = getGroupWarehouse(group, entities);
           if (warehouse) {
             for (const [k, p] of Object.entries(ent.properties)) {
               if (k.startsWith("arm") && p && p.heldItem) {
@@ -5155,7 +5368,7 @@ export function createGroupMemberProp() {
       }
 
       // C. Home Food Pantry / Storing & Eating at Home
-      const ownHouse = entities.find(e => !e.destroyed && e.properties.house && (e.properties.house.ownerId === ent.id || e.properties.house.partnerId === ent.id));
+      const ownHouse = getOwnHouse(ent.id, entities);
       if (ownHouse) {
         const distToHouse = Math.abs(ownHouse.x - ent.x) + Math.abs(ownHouse.y - ent.y);
         // Storing food when not starving
@@ -5190,7 +5403,7 @@ export function createGroupMemberProp() {
       }
 
       // D. Storing Surplus & Withdrawing Needed Building Materials from Clan Warehouse
-      const completedWarehouse = entities.find(e => !e.destroyed && e.properties.warehouse?.isCompleted && (e.properties.warehouse.groupId === group.id || isTileInClaimedZones(e.x, e.y, group.claimedZones)));
+      const completedWarehouse = getGroupWarehouse(group, entities);
       if (completedWarehouse) {
         const distToWh = Math.abs(completedWarehouse.x - ent.x) + Math.abs(completedWarehouse.y - ent.y);
         if (distToWh <= 1) {
@@ -5199,13 +5412,13 @@ export function createGroupMemberProp() {
           let needsStone = false;
           for (const bp of blueprint) {
             if (bp.type === "campfire") {
-              const cf = entities.find(e => !e.destroyed && e.properties.campfire && e.x === bp.x && e.y === bp.y);
+              const cf = getEntityAtTileByProp(bp.x, bp.y, "campfire");
               if (!cf || cf.isConstructed === false) needsWood = true;
             } else if (bp.type === "well") {
-              const wl = entities.find(e => !e.destroyed && e.properties.well && e.x === bp.x && e.y === bp.y);
+              const wl = getEntityAtTileByProp(bp.x, bp.y, "well");
               if (!wl || !wl.properties.well?.isCompleted) { needsWood = true; needsStone = true; }
             } else if (bp.type === "house") {
-              const hs = entities.find(e => !e.destroyed && e.properties.house && e.x === bp.x && e.y === bp.y);
+              const hs = getEntityAtTileByProp(bp.x, bp.y, "house");
               if (!hs || !hs.properties.house?.isCompleted) { needsWood = true; needsStone = true; }
             }
           }
@@ -5246,7 +5459,7 @@ export function createGroupMemberProp() {
           const py = ent.y + off.dy;
           const tile = world.getTile(px, py);
           const isLand = (tile !== 2 && tile !== 5 && tile !== 1 && tile !== 4);
-          const hasNearbyPlant = entities.some(e => !e.destroyed && (e.properties.photosynthesis || e.properties.deep_root || e.properties.species === "oak" || e.properties.species === "willow" || e.properties.species === "cactus" || e.properties.species === "pine" || e.properties.species === "berry") && e.x === px && e.y === py);
+          const hasNearbyPlant = !!getEntityAtTileByProp(px, py, "photosynthesis") || !!getEntityAtTileByProp(px, py, "deep_root");
           if (isLand && !hasNearbyPlant) {
             targetX = px;
             targetY = py;
@@ -5317,7 +5530,7 @@ export function createGroupMemberProp() {
 
         for (const bp of blueprint) {
           if (bp.type === "warehouse") {
-            const wh = entities.find(e => !e.destroyed && e.properties.warehouse && e.x === bp.x && e.y === bp.y);
+            const wh = getEntityAtTileByProp(bp.x, bp.y, "warehouse");
             if (!wh) { totalWoodNeeded += 4; totalStoneNeeded += 4; }
             else if (!wh.properties.warehouse?.isCompleted) {
               const w = wh.properties.warehouse;
@@ -5325,13 +5538,13 @@ export function createGroupMemberProp() {
               totalStoneNeeded += Math.max(0, (w.stoneCost ?? 4) - (w.stoneCurrent || 0));
             }
           } else if (bp.type === "campfire") {
-            const cf = entities.find(e => !e.destroyed && e.properties.campfire && e.x === bp.x && e.y === bp.y);
+            const cf = getEntityAtTileByProp(bp.x, bp.y, "campfire");
             if (!cf) { totalWoodNeeded += 3; }
             else if (cf.isConstructed === false) {
               totalWoodNeeded += Math.max(0, (cf.woodCost ?? 3) - (cf.woodCurrent || 0));
             }
           } else if (bp.type === "well") {
-            const wl = entities.find(e => !e.destroyed && e.properties.well && e.x === bp.x && e.y === bp.y);
+            const wl = getEntityAtTileByProp(bp.x, bp.y, "well");
             if (!wl) { totalWoodNeeded += 2; totalStoneNeeded += 4; }
             else if (!wl.properties.well?.isCompleted) {
               const w = wl.properties.well;
@@ -5339,7 +5552,7 @@ export function createGroupMemberProp() {
               totalStoneNeeded += Math.max(0, (w.stoneCost ?? 4) - (w.stoneCurrent || 0));
             }
           } else if (bp.type === "house") {
-            const h = entities.find(e => !e.destroyed && e.properties.house && e.x === bp.x && e.y === bp.y);
+            const h = getEntityAtTileByProp(bp.x, bp.y, "house");
             if (!h) { totalWoodNeeded += 3; totalStoneNeeded += 2; }
             else if (!h.properties.house?.isCompleted) {
               const hp = h.properties.house;
@@ -5347,15 +5560,15 @@ export function createGroupMemberProp() {
               totalStoneNeeded += Math.max(0, (hp.stoneCost ?? 2) - (hp.stoneCurrent || 0));
             }
           } else if (bp.type === "gate" || bp.type === "door") {
-            const g = entities.find(e => !e.destroyed && e.properties.door && e.x === bp.x && e.y === bp.y);
+            const g = getEntityAtTileByProp(bp.x, bp.y, "door");
             if (!g || !g.isConstructed) totalWoodNeeded += 2;
           } else if (bp.type === "wall") {
-            const w = entities.find(e => !e.destroyed && (e.properties.structure && !e.properties.house) && e.x === bp.x && e.y === bp.y);
+            const w = getEntityAtTileByProp(bp.x, bp.y, "structure");
             if (!w || !w.isConstructed) totalStoneNeeded += 2;
           }
         }
 
-        const warehouse = entities.find(e => !e.destroyed && e.properties.warehouse?.isCompleted && (e.properties.warehouse.groupId === group.id || isTileInClaimedZones(e.x, e.y, group.claimedZones)));
+        const warehouse = getGroupWarehouse(group, entities);
         const storedWood = (group.storage || []).filter(i => i === "wood").length + (warehouse?.properties?.warehouse?.items?.filter(i => i.resourceType === "wood" || i.name?.includes("Wood"))?.length || 0);
         const storedStone = (group.storage || []).filter(i => i === "stone").length + (warehouse?.properties?.warehouse?.items?.filter(i => i.resourceType === "stone" || i.name?.includes("Stone"))?.length || 0);
 
@@ -6246,22 +6459,22 @@ export function evaluateAndAssignClanRoles(group, entities, world) {
   let unbuiltCount = 0;
   for (const bp of blueprint) {
     if (bp.type === "warehouse") {
-      const wh = entities.find(e => !e.destroyed && e.properties.warehouse && e.x === bp.x && e.y === bp.y);
+      const wh = getEntityAtTileByProp(bp.x, bp.y, "warehouse");
       if (!wh || !wh.properties.warehouse?.isCompleted) unbuiltCount++;
     } else if (bp.type === "campfire") {
-      const cf = entities.find(e => !e.destroyed && e.properties.campfire && e.x === bp.x && e.y === bp.y);
+      const cf = getEntityAtTileByProp(bp.x, bp.y, "campfire");
       if (!cf || cf.isConstructed === false) unbuiltCount++;
     } else if (bp.type === "well") {
-      const wl = entities.find(e => !e.destroyed && e.properties.well && e.x === bp.x && e.y === bp.y);
+      const wl = getEntityAtTileByProp(bp.x, bp.y, "well");
       if (!wl || !wl.properties.well?.isCompleted) unbuiltCount++;
     } else if (bp.type === "gate" || bp.type === "door") {
-      const hasDoor = entities.some(e => !e.destroyed && e.properties.door && e.x === bp.x && e.y === bp.y);
+      const hasDoor = !!getEntityAtTileByProp(bp.x, bp.y, "door");
       if (!hasDoor) unbuiltCount++;
     } else if (bp.type === "house") {
-      const h = entities.find(e => !e.destroyed && e.properties.house && e.x === bp.x && e.y === bp.y);
+      const h = getEntityAtTileByProp(bp.x, bp.y, "house");
       if (!h || !h.properties.house?.isCompleted) unbuiltCount++;
     } else {
-      const hasWall = entities.some(e => !e.destroyed && (e.properties.structure && !e.properties.house) && e.x === bp.x && e.y === bp.y);
+      const hasWall = !!getEntityAtTileByProp(bp.x, bp.y, "structure");
       if (!hasWall) unbuiltCount++;
     }
   }
@@ -6420,7 +6633,7 @@ export function createLocomotionProp() {
       const isTiredLoco = energyRatio <= 0.15 || (isNightLoco && energyRatio <= 0.60);
 
       if (!hasIntention && isTiredLoco && entities) {
-        const ownHouse = entities.find(e => !e.destroyed && e.properties.house?.isCompleted && (e.properties.house.ownerId === ent.id || e.properties.house.partnerId === ent.id));
+        const ownHouse = getOwnHouse(ent.id, entities);
         if (ownHouse) {
           const distToHouse = Math.abs(ownHouse.x - ent.x) + Math.abs(ownHouse.y - ent.y);
           if (distToHouse > 0) {
@@ -6818,7 +7031,7 @@ export function createLocomotionProp() {
           // Priority 2.0: Warehouse First, Clan Houses Second
           for (const bp of blueprint) {
             if (bp.type === "warehouse") {
-              const wh = entities.find(e => !e.destroyed && e.properties.warehouse && e.x === bp.x && e.y === bp.y);
+              const wh = getEntityAtTileByProp(bp.x, bp.y, "warehouse");
               let needsThisMat = false;
               if (!wh) {
                 needsThisMat = true;
@@ -6838,7 +7051,7 @@ export function createLocomotionProp() {
                 }
               }
             } else if (bp.type === "campfire") {
-              const cf = entities.find(e => !e.destroyed && e.properties.campfire && e.x === bp.x && e.y === bp.y);
+              const cf = getEntityAtTileByProp(bp.x, bp.y, "campfire");
               let needsThisMat = false;
               if (!cf) {
                 if (heldResType === "wood") needsThisMat = true;
@@ -6855,7 +7068,7 @@ export function createLocomotionProp() {
                 }
               }
             } else if (bp.type === "well") {
-              const wl = entities.find(e => !e.destroyed && e.properties.well && e.x === bp.x && e.y === bp.y);
+              const wl = getEntityAtTileByProp(bp.x, bp.y, "well");
               let needsThisMat = false;
               if (!wl) {
                 needsThisMat = true;
@@ -6875,7 +7088,7 @@ export function createLocomotionProp() {
                 }
               }
             } else if (bp.type === "house") {
-              const houseEnt = entities.find(e => !e.destroyed && e.properties.house && e.x === bp.x && e.y === bp.y);
+              const houseEnt = getEntityAtTileByProp(bp.x, bp.y, "house");
               let needsThisMat = false;
               if (!houseEnt) {
                 needsThisMat = true;
@@ -6948,7 +7161,7 @@ export function createLocomotionProp() {
           if (!targetBuild && allMembersHoused && heldResType === "wood") {
             for (const bp of blueprint) {
               if (bp.type === "gate" || bp.type === "door") {
-                const hasGate = entities.some(e => !e.destroyed && e.properties.door && e.x === bp.x && e.y === bp.y);
+                const hasGate = !!getEntityAtTileByProp(bp.x, bp.y, "door");
                 if (!hasGate) {
                   const dist = Math.abs(bp.x - ent.x) + Math.abs(bp.y - ent.y);
                   if (dist < minBuildDist) {
@@ -6975,7 +7188,7 @@ export function createLocomotionProp() {
           } else {
             ent._buildTarget = null;
             // Held material/item is not needed by any active construction site: haul it to Warehouse/Stockpile!
-            const warehouse = entities.find(e => !e.destroyed && e.properties.warehouse?.isCompleted && (e.properties.warehouse.groupId === group.id || isTileInClaimedZones(e.x, e.y, group.claimedZones)));
+            const warehouse = getGroupWarehouse(group, entities);
             if (warehouse) {
               chosenDx = Math.sign(warehouse.x - ent.x);
               chosenDy = Math.sign(warehouse.y - ent.y);
@@ -6990,7 +7203,7 @@ export function createLocomotionProp() {
 
         // 3. If carrying meat or food: deliver to own house pantry (up to 2 reserves) or clan stockpile
         else if (!hasIntention && isCarryingMeat) {
-          const ownHouse = entities.find(e => !e.destroyed && e.properties.house?.isCompleted && (e.properties.house.ownerId === ent.id || e.properties.house.partnerId === ent.id));
+          const ownHouse = getOwnHouse(ent.id, entities);
           const needsPantryStock = ownHouse && (ownHouse.properties.house.pantry?.length || 0) < 2;
           if (needsPantryStock) {
             chosenDx = Math.sign(ownHouse.x - ent.x);
@@ -7027,7 +7240,7 @@ export function createLocomotionProp() {
 
           for (const bp of blueprint) {
             if (bp.type === "warehouse") {
-              const wh = entities.find(e => !e.destroyed && e.properties.warehouse && e.x === bp.x && e.y === bp.y);
+              const wh = getEntityAtTileByProp(bp.x, bp.y, "warehouse");
               if (!wh) { totalWoodNeeded += 4; totalStoneNeeded += 4; }
               else if (!wh.properties.warehouse?.isCompleted) {
                 const w = wh.properties.warehouse;
@@ -7035,13 +7248,13 @@ export function createLocomotionProp() {
                 totalStoneNeeded += Math.max(0, (w.stoneCost ?? 4) - (w.stoneCurrent || 0));
               }
             } else if (bp.type === "campfire") {
-              const cf = entities.find(e => !e.destroyed && e.properties.campfire && e.x === bp.x && e.y === bp.y);
+              const cf = getEntityAtTileByProp(bp.x, bp.y, "campfire");
               if (!cf) { totalWoodNeeded += 3; }
               else if (cf.isConstructed === false) {
                 totalWoodNeeded += Math.max(0, (cf.woodCost ?? 3) - (cf.woodCurrent || 0));
               }
             } else if (bp.type === "well") {
-              const wl = entities.find(e => !e.destroyed && e.properties.well && e.x === bp.x && e.y === bp.y);
+              const wl = getEntityAtTileByProp(bp.x, bp.y, "well");
               if (!wl) { totalWoodNeeded += 2; totalStoneNeeded += 4; }
               else if (!wl.properties.well?.isCompleted) {
                 const w = wl.properties.well;
@@ -7049,7 +7262,7 @@ export function createLocomotionProp() {
                 totalStoneNeeded += Math.max(0, (w.stoneCost ?? 4) - (w.stoneCurrent || 0));
               }
             } else if (bp.type === "house") {
-              const h = entities.find(e => !e.destroyed && e.properties.house && e.x === bp.x && e.y === bp.y);
+              const h = getEntityAtTileByProp(bp.x, bp.y, "house");
               if (!h) { totalWoodNeeded += 3; totalStoneNeeded += 2; }
               else if (!h.properties.house?.isCompleted) {
                 const hp = h.properties.house;
@@ -7057,15 +7270,15 @@ export function createLocomotionProp() {
                 totalStoneNeeded += Math.max(0, (hp.stoneCost ?? 2) - (hp.stoneCurrent || 0));
               }
             } else if (bp.type === "gate" || bp.type === "door") {
-              const g = entities.find(e => !e.destroyed && e.properties.door && e.x === bp.x && e.y === bp.y);
+              const g = getEntityAtTileByProp(bp.x, bp.y, "door");
               if (!g || !g.isConstructed) totalWoodNeeded += 2;
             } else if (bp.type === "wall") {
-              const w = entities.find(e => !e.destroyed && (e.properties.structure && !e.properties.house) && e.x === bp.x && e.y === bp.y);
+              const w = getEntityAtTileByProp(bp.x, bp.y, "structure");
               if (!w || !w.isConstructed) totalStoneNeeded += 2;
             }
           }
 
-          const warehouse = entities.find(e => !e.destroyed && e.properties.warehouse?.isCompleted && (e.properties.warehouse.groupId === group.id || isTileInClaimedZones(e.x, e.y, group.claimedZones)));
+          const warehouse = getGroupWarehouse(group, entities);
           const storedWood = (group.storage || []).filter(i => i === "wood").length + (warehouse?.properties?.warehouse?.items?.filter(i => i.resourceType === "wood" || i.name?.includes("Wood"))?.length || 0);
           const storedStone = (group.storage || []).filter(i => i === "stone").length + (warehouse?.properties?.warehouse?.items?.filter(i => i.resourceType === "stone" || i.name?.includes("Stone"))?.length || 0);
 
@@ -7179,7 +7392,7 @@ export function createLocomotionProp() {
               }
             } else if (needsWood) {
               // Felling wild trees (Strict: only when wood is genuinely needed)
-              const trees = getEntitiesInRadius(ent.x, ent.y, 75).filter(e => !e.destroyed && (e.properties.photosynthesis || e.properties.deep_root || e.properties.species === "oak" || e.properties.species === "willow" || e.properties.species === "pine" || e.properties.species === "tree"));
+              const trees = getEntitiesInRadius(ent.x, ent.y, 35).filter(e => !e.destroyed && (e.properties.photosynthesis || e.properties.deep_root || e.properties.species === "oak" || e.properties.species === "willow" || e.properties.species === "pine" || e.properties.species === "tree"));
               let nearbyTree = trees.find(t => !isTileInClaimedZones(t.x, t.y, group.claimedZones)) || trees[0];
 
               if (nearbyTree) {
