@@ -14,8 +14,6 @@ import {
   TILE_ROAD_GRASS,
   TILE_ROAD_SAND,
   TILE_ROAD_STONE,
-  TILE_ROAD_WATER,
-  TILE_ROAD_SNAP,
   MAP_PRESET_ARCHIPELAGO,
   MAP_PRESET_CONTINENT,
   MAP_PRESET_HIGHLANDS,
@@ -34,9 +32,7 @@ export {
   TILE_VOID,
   TILE_ROAD_GRASS,
   TILE_ROAD_SAND,
-  TILE_ROAD_STONE,
-  TILE_ROAD_WATER,
-  TILE_ROAD_SNAP
+  TILE_ROAD_STONE
 };
 
 export class WorldClock {
@@ -121,11 +117,9 @@ export class World {
       case TILE_WATER: return "Ocean Water";
       case TILE_SAND: return "Sand Dunes / Desert";
       case TILE_STONE: return "Rocky Foothills / Stone";
-      case TILE_ROAD_GRASS: return "Estrada de Terra";
-      case TILE_ROAD_SAND: return "Trilha do Deserto";
-      case TILE_ROAD_STONE: return "Estrada de Pedra";
-      case TILE_ROAD_WATER: return "Ponte de Madeira";
-      case TILE_ROAD_SNAP: return "Praça Viária / Encaixe";
+      case TILE_ROAD_GRASS: return "Terra com Estrada";
+      case TILE_ROAD_SAND: return "Areia com Estrada";
+      case TILE_ROAD_STONE: return "Montanha com Estrada";
       default: return "Void";
     }
   }

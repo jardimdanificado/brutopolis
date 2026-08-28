@@ -3,7 +3,7 @@
 // =============================================================================
 
 import { ASSET_DATA } from "./assets_data.js";
-import { MAP_WIDTH, MAP_HEIGHT, TILE_FLOOR, TILE_MOUNTAIN, TILE_WATER, TILE_SAND, TILE_STONE, TILE_ROAD_GRASS, TILE_ROAD_SAND, TILE_ROAD_STONE, TILE_ROAD_WATER, TILE_ROAD_SNAP } from "./world_gen.js";
+import { MAP_WIDTH, MAP_HEIGHT, TILE_FLOOR, TILE_MOUNTAIN, TILE_WATER, TILE_SAND, TILE_STONE, TILE_ROAD_GRASS, TILE_ROAD_SAND, TILE_ROAD_STONE } from "./world_gen.js";
 import { globalWallCoords, resolveWallSkin, getEntitiesInViewport } from "./engine.js";
 import { getClanBlueprintTiles } from "./properties.js";
 
@@ -500,14 +500,6 @@ export class Renderer {
           tex = findTexture("Feature_Brick_A.png");
           fg = rgba32(150, 150, 160);
           bg = rgba32(80, 80, 90);
-        } else if (t === TILE_ROAD_WATER) {
-          tex = findTexture("Feature_Wood.png");
-          fg = rgba32(138, 96, 56);
-          bg = rgba32(35, 60, 100);
-        } else if (t === TILE_ROAD_SNAP) {
-          tex = findTexture("Feature_Pebbles.png");
-          fg = rgba32(212, 170, 112);
-          bg = rgba32(120, 85, 45);
         }
 
         // Most grass and sand tiles are intentionally kept clean. A small,

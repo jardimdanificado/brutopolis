@@ -4,7 +4,7 @@
 
 import * as THREE from "https://esm.sh/three@0.160.0";
 import { ASSET_DATA } from "./assets_data.js";
-import { MAP_WIDTH, MAP_HEIGHT, TILE_FLOOR, TILE_MOUNTAIN, TILE_WATER, TILE_SAND, TILE_STONE, TILE_VOID, TILE_ROAD_GRASS, TILE_ROAD_SAND, TILE_ROAD_STONE, TILE_ROAD_WATER, TILE_ROAD_SNAP } from "./world_gen.js";
+import { MAP_WIDTH, MAP_HEIGHT, TILE_FLOOR, TILE_MOUNTAIN, TILE_WATER, TILE_SAND, TILE_STONE, TILE_VOID, TILE_ROAD_GRASS, TILE_ROAD_SAND, TILE_ROAD_STONE } from "./world_gen.js";
 import { globalWallCoords, resolveWallSkin, getEntitiesInViewport } from "./engine.js";
 import { getClanBlueprintTiles, currentZoneSize } from "./properties.js";
 
@@ -1321,18 +1321,6 @@ export class RCT3DRenderer {
         vertexColors: true,
         side: THREE.DoubleSide
       }),
-      [TILE_ROAD_WATER]: new THREE.MeshLambertMaterial({
-        map: createTintedTexture("Feature_Wood.png", 0x8a6038, 0x382412, 1.0),
-        dithering: true,
-        vertexColors: true,
-        side: THREE.DoubleSide
-      }),
-      [TILE_ROAD_SNAP]: new THREE.MeshLambertMaterial({
-        map: createTintedTexture("Feature_Pebbles.png", 0xd4aa70, 0x5c4220, 1.0),
-        dithering: true,
-        vertexColors: true,
-        side: THREE.DoubleSide
-      }),
       cliff: new THREE.MeshLambertMaterial({
         map: createTintedTexture("Feature_Stone_C.png", 0x887a6a, 0x2b2218, 1.0),
         dithering: true,
@@ -2021,12 +2009,10 @@ export class RCT3DRenderer {
   getTileBaseHeight(tileType) {
     switch (tileType) {
       case TILE_WATER: return 0.0;
-      case TILE_ROAD_WATER: return 0.06; // Flat bridge deck over water
       case TILE_SAND:
       case TILE_ROAD_SAND: return 0.38;
       case TILE_FLOOR:
-      case TILE_ROAD_GRASS:
-      case TILE_ROAD_SNAP: return 1.0;
+      case TILE_ROAD_GRASS: return 1.0;
       case TILE_STONE:
       case TILE_ROAD_STONE: return 2.1;
       case TILE_MOUNTAIN: return 3.6;
@@ -2636,9 +2622,7 @@ export class RCT3DRenderer {
       [TILE_WATER]: { pos: [], uvs: [], colors: [] },
       [TILE_ROAD_GRASS]: { pos: [], uvs: [], colors: [] },
       [TILE_ROAD_SAND]: { pos: [], uvs: [], colors: [] },
-      [TILE_ROAD_STONE]: { pos: [], uvs: [], colors: [] },
-      [TILE_ROAD_WATER]: { pos: [], uvs: [], colors: [] },
-      [TILE_ROAD_SNAP]: { pos: [], uvs: [], colors: [] }
+      [TILE_ROAD_STONE]: { pos: [], uvs: [], colors: [] }
     };
 
     const gridLinePositions = [];

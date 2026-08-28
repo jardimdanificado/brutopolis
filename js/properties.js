@@ -1,5 +1,5 @@
 import { createEntity, getEntityById, entityRegistry, currentTick, getEntitiesInRadius, getEntityAtTile, getEntityAtTileByProp, setSpatialZoneSize, tileEntityMap, globalWallCoords, globalRoadCoords, getTileKey, registerEntitySpatial } from "./engine.js";
-import { MAP_WIDTH, MAP_HEIGHT, TILE_FLOOR, TILE_MOUNTAIN, TILE_WATER, TILE_SAND, TILE_STONE, TILE_VOID, TILE_ROAD_GRASS, TILE_ROAD_SAND, TILE_ROAD_STONE, TILE_ROAD_WATER, TILE_ROAD_SNAP } from "./world_gen.js";
+import { MAP_WIDTH, MAP_HEIGHT, TILE_FLOOR, TILE_MOUNTAIN, TILE_WATER, TILE_SAND, TILE_STONE, TILE_VOID, TILE_ROAD_GRASS, TILE_ROAD_SAND, TILE_ROAD_STONE } from "./world_gen.js";
 import {
   recordWorldEvent,
   allEvents,
@@ -50,7 +50,7 @@ export function isLandTile(x, y) {
   if (!curW) return false;
   if (x < 0 || x >= MAP_WIDTH || y < 0 || y >= MAP_HEIGHT) return false;
   const t = curW.getTile ? curW.getTile(x, y) : (curW.map ? curW.map[y * MAP_WIDTH + x] : 0);
-  return t === 0 || t === 3 || t === 4 || (t >= TILE_ROAD_GRASS && t <= TILE_ROAD_SNAP); // Fertile Floor, Sand, Stone, and all Road/Bridge tiles
+  return t === 0 || t === 3 || t === 4 || (t >= TILE_ROAD_GRASS && t <= TILE_ROAD_STONE); // Fertile Floor, Sand, Stone, and all Road tiles
 }
 
 // Configurable macro-chunk zone size (tiles per zone side)
@@ -707,6 +707,7 @@ export function createCampfireEntity(x, y, ownerId = null) {
 
 
 export function createHouseEntity(x, y, style = "mixed", ownerId = null, ownerName = null, supportMaterial = "wood") {
+  if (isRoadTile(x, y)) return null;
   const curW = getSimWorld();
   const isOverWater = curW ? (curW.getTile ? curW.getTile(x, y) === 2 : false) : false;
   let woodCost = 3;
@@ -846,20 +847,33 @@ export function createWaterWellEntity(x, y, group = null) {
  * Road / Paved Street / Bridge Construction
  * Directly sets road terrain tiles into world.map without creating entity overhead.
  */
-export function createRoadEntity(x, y, group = null, isSnapPoint = false) {
+export function createRoadEntity(x, y, group = null) {
   const curW = getSimWorld();
   if (curW) {
     const curTile = curW.getTile ? curW.getTile(x, y) : (curW.map ? curW.map[y * (curW.width || MAP_WIDTH) + x] : 0);
+    if (curTile === 2 || curTile === 5) return null; // No roads on water or void
+
     let roadTile = TILE_ROAD_GRASS;
-    if (curTile === 2) roadTile = TILE_ROAD_WATER; // Flat Wooden Bridge Deck over water
-    else if (curTile === 3) roadTile = TILE_ROAD_SAND;
+    if (curTile === 3) roadTile = TILE_ROAD_SAND;
     else if (curTile === 4 || curTile === 1) roadTile = TILE_ROAD_STONE;
-    else if (isSnapPoint) roadTile = TILE_ROAD_SNAP;
+    else roadTile = TILE_ROAD_GRASS;
 
     if (curW.setTile) {
       curW.setTile(x, y, roadTile);
+    } else if (curW.map) {
+      curW.map[y * (curW.width || MAP_WIDTH) + x] = roadTile;
+    }
+
+    // Clear any plant, tree, wood or stone deposit currently on this tile
+    for (const e of entityRegistry.values()) {
+      if (!e.destroyed && e.x === x && e.y === y) {
+        if (e.properties?.wood || e.properties?.photosynthesis || e.properties?.deep_root || e.properties?.plant_flesh || e.properties?.stone_deposit || e.properties?.item) {
+          e.destroyed = true;
+        }
+      }
     }
   }
+
   globalRoadCoords.add(getTileKey(x, y));
   return null;
 }
@@ -868,7 +882,7 @@ export function isRoadTile(x, y) {
   const curW = getSimWorld();
   if (curW) {
     const t = curW.getTile ? curW.getTile(x, y) : (curW.map ? curW.map[y * (curW.width || MAP_WIDTH) + x] : 0);
-    if (t >= TILE_ROAD_GRASS && t <= TILE_ROAD_SNAP) return true;
+    if (t >= TILE_ROAD_GRASS && t <= TILE_ROAD_STONE) return true;
   }
   return globalRoadCoords.has(getTileKey(x, y));
 }
@@ -899,35 +913,6 @@ export function isRoadFrontierTile(x, y, group = null) {
 }
 
 /**
- * Checks if the specified tile (x, y) is adjacent to a snap point.
- */
-export function isAdjacentToSnapPoint(x, y, group = null) {
-  for (let dy = -1; dy <= 1; dy++) {
-    for (let dx = -1; dx <= 1; dx++) {
-      const nx = x + dx;
-      const ny = y + dy;
-      if (isSnapPointTile(nx, ny)) return true;
-      if (group && group._plannedRoads) {
-        if (group._plannedRoads.some(r => r.isSnapPoint && r.x === nx && r.y === ny)) {
-          return true;
-        }
-      }
-    }
-  }
-  return false;
-}
-
-export function isSnapPointTile(x, y) {
-  const curW = getSimWorld();
-  if (curW) {
-    const t = curW.getTile ? curW.getTile(x, y) : (curW.map ? curW.map[y * (curW.width || MAP_WIDTH) + x] : 0);
-    if (t === TILE_ROAD_SNAP) return true;
-  }
-  const e = getEntityAtTile(x, y);
-  return !!(e && !e.destroyed && (e.properties?.road?.isSnapPoint || e.properties?.name?.includes("Encaixe") || e.properties?.name?.includes("Snap")));
-}
-
-/**
  * Checks if the specified tile (x, y) is within maxDist of an ACTUAL constructed road tile.
  * Prevents planning or attempting houses in off-road wilderness areas.
  */
@@ -938,8 +923,7 @@ export function isNearNormalRoad(x, y, group = null, maxDist = 2) {
         if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
         const nx = x + dx;
         const ny = y + dy;
-        // MUST BE AN ACTUAL CONSTRUCTED ROAD TILE ON THE TERRAIN!
-        if (isRoadTile(nx, ny) && !isSnapPointTile(nx, ny)) return true;
+        if (isRoadTile(nx, ny)) return true;
       }
     }
   }
@@ -2337,11 +2321,12 @@ export function createGroup(name, founder, baseZone = null, claimedZones = null)
  * while allowing flat wooden bridge deck crossings (TILE_ROAD_WATER) over water bodies.
  * Snaps onto existing roads to form natural trade routes and organic Y-forks.
  */
-export function findOrganicLandPath(startX, startY, targetX, targetY, world, minX, maxX, minY, maxY, maxNodes = 900) {
+export function findOrganicLandPath(startX, startY, targetX, targetY, world, minX, maxX, minY, maxY, maxNodes = 1200) {
   if (!world) return null;
   const startTile = world.getTile(startX, startY);
   const targetTile = world.getTile(targetX, targetY);
-  if (startTile === 5 || targetTile === 5) return null;
+  // STRICTLY 100% DRY LAND ONLY (No water, no void)
+  if (startTile === 2 || startTile === 5 || targetTile === 2 || targetTile === 5) return null;
 
   const dist = Math.abs(targetX - startX) + Math.abs(targetY - startY);
   if (dist === 0) return [{ x: startX, y: startY }];
@@ -2355,10 +2340,10 @@ export function findOrganicLandPath(startX, startY, targetX, targetY, world, min
   const closedSet = new Set();
 
   const dirs = [
-    { dx: 1, dy: 0 }, { dx: -1, dy: 0 },
-    { dx: 0, dy: 1 }, { dx: 0, dy: -1 },
-    { dx: 1, dy: 1 }, { dx: -1, dy: 1 },
-    { dx: 1, dy: -1 }, { dx: -1, dy: -1 }
+    { dx: 1, dy: 0 },
+    { dx: -1, dy: 0 },
+    { dx: 0, dy: 1 },
+    { dx: 0, dy: -1 }
   ];
 
   let iterations = 0;
@@ -2399,21 +2384,19 @@ export function findOrganicLandPath(startX, startY, targetX, targetY, world, min
       if (closedSet.has(nKey)) continue;
 
       const t = world.getTile(nx, ny);
-      if (t === 5) continue; // Skip deep void / impassable boundaries
+      // Strictly avoid water and void! 100% dry land pathing
+      if (t === 2 || t === 5) continue;
 
-      let moveCost = (d.dx !== 0 && d.dy !== 0) ? 1.414 : 1.0;
-      if (t === 2) {
-        // Water crossing (Bridge) has moderate cost (prefers land, but bridges if needed)
-        moveCost += 2.8;
-      } else if (t === 1) {
-        moveCost += 4.0;
+      let moveCost = 1.0;
+      if (t === 1) {
+        moveCost += 3.5;
       } else if (t === 4) {
-        moveCost += 1.2;
+        moveCost += 1.0;
       }
 
-      // Existing road discount: snaps roads together to form natural organic arterial highways!
+      // Existing road discount: seamlessly joins into existing road arteries!
       if (isRoadTile(nx, ny)) {
-        moveCost *= 0.35;
+        moveCost *= 0.3;
       }
 
       const tentG = current.g + moveCost;
@@ -2443,13 +2426,11 @@ export function findOrganicLandPath(startX, startY, targetX, targetY, world, min
 
 /**
  * Procedurally generates an organic continental highway and road network directly into world.map.
- * Generates biome-specific road tiles:
- * - Fertile Grass: TILE_ROAD_GRASS (Dirt Road)
- * - Sand Dunes: TILE_ROAD_SAND (Paved Sand Trail)
- * - Rocky / Mountain: TILE_ROAD_STONE (Cobblestone Highway)
- * - Water / River: TILE_ROAD_WATER (Flat Wooden Deck Pier Bridge without railings)
- * - Crossroads: TILE_ROAD_SNAP (Plaza Snap Stone)
- * Scales hub count and highway density dynamically according to world dimensions.
+ * Generates biome-specific road terrain tiles strictly on 100% DRY LAND:
+ * - Fertile Grass: TILE_ROAD_GRASS (6) - Terra com estrada
+ * - Sand Dunes: TILE_ROAD_SAND (7) - Areia com estrada
+ * - Rocky / Mountain: TILE_ROAD_STONE (8) - Montanha com estrada
+ * Zero bridges over water, 100% continuous connected tiles.
  */
 export function generateWorldRoadNetwork(world, minX, maxX, minY, maxY, sz = 8, seed = 12345, entities = []) {
   if (!world) return [];
@@ -2459,7 +2440,7 @@ export function generateWorldRoadNetwork(world, minX, maxX, minY, maxY, sz = 8, 
   const spanY = maxY - minY;
   if (spanX < 32 || spanY < 32) return [];
 
-  // 1. Identify Natural Regional Hubs across Landmasses (Proportionate to world scale)
+  // 1. Identify Natural Regional Hubs across Landmasses
   const targetCellSize = Math.max(80, Math.min(140, Math.floor(spanX / 4)));
   const numDivs = Math.max(2, Math.min(8, Math.floor(spanX / targetCellSize)));
   const cellW = spanX / numDivs;
@@ -2486,7 +2467,7 @@ export function generateWorldRoadNetwork(world, minX, maxX, minY, maxY, sz = 8, 
             const hy = midY + dy;
             if (hx >= cellMinX + 2 && hx < cellMaxX - 2 && hy >= cellMinY + 2 && hy < cellMaxY - 2) {
               const t = world.getTile(hx, hy);
-              if (t === 0 || t === 3 || t === 4) { // Walkable land only
+              if (t === 0 || t === 3 || t === 4) { // Walkable dry land only
                 let tooClose = false;
                 for (const existing of hubNodes) {
                   if (Math.abs(existing.x - hx) + Math.abs(existing.y - hy) < minHubDist) {
@@ -2495,7 +2476,7 @@ export function generateWorldRoadNetwork(world, minX, maxX, minY, maxY, sz = 8, 
                   }
                 }
                 if (!tooClose) {
-                  bestHub = { x: hx, y: hy, isSnap: true };
+                  bestHub = { x: hx, y: hy };
                 }
               }
             }
@@ -2506,41 +2487,46 @@ export function generateWorldRoadNetwork(world, minX, maxX, minY, maxY, sz = 8, 
     }
   }
 
-  function addRoadTile(x, y, isSnap = false) {
+  function addRoadTile(x, y) {
     if (x < minX || x >= maxX || y < minY || y >= maxY) return;
     const t = world.getTile ? world.getTile(x, y) : (world.map ? world.map[y * (world.width || 1024) + x] : 0);
-    if (t === 5) return; // Skip deep void
+    // Never build on water (2) or void (5)
+    if (t === 2 || t === 5) return;
 
-    // Avoid double parallel roads directly adjacent
-    const hasParallelLeftRight = (isRoadTile(x - 1, y) && isRoadTile(x - 1, y - 1)) || (isRoadTile(x + 1, y) && isRoadTile(x + 1, y - 1));
-    const hasParallelUpDown = (isRoadTile(x, y - 1) && isRoadTile(x - 1, y - 1)) || (isRoadTile(x, y + 1) && isRoadTile(x - 1, y + 1));
-    if (hasParallelLeftRight || hasParallelUpDown) return;
+    // Clear any plant, tree, wood or stone deposit currently on this tile
+    if (entities && entities.length > 0) {
+      for (let i = entities.length - 1; i >= 0; i--) {
+        const e = entities[i];
+        if (e && !e.destroyed && e.x === x && e.y === y) {
+          if (e.properties?.wood || e.properties?.photosynthesis || e.properties?.deep_root || e.properties?.plant_flesh || e.properties?.stone_deposit || e.properties?.item) {
+            e.destroyed = true;
+            entities.splice(i, 1);
+          }
+        }
+      }
+    }
 
     let roadTile = TILE_ROAD_GRASS;
-    if (t === 2) {
-      roadTile = TILE_ROAD_WATER; // Flat Wooden Bridge Deck over water
-    } else if (t === 3) {
-      roadTile = TILE_ROAD_SAND; // Sand Trail
+    if (t === 3) {
+      roadTile = TILE_ROAD_SAND; // Sand with road
     } else if (t === 4 || t === 1) {
-      roadTile = TILE_ROAD_STONE; // Cobblestone Highway
-    } else if (isSnap) {
-      roadTile = TILE_ROAD_SNAP; // Road Snap Hub
+      roadTile = TILE_ROAD_STONE; // Mountain/Stone with road
     } else {
-      roadTile = TILE_ROAD_GRASS; // Dirt Road
+      roadTile = TILE_ROAD_GRASS; // Grass with road
     }
 
     world.setTile(x, y, roadTile);
     const tk = getTileKey(x, y);
     globalRoadCoords.add(tk);
-    roadCoords.set(`${x}_${y}`, { x, y, isSnap, tile: roadTile });
+    roadCoords.set(`${x}_${y}`, { x, y, tile: roadTile });
   }
 
-  // 2. Connect Regional Hubs into a SINGLE Connected Spanning Tree Network
+  // 2. Connect Regional Hubs into a Connected Land Spanning Network
   if (hubNodes.length > 0) {
     const connectedHubs = [hubNodes[0]];
     const unconnectedHubs = hubNodes.slice(1);
 
-    addRoadTile(hubNodes[0].x, hubNodes[0].y, true);
+    addRoadTile(hubNodes[0].x, hubNodes[0].y);
 
     while (unconnectedHubs.length > 0) {
       let minCost = 999999;
@@ -2553,7 +2539,7 @@ export function generateWorldRoadNetwork(world, minX, maxX, minY, maxY, sz = 8, 
           const nodeB = unconnectedHubs[v];
           const dist = Math.abs(nodeA.x - nodeB.x) + Math.abs(nodeA.y - nodeB.y);
           if (dist < minCost) {
-            const path = findOrganicLandPath(nodeA.x, nodeA.y, nodeB.x, nodeB.y, world, minX, maxX, minY, maxY, 800);
+            const path = findOrganicLandPath(nodeA.x, nodeA.y, nodeB.x, nodeB.y, world, minX, maxX, minY, maxY, 1000);
             if (path && path.length > 0) {
               minCost = dist;
               bestPath = path;
@@ -2566,33 +2552,19 @@ export function generateWorldRoadNetwork(world, minX, maxX, minY, maxY, sz = 8, 
       if (bestPath && bestUnconnectedIdx !== -1) {
         for (let s = 0; s < bestPath.length; s++) {
           const pt = bestPath[s];
-          const isSnap = (s === 0 || s === bestPath.length - 1 || s % 12 === 0);
-          addRoadTile(pt.x, pt.y, isSnap);
+          addRoadTile(pt.x, pt.y);
         }
         connectedHubs.push(unconnectedHubs[bestUnconnectedIdx]);
         unconnectedHubs.splice(bestUnconnectedIdx, 1);
       } else {
-        // Direct bridge connection to closest connected hub
-        const nodeB = unconnectedHubs[0];
-        let closestConn = connectedHubs[0];
-        let minD = 999999;
-        for (const conn of connectedHubs) {
-          const d = Math.abs(conn.x - nodeB.x) + Math.abs(conn.y - nodeB.y);
-          if (d < minD) { minD = d; closestConn = conn; }
-        }
-        let cx = closestConn.x;
-        let cy = closestConn.y;
-        while (cx !== nodeB.x || cy !== nodeB.y) {
-          if (cx !== nodeB.x) cx += Math.sign(nodeB.x - cx);
-          else if (cy !== nodeB.y) cy += Math.sign(nodeB.y - cy);
-          addRoadTile(cx, cy, (cx === nodeB.x && cy === nodeB.y));
-        }
-        connectedHubs.push(nodeB);
+        // If an island hub has no land path to the connected network, start its own sub-hub
+        connectedHubs.push(unconnectedHubs[0]);
+        addRoadTile(unconnectedHubs[0].x, unconnectedHubs[0].y);
         unconnectedHubs.splice(0, 1);
       }
     }
 
-    // Add 2-3 additional cross-connections for alternate loop routes
+    // Add cross-connections for alternate loop routes on the same landmass
     for (let i = 0; i < hubNodes.length; i++) {
       const nodeA = hubNodes[i];
       const otherNodes = hubNodes
@@ -2602,19 +2574,18 @@ export function generateWorldRoadNetwork(world, minX, maxX, minY, maxY, sz = 8, 
         .slice(0, 2);
 
       for (const { other: nodeB } of otherNodes) {
-        const path = findOrganicLandPath(nodeA.x, nodeA.y, nodeB.x, nodeB.y, world, minX, maxX, minY, maxY, 600);
+        const path = findOrganicLandPath(nodeA.x, nodeA.y, nodeB.x, nodeB.y, world, minX, maxX, minY, maxY, 800);
         if (path && path.length > 0) {
           for (let s = 0; s < path.length; s++) {
             const pt = path[s];
-            const isSnap = (s === 0 || s === path.length - 1 || s % 12 === 0);
-            addRoadTile(pt.x, pt.y, isSnap);
+            addRoadTile(pt.x, pt.y);
           }
         }
       }
     }
   }
 
-  // 3. Flood Fill & Bridge Verification: Guarantee 100% Connectivity across ALL Road Tiles
+  // 3. Flood Fill Verification: Guarantee contiguous connectivity
   const allRoadsArray = Array.from(roadCoords.values());
   if (allRoadsArray.length > 0) {
     const mainComponent = new Set();
@@ -2636,7 +2607,7 @@ export function generateWorldRoadNetwork(world, minX, maxX, minY, maxY, sz = 8, 
       }
     }
 
-    // Connect any detached road fragments to the main network
+    // Connect any detached land road fragments
     for (const r of allRoadsArray) {
       const rk = `${r.x}_${r.y}`;
       if (!mainComponent.has(rk)) {
@@ -2653,13 +2624,12 @@ export function generateWorldRoadNetwork(world, minX, maxX, minY, maxY, sz = 8, 
           }
         }
         if (closestMain) {
-          let cx = r.x;
-          let cy = r.y;
-          while (cx !== closestMain.x || cy !== closestMain.y) {
-            if (cx !== closestMain.x) cx += Math.sign(closestMain.x - cx);
-            else if (cy !== closestMain.y) cy += Math.sign(closestMain.y - cy);
-            addRoadTile(cx, cy, (cx === closestMain.x && cy === closestMain.y));
-            mainComponent.add(`${cx}_${cy}`);
+          const path = findOrganicLandPath(r.x, r.y, closestMain.x, closestMain.y, world, minX, maxX, minY, maxY, 600);
+          if (path && path.length > 0) {
+            for (const pt of path) {
+              addRoadTile(pt.x, pt.y);
+              mainComponent.add(`${pt.x}_${pt.y}`);
+            }
           }
         }
       }
@@ -2767,12 +2737,44 @@ export function initClanRoadNetwork(group) {
     }
   }
 
-  const baseX = landStart ? landStart.x : 32 * sz + 4;
-  const baseY = landStart ? landStart.y : 32 * sz + 4;
+  // 1. Find village anchor point (prefer existing continental road tile, or land center)
+  let baseX = 32 * sz + 4;
+  let baseY = 32 * sz + 4;
+  let foundAnchor = false;
 
-  // Initial Snap Point S0 at village center on dry land
+  for (const zk of (group.claimedZones || ["32_32"])) {
+    const zp = zk.includes("_") ? zk.split("_") : zk.split(",");
+    const zx = parseInt(zp[0], 10) || 32;
+    const zy = parseInt(zp[1], 10) || 32;
+    for (let oy = 0; oy < sz; oy++) {
+      for (let ox = 0; ox < sz; ox++) {
+        const tx = zx * sz + ox;
+        const ty = zy * sz + oy;
+        if (isRoadTile(tx, ty)) {
+          baseX = tx;
+          baseY = ty;
+          foundAnchor = true;
+          break;
+        }
+      }
+      if (foundAnchor) break;
+    }
+    if (foundAnchor) break;
+  }
+
+  if (!foundAnchor) {
+    const firstZone = group.claimedZones?.[0] || "32_32";
+    const zp = firstZone.includes("_") ? firstZone.split("_") : firstZone.split(",");
+    const zx = parseInt(zp[0], 10) || 32;
+    const zy = parseInt(zp[1], 10) || 32;
+    baseX = zx * sz + Math.floor(sz / 2);
+    baseY = zy * sz + Math.floor(sz / 2);
+  }
+
+  // Anchor village center snap
   setTile(baseX, baseY, true);
 
+  // 2. Completely Randomized & Organic Village Street Generation (Asymmetric branches, winding alleys, cul-de-sacs)
   const cardDirs = [
     { dx: 1, dy: 0 },
     { dx: -1, dy: 0 },
@@ -2780,118 +2782,61 @@ export function initClanRoadNetwork(group) {
     { dx: 0, dy: -1 }
   ];
 
-  // Distinct Urban Archetype Design
-  const archetype = Math.abs((group.id || 0) + (group.name ? group.name.charCodeAt(0) : 0)) % 4;
+  // Number of organic radiating branches: 3 to 6
+  const numBranches = Math.floor(Math.random() * 4) + 3;
+  const branchDirs = [...cardDirs, ...cardDirs].sort(() => Math.random() - 0.5);
 
-  if (archetype === 0) {
-    // ARCHETYPE 0: Grid Castrum (Cross avenues & parallel residential streets)
-    const axes = [
-      { dx: 1, dy: 0, len: 10 },
-      { dx: -1, dy: 0, len: 10 },
-      { dx: 0, dy: 1, len: 10 },
-      { dx: 0, dy: -1, len: 10 }
-    ];
-    for (const ax of axes) {
-      let cx = baseX;
-      let cy = baseY;
-      for (let s = 1; s <= ax.len; s++) {
-        const nx = baseX + ax.dx * s;
-        const ny = baseY + ax.dy * s;
-        if (!isLandTile(nx, ny)) {
-          setTile(cx, cy, true);
-          break;
-        }
-        cx = nx;
-        cy = ny;
-        maybeClaimZone(cx, cy);
-        const isSnap = (s === ax.len || s === 5);
-        setTile(cx, cy, isSnap);
-      }
-    }
-  } else if (archetype === 1) {
-    // ARCHETYPE 1: Radial Organic (Branching curves & diagonal-oriented streets)
-    const startDirs = [...cardDirs].sort(() => Math.random() - 0.5);
-    for (let i = 0; i < 3; i++) {
-      const dir = startDirs[i];
-      const len = Math.floor(Math.random() * 5) + 8;
-      let cx = baseX;
-      let cy = baseY;
-      for (let s = 1; s <= len; s++) {
-        const nx = baseX + dir.dx * s;
-        const ny = baseY + dir.dy * s;
-        if (!isLandTile(nx, ny)) {
-          setTile(cx, cy, true);
-          break;
-        }
-        cx = nx;
-        cy = ny;
-        maybeClaimZone(cx, cy);
-        const isSnap = (s === len || s === Math.floor(len / 2));
-        setTile(cx, cy, isSnap);
-      }
-    }
-  } else if (archetype === 2) {
-    // ARCHETYPE 2: Boulevard (Long grand spine + orthogonal side street alleys)
-    const spineDir = cardDirs[Math.floor(Math.random() * cardDirs.length)];
-    const perpDirs = cardDirs.filter(d => (d.dx !== spineDir.dx && d.dx !== -spineDir.dx) || (d.dy !== spineDir.dy && d.dy !== -spineDir.dy));
+  for (let b = 0; b < numBranches; b++) {
+    const startDir = branchDirs[b % branchDirs.length];
+    let curDx = startDir.dx;
+    let curDy = startDir.dy;
 
     let cx = baseX;
     let cy = baseY;
-    for (let s = 1; s <= 14; s++) {
-      const nx = baseX + spineDir.dx * s;
-      const ny = baseY + spineDir.dy * s;
+    const branchLength = Math.floor(Math.random() * 8) + 5; // 5 to 12 tiles
+
+    for (let s = 1; s <= branchLength; s++) {
+      // 25% chance to wander / meander organically to a perpendicular direction
+      if (s > 2 && Math.random() < 0.25) {
+        if (curDx !== 0) {
+          curDy = Math.random() < 0.5 ? 1 : -1;
+          curDx = 0;
+        } else {
+          curDx = Math.random() < 0.5 ? 1 : -1;
+          curDy = 0;
+        }
+      }
+
+      const nx = cx + curDx;
+      const ny = cy + curDy;
       if (!isLandTile(nx, ny)) {
-        setTile(cx, cy, true);
+        setTile(cx, cy);
         break;
       }
+
       cx = nx;
       cy = ny;
       maybeClaimZone(cx, cy);
-      const isSnap = (s % 4 === 0);
-      setTile(cx, cy, isSnap);
+      setTile(cx, cy);
 
-      // Branch short side street alley from snap
-      if (isSnap && perpDirs.length > 0) {
-        const pDir = perpDirs[(s / 4) % perpDirs.length];
-        let px = cx;
-        let py = cy;
-        for (let ps = 1; ps <= 6; ps++) {
-          const pnx = cx + pDir.dx * ps;
-          const pny = cy + pDir.dy * ps;
-          if (!isLandTile(pnx, pny)) {
-            setTile(px, py, true);
+      // 30% chance to spawn an asymmetric short side alley
+      if (s > 3 && s % 4 === 0 && Math.random() < 0.5) {
+        const perpDx = -curDy;
+        const perpDy = curDx;
+        const alleyLen = Math.floor(Math.random() * 4) + 3;
+        let ax = cx;
+        let ay = cy;
+        for (let as = 1; as <= alleyLen; as++) {
+          const anx = ax + perpDx;
+          const any = ay + perpDy;
+          if (!isLandTile(anx, any)) {
+            setTile(ax, ay);
             break;
           }
-          px = pnx;
-          py = pny;
-          maybeClaimZone(px, py);
-          setTile(px, py, ps === 6);
-        }
-      }
-    }
-  } else {
-    // ARCHETYPE 3: Plaza Ring (Ring street around the central plaza with radial garden spokes)
-    const ringRadius = 4;
-    for (let ox = -ringRadius; ox <= ringRadius; ox++) {
-      for (let oy = -ringRadius; oy <= ringRadius; oy++) {
-        if (Math.max(Math.abs(ox), Math.abs(oy)) === ringRadius) {
-          const rx = baseX + ox;
-          const ry = baseY + oy;
-          if (isLandTile(rx, ry)) {
-            maybeClaimZone(rx, ry);
-            const isCorner = Math.abs(ox) === ringRadius && Math.abs(oy) === ringRadius;
-            setTile(rx, ry, isCorner);
-          }
-        }
-      }
-    }
-    // Cardinal spoke connector from center to ring
-    for (const dir of cardDirs) {
-      for (let s = 1; s <= ringRadius; s++) {
-        const sx = baseX + dir.dx * s;
-        const sy = baseY + dir.dy * s;
-        if (isLandTile(sx, sy)) {
-          setTile(sx, sy, s === ringRadius);
+          ax = anx;
+          ay = any;
+          maybeClaimZone(ax, ay);
+          setTile(ax, ay);
         }
       }
     }
@@ -2903,7 +2848,6 @@ export function initClanRoadNetwork(group) {
 
 /**
  * Expands the clan road network by digging more dirt roads.
- * If existing snap points cannot expand further (e.g. hit water or boundaries), spawns a new disconnected street on nearby land.
  */
 export function expandClanRoadNetwork(group, count = 3) {
   if (!group) return [];
@@ -2918,17 +2862,17 @@ export function expandClanRoadNetwork(group, count = 3) {
     roadMap.set(`${r.x}_${r.y}`, r);
   }
 
-  function setTile(x, y, isSnap) {
+  function setTile(x, y) {
+    if (!isLandTile(x, y)) return;
     const k = `${x}_${y}`;
     if (!roadMap.has(k)) {
-      const entry = { x, y, type: "road", isSnapPoint: !!isSnap, groupId: group.id };
+      const hasParallelLeftRight = (roadMap.has(`${x-1}_${y}`) && roadMap.has(`${x-1}_${y-1}`)) || (roadMap.has(`${x+1}_${y}`) && roadMap.has(`${x+1}_${y-1}`));
+      const hasParallelUpDown = (roadMap.has(`${x}_${y-1}`) && roadMap.has(`${x-1}_${y-1}`)) || (roadMap.has(`${x}_${y+1}`) && roadMap.has(`${x-1}_${y+1}`));
+      if (hasParallelLeftRight || hasParallelUpDown) return;
+
+      const entry = { x, y, type: "road", groupId: group.id };
       roadMap.set(k, entry);
       planned.push(entry);
-    } else {
-      if (isSnap) {
-        const entry = roadMap.get(k);
-        entry.isSnapPoint = true;
-      }
     }
   }
 
@@ -2948,90 +2892,31 @@ export function expandClanRoadNetwork(group, count = 3) {
     { dx: 0, dy: -1 }
   ];
 
-  let successfulExpansions = 0;
-
   for (let i = 0; i < count; i++) {
-    const snapPoints = planned.filter(r => r.isSnapPoint);
-    let expanded = false;
-
-    if (snapPoints.length > 0) {
-      const shuffledSnaps = [...snapPoints].sort(() => Math.random() - 0.5);
-      for (const startSnap of shuffledSnaps) {
-        const availableDirs = cardDirs.filter(d => isLandTile(startSnap.x + d.dx, startSnap.y + d.dy) && !roadMap.has(`${startSnap.x + d.dx}_${startSnap.y + d.dy}`));
+    if (planned.length > 0) {
+      const shuffledRoads = [...planned].sort(() => Math.random() - 0.5);
+      for (const startRoad of shuffledRoads) {
+        const availableDirs = cardDirs.filter(d => isLandTile(startRoad.x + d.dx, startRoad.y + d.dy) && !roadMap.has(`${startRoad.x + d.dx}_${startRoad.y + d.dy}`));
         if (availableDirs.length === 0) continue;
 
         const dir = availableDirs[Math.floor(Math.random() * availableDirs.length)];
-        const len = Math.floor(Math.random() * 5) + 8; // 8 to 12 tiles
+        const len = Math.floor(Math.random() * 5) + 6; // 6 to 10 tiles
 
-        let cx = startSnap.x;
-        let cy = startSnap.y;
+        let cx = startRoad.x;
+        let cy = startRoad.y;
         for (let s = 1; s <= len; s++) {
-          const nx = startSnap.x + dir.dx * s;
-          const ny = startSnap.y + dir.dy * s;
-          const curW = getSimWorld();
-          const t = curW ? (curW.getTile ? curW.getTile(nx, ny) : 0) : 0;
-          if (t === 5) { // Stop at deep mountain
-            setTile(cx, cy, true);
+          const nx = cx + dir.dx;
+          const ny = cy + dir.dy;
+          if (!isLandTile(nx, ny)) {
+            setTile(cx, cy);
             break;
           }
-
-          // Ensure road NEVER intersects with any existing building
-          let hasOccupyingBuilding = false;
-          for (const e of entityRegistry.values()) {
-            if (!e.destroyed && e.x === nx && e.y === ny && (e.properties?.house || e.properties?.warehouse || e.properties?.well || e.properties?.campfire || e.properties?.door || (e.properties?.structure && !e.properties?.road))) {
-              hasOccupyingBuilding = true;
-              break;
-            }
-          }
-          if (hasOccupyingBuilding) {
-            setTile(cx, cy, true);
-            break;
-          }
-
           cx = nx;
           cy = ny;
           maybeClaimZone(cx, cy);
-          const isSnap = (s === len || s === Math.floor(len / 2));
-          setTile(cx, cy, isSnap);
+          setTile(cx, cy);
         }
-        expanded = true;
-        successfulExpansions++;
         break;
-      }
-    }
-
-    // Disconnected / Detached Secondary Road Feature:
-    // If existing roads cannot expand further (blocked by water/buildings/edges), start a new detached street in unroaded land!
-    if (!expanded) {
-      for (const zk of group.claimedZones) {
-        const zp = zk.includes("_") ? zk.split("_") : zk.split(",");
-        const zx = parseInt(zp[0], 10) || 32;
-        const zy = parseInt(zp[1], 10) || 32;
-        const zoneHasRoad = planned.some(r => Math.floor(r.x / sz) === zx && Math.floor(r.y / sz) === zy);
-        if (!zoneHasRoad) {
-          // Found a land zone with no roads: start a detached neighborhood street!
-          const cx = zx * sz + Math.floor(sz / 2);
-          const cy = zy * sz + Math.floor(sz / 2);
-          if (isLandTile(cx, cy)) {
-            setTile(cx, cy, true);
-            const dir = cardDirs[Math.floor(Math.random() * cardDirs.length)];
-            let sx = cx;
-            let sy = cy;
-            for (let s = 1; s <= 8; s++) {
-              const nx = cx + dir.dx * s;
-              const ny = cy + dir.dy * s;
-              if (!isLandTile(nx, ny)) {
-                setTile(sx, sy, true);
-                break;
-              }
-              sx = nx;
-              sy = ny;
-              setTile(sx, sy, s === 8 || s === 4);
-            }
-            successfulExpansions++;
-            break;
-          }
-        }
       }
     }
   }
@@ -3044,7 +2929,6 @@ export function expandClanRoadNetwork(group, count = 3) {
  * 1. Estoque (Warehouse / Stockpile)
  * 2. Poço (Water Well)
  * 3. Fogueira (Campfire)
- * Constraint: NONE of these 3 structures can be built on a road or within the 4 adjacent tiles of any snap point!
  * Spacing: Each structure is comfortably spaced out with at least 3 tiles distance between each other.
  */
 export function initClanPlaza(group) {
@@ -3053,20 +2937,25 @@ export function initClanPlaza(group) {
     return group._plaza;
   }
 
-  // Ensure road network is initialized first
   initClanRoadNetwork(group);
 
   const sz = currentZoneSize || 8;
-  const firstZone = group.claimedZones?.[0] || "32_32";
-  const zp = firstZone.includes("_") ? firstZone.split("_") : firstZone.split(",");
-  const baseZx = parseInt(zp[0], 10) || 32;
-  const baseZy = parseInt(zp[1], 10) || 32;
-  const baseX = baseZx * sz + Math.floor(sz / 2);
-  const baseY = baseZy * sz + Math.floor(sz / 2);
+  let baseX = 32 * sz + 4;
+  let baseY = 32 * sz + 4;
+  if (group._plannedRoads && group._plannedRoads.length > 0) {
+    baseX = group._plannedRoads[0].x;
+    baseY = group._plannedRoads[0].y;
+  } else {
+    const firstZone = group.claimedZones?.[0] || "32_32";
+    const zp = firstZone.includes("_") ? firstZone.split("_") : firstZone.split(",");
+    const baseZx = parseInt(zp[0], 10) || 32;
+    const baseZy = parseInt(zp[1], 10) || 32;
+    baseX = baseZx * sz + Math.floor(sz / 2);
+    baseY = baseZy * sz + Math.floor(sz / 2);
+  }
 
   const plannedRoadSet = new Set((group._plannedRoads || []).map(r => `${r.x}_${r.y}`));
 
-  // Check if any praça entities already exist in the world
   let existingWh = null, existingCf = null, existingWell = null;
   for (const e of entityRegistry.values()) {
     if (!e.destroyed && isTileInClaimedZones(e.x, e.y, group.claimedZones)) {
@@ -3087,7 +2976,6 @@ export function initClanPlaza(group) {
         if (!isLandTile(tx, ty)) continue;
         if (!isTileInClaimedZones(tx, ty, group.claimedZones)) continue;
         if (plannedRoadSet.has(tk) || isRoadTile(tx, ty)) continue;
-        if (isAdjacentToSnapPoint(tx, ty, group)) continue; // NO building adjacent to snap point!
         validTiles.push({ x: tx, y: ty });
       }
     }
@@ -3097,10 +2985,10 @@ export function initClanPlaza(group) {
   if (validTiles.length < 3) {
     for (let ox = 1; ox < sz - 1; ox++) {
       for (let oy = 1; oy < sz - 1; oy++) {
-        const tx = baseZx * sz + ox;
-        const ty = baseZy * sz + oy;
+        const tx = Math.floor(baseX / sz) * sz + ox;
+        const ty = Math.floor(baseY / sz) * sz + oy;
         const tk = `${tx}_${ty}`;
-        if (isLandTile(tx, ty) && !plannedRoadSet.has(tk) && !isRoadTile(tx, ty) && !isAdjacentToSnapPoint(tx, ty, group)) {
+        if (isLandTile(tx, ty) && !plannedRoadSet.has(tk) && !isRoadTile(tx, ty)) {
           if (!validTiles.some(t => t.x === tx && t.y === ty)) {
             validTiles.push({ x: tx, y: ty });
           }
@@ -3109,7 +2997,6 @@ export function initClanPlaza(group) {
     }
   }
 
-  // Select 3 spacious plaza locations with at least 3 tiles distance between each other
   const plazaPicks = [];
   if (existingWh) plazaPicks.push(existingWh);
   if (existingCf) plazaPicks.push(existingCf);
@@ -3131,6 +3018,7 @@ export function initClanPlaza(group) {
     campfire: cfPos,
     well: wellPos
   };
+
   return group._plaza;
 }
 
@@ -3158,17 +3046,15 @@ export function isPraçaCompleted(group) {
 }
 
 /**
- * Returns blueprint grid positions and types for clan buildings (Memoized).
- * Enforces:
+ * Returns prioritized blueprint tiles for a clan:
  * 1. Praça First (Warehouse, Campfire, Well).
- * 2. Only after Praça is built: plan houses along normal road borders (NOT adjacent to snap points).
- * 3. Expands roads by 3 whenever road occupancy reaches >= 50%.
+ * 2. Only after Praça is built: plan houses along normal road borders.
  */
 export function getClanBlueprintTiles(group) {
   if (!group || !group.claimedZones) return [];
 
   // Fast Memoization Check (60 ticks cache)
-  const versionKey = `${group.claimedZones.join(",")}_${(group.members || []).length}`;
+  const versionKey = `${group.claimedZones.join(",")}_${(group.members || []).length}_${group._plannedRoads?.length}`;
   if (group._cachedBlueprint && group._cachedBlueprintKey === versionKey && (currentTick - (group._cachedBlueprintTick || 0) < 60)) {
     return group._cachedBlueprint;
   }
@@ -3181,7 +3067,6 @@ export function getClanBlueprintTiles(group) {
   initClanRoadNetwork(group);
   const plaza = initClanPlaza(group);
 
-  // 1. Central Praça Blueprints (Warehouse, Campfire, Well)
   let warehouseEnt = null;
   let campfireEnt = null;
   let wellEnt = null;
@@ -3194,25 +3079,21 @@ export function getClanBlueprintTiles(group) {
     }
   }
 
-  // Praça Warehouse
   const whX = warehouseEnt ? warehouseEnt.x : plaza.warehouse.x;
   const whY = warehouseEnt ? warehouseEnt.y : plaza.warehouse.y;
   tiles.push({ x: whX, y: whY, type: "warehouse" });
   occupiedTiles.add(`${whX}_${whY}`);
 
-  // Praça Campfire
   const cfX = campfireEnt ? campfireEnt.x : plaza.campfire.x;
   const cfY = campfireEnt ? campfireEnt.y : plaza.campfire.y;
   tiles.push({ x: cfX, y: cfY, type: "campfire" });
   occupiedTiles.add(`${cfX}_${cfY}`);
 
-  // Praça Well
   const wellX = wellEnt ? wellEnt.x : plaza.well.x;
   const wellY = wellEnt ? wellEnt.y : plaza.well.y;
   tiles.push({ x: wellX, y: wellY, type: "well" });
   occupiedTiles.add(`${wellX}_${wellY}`);
 
-  // 2. Track existing houses in territory
   for (const ent of entityRegistry.values()) {
     if (!ent.destroyed && ent.properties.house && isTileInClaimedZones(ent.x, ent.y, group.claimedZones)) {
       tiles.push({ x: ent.x, y: ent.y, type: "house", ownerId: ent.properties.house.ownerId });
@@ -3220,7 +3101,6 @@ export function getClanBlueprintTiles(group) {
     }
   }
 
-  // 4. Find all candidate house plots along road edges (adjacent to normal roads and NOT adjacent to snap points)
   let plannedRoadSet = new Set((group._plannedRoads || []).map(r => `${r.x}_${r.y}`));
   const candidatePlots = [];
 
@@ -3239,19 +3119,13 @@ export function getClanBlueprintTiles(group) {
 
           const curW = getSimWorld();
           const t = curW ? (curW.getTile ? curW.getTile(px, py) : 0) : 0;
-          if (t === 5 || t === 2) continue; // Skip deep mountain and water bodies
+          if (t === 5 || t === 2) continue;
           if (plannedRoadSet.has(tk) || isRoadTile(px, py)) continue;
           if (occupiedTiles.has(tk)) continue;
 
-          // Rule: Must NOT be adjacent to any snap point!
-          if (isAdjacentToSnapPoint(px, py, group)) continue;
-          // Rule: Must be within 3 tiles of a normal road (allows organic setback layouts)
-          if (!isNearNormalRoad(px, py, group, 3)) continue;
+          if (!isNearNormalRoad(px, py, group, 2)) continue;
 
-          candidatePlots.push({
-            x: px,
-            y: py
-          });
+          candidatePlots.push({ x: px, y: py });
         }
       }
     }
@@ -3259,25 +3133,22 @@ export function getClanBlueprintTiles(group) {
 
   collectCandidatePlots();
 
-  // If candidate plots are running low or group has grown, expand road network organically!
-  if (candidatePlots.length < Math.max(6, members.length * 2)) {
+  if (candidatePlots.length < Math.max(4, members.length)) {
     expandClanRoadNetwork(group, 2);
     plannedRoadSet = new Set((group._plannedRoads || []).map(r => `${r.x}_${r.y}`));
     collectCandidatePlots();
   }
 
-  // Sort candidate plots deterministically by distance from central plaza warehouse
   candidatePlots.sort((a, b) => {
     const da = Math.abs(a.x - whX) + Math.abs(a.y - whY);
     const db = Math.abs(b.x - whX) + Math.abs(b.y - whY);
     return da - db;
   });
 
-  // 5. Assign permanent house plots to members (Enforcing at least 3 tiles distance between each house)
   if (!group._housePlots) group._housePlots = {};
   const memberSet = new Set(members);
 
-  function isFarEnoughFromBuildings(x, y, currentTiles, minDist = 3) {
+  function isFarEnoughFromBuildings(x, y, currentTiles, minDist = 2) {
     for (const t of currentTiles) {
       if (t.type === "house" || t.type === "warehouse" || t.type === "campfire" || t.type === "well") {
         const chebDist = Math.max(Math.abs(x - t.x), Math.abs(y - t.y));
@@ -3297,26 +3168,29 @@ export function getClanBlueprintTiles(group) {
         continue;
       }
 
-      // Check persistent assigned plot (must satisfy at least 3 tiles distance rule)
+      let chosenPlot = null;
       if (group._housePlots[ownerId]) {
         const p = group._housePlots[ownerId];
-        if (isLandTile(p.x, p.y) && !plannedRoadSet.has(`${p.x}_${p.y}`) && !isRoadTile(p.x, p.y) && !isAdjacentToSnapPoint(p.x, p.y, group) && isNearNormalRoad(p.x, p.y, group, 3) && isFarEnoughFromBuildings(p.x, p.y, tiles, 3)) {
-          tiles.push({ x: p.x, y: p.y, type: "house", ownerId });
-          occupiedTiles.add(`${p.x}_${p.y}`);
-          continue;
-        } else {
-          delete group._housePlots[ownerId];
+        const tk = `${p.x}_${p.y}`;
+        if (!occupiedTiles.has(tk) && isLandTile(p.x, p.y) && !isRoadTile(p.x, p.y) && isNearNormalRoad(p.x, p.y, group, 2) && isFarEnoughFromBuildings(p.x, p.y, tiles, 2)) {
+          chosenPlot = p;
         }
       }
 
-      // Pick from available candidate plots respecting >= 3 tiles distance from any other house/building
-      const available = candidatePlots.filter(c => !occupiedTiles.has(`${c.x}_${c.y}`) && isFarEnoughFromBuildings(c.x, c.y, tiles, 3));
+      if (!chosenPlot) {
+        for (const cand of candidatePlots) {
+          const tk = `${cand.x}_${cand.y}`;
+          if (!occupiedTiles.has(tk) && isFarEnoughFromBuildings(cand.x, cand.y, tiles, 2)) {
+            chosenPlot = cand;
+            group._housePlots[ownerId] = { x: cand.x, y: cand.y };
+            break;
+          }
+        }
+      }
 
-      if (available.length > 0) {
-        const chosen = available[0];
-        group._housePlots[ownerId] = { x: chosen.x, y: chosen.y };
-        tiles.push({ x: chosen.x, y: chosen.y, type: "house", ownerId });
-        occupiedTiles.add(`${chosen.x}_${chosen.y}`);
+      if (chosenPlot) {
+        tiles.push({ x: chosenPlot.x, y: chosenPlot.y, type: "house", ownerId });
+        occupiedTiles.add(`${chosenPlot.x}_${chosenPlot.y}`);
       }
     }
   }
@@ -3348,7 +3222,7 @@ export function getClanBlueprintTiles(group) {
           const py = zy * sz + oy;
           const isPerim = isPerimeterEdge(zx, zy, ox, oy, group.claimedZones);
 
-          if (isPerim && isLandTile(px, py) && !isRoadTile(px, py) && !plannedRoadSet.has(`${px}_${py}`) && !isAdjacentToSnapPoint(px, py, group)) {
+          if (isPerim && isLandTile(px, py) && !isRoadTile(px, py) && !plannedRoadSet.has(`${px}_${py}`)) {
             const isGateway = (oy === 0 && (ox === 3 || ox === 4)) ||
                               (oy === sz - 1 && (ox === 3 || ox === 4)) ||
                               (ox === 0 && (oy === 3 || oy === 4)) ||
@@ -6021,7 +5895,7 @@ export function createGroupMemberProp() {
           const tile = world.getTile(px, py);
           const isLand = (tile !== 2 && tile !== 5 && tile !== 1 && tile !== 4);
           const hasNearbyPlant = !!getEntityAtTileByProp(px, py, "photosynthesis") || !!getEntityAtTileByProp(px, py, "deep_root");
-          if (isLand && !hasNearbyPlant) {
+          if (isLand && !isRoadTile(px, py) && !hasNearbyPlant) {
             targetX = px;
             targetY = py;
             canPlant = true;
@@ -7565,7 +7439,7 @@ export function createLocomotionProp() {
                 if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
                 const px = ent.x + dx;
                 const py = ent.y + dy;
-                if (isTileInClaimedZones(px, py, group.claimedZones) && isLandTile(px, py) && !isRoadTile(px, py) && !isAdjacentToSnapPoint(px, py, group)) {
+                if (isTileInClaimedZones(px, py, group.claimedZones) && isLandTile(px, py) && !isRoadTile(px, py)) {
                   targetPlot = { x: px, y: py };
                   break;
                 }
@@ -9959,7 +9833,7 @@ export function createSeedGerminationProp(species = "oak", checkInterval = 4.0, 
           (this.species === "pine" && (tile === 0 || tile === 4 || tile === 1)) ||
           (tile === 0 || tile === 3);
 
-        if (isSuitable && Math.random() < this.sproutChance) {
+        if (isSuitable && !isRoadTile(ent.x, ent.y) && Math.random() < this.sproutChance) {
           let newPlant = null;
           if (this.species === "willow") {
             newPlant = createWillowTree(ent.x, ent.y);

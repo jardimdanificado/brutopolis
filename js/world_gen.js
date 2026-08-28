@@ -11,11 +11,9 @@ export const TILE_WATER = 2;       // Ocean Water / Lakes
 export const TILE_SAND = 3;        // Sand / Coastal Beach / Desert
 export const TILE_STONE = 4;       // Rocky Ground / Mountain Foothill
 export const TILE_VOID = 5;
-export const TILE_ROAD_GRASS = 6;  // Dirt Road / Country Lane (in fertile grassland)
-export const TILE_ROAD_SAND = 7;   // Sand Paved Track (in dunes / beach)
-export const TILE_ROAD_STONE = 8;  // Cobblestone Highway (in rocky / foothill terrain)
-export const TILE_ROAD_WATER = 9;  // Flat Wooden Deck Bridge (over water, clean railing-free pier deck)
-export const TILE_ROAD_SNAP = 10;  // Road Hub / Crossroad Plaza Stone Snap
+export const TILE_ROAD_GRASS = 6;  // Dirt Road / Packed Soil Track (Grassland)
+export const TILE_ROAD_SAND = 7;   // Sand Paved Track (Dunes / Beach)
+export const TILE_ROAD_STONE = 8;  // Cobblestone Highway (Rocky Foothills / Mountain)
 
 export const MAP_PRESET_ARCHIPELAGO = {
   seed: 0,
@@ -170,7 +168,7 @@ export function world_gen_is_walkable(map, x, y, move_type = 1) {
   if (t === TILE_VOID) return false;
   if (move_type === 3) return true; // Fly
   if (move_type === 2) return t === TILE_WATER; // Aquatic
-  if (move_type === 1) return t === TILE_FLOOR || t === TILE_SAND || t === TILE_STONE || (t >= TILE_ROAD_GRASS && t <= TILE_ROAD_SNAP); // Terrestrial (walks on land and bridges)
+  if (move_type === 1) return t === TILE_FLOOR || t === TILE_SAND || t === TILE_STONE || (t >= TILE_ROAD_GRASS && t <= TILE_ROAD_STONE); // Terrestrial (walks on land)
   return false;
 }
 

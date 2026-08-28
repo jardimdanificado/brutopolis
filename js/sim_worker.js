@@ -226,21 +226,24 @@ function generateConfiguredWorld(config) {
   const inBounds = (x, y) => x >= minX && x < maxX && y >= minY && y < maxY;
   const spawnBounds = { minX, maxX, minY, maxY };
 
+  // 1. Procedural Global Continental Road Network (Inter-regional highways generated on dry land at world inception)
+  generateWorldRoadNetwork(world, minX, maxX, minY, maxY, genZoneSize, genSeed, entities);
+
   const floraCount = (base) => Math.max(1, Math.round(base * plantMult));
-  spawnRandomGlobal(floraCount(80), createOakTree, (x, y) => inBounds(x, y) && world.getTile(x, y) === 0, spawnBounds);
-  spawnRandomGlobal(floraCount(60), createWillowTree, (x, y) => inBounds(x, y) && (world.getTile(x, y) === 0 || world.getTile(x, y) === 3), spawnBounds);
-  spawnRandomGlobal(floraCount(65), createCactus, (x, y) => inBounds(x, y) && world.getTile(x, y) === 3, spawnBounds);
-  spawnRandomGlobal(floraCount(50), createAlpineShrub, (x, y) => inBounds(x, y) && (world.getTile(x, y) === 4 || world.getTile(x, y) === 1), spawnBounds);
-  spawnRandomGlobal(floraCount(55), createPineTree, (x, y) => inBounds(x, y) && (world.getTile(x, y) === 4 || world.getTile(x, y) === 0), spawnBounds);
+  spawnRandomGlobal(floraCount(80), createOakTree, (x, y) => inBounds(x, y) && world.getTile(x, y) === 0 && !isRoadTile(x, y), spawnBounds);
+  spawnRandomGlobal(floraCount(60), createWillowTree, (x, y) => inBounds(x, y) && (world.getTile(x, y) === 0 || world.getTile(x, y) === 3) && !isRoadTile(x, y), spawnBounds);
+  spawnRandomGlobal(floraCount(65), createCactus, (x, y) => inBounds(x, y) && world.getTile(x, y) === 3 && !isRoadTile(x, y), spawnBounds);
+  spawnRandomGlobal(floraCount(50), createAlpineShrub, (x, y) => inBounds(x, y) && (world.getTile(x, y) === 4 || world.getTile(x, y) === 1) && !isRoadTile(x, y), spawnBounds);
+  spawnRandomGlobal(floraCount(55), createPineTree, (x, y) => inBounds(x, y) && (world.getTile(x, y) === 4 || world.getTile(x, y) === 0) && !isRoadTile(x, y), spawnBounds);
   spawnRandomGlobal(floraCount(80), createWaterLily, (x, y) => inBounds(x, y) && world.getTile(x, y) === 2, spawnBounds);
   spawnRandomGlobal(floraCount(100), createSeaweed, (x, y) => inBounds(x, y) && world.getTile(x, y) === 2, spawnBounds);
 
-  spawnRandomGlobal(floraCount(60), (x, y) => createSeedEntity(x, y, "large", "oak"), (x, y) => inBounds(x, y) && world.getTile(x, y) === 0, spawnBounds);
-  spawnRandomGlobal(floraCount(40), (x, y) => createSeedEntity(x, y, "small", "willow"), (x, y) => inBounds(x, y) && (world.getTile(x, y) === 0 || world.getTile(x, y) === 3), spawnBounds);
-  spawnRandomGlobal(floraCount(30), (x, y) => createFruit(x, y, "large", "cactus"), (x, y) => inBounds(x, y) && world.getTile(x, y) === 3, spawnBounds);
-  spawnRandomGlobal(floraCount(40), (x, y) => createFruit(x, y, "large", "oak"), (x, y) => inBounds(x, y) && world.isWalkable(x, y), spawnBounds);
-  spawnRandomGlobal(floraCount(50), createWoodItem, (x, y) => inBounds(x, y) && world.getTile(x, y) === 0, spawnBounds);
-  spawnRandomGlobal(floraCount(50), createStoneItem, (x, y) => inBounds(x, y) && (world.getTile(x, y) === 4 || world.getTile(x, y) === 1), spawnBounds);
+  spawnRandomGlobal(floraCount(60), (x, y) => createSeedEntity(x, y, "large", "oak"), (x, y) => inBounds(x, y) && world.getTile(x, y) === 0 && !isRoadTile(x, y), spawnBounds);
+  spawnRandomGlobal(floraCount(40), (x, y) => createSeedEntity(x, y, "small", "willow"), (x, y) => inBounds(x, y) && (world.getTile(x, y) === 0 || world.getTile(x, y) === 3) && !isRoadTile(x, y), spawnBounds);
+  spawnRandomGlobal(floraCount(30), (x, y) => createFruit(x, y, "large", "cactus"), (x, y) => inBounds(x, y) && world.getTile(x, y) === 3 && !isRoadTile(x, y), spawnBounds);
+  spawnRandomGlobal(floraCount(40), (x, y) => createFruit(x, y, "large", "oak"), (x, y) => inBounds(x, y) && world.isWalkable(x, y) && !isRoadTile(x, y), spawnBounds);
+  spawnRandomGlobal(floraCount(50), createWoodItem, (x, y) => inBounds(x, y) && world.getTile(x, y) === 0 && !isRoadTile(x, y), spawnBounds);
+  spawnRandomGlobal(floraCount(50), createStoneItem, (x, y) => inBounds(x, y) && (world.getTile(x, y) === 4 || world.getTile(x, y) === 1) && !isRoadTile(x, y), spawnBounds);
 
   let centerPlayX = minX + Math.floor(genWidth / 2);
   let centerPlayY = minY + Math.floor(genHeight / 2);
@@ -286,9 +289,6 @@ function generateConfiguredWorld(config) {
 
   let firstLeaderId = -1;
 
-  // 1. Procedural Global Continental Road Network (Inter-regional highways & bridges generated at world inception)
-  generateWorldRoadNetwork(world, minX, maxX, minY, maxY, genZoneSize, genSeed, entities);
-
   // 2. Spawn Clan Embark Parties directly along the continental road network
   if (genSpawnPioneers) {
     const spawnedEmbarkCenters = [];
@@ -298,7 +298,7 @@ function generateConfiguredWorld(config) {
     for (let y = minY; y < maxY; y++) {
       for (let x = minX; x < maxX; x++) {
         const t = world.getTile(x, y);
-        if (t >= 6 && t <= 10) {
+        if (t >= 6 && t <= 9) {
           allRoadTiles.push({ x, y, t });
         }
       }
@@ -306,8 +306,8 @@ function generateConfiguredWorld(config) {
 
     function findSuitableEmbarkSpot(targetX, targetY) {
       if (allRoadTiles.length === 0) {
-        world.setTile(targetX, targetY, 10); // TILE_ROAD_SNAP
-        allRoadTiles.push({ x: targetX, y: targetY, t: 10 });
+        world.setTile(targetX, targetY, 6); // TILE_ROAD_GRASS
+        allRoadTiles.push({ x: targetX, y: targetY, t: 6 });
         return { x: targetX, y: targetY };
       }
 
