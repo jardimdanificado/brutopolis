@@ -799,6 +799,72 @@ function createBoneWallGeometry() {
   return mergeBufferGeometries(parts);
 }
 
+// 3D Wooden Bridge Geometry (Elevated timber deck with side railings & vertical support pilings)
+function createWoodBridgeGeometry() {
+  const parts = [];
+  const deck = new THREE.BoxGeometry(0.98, 0.08, 0.98);
+  deck.translate(0, 0.04, 0);
+  parts.push(deck);
+
+  const railL = new THREE.BoxGeometry(0.06, 0.22, 0.98);
+  railL.translate(-0.46, 0.15, 0);
+  parts.push(railL);
+
+  const railR = new THREE.BoxGeometry(0.06, 0.22, 0.98);
+  railR.translate(0.46, 0.15, 0);
+  parts.push(railR);
+
+  const stilt = new THREE.CylinderGeometry(0.06, 0.06, 1.30, 6);
+  const s1 = stilt.clone(); s1.translate(-0.40, -0.60, -0.40); parts.push(s1);
+  const s2 = stilt.clone(); s2.translate( 0.40, -0.60, -0.40); parts.push(s2);
+  const s3 = stilt.clone(); s3.translate(-0.40, -0.60,  0.40); parts.push(s3);
+  const s4 = stilt.clone(); s4.translate( 0.40, -0.60,  0.40); parts.push(s4);
+
+  return mergeBufferGeometries(parts);
+}
+
+// 3D Stone Arch Bridge Geometry (Chiseled stone deck with parapets & heavy masonry piers)
+function createStoneBridgeGeometry() {
+  const parts = [];
+  const deck = new THREE.BoxGeometry(0.98, 0.10, 0.98);
+  deck.translate(0, 0.05, 0);
+  parts.push(deck);
+
+  const parapetL = new THREE.BoxGeometry(0.12, 0.28, 0.98);
+  parapetL.translate(-0.43, 0.18, 0);
+  parts.push(parapetL);
+
+  const parapetR = new THREE.BoxGeometry(0.12, 0.28, 0.98);
+  parapetR.translate(0.43, 0.18, 0);
+  parts.push(parapetR);
+
+  const pier1 = new THREE.BoxGeometry(0.24, 1.40, 0.96);
+  pier1.translate(-0.25, -0.65, 0);
+  parts.push(pier1);
+
+  const pier2 = new THREE.BoxGeometry(0.24, 1.40, 0.96);
+  pier2.translate(0.25, -0.65, 0);
+  parts.push(pier2);
+
+  return mergeBufferGeometries(parts);
+}
+
+// 3D Water Platform / Stilt Foundation Geometry for Houses & Buildings over water
+function createWaterPlatformGeometry() {
+  const parts = [];
+  const deck = new THREE.BoxGeometry(1.68, 0.12, 1.68);
+  deck.translate(0, 0.06, 0);
+  parts.push(deck);
+
+  const stilt = new THREE.CylinderGeometry(0.09, 0.09, 1.40, 6);
+  const p1 = stilt.clone(); p1.translate(-0.72, -0.64, -0.72); parts.push(p1);
+  const p2 = stilt.clone(); p2.translate( 0.72, -0.64, -0.72); parts.push(p2);
+  const p3 = stilt.clone(); p3.translate(-0.72, -0.64,  0.72); parts.push(p3);
+  const p4 = stilt.clone(); p4.translate( 0.72, -0.64,  0.72); parts.push(p4);
+
+  return mergeBufferGeometries(parts);
+}
+
 // Fortified Stone Wall Geometry (Slope-Adaptive Base Skirt + Crenellated Battlements)
 function createStoneWallGeometry() {
   const parts = [];
@@ -1369,6 +1435,21 @@ export class RCT3DRenderer {
         map: createTintedTexture("Feature_Stone_B.png", 0xd0c4b4, 0x3d352e, 1.0),
         dithering: true,
         side: THREE.DoubleSide
+      }),
+      woodBridge: new THREE.MeshLambertMaterial({
+        map: createTintedTexture("Feature_Wood.png", 0x8b5a2b, 0x3a2214, 1.0),
+        dithering: true,
+        side: THREE.DoubleSide
+      }),
+      stoneBridge: new THREE.MeshLambertMaterial({
+        map: createTintedTexture("Feature_Brick_A.png", 0xc8c8c8, 0x4a4a4a, 1.0),
+        dithering: true,
+        side: THREE.DoubleSide
+      }),
+      waterPlatform: new THREE.MeshLambertMaterial({
+        map: createTintedTexture("Feature_Wood.png", 0x7c4c24, 0x2e1a0e, 1.0),
+        dithering: true,
+        side: THREE.DoubleSide
       })
     };
 
@@ -1601,6 +1682,23 @@ export class RCT3DRenderer {
     this.instRoadSnaps = new THREE.InstancedMesh(roadSnapGeo, this.materials.roadSnap, 1600);
     this.instRoadSnaps.receiveShadow = true;
 
+    // 3D Elevated Bridges over Water (Wood & Stone Pillars)
+    const woodBridgeGeo = createWoodBridgeGeometry();
+    this.instWoodBridges = new THREE.InstancedMesh(woodBridgeGeo, this.materials.woodBridge, 1600);
+    this.instWoodBridges.receiveShadow = true;
+    this.instWoodBridges.castShadow = true;
+
+    const stoneBridgeGeo = createStoneBridgeGeometry();
+    this.instStoneBridges = new THREE.InstancedMesh(stoneBridgeGeo, this.materials.stoneBridge, 1600);
+    this.instStoneBridges.receiveShadow = true;
+    this.instStoneBridges.castShadow = true;
+
+    // 3D Water Stilt Platform Foundation for Houses & Buildings over water
+    const waterPlatformGeo = createWaterPlatformGeometry();
+    this.instWaterPlatforms = new THREE.InstancedMesh(waterPlatformGeo, this.materials.waterPlatform, 800);
+    this.instWaterPlatforms.receiveShadow = true;
+    this.instWaterPlatforms.castShadow = true;
+
     // Disable Frustum Culling on Instanced Meshes (Manual Viewport Spatial Grid Culling is active)
     this.instOakTrunks.frustumCulled = false;
     this.instOakLeaves.frustumCulled = false;
@@ -1638,6 +1736,9 @@ export class RCT3DRenderer {
     this.instCampfireFlames.frustumCulled = false;
     this.instRoads.frustumCulled = false;
     this.instRoadSnaps.frustumCulled = false;
+    this.instWoodBridges.frustumCulled = false;
+    this.instStoneBridges.frustumCulled = false;
+    this.instWaterPlatforms.frustumCulled = false;
 
     this.instancedGroup = new THREE.Group();
     this.instancedGroup.add(
@@ -1656,7 +1757,8 @@ export class RCT3DRenderer {
       this.instWoodLogs, this.instStoneItems,
       this.instTorches, this.instTorchesUnlit,
       this.instWoodCampfires, this.instCampfireFlames,
-      this.instRoads, this.instRoadSnaps
+      this.instRoads, this.instRoadSnaps,
+      this.instWoodBridges, this.instStoneBridges, this.instWaterPlatforms
     );
     this.scene.add(this.instancedGroup);
 
@@ -2959,6 +3061,9 @@ export class RCT3DRenderer {
     let campfireFlameCount = 0;
     let roadCount = 0;
     let roadSnapCount = 0;
+    let woodBridgeCount = 0;
+    let stoneBridgeCount = 0;
+    let waterPlatformCount = 0;
 
     const mMatrix = this._mMatrix;
     const scaleMatrix = this._scaleMatrix;
@@ -3081,17 +3186,44 @@ export class RCT3DRenderer {
           this.instCampfireFlames.setMatrixAt(campfireFlameCount++, mMatrix);
         }
       }
-      // --- 3D PAVED ROADS & SNAP POINTS (Flat Ground Slabs) ---
+      // --- 3D PAVED ROADS, BRIDGES & SNAP POINTS (Adaptive Slopes, Ramps & Water Bridges) ---
       else if (isRoad) {
-        const isSnap = !!e.properties?.road?.isSnapPoint || e.properties?.name?.includes("Encaixe") || e.properties?.name?.includes("Snap");
-        if (isSnap && roadSnapCount < 1600) {
+        const tx = Math.floor(e.x);
+        const ty = Math.floor(e.y);
+        const tileType = map?.getTile ? map.getTile(tx, ty) : 0;
+        const isOverWater = (tileType === 2) || (!!e.properties?.road?.isBridge);
+
+        if (isOverWater) {
+          const isStone = (e.properties?.road?.supportMaterial === "stone") || (e.properties?.name?.includes("Pedra"));
+          const bridgeH = 0.08;
           mMatrix.identity();
-          mMatrix.setPosition(e.x + 0.5, surfaceH, e.y + 0.5);
-          this.instRoadSnaps.setMatrixAt(roadSnapCount++, mMatrix);
-        } else if (!isSnap && roadCount < 1600) {
+          mMatrix.setPosition(e.x + 0.5, bridgeH, e.y + 0.5);
+
+          if (isStone && stoneBridgeCount < 1600) {
+            this.instStoneBridges.setMatrixAt(stoneBridgeCount++, mMatrix);
+          } else if (!isStone && woodBridgeCount < 1600) {
+            this.instWoodBridges.setMatrixAt(woodBridgeCount++, mMatrix);
+          }
+        } else {
+          // Adaptive slope & ramp rotation for natural hill grades
+          const h00 = map?.getElevation ? map.getElevation(tx, ty) : surfaceH;
+          const h10 = map?.getElevation ? map.getElevation(tx + 1, ty) : surfaceH;
+          const h01 = map?.getElevation ? map.getElevation(tx, ty + 1) : surfaceH;
+          const h11 = map?.getElevation ? map.getElevation(tx + 1, ty + 1) : surfaceH;
+          const slopeX = (h10 + h11 - h00 - h01) * 0.5;
+          const slopeZ = (h01 + h11 - h00 - h10) * 0.5;
+
           mMatrix.identity();
-          mMatrix.setPosition(e.x + 0.5, surfaceH, e.y + 0.5);
-          this.instRoads.setMatrixAt(roadCount++, mMatrix);
+          this._rotEuler.set(-slopeZ * 0.45, 0, slopeX * 0.45, "YXZ");
+          mMatrix.makeRotationFromEuler(this._rotEuler);
+          mMatrix.setPosition(e.x + 0.5, surfaceH + 0.02, e.y + 0.5);
+
+          const isSnap = !!e.properties?.road?.isSnapPoint || e.properties?.name?.includes("Encaixe") || e.properties?.name?.includes("Snap");
+          if (isSnap && roadSnapCount < 1600) {
+            this.instRoadSnaps.setMatrixAt(roadSnapCount++, mMatrix);
+          } else if (!isSnap && roadCount < 1600) {
+            this.instRoads.setMatrixAt(roadCount++, mMatrix);
+          }
         }
       }
       // --- 3D WALLS (Stone, Wood, Mixed & Slope/Ramp Adaptive) ---
@@ -3203,6 +3335,15 @@ export class RCT3DRenderer {
         scaleMatrix.makeScale(1.0, heightScale, 1.0);
         mMatrix.multiply(scaleMatrix);
         mMatrix.setPosition(e.x + 0.5, surfaceH, e.y + 0.5);
+
+        const htx = Math.floor(e.x);
+        const hty = Math.floor(e.y);
+        const isHouseOverWater = (map?.getTile ? map.getTile(htx, hty) === 2 : false) || (!!h?.isPlatform);
+        if (isHouseOverWater && waterPlatformCount < 800) {
+          const platMat = new THREE.Matrix4();
+          platMat.setPosition(e.x + 0.5, 0.08, e.y + 0.5);
+          this.instWaterPlatforms.setMatrixAt(waterPlatformCount++, platMat);
+        }
 
         if (isCompleted) {
           const houseStyle = h?.style || "mixed";
@@ -3698,6 +3839,13 @@ export class RCT3DRenderer {
     this.instRoads.instanceMatrix.needsUpdate = true;
     this.instRoadSnaps.count = roadSnapCount;
     this.instRoadSnaps.instanceMatrix.needsUpdate = true;
+
+    this.instWoodBridges.count = woodBridgeCount;
+    this.instWoodBridges.instanceMatrix.needsUpdate = true;
+    this.instStoneBridges.count = stoneBridgeCount;
+    this.instStoneBridges.instanceMatrix.needsUpdate = true;
+    this.instWaterPlatforms.count = waterPlatformCount;
+    this.instWaterPlatforms.instanceMatrix.needsUpdate = true;
 
     // Clean inactive dynamic billboards
     for (const [id, spr] of this.entitySprites.entries()) {

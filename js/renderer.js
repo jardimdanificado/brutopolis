@@ -599,9 +599,16 @@ export class Renderer {
         const isWall = !isDoor && !isHouse && !isWarehouse && !isWell && !isCampfire && !isRoad && !e.properties.edible && !e.properties.resourceType && !e.properties.germination && (r.skin?.startsWith("Wall_") || e.properties.name?.includes("Muralha") || e.properties.name?.includes("Wall") || (e.properties.structure && !e.properties.isWell && !e.properties.well));
         let entSkin = r.skin || "Human_Knight_M.png";
         if (isRoad) {
+          const isOverWater = (world && world.getTile(Math.floor(e.x), Math.floor(e.y)) === 2) || (!!e.properties?.road?.isBridge);
           const isSnap = !!e.properties?.road?.isSnapPoint || e.properties?.name?.includes("Encaixe");
-          entSkin = isSnap ? "Feature_Pebbles.png" : "Feature_Stone_B.png";
-          entFg = isSnap ? rgba32(216, 186, 128) : rgba32(155, 118, 83);
+          if (isOverWater) {
+            const isStone = (e.properties?.road?.supportMaterial === "stone") || (e.properties?.name?.includes("Pedra"));
+            entSkin = isStone ? "Feature_Brick_A.png" : "Feature_Wood.png";
+            entFg = isStone ? rgba32(200, 200, 205) : rgba32(140, 90, 45);
+          } else {
+            entSkin = isSnap ? "Feature_Pebbles.png" : "Feature_Stone_B.png";
+            entFg = isSnap ? rgba32(216, 186, 128) : rgba32(155, 118, 83);
+          }
         } else if (isWarehouse) {
           entSkin = "Feature_Wood.png";
         } else if (isWell) {
@@ -616,8 +623,12 @@ export class Renderer {
             entSkin = e.properties.door.isOpen ? "Feature_Door_Open.png" : "Feature_Door_Closed.png";
           }
         } else if (isHouse) {
+          const isOverWater = (world && world.getTile(Math.floor(e.x), Math.floor(e.y)) === 2) || (!!e.properties?.house?.isPlatform);
           const hStyle = e.properties?.house?.style || "mixed";
-          if (hStyle === "bone") entSkin = "Feature_Stone_B.png";
+          if (isOverWater) {
+            entSkin = "Feature_Wood.png";
+            entFg = rgba32(150, 100, 50);
+          } else if (hStyle === "bone") entSkin = "Feature_Stone_B.png";
           else if (hStyle === "wood") entSkin = "Feature_Wood.png";
           else if (hStyle === "stone") entSkin = "Feature_Brick_A.png";
           else entSkin = "Overworld_House.png";

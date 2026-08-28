@@ -39,6 +39,12 @@ export function setActiveWorld(w) {
   activeWorld = w;
 }
 
+export function getSimWorld() {
+  if (typeof world !== "undefined" && world) return world;
+  if (typeof activeWorld !== "undefined" && activeWorld) return activeWorld;
+  return null;
+}
+
 export function isLandTile(x, y) {
   if (!activeWorld || !activeWorld.map) return true;
   if (x < 0 || x >= MAP_WIDTH || y < 0 || y >= MAP_HEIGHT) return false;
@@ -698,43 +704,48 @@ export function createCampfireEntity(x, y, ownerId = null) {
   }, x, y);
 }
 
-export function createHouseEntity(x, y, ownerId = null, ownerName = null, style = "mixed", boneOwnerName = null) {
-  let condition = 5500;
-  let defense = 75;
+
+export function createHouseEntity(x, y, style = "mixed", ownerId = null, ownerName = null, supportMaterial = "wood") {
+  const curW = getSimWorld();
+  const isOverWater = curW ? (curW.getTile ? curW.getTile(x, y) === 2 : false) : false;
   let woodCost = 3;
   let stoneCost = 2;
   let boneCost = 0;
-  let color = 0xffe8d8c8;
-  let backcolor = 0xff402818;
-  let houseTypeLabel = "Casa";
+  let condition = 10000;
+  let defense = 80;
+  let houseTypeLabel = isOverWater ? "Palafita / Plataforma" : "Cabana Rústica";
 
-  if (style === "wood") {
-    condition = 3200;
-    defense = 45;
-    woodCost = 4;
-    stoneCost = 0;
-    boneCost = 0;
-    color = 0xffd4a373;
-    backcolor = 0xff3b271a;
-    houseTypeLabel = "Cabana de Madeira";
+  if (isOverWater) {
+    if (supportMaterial === "stone") {
+      stoneCost += 2;
+      woodCost += 1;
+      condition += 3000;
+      houseTypeLabel = "Plataforma de Pedra";
+    } else {
+      woodCost += 2;
+      stoneCost += 1;
+      condition += 1500;
+      houseTypeLabel = "Palafita de Madeira";
+    }
   } else if (style === "stone") {
-    condition = 8500;
-    defense = 95;
-    woodCost = 0;
+    woodCost = 2;
     stoneCost = 4;
-    boneCost = 0;
-    color = 0xffcbd5e1;
-    backcolor = 0xff1e293b;
-    houseTypeLabel = "Castelo de Pedra";
+    condition = 15000;
+    defense = 120;
+    houseTypeLabel = "Casa de Pedra";
+  } else if (style === "wood") {
+    woodCost = 5;
+    stoneCost = 1;
+    condition = 8000;
+    defense = 60;
+    houseTypeLabel = "Cabana de Troncos";
   } else if (style === "bone") {
-    condition = 4200;
-    defense = 65;
-    woodCost = 0;
-    stoneCost = 0;
+    woodCost = 1;
+    stoneCost = 1;
     boneCost = 4;
-    color = 0xfff4f1e8;
-    backcolor = 0xff2d2a24;
-    houseTypeLabel = boneOwnerName ? `Ossuário dos Restos de ${boneOwnerName}` : "Ossuário de Ossos";
+    condition = 12000;
+    defense = 90;
+    houseTypeLabel = "Ossuário Macabro";
   }
 
   const houseTitle = ownerName ? `${houseTypeLabel} de ${ownerName}` : houseTypeLabel;
@@ -747,7 +758,7 @@ export function createHouseEntity(x, y, ownerId = null, ownerName = null, style 
       defense: defense
     },
     house: {
-      style: style, // "wood" | "stone" | "mixed" | "bone"
+      style: style,
       ownerId: ownerId,
       ownerName: ownerName,
       partnerId: null,
@@ -759,13 +770,15 @@ export function createHouseEntity(x, y, ownerId = null, ownerName = null, style 
       stoneCurrent: 0,
       boneCurrent: 0,
       isCompleted: false,
-      foodStorage: [] // Stored home food reserves (up to 6 foods)
+      isPlatform: !!isOverWater,
+      supportMaterial: isOverWater ? supportMaterial : null,
+      foodStorage: []
     },
     blocking: true,
     render: {
       skin: "Overworld_House.png",
-      color: color,
-      backcolor: backcolor
+      color: isOverWater ? (supportMaterial === "stone" ? 0xffc8c8c8 : 0xff8b5a2b) : 0xffd4a373,
+      backcolor: 0x00000000
     }
   }, x, y);
 }
@@ -829,14 +842,17 @@ export function createWaterWellEntity(x, y, group = null) {
 }
 
 /**
- * Road / Paved Street Structure Entity (Rua de Barro Normal e Ponto de Encaixe)
- * 2 Tipos:
- * 1. Rua de Barro Normal: estrada convencional onde casas podem ser construídas nas bordas.
- * 2. Ponto de Encaixe: nó de interligação viária onde NENHUMA casa/estrutura pode ser construída nas 4 tiles adjacentes.
+ * Road / Paved Street / Water Bridge Structure Entity (Rua de Barro, Ponte de Madeira/Pedra e Ponto de Encaixe)
+ * Supports roads over land and elevated bridges with wood/stone pillar supports over water.
  */
-export function createRoadEntity(x, y, group = null, isSnapPoint = false) {
+export function createRoadEntity(x, y, group = null, isSnapPoint = false, supportMaterial = "wood") {
   const gName = group?.name || "Território Neutro";
-  const name = isSnapPoint ? `Ponto de Encaixe de ${gName}` : `Rua de Barro de ${gName}`;
+  const curW = getSimWorld();
+  const isOverWater = curW ? (curW.getTile ? curW.getTile(x, y) === 2 : false) : false;
+  let name = isSnapPoint ? `Ponto de Encaixe de ${gName}` : `Rua de Barro de ${gName}`;
+  if (isOverWater) {
+    name = supportMaterial === "stone" ? `Ponte de Pedra de ${gName}` : `Ponte de Madeira de ${gName}`;
+  }
   return createEntity(
     {
       name: name,
@@ -846,12 +862,14 @@ export function createRoadEntity(x, y, group = null, isSnapPoint = false) {
         groupName: gName,
         speedBoost: 1.45,
         isCompleted: true,
-        isSnapPoint: !!isSnapPoint
+        isSnapPoint: !!isSnapPoint,
+        isBridge: !!isOverWater,
+        supportMaterial: isOverWater ? supportMaterial : null
       },
       structure: { condition: 8000, maxCondition: 8000, defense: 60 },
       render: {
-        skin: isSnapPoint ? "Feature_Pebbles.png" : "Feature_Stone_B.png",
-        color: isSnapPoint ? 0xffc8a060 : 0xffa88564,
+        skin: isOverWater ? (supportMaterial === "stone" ? "Feature_Brick_A.png" : "Feature_Wood.png") : (isSnapPoint ? "Feature_Pebbles.png" : "Feature_Stone_B.png"),
+        color: isOverWater ? (supportMaterial === "stone" ? 0xffc8c8c8 : 0xff966838) : (isSnapPoint ? 0xffc8a060 : 0xffa88564),
         backcolor: 0x00000000
       },
       blocking: false
@@ -2627,7 +2645,9 @@ export function expandClanRoadNetwork(group, count = 3) {
         for (let s = 1; s <= len; s++) {
           const nx = startSnap.x + dir.dx * s;
           const ny = startSnap.y + dir.dy * s;
-          if (!isLandTile(nx, ny)) {
+          const curW = getSimWorld();
+          const t = curW ? (curW.getTile ? curW.getTile(nx, ny) : 0) : 0;
+          if (t === 5) { // Stop at deep mountain
             setTile(cx, cy, true);
             break;
           }
@@ -2894,7 +2914,9 @@ export function getClanBlueprintTiles(group) {
           const py = zy * sz + oy;
           const tk = `${px}_${py}`;
 
-          if (!isLandTile(px, py)) continue;
+          const curW = getSimWorld();
+          const t = curW ? (curW.getTile ? curW.getTile(px, py) : 0) : 0;
+          if (t === 5) continue; // Skip deep mountain
           if (plannedRoadSet.has(tk) || isRoadTile(px, py)) continue;
           if (occupiedTiles.has(tk)) continue;
 
@@ -2903,7 +2925,13 @@ export function getClanBlueprintTiles(group) {
           // Rule: Must be within 3 tiles of a normal road (allows organic setback layouts)
           if (!isNearNormalRoad(px, py, group, 3)) continue;
 
-          candidatePlots.push({ x: px, y: py });
+          const isWater = (t === 2);
+          candidatePlots.push({
+            x: px,
+            y: py,
+            isPlatform: isWater,
+            supportMaterial: (group.id % 2 === 0) ? "stone" : "wood"
+          });
         }
       }
     }
@@ -2967,7 +2995,7 @@ export function getClanBlueprintTiles(group) {
       if (available.length > 0) {
         const chosen = available[0];
         group._housePlots[ownerId] = { x: chosen.x, y: chosen.y };
-        tiles.push({ x: chosen.x, y: chosen.y, type: "house", ownerId });
+        tiles.push({ x: chosen.x, y: chosen.y, type: "house", ownerId, isPlatform: chosen.isPlatform, supportMaterial: chosen.supportMaterial });
         occupiedTiles.add(`${chosen.x}_${chosen.y}`);
       }
     }
@@ -3023,6 +3051,25 @@ export function getClanBlueprintTiles(group) {
 }
 
 /**
+ * Returns all active clans and groups across the world.
+ */
+export function getAllWorldGroups() {
+  const groupsMap = new Map();
+  const curW = getSimWorld();
+  if (curW && Array.isArray(curW.groups)) {
+    for (const g of curW.groups) {
+      if (g && g.id) groupsMap.set(g.id, g);
+    }
+  }
+  for (const e of entityRegistry.values()) {
+    if (!e.destroyed && e.properties?.group?.id) {
+      groupsMap.set(e.properties.group.id, e.properties.group);
+    }
+  }
+  return Array.from(groupsMap.values());
+}
+
+/**
  * Checks diplomatic eligibility for building an inter-village highway between Group A and Group B.
  */
 export function canBuildInterVillageRoad(groupA, groupB) {
@@ -3033,31 +3080,20 @@ export function canBuildInterVillageRoad(groupA, groupB) {
   const membersB = groupB.members || [];
   if (membersA.length === 0 || membersB.length === 0) return false;
 
-  let knownPositivePairs = 0;
-
+  // Check if active hostility/war between members exists
   for (const idA of membersA) {
     const entA = entityRegistry.get(idA);
     if (!entA || entA.destroyed || !entA.properties?.brain?.affinities) continue;
 
     for (const idB of membersB) {
-      const entB = entityRegistry.get(idB);
-      if (!entB || entB.destroyed) continue;
-
       const affAtoB = entA.properties.brain.affinities[idB];
-      const affBtoA = entB.properties?.brain?.affinities ? entB.properties.brain.affinities[idA] : undefined;
-
-      if (affAtoB !== undefined) {
-        if (affAtoB < 0) return false;
-        if (affAtoB >= 0) knownPositivePairs++;
-      }
-      if (affBtoA !== undefined) {
-        if (affBtoA < 0) return false;
-        if (affBtoA >= 0 && affAtoB === undefined) knownPositivePairs++;
+      if (affAtoB !== undefined && affAtoB < -20) {
+        return false;
       }
     }
   }
 
-  return knownPositivePairs >= 2;
+  return true;
 }
 
 /**
@@ -3074,41 +3110,75 @@ export function getClanRoadBlueprints(group, allGroups = null) {
     roadTiles.set(`${r.x}_${r.y}`, r);
   }
 
-  // Inter-Village Highways (Shared Neutral Highways)
-  if (allGroups && Array.isArray(allGroups)) {
+  const groups = (allGroups && allGroups.length > 0) ? allGroups : getAllWorldGroups();
+
+  // Inter-Village Highways (Shared Neutral Highways linking closest Snap Points)
+  if (groups && Array.isArray(groups)) {
+    const snapsA = (group._plannedRoads || []).filter(r => r.isSnapPoint);
     const sz = currentZoneSize || 8;
     const firstZone = group.claimedZones[0];
     const zp = firstZone.includes("_") ? firstZone.split("_") : firstZone.split(",");
     const baseZx = parseInt(zp[0], 10) || 32;
     const baseZy = parseInt(zp[1], 10) || 32;
-    let baseX = baseZx * sz + Math.floor(sz / 2);
-    let baseY = baseZy * sz + Math.floor(sz / 2);
+    const defaultBaseA = { x: baseZx * sz + Math.floor(sz / 2), y: baseZy * sz + Math.floor(sz / 2) };
 
-    for (const otherGroup of allGroups) {
+    for (const otherGroup of groups) {
       if (otherGroup.id !== group.id && canBuildInterVillageRoad(group, otherGroup)) {
+        const snapsB = (otherGroup._plannedRoads || []).filter(r => r.isSnapPoint);
         const otherFirstZone = otherGroup.claimedZones?.[0] || "32_32";
         const otherZp = otherFirstZone.includes("_") ? otherFirstZone.split("_") : otherFirstZone.split(",");
         const otherZx = parseInt(otherZp[0], 10) || 32;
         const otherZy = parseInt(otherZp[1], 10) || 32;
-        let otherBaseX = otherZx * sz + Math.floor(sz / 2);
-        let otherBaseY = otherZy * sz + Math.floor(sz / 2);
+        const defaultBaseB = { x: otherZx * sz + Math.floor(sz / 2), y: otherZy * sz + Math.floor(sz / 2) };
 
-        let cx = baseX;
-        let cy = baseY;
-        const targetX = otherBaseX;
-        const targetY = otherBaseY;
+        // Find the two closest snap points between Village A and Village B
+        let startSnap = defaultBaseA;
+        let endSnap = defaultBaseB;
+        let minPairDist = 99999;
 
-        while (cx !== targetX || cy !== targetY) {
+        const candidatesA = snapsA.length > 0 ? snapsA : [defaultBaseA];
+        const candidatesB = snapsB.length > 0 ? snapsB : [defaultBaseB];
+
+        for (const sa of candidatesA) {
+          for (const sb of candidatesB) {
+            const d = Math.abs(sa.x - sb.x) + Math.abs(sa.y - sb.y);
+            if (d < minPairDist) {
+              minPairDist = d;
+              startSnap = sa;
+              endSnap = sb;
+            }
+          }
+        }
+
+        // Trace straight/L-shaped highway path between the two snap points across land and water bridges
+        let cx = startSnap.x;
+        let cy = startSnap.y;
+        const targetX = endSnap.x;
+        const targetY = endSnap.y;
+
+        let steps = 0;
+        while ((cx !== targetX || cy !== targetY) && steps < 600) {
+          steps++;
           if (cx !== targetX) cx += Math.sign(targetX - cx);
           else if (cy !== targetY) cy += Math.sign(targetY - cy);
 
-          const inGroupA = isTileInClaimedZones(cx, cy, group.claimedZones);
-          const inGroupB = isTileInClaimedZones(cx, cy, otherGroup.claimedZones);
-
-          if (!inGroupB && isLandTile(cx, cy)) {
+          const curW = getSimWorld();
+          const t = curW ? (curW.getTile ? curW.getTile(cx, cy) : 0) : 0;
+          if (t !== 5) { // Walkable land and bridgeable water (skip only impassable deep mountain)
+            const isWater = (t === 2);
             const k = `${cx}_${cy}`;
             if (!roadTiles.has(k)) {
-              roadTiles.set(k, { x: cx, y: cy, type: "road", isSnapPoint: false, groupId: inGroupA ? group.id : null, isHighway: true });
+              const inGroupA = isTileInClaimedZones(cx, cy, group.claimedZones);
+              roadTiles.set(k, {
+                x: cx,
+                y: cy,
+                type: "road",
+                isSnapPoint: false,
+                isBridge: isWater,
+                supportMaterial: (group.id % 2 === 0) ? "stone" : "wood",
+                groupId: inGroupA ? group.id : null,
+                isHighway: true
+              });
             }
           }
         }
@@ -4934,7 +5004,8 @@ export function createGroupMemberProp() {
       }
 
       // B. Road & Street Digging (Immediate dirt road digging when adjacent to unbuilt road blueprint)
-      const allGroups = world?.groups || (activeWorld?.groups || []);
+      const curW = getSimWorld();
+      const allGroups = curW?.groups || (activeWorld?.groups || []);
       const roadBlueprints = getClanRoadBlueprints(group, allGroups);
       const unbuiltRoadNear = roadBlueprints.find(bp => !isRoadTile(bp.x, bp.y) && (Math.abs(bp.x - ent.x) + Math.abs(bp.y - ent.y) <= 1));
       if (unbuiltRoadNear && this.actionTimer >= 0.25) {
@@ -7605,7 +7676,8 @@ export function createLocomotionProp() {
           }
 
           // --- 5.3 Road & Street Construction (When no loose items clutter territory) ---
-          const allGroups = world?.groups || (activeWorld?.groups || []);
+          const curW = getSimWorld();
+          const allGroups = curW?.groups || (activeWorld?.groups || []);
           const roadBlueprints = getClanRoadBlueprints(group, allGroups);
           const unbuiltRoads = roadBlueprints.filter(bp => !isRoadTile(bp.x, bp.y));
 
@@ -7724,7 +7796,8 @@ export function createLocomotionProp() {
           // --- 5.7 Civic & Idle Settler Tasks (Foraging in border zones & social visits) ---
           if (!hasIntention && energyRatio > 0.35) {
                 // 1. Road & Street Construction (3 Initial Dirt Roads, Expansion Lanes, Inter-Village Highways)
-                const allGroups = world?.groups || (activeWorld?.groups || []);
+                const curW = getSimWorld();
+                const allGroups = curW?.groups || (activeWorld?.groups || []);
                 const roadBlueprints = getClanRoadBlueprints(group, allGroups);
                 const unbuiltRoads = roadBlueprints.filter(bp => !isRoadTile(bp.x, bp.y));
 

@@ -796,6 +796,7 @@ function simulationLoop() {
       const subTicks = Math.min(Math.round(simSpeed), 4);
       const subDt = (realDt * simSpeed) / subTicks;
       for (let s = 0; s < subTicks; s++) {
+        world.groups = getAllGroups();
         world.clock.tick(subDt);
         incrementEngineTick();
         tickEntities(entities, subDt, world);
@@ -803,6 +804,7 @@ function simulationLoop() {
     } else {
       const speedVal = typeof simSpeed === "number" ? simSpeed : 1.0;
       const effectiveDt = realDt * speedVal;
+      world.groups = getAllGroups();
       world.clock.tick(effectiveDt);
       incrementEngineTick();
       tickEntities(entities, effectiveDt, world);
