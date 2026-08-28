@@ -231,6 +231,35 @@ export function createLifeProp(energy = 4000, max = 4000, basalRate = 1.8, initi
         }
       }
 
+      this.age += (dt !== undefined ? dt : 1.0);
+
+      // Biological Maturation: Babies grow to full adult capacity over time (~180s simulation)
+      if (this.age >= 180.0 && !ent._isMature) {
+        ent._isMature = true;
+        if (this.max < 4000) {
+          this.max = 4500;
+          this.energy = Math.min(this.max, Math.max(this.energy, 2800));
+        }
+        for (const [k, p] of Object.entries(ent.properties)) {
+          if (p && typeof p.condition === "number" && typeof p.maxCondition === "number" && p.maxCondition < 100) {
+            p.maxCondition = 100;
+            p.condition = 100;
+          }
+        }
+        if (ent.properties.stomach && ent.properties.stomach.capacity < 4) {
+          ent.properties.stomach.capacity = 4;
+        }
+        recordWorldEvent({
+          opcode: OP_SPROUT,
+          type: "MATURATION",
+          primaryEntityId: ent.id,
+          location: { x: ent.x, y: ent.y },
+          description: `${ent.properties.name} atingiu a idade adulta e agora participa ativamente da comunidade!`,
+          tick: currentTick,
+          timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
+        });
+      }
+
       // Bedtime & Fatigue Sleep Trigger (Only sleep if night-time or critically exhausted <= 15% energy)
       const isNight = world?.clock ? (world.clock.hour >= 21 || world.clock.hour < 5) : false;
       const isExhausted = this.energy <= this.max * 0.15;
@@ -579,6 +608,8 @@ export function createTorchItem(ownerId = null) {
     itemType: "torch",
     resourceType: "torch",
     skin: "Item_Torch.png",
+    isTool: true,
+    isTorch: true,
     isLit: true,
     fuel: 240, // Lasts 240s = 24 in-game night hours (~2 full nights)
     maxFuel: 240,
@@ -753,8 +784,8 @@ export function createWarehouseEntity(x, y, group = null) {
         groupId: group?.id || null,
         groupName: gName,
         items: [],
-        woodCost: 4,
-        stoneCost: 4,
+        woodCost: 2,
+        stoneCost: 2,
         woodCurrent: 0,
         stoneCurrent: 0,
         isCompleted: false
@@ -2847,32 +2878,44 @@ export function getClanBlueprintTiles(group) {
   }
 
   // 4. Find all candidate house plots along road edges (adjacent to normal roads and NOT adjacent to snap points)
-  const plannedRoadSet = new Set((group._plannedRoads || []).map(r => `${r.x}_${r.y}`));
+  let plannedRoadSet = new Set((group._plannedRoads || []).map(r => `${r.x}_${r.y}`));
   const candidatePlots = [];
 
-  for (const zk of group.claimedZones) {
-    const zp = zk.includes("_") ? zk.split("_") : zk.split(",");
-    const zx = parseInt(zp[0], 10);
-    const zy = parseInt(zp[1], 10);
+  function collectCandidatePlots() {
+    candidatePlots.length = 0;
+    for (const zk of group.claimedZones) {
+      const zp = zk.includes("_") ? zk.split("_") : zk.split(",");
+      const zx = parseInt(zp[0], 10);
+      const zy = parseInt(zp[1], 10);
 
-    for (let ox = 0; ox < sz; ox++) {
-      for (let oy = 0; oy < sz; oy++) {
-        const px = zx * sz + ox;
-        const py = zy * sz + oy;
-        const tk = `${px}_${py}`;
+      for (let ox = 0; ox < sz; ox++) {
+        for (let oy = 0; oy < sz; oy++) {
+          const px = zx * sz + ox;
+          const py = zy * sz + oy;
+          const tk = `${px}_${py}`;
 
-        if (!isLandTile(px, py)) continue;
-        if (plannedRoadSet.has(tk) || isRoadTile(px, py)) continue;
-        if (occupiedTiles.has(tk)) continue;
+          if (!isLandTile(px, py)) continue;
+          if (plannedRoadSet.has(tk) || isRoadTile(px, py)) continue;
+          if (occupiedTiles.has(tk)) continue;
 
-        // Rule: Must NOT be adjacent to any snap point!
-        if (isAdjacentToSnapPoint(px, py, group)) continue;
-        // Rule: Must be within 3 tiles of a normal road (allows organic setback layouts)
-        if (!isNearNormalRoad(px, py, group, 3)) continue;
+          // Rule: Must NOT be adjacent to any snap point!
+          if (isAdjacentToSnapPoint(px, py, group)) continue;
+          // Rule: Must be within 3 tiles of a normal road (allows organic setback layouts)
+          if (!isNearNormalRoad(px, py, group, 3)) continue;
 
-        candidatePlots.push({ x: px, y: py });
+          candidatePlots.push({ x: px, y: py });
+        }
       }
     }
+  }
+
+  collectCandidatePlots();
+
+  // If candidate plots are running low or group has grown, expand road network organically!
+  if (candidatePlots.length < Math.max(6, members.length * 2)) {
+    expandClanRoadNetwork(group, 2);
+    plannedRoadSet = new Set((group._plannedRoads || []).map(r => `${r.x}_${r.y}`));
+    collectCandidatePlots();
   }
 
   // Sort candidate plots deterministically by distance from central plaza warehouse
@@ -3195,9 +3238,16 @@ export function getGroupStockpile(group, entities) {
     else if (category === "storage") storageCount++;
   }
 
-  // 1. Clan Storage Array
+  // 1. Clan Storage Array & Completed Warehouse Items
   if (Array.isArray(group.storage)) {
     for (const it of group.storage) {
+      addItem(it, "storage");
+    }
+  }
+
+  const warehouse = getGroupWarehouse(group, entities);
+  if (warehouse && warehouse.properties?.warehouse?.items) {
+    for (const it of warehouse.properties.warehouse.items) {
       addItem(it, "storage");
     }
   }
@@ -4560,13 +4610,12 @@ export function manageCreatureTorches(ent, group, world, entities, dt = 0.1) {
       }
     }
   } else {
-    const isCarryingMaterial = isCarryingItem(ent, "stone") || isCarryingItem(ent, "wood") || isCarryingItem(ent, "bone");
-    if (isCarryingMaterial && isHoldingTorch) {
-      if (leftArm?.heldItem?.resourceType === "torch") {
-        leftArm.heldItem = null;
-      } else if (rightArm?.heldItem?.resourceType === "torch") {
-        rightArm.heldItem = null;
-      }
+    // Extinguish and pack away handheld night torches during daytime
+    if (leftArm?.heldItem?.resourceType === "torch" || leftArm?.heldItem?.isTorch) {
+      leftArm.heldItem = null;
+    }
+    if (rightArm?.heldItem?.resourceType === "torch" || rightArm?.heldItem?.isTorch) {
+      rightArm.heldItem = null;
     }
   }
 }
@@ -4615,12 +4664,24 @@ export function createGroupMemberProp() {
       }).filter(Boolean);
       group.maxMembersEver = Math.max(group.maxMembersEver || 0, livingMems.length);
 
-      // Leadership check
+      // Leadership check: prioritize senior living member with highest group affinity/age
       const curL = getEntityById(group.leaderId);
       const isCurLeaderAlive = (curL && !curL.destroyed && curL.properties.life);
       if (!group.leaderId || !isCurLeaderAlive) {
         if (livingMems.length > 0) {
+          livingMems.sort((a, b) => (b.properties.life?.age || 0) - (a.properties.life?.age || 0));
           group.leaderId = livingMems[0].id;
+          livingMems[0].properties.role = "Leader";
+          recordWorldEvent({
+            opcode: OP_RELATION,
+            type: "SUCCESSION",
+            primaryEntityId: livingMems[0].id,
+            secondaryEntityId: group.id,
+            location: { x: livingMems[0].x, y: livingMems[0].y },
+            description: `${livingMems[0].properties.name} assumiu a liderança de '${group.name}' em sucessão honrosa!`,
+            tick: currentTick,
+            timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
+          });
         }
       }
       
@@ -4633,17 +4694,32 @@ export function createGroupMemberProp() {
         evaluateAndAssignClanRoles(group, entities, world);
       }
 
-      // Ensure all completed houses without valid living owners are auto-claimed by living unhoused clan members
+      // Ensure all completed houses without valid living owners are inherited by living partners, children, or unhoused clan members
       for (const e of entities) {
         if (!e.destroyed && e.properties.house?.isCompleted && isTileInClaimedZones(e.x, e.y, group.claimedZones)) {
-          const curO = e.properties.house.ownerId ? getEntityById(e.properties.house.ownerId) : null;
+          const house = e.properties.house;
+          const curO = house.ownerId ? getEntityById(house.ownerId) : null;
           if (!curO || curO.destroyed || !curO.properties.life) {
             const livingOwners = new Set(entities.filter(h => !h.destroyed && h.properties.house?.ownerId && h !== e).map(h => h.properties.house.ownerId));
-            const homeless = livingMems.find(m => !livingOwners.has(m.id));
-            if (homeless) {
-              e.properties.house.ownerId = homeless.id;
-              e.properties.house.ownerName = homeless.properties.name;
-              e.properties.name = `Casa de ${homeless.properties.name}`;
+            
+            // Succession 1: Bonded romantic partner
+            let heir = house.partnerId ? getEntityById(house.partnerId) : null;
+            if (!heir || heir.destroyed || !heir.properties.life) {
+              // Succession 2: Living children of deceased owner
+              const children = (curO?.properties?.life?.childrenIds || []).map(cid => getEntityById(cid)).filter(c => c && !c.destroyed && c.properties.life && !livingOwners.has(c.id));
+              if (children.length > 0) {
+                heir = children[0];
+              }
+            }
+            // Succession 3: Any living unhoused clan member
+            if (!heir || heir.destroyed || !heir.properties.life) {
+              heir = livingMems.find(m => !livingOwners.has(m.id));
+            }
+
+            if (heir) {
+              house.ownerId = heir.id;
+              house.ownerName = heir.properties.name;
+              e.properties.name = `Casa de ${heir.properties.name}`;
               e.properties.group = group;
               e.properties.groupId = group.id;
             }
@@ -4729,11 +4805,38 @@ export function createGroupMemberProp() {
       }
 
       // ---------------------------------------------------------------------
-      // 1. CLAN COMMUNAL NOURISHMENT (Eat from group storage if hungry)
+      // 1. CLAN COMMUNAL NOURISHMENT (Eat from warehouse or group storage if hungry)
       // ---------------------------------------------------------------------
       const energyRatio = ent.properties.life ? (ent.properties.life.energy / ent.properties.life.max) : 1.0;
       if (energyRatio <= 0.65 && ent.properties.stomach && ent.properties.stomach.items.length < ent.properties.stomach.capacity) {
-        if ((inClaimedZone || distToBase <= 4) && group.storage && group.storage.length > 0) {
+        const warehouse = getGroupWarehouse(group, entities);
+        const distWh = warehouse ? Math.max(Math.abs(warehouse.x - ent.x), Math.abs(warehouse.y - ent.y)) : 999;
+        
+        if (warehouse && warehouse.properties.warehouse?.isCompleted && distWh <= 2 && warehouse.properties.warehouse.items?.length > 0) {
+          const whItems = warehouse.properties.warehouse.items;
+          const foodIdx = whItems.findIndex(item => item.foodType || item.edible || item.resourceType === "meat" || item.resourceType === "fruit" || item.name?.includes("Meat") || item.name?.includes("Fruit") || item.name?.includes("Berry") || item.name?.includes("Carne") || item.name?.includes("Fruta") || item.name?.includes("Crop"));
+          if (foodIdx !== -1) {
+            const consumedFood = whItems.splice(foodIdx, 1)[0];
+            const nutrition = consumedFood.nutrition || consumedFood.edible?.nutrition || 3500;
+            const fType = consumedFood.foodType || consumedFood.edible?.foodType || (consumedFood.resourceType === "meat" ? "meat" : "fruit");
+            ent.properties.stomach.items.push({
+              name: consumedFood.name || `Clan Stockpile ${fType}`,
+              nutrition: nutrition,
+              foodType: fType,
+              totalTurns: 80,
+              remainingTurns: 80
+            });
+            recordWorldEvent({
+              opcode: OP_FEED,
+              type: "FEED",
+              primaryEntityId: ent.id,
+              location: { x: ent.x, y: ent.y },
+              description: `${ent.properties.name} alimentou-se de ${consumedFood.name || fType} do Grande Armazém de '${group.name}'!`,
+              tick: currentTick,
+              timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
+            });
+          }
+        } else if ((inClaimedZone || distToBase <= 4) && group.storage && group.storage.length > 0) {
           const foodIdx = group.storage.findIndex(item => item === "meat" || item === "fruit" || item === "food");
           if (foodIdx !== -1) {
             const consumedFood = group.storage.splice(foodIdx, 1)[0];
@@ -4745,10 +4848,11 @@ export function createGroupMemberProp() {
               remainingTurns: 80
             });
             recordWorldEvent({
+              opcode: OP_FEED,
               type: "FEED",
               primaryEntityId: ent.id,
               location: { x: ent.x, y: ent.y },
-              description: `${ent.properties.name} ate a portion of ${consumedFood} from the '${group.name}' communal stockpile!`,
+              description: `${ent.properties.name} comeu uma porção de ${consumedFood} do estoque comunal de '${group.name}'!`,
               tick: currentTick,
               timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
             });
@@ -4756,13 +4860,17 @@ export function createGroupMemberProp() {
         }
       }
 
-      // A. Universal Warehouse & Stockpile Deposit for Any Carried Item
+      // A1. Universal Warehouse & Stockpile Deposit for Any Carried Item (excluding tools, weapons, and equipped torches)
       const warehouse = getGroupWarehouse(group, entities);
-      if (warehouse) {
-        const distWh = Math.max(Math.abs(warehouse.x - ent.x), Math.abs(warehouse.y - ent.y));
-        if (distWh <= 1 && this.actionTimer >= 0.25) {
+      const distWh = warehouse ? Math.max(Math.abs(warehouse.x - ent.x), Math.abs(warehouse.y - ent.y)) : 999;
+      if (warehouse && warehouse.properties.warehouse?.isCompleted) {
+        // Clean up any rogue torches from warehouse storage
+        if (warehouse.properties.warehouse.items && warehouse.properties.warehouse.items.length > 0) {
+          warehouse.properties.warehouse.items = warehouse.properties.warehouse.items.filter(it => it && it.resourceType !== "torch" && !it.isTorch && !it.name?.includes("Torch") && !it.name?.includes("Tocha"));
+        }
+        if (distWh <= 1 && this.actionTimer >= 0.20) {
           for (const [k, p] of Object.entries(ent.properties)) {
-            if (k.startsWith("arm") && p && p.heldItem && !p.heldItem.isWeapon && !p.heldItem.isTool) {
+            if (k.startsWith("arm") && p && p.heldItem && !p.heldItem.isWeapon && !p.heldItem.isTool && !p.heldItem.isTorch && p.heldItem.resourceType !== "torch" && !p.heldItem.name?.includes("Torch") && !p.heldItem.name?.includes("Tocha")) {
               if (!warehouse.properties.warehouse.items) warehouse.properties.warehouse.items = [];
               warehouse.properties.warehouse.items.push(p.heldItem);
               p.heldItem = null;
@@ -4772,15 +4880,55 @@ export function createGroupMemberProp() {
             }
           }
         }
-      } else if (distToBase <= 2 && this.actionTimer >= 0.25) {
+      } else if (distToBase <= 2 && this.actionTimer >= 0.20) {
+        if (group.storage && group.storage.length > 0) {
+          group.storage = group.storage.filter(it => it !== "torch" && it !== "tocha");
+        }
         for (const [k, p] of Object.entries(ent.properties)) {
-          if (k.startsWith("arm") && p && p.heldItem && !p.heldItem.isWeapon && !p.heldItem.isTool) {
+          if (k.startsWith("arm") && p && p.heldItem && !p.heldItem.isWeapon && !p.heldItem.isTool && !p.heldItem.isTorch && p.heldItem.resourceType !== "torch" && !p.heldItem.name?.includes("Torch") && !p.heldItem.name?.includes("Tocha")) {
             if (!group.storage) group.storage = [];
             group.storage.push(p.heldItem.resourceType || "item");
             p.heldItem = null;
             this.actionTimer = 0;
             ent.emote = 2;
             break;
+          }
+        }
+      }
+
+      // A2. Withdraw Needed Construction Materials from Warehouse if hands are free
+      if (!isCarryingMat && warehouse && warehouse.properties.warehouse?.isCompleted && distWh <= 1 && this.actionTimer >= 0.20) {
+        const freeArm = Object.entries(ent.properties).find(([k, p]) => k.startsWith("arm") && p && !p.heldItem);
+        if (freeArm && warehouse.properties.warehouse.items && warehouse.properties.warehouse.items.length > 0) {
+          const blueprint = getClanBlueprintTiles(group);
+          let needsWood = false;
+          let needsStone = false;
+          for (const bp of blueprint) {
+            if (bp.type === "campfire") {
+              const cf = getEntityAtTileByProp(bp.x, bp.y, "campfire");
+              if (!cf || cf.isConstructed === false) needsWood = true;
+            } else if (bp.type === "well") {
+              const wl = getEntityAtTileByProp(bp.x, bp.y, "well");
+              if (!wl || !wl.properties.well?.isCompleted) { needsWood = true; needsStone = true; }
+            } else if (bp.type === "house") {
+              const h = getEntityAtTileByProp(bp.x, bp.y, "house");
+              if (!h || !h.properties.house?.isCompleted) { needsWood = true; needsStone = true; }
+            } else if (bp.type === "wall") {
+              const w = getEntityAtTileByProp(bp.x, bp.y, "structure");
+              if (!w || !w.isConstructed) needsStone = true;
+            } else if (bp.type === "gate") {
+              const g = getEntityAtTileByProp(bp.x, bp.y, "door");
+              if (!g || !g.isConstructed) needsWood = true;
+            }
+          }
+          if (needsWood || needsStone) {
+            const itemIdx = warehouse.properties.warehouse.items.findIndex(i => (needsWood && (i.resourceType === "wood" || i.name?.includes("Wood") || i.name?.includes("Madeira"))) || (needsStone && (i.resourceType === "stone" || i.resourceType === "bone" || i.name?.includes("Stone") || i.name?.includes("Pedra"))));
+            if (itemIdx >= 0) {
+              const item = warehouse.properties.warehouse.items.splice(itemIdx, 1)[0];
+              freeArm[1].heldItem = item;
+              this.actionTimer = 0;
+              ent.emote = 2;
+            }
           }
         }
       }
@@ -6355,7 +6503,9 @@ export function findPathAStarLocal(startX, startY, targetX, targetY, world, ent,
       if (tTile === 5) continue; // Unwalkable deep mountain
 
       let stepCost = 1.0;
-      if (tTile === 2) {
+      if (isRoadTile(nx, ny)) {
+        stepCost = 0.5; // Significant path preference for paved roads, streets, and avenues!
+      } else if (tTile === 2) {
         if (isFlying) stepCost = 1.0;
         else if (isAquatic) stepCost = 0.8;
         else stepCost = 4.0;
@@ -6591,6 +6741,10 @@ export function createLocomotionProp() {
       if (ent.properties.locomotion?.speedBonus) {
         speciesSpeed *= ent.properties.locomotion.speedBonus;
       }
+      // Speed boost on paved street / road network
+      if (isRoadTile(ent.x, ent.y)) {
+        speciesSpeed *= 1.45;
+      }
 
       const waterRatio = ent.properties.bladder ? (ent.properties.bladder.water / ent.properties.bladder.maxWater) : 1.0;
       let speedFactor = (isFlying ? 2.2 : (isAquatic && legCount === 0 ? 1.6 : (totalLegPower / Math.max(1, legCount)))) * speciesSpeed;
@@ -6724,20 +6878,25 @@ export function createLocomotionProp() {
       }
 
       // -----------------------------------------------------------------------
-      // Priority 3: Food Hauling Delivery (Return harvested meat/fruit to clan stockpile)
+      // Priority 3: Food Hauling Delivery (Return harvested meat/fruit to clan warehouse/stockpile)
       // -----------------------------------------------------------------------
-      const isCarryingFoodHaul = isCarryingItem(ent, "meat") || isCarryingItem(ent, "fruit");
+      const isCarryingFoodHaul = isCarryingItem(ent, "meat") || isCarryingItem(ent, "fruit") || isCarryingItem(ent, "food") || isCarryingItem(ent, "crop");
       if (!hasIntention && isCarryingFoodHaul && ent.properties.group && energyRatio > 0.35 && waterRatio > 0.25) {
         const group = ent.properties.group;
-        const firstZone = group.claimedZones?.[0] || "32_32";
-        const parts = firstZone.includes("_") ? firstZone.split("_") : firstZone.split(",");
-        const baseZx = parseInt(parts[0], 10) || 32;
-        const baseZy = parseInt(parts[1], 10) || 32;
-        const homeBaseX = baseZx * 8 + 4;
-        const homeBaseY = baseZy * 8 + 4;
-
-        chosenDx = Math.sign(homeBaseX - ent.x);
-        chosenDy = Math.sign(homeBaseY - ent.y);
+        const warehouse = getGroupWarehouse(group, entities);
+        if (warehouse) {
+          chosenDx = Math.sign(warehouse.x - ent.x);
+          chosenDy = Math.sign(warehouse.y - ent.y);
+        } else {
+          const firstZone = group.claimedZones?.[0] || "32_32";
+          const parts = firstZone.includes("_") ? firstZone.split("_") : firstZone.split(",");
+          const baseZx = parseInt(parts[0], 10) || 32;
+          const baseZy = parseInt(parts[1], 10) || 32;
+          const homeBaseX = baseZx * 8 + 4;
+          const homeBaseY = baseZy * 8 + 4;
+          chosenDx = Math.sign(homeBaseX - ent.x);
+          chosenDy = Math.sign(homeBaseY - ent.y);
+        }
         hasIntention = true;
       }
 
@@ -6827,10 +6986,18 @@ export function createLocomotionProp() {
       }
 
       // -----------------------------------------------------------------------
-      // Priority 5: Hunger (Energy <= 35% or empty stomach with energy <= 45%) -> Seek Food from Environment or Stockpile
+      // Priority 5: Hunger (Energy <= 35% or empty stomach with energy <= 45%) -> Seek Food from Warehouse, Stockpile, or Wild
       // -----------------------------------------------------------------------
       if (!hasIntention && (energyRatio <= 0.35 || (ent.properties.stomach && ent.properties.stomach.items.length === 0 && energyRatio <= 0.45))) {
-        if (ent.properties.group && ent.properties.group.storage && ent.properties.group.storage.some(it => it === "meat" || it === "fruit" || it === "food")) {
+        const warehouse = ent.properties.group ? getGroupWarehouse(ent.properties.group, entities) : null;
+        const hasWhFood = warehouse?.properties?.warehouse?.items?.some(it => it.foodType || it.edible || it.resourceType === "meat" || it.resourceType === "fruit" || it.name?.includes("Meat") || it.name?.includes("Fruit") || it.name?.includes("Berry") || it.name?.includes("Carne") || it.name?.includes("Fruta") || it.name?.includes("Crop"));
+        const hasGroupFood = ent.properties.group?.storage?.some(it => it === "meat" || it === "fruit" || it === "food");
+
+        if (hasWhFood && warehouse) {
+          chosenDx = Math.sign(warehouse.x - ent.x);
+          chosenDy = Math.sign(warehouse.y - ent.y);
+          hasIntention = true;
+        } else if (hasGroupFood) {
           const firstZone = ent.properties.group.claimedZones?.[0] || "32_32";
           const parts = firstZone.includes("_") ? firstZone.split("_") : firstZone.split(",");
           const baseZx = parseInt(parts[0], 10) || 32;
@@ -7028,7 +7195,7 @@ export function createLocomotionProp() {
           const completedHousesCount = entities.filter(e => !e.destroyed && e.properties.house?.isCompleted && (group.members?.includes(e.properties.house.ownerId) || group.members?.includes(e.properties.house.partnerId))).length;
           const allMembersHoused = completedHousesCount >= Math.max(1, livingClanMembers.length);
 
-          // Priority 2.0: Warehouse First, Clan Houses Second
+          // Priority 2.0: Warehouse First (Top Priority for the Settlement), Clan Houses Second
           for (const bp of blueprint) {
             if (bp.type === "warehouse") {
               const wh = getEntityAtTileByProp(bp.x, bp.y, "warehouse");
@@ -7037,16 +7204,17 @@ export function createLocomotionProp() {
                 needsThisMat = true;
               } else if (!wh.properties.warehouse?.isCompleted) {
                 const w = wh.properties.warehouse;
-                const wCost = w.woodCost ?? 4;
-                const sCost = w.stoneCost ?? 4;
+                const wCost = w.woodCost ?? 2;
+                const sCost = w.stoneCost ?? 2;
                 if (heldResType === "wood" && (w.woodCurrent || 0) < wCost) needsThisMat = true;
                 if ((heldResType === "stone" || heldResType === "bone") && (w.stoneCurrent || 0) < sCost) needsThisMat = true;
               }
 
               if (needsThisMat) {
                 const dist = Math.abs(bp.x - ent.x) + Math.abs(bp.y - ent.y);
-                if (dist < minBuildDist) {
-                  minBuildDist = dist;
+                const weightDist = dist * 0.1; // TOP PRIORITY: Construct warehouse first!
+                if (weightDist < minBuildDist) {
+                  minBuildDist = weightDist;
                   targetBuild = { x: bp.x, y: bp.y, type: "warehouse" };
                 }
               }
