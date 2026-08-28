@@ -199,6 +199,11 @@ function generateConfiguredWorld(config) {
   }
   setActiveWorld(world);
 
+  pendingModifiedTiles = [];
+  world.onTileChange = (x, y, tile) => {
+    pendingModifiedTiles.push({ x, y, tile });
+  };
+
   resetEngineTicks();
   resetWorldEvents();
   world.refresh();
@@ -501,10 +506,16 @@ function serializeRegistry() {
   return result;
 }
 
-let cachedGroups = null;
+let lastGroupSerializeTime = 0;
+let cachedSerializedGroups = null;
 function serializeGroups() {
+  const now = performance.now();
+  if (cachedSerializedGroups && now - lastGroupSerializeTime < 300) {
+    return cachedSerializedGroups;
+  }
+  lastGroupSerializeTime = now;
   const groups = getAllGroups();
-  return groups.map(g => ({
+  cachedSerializedGroups = groups.map(g => ({
     id: g.id,
     name: g.name,
     color: g.color,
@@ -518,6 +529,7 @@ function serializeGroups() {
     _plaza: g._plaza ? { warehouse: { ...g._plaza.warehouse }, campfire: { ...g._plaza.campfire }, well: { ...g._plaza.well } } : null,
     _housePlots: g._housePlots ? { ...g._housePlots } : null
   }));
+  return cachedSerializedGroups;
 }
 
 function serializeEvents() {
@@ -563,12 +575,22 @@ function postFullWorldState(startX = 256, startY = 256, firstLeaderId = -1) {
   });
 }
 
+let pendingModifiedTiles = [];
 let lastSyncTime = 0;
 
 function postSimSync(force = false) {
   const now = performance.now();
   if (!force && now - lastSyncTime < 40) return; // Throttle UI sync messages to max 25 FPS to keep main thread light
   lastSyncTime = now;
+
+  // Real-time incremental tile updates (e.g. roads built by creatures or terraforming)
+  if (pendingModifiedTiles.length > 0) {
+    self.postMessage({
+      type: "TILES_UPDATED",
+      tiles: pendingModifiedTiles
+    });
+    pendingModifiedTiles = [];
+  }
 
   const activeEnts = [];
   for (let i = 0; i < entities.length; i++) {

@@ -127,6 +127,9 @@ export class World {
   setTile(x, y, tile) {
     if (x < 0 || x >= MAP_WIDTH || y < 0 || y >= MAP_HEIGHT) return;
     this.map[y * MAP_WIDTH + x] = tile;
+    if (typeof this.onTileChange === "function") {
+      this.onTileChange(x, y, tile);
+    }
   }
 
   isWalkable(x, y, moveType = 1) {
