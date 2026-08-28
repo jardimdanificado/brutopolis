@@ -3,7 +3,7 @@
 // =============================================================================
 
 import { ASSET_DATA } from "./assets_data.js";
-import { MAP_WIDTH, MAP_HEIGHT, TILE_FLOOR, TILE_MOUNTAIN, TILE_WATER, TILE_SAND, TILE_STONE } from "./world_gen.js";
+import { MAP_WIDTH, MAP_HEIGHT, TILE_FLOOR, TILE_MOUNTAIN, TILE_WATER, TILE_SAND, TILE_STONE, TILE_ROAD_GRASS, TILE_ROAD_SAND, TILE_ROAD_STONE, TILE_ROAD_WATER, TILE_ROAD_SNAP } from "./world_gen.js";
 import { globalWallCoords, resolveWallSkin, getEntitiesInViewport } from "./engine.js";
 import { getClanBlueprintTiles } from "./properties.js";
 
@@ -488,6 +488,26 @@ export class Renderer {
           tex = texStone;
           fg = colStoneFg;
           bg = colStoneBg;
+        } else if (t === TILE_ROAD_GRASS) {
+          tex = findTexture("Feature_Stone_B.png");
+          fg = rgba32(155, 118, 83);
+          bg = rgba32(100, 75, 48);
+        } else if (t === TILE_ROAD_SAND) {
+          tex = findTexture("Feature_Pebbles.png");
+          fg = rgba32(200, 160, 96);
+          bg = rgba32(140, 105, 55);
+        } else if (t === TILE_ROAD_STONE) {
+          tex = findTexture("Feature_Brick_A.png");
+          fg = rgba32(150, 150, 160);
+          bg = rgba32(80, 80, 90);
+        } else if (t === TILE_ROAD_WATER) {
+          tex = findTexture("Feature_Wood.png");
+          fg = rgba32(138, 96, 56);
+          bg = rgba32(35, 60, 100);
+        } else if (t === TILE_ROAD_SNAP) {
+          tex = findTexture("Feature_Pebbles.png");
+          fg = rgba32(212, 170, 112);
+          bg = rgba32(120, 85, 45);
         }
 
         // Most grass and sand tiles are intentionally kept clean. A small,
@@ -599,16 +619,9 @@ export class Renderer {
         const isWall = !isDoor && !isHouse && !isWarehouse && !isWell && !isCampfire && !isRoad && !e.properties.edible && !e.properties.resourceType && !e.properties.germination && (r.skin?.startsWith("Wall_") || e.properties.name?.includes("Muralha") || e.properties.name?.includes("Wall") || (e.properties.structure && !e.properties.isWell && !e.properties.well));
         let entSkin = r.skin || "Human_Knight_M.png";
         if (isRoad) {
-          const isOverWater = (world && world.getTile(Math.floor(e.x), Math.floor(e.y)) === 2) || (!!e.properties?.road?.isBridge);
           const isSnap = !!e.properties?.road?.isSnapPoint || e.properties?.name?.includes("Encaixe");
-          if (isOverWater) {
-            const isStone = (e.properties?.road?.supportMaterial === "stone") || (e.properties?.name?.includes("Pedra"));
-            entSkin = isStone ? "Feature_Brick_A.png" : "Feature_Wood.png";
-            entFg = isStone ? rgba32(200, 200, 205) : rgba32(140, 90, 45);
-          } else {
-            entSkin = isSnap ? "Feature_Pebbles.png" : "Feature_Stone_B.png";
-            entFg = isSnap ? rgba32(216, 186, 128) : rgba32(155, 118, 83);
-          }
+          entSkin = isSnap ? "Feature_Pebbles.png" : "Feature_Stone_B.png";
+          entFg = isSnap ? rgba32(216, 186, 128) : rgba32(155, 118, 83);
         } else if (isWarehouse) {
           entSkin = "Feature_Wood.png";
         } else if (isWell) {

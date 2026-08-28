@@ -81,7 +81,9 @@ import {
   getGroupStockpile,
   setActiveWorld,
   isTileInClaimedZones,
-  createGroupMemberProp
+  createGroupMemberProp,
+  generateWorldRoadNetwork,
+  isRoadTile
 } from "./properties.js";
 
 // Worker Simulation State
@@ -284,30 +286,50 @@ function generateConfiguredWorld(config) {
 
   let firstLeaderId = -1;
 
+  // 1. Procedural Global Continental Road Network (Inter-regional highways & bridges generated at world inception)
+  generateWorldRoadNetwork(world, minX, maxX, minY, maxY, genZoneSize, genSeed, entities);
+
+  // 2. Spawn Clan Embark Parties directly along the continental road network
   if (genSpawnPioneers) {
     const spawnedEmbarkCenters = [];
     const minDistanceBetweenEmbarks = Math.max(30, Math.min(genWidth, genHeight) * 0.20);
-
-    function findSuitableEmbarkSpot(targetX, targetY, searchRadius = 40) {
-      for (let r = 0; r < searchRadius; r += 2) {
-        for (let dy = -r; dy <= r; dy += 2) {
-          for (let dx = -r; dx <= r; dx += 2) {
-            const cx = targetX + dx;
-            const cy = targetY + dy;
-            if (inBounds(cx, cy) && world.isWalkable(cx, cy)) {
-              let tooClose = false;
-              for (const [ex, ey] of spawnedEmbarkCenters) {
-                if (Math.hypot(cx - ex, cy - ey) < minDistanceBetweenEmbarks) {
-                  tooClose = true;
-                  break;
-                }
-              }
-              if (!tooClose) return { x: cx, y: cy };
-            }
-          }
+    // Collect all generated road network tiles
+    const allRoadTiles = [];
+    for (let y = minY; y < maxY; y++) {
+      for (let x = minX; x < maxX; x++) {
+        const t = world.getTile(x, y);
+        if (t >= 6 && t <= 10) {
+          allRoadTiles.push({ x, y, t });
         }
       }
-      return null;
+    }
+
+    function findSuitableEmbarkSpot(targetX, targetY) {
+      if (allRoadTiles.length === 0) {
+        world.setTile(targetX, targetY, 10); // TILE_ROAD_SNAP
+        allRoadTiles.push({ x: targetX, y: targetY, t: 10 });
+        return { x: targetX, y: targetY };
+      }
+
+      // Sort road tiles by distance to target sector
+      const candidates = allRoadTiles
+        .map(r => ({ x: r.x, y: r.y, dist: Math.hypot(r.x - targetX, r.y - targetY) }))
+        .sort((a, b) => a.dist - b.dist);
+
+      for (const cand of candidates) {
+        let tooClose = false;
+        for (const [ex, ey] of spawnedEmbarkCenters) {
+          if (Math.hypot(cand.x - ex, cand.y - ey) < minDistanceBetweenEmbarks) {
+            tooClose = true;
+            break;
+          }
+        }
+        if (!tooClose) {
+          return { x: cand.x, y: cand.y };
+        }
+      }
+
+      return candidates[0];
     }
 
     const EMBARK_THEMES = ["diverse", "dwarf", "elf", "orc", "goblin", "lizardfolk", "human", "catfolk", "centaur", "random"];
@@ -316,18 +338,22 @@ function generateConfiguredWorld(config) {
     for (let k = 0; k < genEmbarkCount; k++) {
       let embarkSpot = null;
       if (k === 0) {
-        embarkSpot = { x: startX, y: startY };
+        embarkSpot = findSuitableEmbarkSpot(centerPlayX, centerPlayY);
       } else {
         const angle = (k / genEmbarkCount) * Math.PI * 2 + (Math.random() * 0.4 - 0.2);
-        const dist = (Math.min(genWidth, genHeight) * 0.25) + Math.random() * (Math.min(genWidth, genHeight) * 0.15);
+        const dist = (Math.min(genWidth, genHeight) * 0.28) + Math.random() * (Math.min(genWidth, genHeight) * 0.15);
         const approxX = Math.floor(centerPlayX + Math.cos(angle) * dist);
         const approxY = Math.floor(centerPlayY + Math.sin(angle) * dist);
 
-        embarkSpot = findSuitableEmbarkSpot(approxX, approxY, 60) || findSuitableEmbarkSpot(centerPlayX, centerPlayY, maxSearchRadius);
+        embarkSpot = findSuitableEmbarkSpot(approxX, approxY);
       }
 
       if (embarkSpot) {
         spawnedEmbarkCenters.push([embarkSpot.x, embarkSpot.y]);
+        if (k === 0) {
+          startX = embarkSpot.x;
+          startY = embarkSpot.y;
+        }
         const theme = shuffledThemes[k % shuffledThemes.length];
         const res = createEmbarkParty(embarkSpot.x, embarkSpot.y, world, entities, { theme });
         if (k === 0 && res.members.length > 0) {

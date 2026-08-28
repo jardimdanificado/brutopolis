@@ -1,5 +1,5 @@
 import { createEntity, getEntityById, entityRegistry, currentTick, getEntitiesInRadius, getEntityAtTile, getEntityAtTileByProp, setSpatialZoneSize, tileEntityMap, globalWallCoords, globalRoadCoords, getTileKey, registerEntitySpatial } from "./engine.js";
-import { MAP_WIDTH, MAP_HEIGHT, TILE_WATER, TILE_VOID } from "./world_gen.js";
+import { MAP_WIDTH, MAP_HEIGHT, TILE_FLOOR, TILE_MOUNTAIN, TILE_WATER, TILE_SAND, TILE_STONE, TILE_VOID, TILE_ROAD_GRASS, TILE_ROAD_SAND, TILE_ROAD_STONE, TILE_ROAD_WATER, TILE_ROAD_SNAP } from "./world_gen.js";
 import {
   recordWorldEvent,
   allEvents,
@@ -46,10 +46,11 @@ export function getSimWorld() {
 }
 
 export function isLandTile(x, y) {
-  if (!activeWorld || !activeWorld.map) return true;
+  const curW = getSimWorld();
+  if (!curW) return false;
   if (x < 0 || x >= MAP_WIDTH || y < 0 || y >= MAP_HEIGHT) return false;
-  const t = activeWorld.map[y * MAP_WIDTH + x];
-  return t !== TILE_WATER && t !== TILE_VOID;
+  const t = curW.getTile ? curW.getTile(x, y) : (curW.map ? curW.map[y * MAP_WIDTH + x] : 0);
+  return t === 0 || t === 3 || t === 4 || (t >= TILE_ROAD_GRASS && t <= TILE_ROAD_SNAP); // Fertile Floor, Sand, Stone, and all Road/Bridge tiles
 }
 
 // Configurable macro-chunk zone size (tiles per zone side)
@@ -842,78 +843,72 @@ export function createWaterWellEntity(x, y, group = null) {
 }
 
 /**
- * Road / Paved Street / Water Bridge Structure Entity (Rua de Barro, Ponte de Madeira/Pedra e Ponto de Encaixe)
- * Supports roads over land and elevated bridges with wood/stone pillar supports over water.
+ * Road / Paved Street / Bridge Construction
+ * Directly sets road terrain tiles into world.map without creating entity overhead.
  */
-export function createRoadEntity(x, y, group = null, isSnapPoint = false, supportMaterial = "wood") {
-  const gName = group?.name || "Território Neutro";
+export function createRoadEntity(x, y, group = null, isSnapPoint = false) {
   const curW = getSimWorld();
-  const isOverWater = curW ? (curW.getTile ? curW.getTile(x, y) === 2 : false) : false;
-  let name = isSnapPoint ? `Ponto de Encaixe de ${gName}` : `Rua de Barro de ${gName}`;
-  if (isOverWater) {
-    name = supportMaterial === "stone" ? `Ponte de Pedra de ${gName}` : `Ponte de Madeira de ${gName}`;
+  if (curW) {
+    const curTile = curW.getTile ? curW.getTile(x, y) : (curW.map ? curW.map[y * (curW.width || MAP_WIDTH) + x] : 0);
+    let roadTile = TILE_ROAD_GRASS;
+    if (curTile === 2) roadTile = TILE_ROAD_WATER; // Flat Wooden Bridge Deck over water
+    else if (curTile === 3) roadTile = TILE_ROAD_SAND;
+    else if (curTile === 4 || curTile === 1) roadTile = TILE_ROAD_STONE;
+    else if (isSnapPoint) roadTile = TILE_ROAD_SNAP;
+
+    if (curW.setTile) {
+      curW.setTile(x, y, roadTile);
+    }
   }
-  return createEntity(
-    {
-      name: name,
-      species: "structure",
-      road: {
-        groupId: group?.id || null,
-        groupName: gName,
-        speedBoost: 1.45,
-        isCompleted: true,
-        isSnapPoint: !!isSnapPoint,
-        isBridge: !!isOverWater,
-        supportMaterial: isOverWater ? supportMaterial : null
-      },
-      structure: { condition: 8000, maxCondition: 8000, defense: 60 },
-      render: {
-        skin: isOverWater ? (supportMaterial === "stone" ? "Feature_Brick_A.png" : "Feature_Wood.png") : (isSnapPoint ? "Feature_Pebbles.png" : "Feature_Stone_B.png"),
-        color: isOverWater ? (supportMaterial === "stone" ? 0xffc8c8c8 : 0xff966838) : (isSnapPoint ? 0xffc8a060 : 0xffa88564),
-        backcolor: 0x00000000
-      },
-      blocking: false
-    },
-    x,
-    y
-  );
+  globalRoadCoords.add(getTileKey(x, y));
+  return null;
 }
 
 export function isRoadTile(x, y) {
+  const curW = getSimWorld();
+  if (curW) {
+    const t = curW.getTile ? curW.getTile(x, y) : (curW.map ? curW.map[y * (curW.width || MAP_WIDTH) + x] : 0);
+    if (t >= TILE_ROAD_GRASS && t <= TILE_ROAD_SNAP) return true;
+  }
   return globalRoadCoords.has(getTileKey(x, y));
 }
 
-export function isSnapPointTile(x, y) {
-  const tk = getTileKey(x, y);
-  const bucket = tileEntityMap.get(tk);
-  if (!bucket || bucket.size === 0) return false;
-  for (const ent of bucket) {
-    if (!ent.destroyed && ent.properties?.road?.isSnapPoint) return true;
+/**
+ * Checks if an unbuilt road tile is on the active construction frontier.
+ * A road tile is on the frontier if:
+ * 1. It is inside the clan's claimed territory zones, OR
+ * 2. It is directly adjacent (within 1 tile) to an already constructed paved road tile.
+ * This guarantees that highways and roads are built sequentially tile-by-tile in an unbroken chain from borders outward!
+ */
+export function isRoadFrontierTile(x, y, group = null) {
+  if (isRoadTile(x, y)) return false;
+  if (group && group.claimedZones && isTileInClaimedZones(x, y, group.claimedZones)) return true;
+
+  const cardDirs = [
+    { dx: 1, dy: 0 },
+    { dx: -1, dy: 0 },
+    { dx: 0, dy: 1 },
+    { dx: 0, dy: -1 }
+  ];
+
+  for (const d of cardDirs) {
+    if (isRoadTile(x + d.dx, y + d.dy)) return true;
   }
+
   return false;
 }
 
 /**
- * Checks if the specified tile (x, y) has any orthogonal adjacent tile that is a snap point.
- * Snap Point rule: houses and other structures (excluding roads/snap points) CANNOT be built on the 4 tiles adjacent to a snap point.
+ * Checks if the specified tile (x, y) is adjacent to a snap point.
  */
 export function isAdjacentToSnapPoint(x, y, group = null) {
-  const offsets = [{ dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 }];
-  for (const off of offsets) {
-    const nx = x + off.dx;
-    const ny = y + off.dy;
-
-    // 1. Check active snap point entity in world
-    if (isSnapPointTile(nx, ny)) return true;
-
-    // 2. Check planned road blueprints
-    if (group && group._plannedRoads) {
-      if (group._plannedRoads.some(r => r.isSnapPoint && r.x === nx && r.y === ny)) {
-        return true;
-      }
-    } else if (activeWorld && activeWorld.groups) {
-      for (const g of activeWorld.groups) {
-        if (g._plannedRoads && g._plannedRoads.some(r => r.isSnapPoint && r.x === nx && r.y === ny)) {
+  for (let dy = -1; dy <= 1; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      const nx = x + dx;
+      const ny = y + dy;
+      if (isSnapPointTile(nx, ny)) return true;
+      if (group && group._plannedRoads) {
+        if (group._plannedRoads.some(r => r.isSnapPoint && r.x === nx && r.y === ny)) {
           return true;
         }
       }
@@ -922,39 +917,29 @@ export function isAdjacentToSnapPoint(x, y, group = null) {
   return false;
 }
 
-/**
- * Checks if the specified tile (x, y) is orthogonally adjacent to at least one normal road tile.
- */
-export function isAdjacentToNormalRoad(x, y, group = null) {
-  return isNearNormalRoad(x, y, group, 1);
+export function isSnapPointTile(x, y) {
+  const curW = getSimWorld();
+  if (curW) {
+    const t = curW.getTile ? curW.getTile(x, y) : (curW.map ? curW.map[y * (curW.width || MAP_WIDTH) + x] : 0);
+    if (t === TILE_ROAD_SNAP) return true;
+  }
+  const e = getEntityAtTile(x, y);
+  return !!(e && !e.destroyed && (e.properties?.road?.isSnapPoint || e.properties?.name?.includes("Encaixe") || e.properties?.name?.includes("Snap")));
 }
 
 /**
- * Checks if the specified tile (x, y) is within maxDist (1 to 3 tiles) of at least one normal road tile.
+ * Checks if the specified tile (x, y) is within maxDist of an ACTUAL constructed road tile.
+ * Prevents planning or attempting houses in off-road wilderness areas.
  */
-export function isNearNormalRoad(x, y, group = null, maxDist = 3) {
+export function isNearNormalRoad(x, y, group = null, maxDist = 2) {
   for (let r = 1; r <= maxDist; r++) {
     for (let dy = -r; dy <= r; dy++) {
       for (let dx = -r; dx <= r; dx++) {
         if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
         const nx = x + dx;
         const ny = y + dy;
-
-        // 1. Check active normal road entity in world
+        // MUST BE AN ACTUAL CONSTRUCTED ROAD TILE ON THE TERRAIN!
         if (isRoadTile(nx, ny) && !isSnapPointTile(nx, ny)) return true;
-
-        // 2. Check planned normal road in group blueprints
-        if (group && group._plannedRoads) {
-          if (group._plannedRoads.some(r => !r.isSnapPoint && r.x === nx && r.y === ny)) {
-            return true;
-          }
-        } else if (activeWorld && activeWorld.groups) {
-          for (const g of activeWorld.groups) {
-            if (g._plannedRoads && g._plannedRoads.some(r => !r.isSnapPoint && r.x === nx && r.y === ny)) {
-              return true;
-            }
-          }
-        }
       }
     }
   }
@@ -2347,6 +2332,344 @@ export function createGroup(name, founder, baseZone = null, claimedZones = null)
 }
 
 /**
+ * Fast terrain-aware land and bridge pathfinding.
+ * Uses terrain cost grading to favor gentle terrain and natural curves around lakes and coasts,
+ * while allowing flat wooden bridge deck crossings (TILE_ROAD_WATER) over water bodies.
+ * Snaps onto existing roads to form natural trade routes and organic Y-forks.
+ */
+export function findOrganicLandPath(startX, startY, targetX, targetY, world, minX, maxX, minY, maxY, maxNodes = 900) {
+  if (!world) return null;
+  const startTile = world.getTile(startX, startY);
+  const targetTile = world.getTile(targetX, targetY);
+  if (startTile === 5 || targetTile === 5) return null;
+
+  const dist = Math.abs(targetX - startX) + Math.abs(targetY - startY);
+  if (dist === 0) return [{ x: startX, y: startY }];
+
+  function toKey(x, y) { return (x << 16) | (y & 0xffff); }
+
+  const startKey = toKey(startX, startY);
+  const openArray = [{ x: startX, y: startY, g: 0, f: dist, parent: null }];
+  const gScores = new Map();
+  gScores.set(startKey, 0);
+  const closedSet = new Set();
+
+  const dirs = [
+    { dx: 1, dy: 0 }, { dx: -1, dy: 0 },
+    { dx: 0, dy: 1 }, { dx: 0, dy: -1 },
+    { dx: 1, dy: 1 }, { dx: -1, dy: 1 },
+    { dx: 1, dy: -1 }, { dx: -1, dy: -1 }
+  ];
+
+  let iterations = 0;
+  let closestNode = openArray[0];
+  let minH = dist;
+
+  while (openArray.length > 0 && iterations < maxNodes) {
+    iterations++;
+    let bestIdx = 0;
+    for (let i = 1; i < openArray.length; i++) {
+      if (openArray[i].f < openArray[bestIdx].f) bestIdx = i;
+    }
+    const current = openArray[bestIdx];
+    openArray[bestIdx] = openArray[openArray.length - 1];
+    openArray.pop();
+
+    if (current.x === targetX && current.y === targetY) {
+      closestNode = current;
+      minH = 0;
+      break;
+    }
+
+    const curKey = toKey(current.x, current.y);
+    closedSet.add(curKey);
+
+    const h = Math.abs(targetX - current.x) + Math.abs(targetY - current.y);
+    if (h < minH) {
+      minH = h;
+      closestNode = current;
+    }
+
+    for (const d of dirs) {
+      const nx = current.x + d.dx;
+      const ny = current.y + d.dy;
+      if (nx < minX + 1 || nx >= maxX - 1 || ny < minY + 1 || ny >= maxY - 1) continue;
+
+      const nKey = toKey(nx, ny);
+      if (closedSet.has(nKey)) continue;
+
+      const t = world.getTile(nx, ny);
+      if (t === 5) continue; // Skip deep void / impassable boundaries
+
+      let moveCost = (d.dx !== 0 && d.dy !== 0) ? 1.414 : 1.0;
+      if (t === 2) {
+        // Water crossing (Bridge) has moderate cost (prefers land, but bridges if needed)
+        moveCost += 2.8;
+      } else if (t === 1) {
+        moveCost += 4.0;
+      } else if (t === 4) {
+        moveCost += 1.2;
+      }
+
+      // Existing road discount: snaps roads together to form natural organic arterial highways!
+      if (isRoadTile(nx, ny)) {
+        moveCost *= 0.35;
+      }
+
+      const tentG = current.g + moveCost;
+      const prevG = gScores.get(nKey);
+
+      if (prevG === undefined || tentG < prevG) {
+        gScores.set(nKey, tentG);
+        const node = { x: nx, y: ny, g: tentG, f: tentG + (Math.abs(targetX - nx) + Math.abs(targetY - ny)), parent: current };
+        openArray.push(node);
+      }
+    }
+  }
+
+  // Must reach destination cleanly
+  if (closestNode.x !== targetX || closestNode.y !== targetY) {
+    return null;
+  }
+
+  const path = [];
+  let curr = closestNode;
+  while (curr) {
+    path.push({ x: curr.x, y: curr.y });
+    curr = curr.parent;
+  }
+  return path.reverse();
+}
+
+/**
+ * Procedurally generates an organic continental highway and road network directly into world.map.
+ * Generates biome-specific road tiles:
+ * - Fertile Grass: TILE_ROAD_GRASS (Dirt Road)
+ * - Sand Dunes: TILE_ROAD_SAND (Paved Sand Trail)
+ * - Rocky / Mountain: TILE_ROAD_STONE (Cobblestone Highway)
+ * - Water / River: TILE_ROAD_WATER (Flat Wooden Deck Pier Bridge without railings)
+ * - Crossroads: TILE_ROAD_SNAP (Plaza Snap Stone)
+ * Scales hub count and highway density dynamically according to world dimensions.
+ */
+export function generateWorldRoadNetwork(world, minX, maxX, minY, maxY, sz = 8, seed = 12345, entities = []) {
+  if (!world) return [];
+  const roadCoords = new Map();
+
+  const spanX = maxX - minX;
+  const spanY = maxY - minY;
+  if (spanX < 32 || spanY < 32) return [];
+
+  // 1. Identify Natural Regional Hubs across Landmasses (Proportionate to world scale)
+  const targetCellSize = Math.max(80, Math.min(140, Math.floor(spanX / 4)));
+  const numDivs = Math.max(2, Math.min(8, Math.floor(spanX / targetCellSize)));
+  const cellW = spanX / numDivs;
+  const cellH = spanY / numDivs;
+  const minHubDist = Math.max(30, Math.floor(spanX * 0.16));
+
+  const hubNodes = [];
+
+  for (let gy = 0; gy < numDivs; gy++) {
+    for (let gx = 0; gx < numDivs; gx++) {
+      const cellMinX = Math.floor(minX + gx * cellW);
+      const cellMaxX = Math.floor(minX + (gx + 1) * cellW);
+      const cellMinY = Math.floor(minY + gy * cellH);
+      const cellMaxY = Math.floor(minY + (gy + 1) * cellH);
+
+      let bestHub = null;
+      let midX = Math.floor((cellMinX + cellMaxX) / 2);
+      let midY = Math.floor((cellMinY + cellMaxY) / 2);
+
+      for (let r = 0; r <= Math.max(cellW, cellH) / 2 && !bestHub; r += 2) {
+        for (let dy = -r; dy <= r && !bestHub; dy += 2) {
+          for (let dx = -r; dx <= r && !bestHub; dx += 2) {
+            const hx = midX + dx;
+            const hy = midY + dy;
+            if (hx >= cellMinX + 2 && hx < cellMaxX - 2 && hy >= cellMinY + 2 && hy < cellMaxY - 2) {
+              const t = world.getTile(hx, hy);
+              if (t === 0 || t === 3 || t === 4) { // Walkable land only
+                let tooClose = false;
+                for (const existing of hubNodes) {
+                  if (Math.abs(existing.x - hx) + Math.abs(existing.y - hy) < minHubDist) {
+                    tooClose = true;
+                    break;
+                  }
+                }
+                if (!tooClose) {
+                  bestHub = { x: hx, y: hy, isSnap: true };
+                }
+              }
+            }
+          }
+        }
+      }
+      if (bestHub) hubNodes.push(bestHub);
+    }
+  }
+
+  function addRoadTile(x, y, isSnap = false) {
+    if (x < minX || x >= maxX || y < minY || y >= maxY) return;
+    const t = world.getTile ? world.getTile(x, y) : (world.map ? world.map[y * (world.width || 1024) + x] : 0);
+    if (t === 5) return; // Skip deep void
+
+    // Avoid double parallel roads directly adjacent
+    const hasParallelLeftRight = (isRoadTile(x - 1, y) && isRoadTile(x - 1, y - 1)) || (isRoadTile(x + 1, y) && isRoadTile(x + 1, y - 1));
+    const hasParallelUpDown = (isRoadTile(x, y - 1) && isRoadTile(x - 1, y - 1)) || (isRoadTile(x, y + 1) && isRoadTile(x - 1, y + 1));
+    if (hasParallelLeftRight || hasParallelUpDown) return;
+
+    let roadTile = TILE_ROAD_GRASS;
+    if (t === 2) {
+      roadTile = TILE_ROAD_WATER; // Flat Wooden Bridge Deck over water
+    } else if (t === 3) {
+      roadTile = TILE_ROAD_SAND; // Sand Trail
+    } else if (t === 4 || t === 1) {
+      roadTile = TILE_ROAD_STONE; // Cobblestone Highway
+    } else if (isSnap) {
+      roadTile = TILE_ROAD_SNAP; // Road Snap Hub
+    } else {
+      roadTile = TILE_ROAD_GRASS; // Dirt Road
+    }
+
+    world.setTile(x, y, roadTile);
+    const tk = getTileKey(x, y);
+    globalRoadCoords.add(tk);
+    roadCoords.set(`${x}_${y}`, { x, y, isSnap, tile: roadTile });
+  }
+
+  // 2. Connect Regional Hubs into a SINGLE Connected Spanning Tree Network
+  if (hubNodes.length > 0) {
+    const connectedHubs = [hubNodes[0]];
+    const unconnectedHubs = hubNodes.slice(1);
+
+    addRoadTile(hubNodes[0].x, hubNodes[0].y, true);
+
+    while (unconnectedHubs.length > 0) {
+      let minCost = 999999;
+      let bestPath = null;
+      let bestUnconnectedIdx = -1;
+
+      for (let u = 0; u < connectedHubs.length; u++) {
+        const nodeA = connectedHubs[u];
+        for (let v = 0; v < unconnectedHubs.length; v++) {
+          const nodeB = unconnectedHubs[v];
+          const dist = Math.abs(nodeA.x - nodeB.x) + Math.abs(nodeA.y - nodeB.y);
+          if (dist < minCost) {
+            const path = findOrganicLandPath(nodeA.x, nodeA.y, nodeB.x, nodeB.y, world, minX, maxX, minY, maxY, 800);
+            if (path && path.length > 0) {
+              minCost = dist;
+              bestPath = path;
+              bestUnconnectedIdx = v;
+            }
+          }
+        }
+      }
+
+      if (bestPath && bestUnconnectedIdx !== -1) {
+        for (let s = 0; s < bestPath.length; s++) {
+          const pt = bestPath[s];
+          const isSnap = (s === 0 || s === bestPath.length - 1 || s % 12 === 0);
+          addRoadTile(pt.x, pt.y, isSnap);
+        }
+        connectedHubs.push(unconnectedHubs[bestUnconnectedIdx]);
+        unconnectedHubs.splice(bestUnconnectedIdx, 1);
+      } else {
+        // Direct bridge connection to closest connected hub
+        const nodeB = unconnectedHubs[0];
+        let closestConn = connectedHubs[0];
+        let minD = 999999;
+        for (const conn of connectedHubs) {
+          const d = Math.abs(conn.x - nodeB.x) + Math.abs(conn.y - nodeB.y);
+          if (d < minD) { minD = d; closestConn = conn; }
+        }
+        let cx = closestConn.x;
+        let cy = closestConn.y;
+        while (cx !== nodeB.x || cy !== nodeB.y) {
+          if (cx !== nodeB.x) cx += Math.sign(nodeB.x - cx);
+          else if (cy !== nodeB.y) cy += Math.sign(nodeB.y - cy);
+          addRoadTile(cx, cy, (cx === nodeB.x && cy === nodeB.y));
+        }
+        connectedHubs.push(nodeB);
+        unconnectedHubs.splice(0, 1);
+      }
+    }
+
+    // Add 2-3 additional cross-connections for alternate loop routes
+    for (let i = 0; i < hubNodes.length; i++) {
+      const nodeA = hubNodes[i];
+      const otherNodes = hubNodes
+        .filter((_, idx) => idx !== i)
+        .map(other => ({ other, dist: Math.abs(other.x - nodeA.x) + Math.abs(other.y - nodeA.y) }))
+        .sort((a, b) => a.dist - b.dist)
+        .slice(0, 2);
+
+      for (const { other: nodeB } of otherNodes) {
+        const path = findOrganicLandPath(nodeA.x, nodeA.y, nodeB.x, nodeB.y, world, minX, maxX, minY, maxY, 600);
+        if (path && path.length > 0) {
+          for (let s = 0; s < path.length; s++) {
+            const pt = path[s];
+            const isSnap = (s === 0 || s === path.length - 1 || s % 12 === 0);
+            addRoadTile(pt.x, pt.y, isSnap);
+          }
+        }
+      }
+    }
+  }
+
+  // 3. Flood Fill & Bridge Verification: Guarantee 100% Connectivity across ALL Road Tiles
+  const allRoadsArray = Array.from(roadCoords.values());
+  if (allRoadsArray.length > 0) {
+    const mainComponent = new Set();
+    const queue = [allRoadsArray[0]];
+    mainComponent.add(`${allRoadsArray[0].x}_${allRoadsArray[0].y}`);
+
+    const cardDirs = [{ dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 }];
+
+    while (queue.length > 0) {
+      const curr = queue.shift();
+      for (const d of cardDirs) {
+        const nx = curr.x + d.dx;
+        const ny = curr.y + d.dy;
+        const nk = `${nx}_${ny}`;
+        if (roadCoords.has(nk) && !mainComponent.has(nk)) {
+          mainComponent.add(nk);
+          queue.push(roadCoords.get(nk));
+        }
+      }
+    }
+
+    // Connect any detached road fragments to the main network
+    for (const r of allRoadsArray) {
+      const rk = `${r.x}_${r.y}`;
+      if (!mainComponent.has(rk)) {
+        let closestMain = null;
+        let minD = 999999;
+        for (const mk of mainComponent) {
+          const parts = mk.split("_");
+          const mx = parseInt(parts[0], 10);
+          const my = parseInt(parts[1], 10);
+          const d = Math.abs(mx - r.x) + Math.abs(my - r.y);
+          if (d < minD) {
+            minD = d;
+            closestMain = { x: mx, y: my };
+          }
+        }
+        if (closestMain) {
+          let cx = r.x;
+          let cy = r.y;
+          while (cx !== closestMain.x || cy !== closestMain.y) {
+            if (cx !== closestMain.x) cx += Math.sign(closestMain.x - cx);
+            else if (cy !== closestMain.y) cy += Math.sign(closestMain.y - cy);
+            addRoadTile(cx, cy, (cx === closestMain.x && cy === closestMain.y));
+            mainComponent.add(`${cx}_${cy}`);
+          }
+        }
+      }
+    }
+  }
+
+  return Array.from(roadCoords.values());
+}
+
+/**
  * Initializes distinct road network archetypes for clans, avoiding water and expanding until land is found.
  * Archetypes:
  * 0: Grid (Roman Castrum / Urban Blocks)
@@ -2916,7 +3239,7 @@ export function getClanBlueprintTiles(group) {
 
           const curW = getSimWorld();
           const t = curW ? (curW.getTile ? curW.getTile(px, py) : 0) : 0;
-          if (t === 5) continue; // Skip deep mountain
+          if (t === 5 || t === 2) continue; // Skip deep mountain and water bodies
           if (plannedRoadSet.has(tk) || isRoadTile(px, py)) continue;
           if (occupiedTiles.has(tk)) continue;
 
@@ -2925,12 +3248,9 @@ export function getClanBlueprintTiles(group) {
           // Rule: Must be within 3 tiles of a normal road (allows organic setback layouts)
           if (!isNearNormalRoad(px, py, group, 3)) continue;
 
-          const isWater = (t === 2);
           candidatePlots.push({
             x: px,
-            y: py,
-            isPlatform: isWater,
-            supportMaterial: (group.id % 2 === 0) ? "stone" : "wood"
+            y: py
           });
         }
       }
@@ -2995,7 +3315,7 @@ export function getClanBlueprintTiles(group) {
       if (available.length > 0) {
         const chosen = available[0];
         group._housePlots[ownerId] = { x: chosen.x, y: chosen.y };
-        tiles.push({ x: chosen.x, y: chosen.y, type: "house", ownerId, isPlatform: chosen.isPlatform, supportMaterial: chosen.supportMaterial });
+        tiles.push({ x: chosen.x, y: chosen.y, type: "house", ownerId });
         occupiedTiles.add(`${chosen.x}_${chosen.y}`);
       }
     }
@@ -3097,6 +3417,65 @@ export function canBuildInterVillageRoad(groupA, groupB) {
 }
 
 /**
+ * Calculates a single deterministic canonical highway between two clans using organic terrain-aware pathfinding.
+ * Strictly avoids water bodies and deep mountains.
+ */
+export function getCanonicalHighway(groupA, groupB, sz = 8) {
+  if (!groupA || !groupB || groupA.id === groupB.id) return [];
+  const g1 = (groupA.id < groupB.id) ? groupA : groupB;
+  const g2 = (groupA.id < groupB.id) ? groupB : groupA;
+
+  const firstZone1 = g1.claimedZones?.[0] || "32_32";
+  const zp1 = firstZone1.includes("_") ? firstZone1.split("_") : firstZone1.split(",");
+  const base1 = { x: (parseInt(zp1[0], 10) || 32) * sz + Math.floor(sz / 2), y: (parseInt(zp1[1], 10) || 32) * sz + Math.floor(sz / 2) };
+
+  const firstZone2 = g2.claimedZones?.[0] || "32_32";
+  const zp2 = firstZone2.includes("_") ? firstZone2.split("_") : firstZone2.split(",");
+  const base2 = { x: (parseInt(zp2[0], 10) || 32) * sz + Math.floor(sz / 2), y: (parseInt(zp2[1], 10) || 32) * sz + Math.floor(sz / 2) };
+
+  const snaps1 = (g1._plannedRoads || []).filter(r => r.isSnapPoint);
+  const snaps2 = (g2._plannedRoads || []).filter(r => r.isSnapPoint);
+
+  const cands1 = snaps1.length > 0 ? snaps1 : [base1];
+  const cands2 = snaps2.length > 0 ? snaps2 : [base2];
+
+  let startSnap = base1;
+  let endSnap = base2;
+  let minD = 999999;
+
+  for (const s1 of cands1) {
+    for (const s2 of cands2) {
+      const d = Math.abs(s1.x - s2.x) + Math.abs(s1.y - s2.y);
+      if (d < minD) {
+        minD = d;
+        startSnap = s1;
+        endSnap = s2;
+      }
+    }
+  }
+
+  const curW = getSimWorld();
+  if (!curW) return [];
+  const path = findOrganicLandPath(startSnap.x, startSnap.y, endSnap.x, endSnap.y, curW, 0, curW.width || 1024, 0, curW.height || 1024, 800);
+  if (!path || path.length === 0) return [];
+
+  const highwayTiles = [];
+  for (let s = 0; s < path.length; s++) {
+    const pt = path[s];
+    highwayTiles.push({
+      x: pt.x,
+      y: pt.y,
+      type: "road",
+      isSnapPoint: (s === 0 || s === path.length - 1 || s % 10 === 0),
+      groupId: null,
+      isHighway: true
+    });
+  }
+
+  return highwayTiles;
+}
+
+/**
  * Generates road network blueprints for a clan (3 Initial Dirt Roads + Snap Points + Inter-Village Highways).
  */
 export function getClanRoadBlueprints(group, allGroups = null) {
@@ -3114,7 +3493,6 @@ export function getClanRoadBlueprints(group, allGroups = null) {
 
   // Inter-Village Highways (Shared Neutral Highways linking closest Snap Points)
   if (groups && Array.isArray(groups)) {
-    const snapsA = (group._plannedRoads || []).filter(r => r.isSnapPoint);
     const sz = currentZoneSize || 8;
     const firstZone = group.claimedZones[0];
     const zp = firstZone.includes("_") ? firstZone.split("_") : firstZone.split(",");
@@ -3122,65 +3500,31 @@ export function getClanRoadBlueprints(group, allGroups = null) {
     const baseZy = parseInt(zp[1], 10) || 32;
     const defaultBaseA = { x: baseZx * sz + Math.floor(sz / 2), y: baseZy * sz + Math.floor(sz / 2) };
 
-    for (const otherGroup of groups) {
-      if (otherGroup.id !== group.id && canBuildInterVillageRoad(group, otherGroup)) {
-        const snapsB = (otherGroup._plannedRoads || []).filter(r => r.isSnapPoint);
-        const otherFirstZone = otherGroup.claimedZones?.[0] || "32_32";
+    // Connect only to the 1 or 2 closest peaceful neighbor clans
+    const neighborClans = groups
+      .filter(other => other.id !== group.id && canBuildInterVillageRoad(group, other))
+      .map(other => {
+        const otherFirstZone = other.claimedZones?.[0] || "32_32";
         const otherZp = otherFirstZone.includes("_") ? otherFirstZone.split("_") : otherFirstZone.split(",");
         const otherZx = parseInt(otherZp[0], 10) || 32;
         const otherZy = parseInt(otherZp[1], 10) || 32;
-        const defaultBaseB = { x: otherZx * sz + Math.floor(sz / 2), y: otherZy * sz + Math.floor(sz / 2) };
+        const otherBase = { x: otherZx * sz + Math.floor(sz / 2), y: otherZy * sz + Math.floor(sz / 2) };
+        const dist = Math.abs(otherBase.x - defaultBaseA.x) + Math.abs(otherBase.y - defaultBaseA.y);
+        return { other, dist };
+      })
+      .sort((a, b) => a.dist - b.dist)
+      .slice(0, 2);
 
-        // Find the two closest snap points between Village A and Village B
-        let startSnap = defaultBaseA;
-        let endSnap = defaultBaseB;
-        let minPairDist = 99999;
-
-        const candidatesA = snapsA.length > 0 ? snapsA : [defaultBaseA];
-        const candidatesB = snapsB.length > 0 ? snapsB : [defaultBaseB];
-
-        for (const sa of candidatesA) {
-          for (const sb of candidatesB) {
-            const d = Math.abs(sa.x - sb.x) + Math.abs(sa.y - sb.y);
-            if (d < minPairDist) {
-              minPairDist = d;
-              startSnap = sa;
-              endSnap = sb;
-            }
-          }
-        }
-
-        // Trace straight/L-shaped highway path between the two snap points across land and water bridges
-        let cx = startSnap.x;
-        let cy = startSnap.y;
-        const targetX = endSnap.x;
-        const targetY = endSnap.y;
-
-        let steps = 0;
-        while ((cx !== targetX || cy !== targetY) && steps < 600) {
-          steps++;
-          if (cx !== targetX) cx += Math.sign(targetX - cx);
-          else if (cy !== targetY) cy += Math.sign(targetY - cy);
-
-          const curW = getSimWorld();
-          const t = curW ? (curW.getTile ? curW.getTile(cx, cy) : 0) : 0;
-          if (t !== 5) { // Walkable land and bridgeable water (skip only impassable deep mountain)
-            const isWater = (t === 2);
-            const k = `${cx}_${cy}`;
-            if (!roadTiles.has(k)) {
-              const inGroupA = isTileInClaimedZones(cx, cy, group.claimedZones);
-              roadTiles.set(k, {
-                x: cx,
-                y: cy,
-                type: "road",
-                isSnapPoint: false,
-                isBridge: isWater,
-                supportMaterial: (group.id % 2 === 0) ? "stone" : "wood",
-                groupId: inGroupA ? group.id : null,
-                isHighway: true
-              });
-            }
-          }
+    for (const { other: otherGroup } of neighborClans) {
+      const highwayTiles = getCanonicalHighway(group, otherGroup, sz);
+      for (const ht of highwayTiles) {
+        const k = `${ht.x}_${ht.y}`;
+        if (!roadTiles.has(k)) {
+          const inGroupA = isTileInClaimedZones(ht.x, ht.y, group.claimedZones);
+          roadTiles.set(k, {
+            ...ht,
+            groupId: inGroupA ? group.id : null
+          });
         }
       }
     }
@@ -5003,16 +5347,14 @@ export function createGroupMemberProp() {
         }
       }
 
-      // B. Road & Street Digging (Immediate dirt road digging when adjacent to unbuilt road blueprint)
+      // B. Road & Street Digging (Immediate dirt road digging when adjacent to unbuilt road blueprint on the frontier)
       const curW = getSimWorld();
       const allGroups = curW?.groups || (activeWorld?.groups || []);
       const roadBlueprints = getClanRoadBlueprints(group, allGroups);
-      const unbuiltRoadNear = roadBlueprints.find(bp => !isRoadTile(bp.x, bp.y) && (Math.abs(bp.x - ent.x) + Math.abs(bp.y - ent.y) <= 1));
+      const unbuiltRoadNear = roadBlueprints.find(bp => !isRoadTile(bp.x, bp.y) && isRoadFrontierTile(bp.x, bp.y, group) && (Math.abs(bp.x - ent.x) + Math.abs(bp.y - ent.y) <= 1));
       if (unbuiltRoadNear && this.actionTimer >= 0.25) {
         this.actionTimer = 0;
-        const roadEnt = createRoadEntity(unbuiltRoadNear.x, unbuiltRoadNear.y, unbuiltRoadNear.groupId ? group : null, unbuiltRoadNear.isSnapPoint);
-        entities.push(roadEnt);
-        registerEntitySpatial(roadEnt);
+        createRoadEntity(unbuiltRoadNear.x, unbuiltRoadNear.y, unbuiltRoadNear.groupId ? group : null, unbuiltRoadNear.isSnapPoint);
         ent.emote = 2;
         return;
       }
@@ -7467,9 +7809,12 @@ export function createLocomotionProp() {
         else if (!hasIntention) {
           const myRole = ent.properties.role || "Pioneer";
           const isPioneer = myRole === "Pioneer";
-          const isFarmer = myRole === "Farmer" || myRole === "Hunter" || isPioneer || myRole === "Leader";
-          const isBuilder = myRole === "Builder" || isPioneer || myRole === "Leader";
-          const isForager = myRole === "Forager" || myRole === "Miner" || isPioneer || myRole === "Leader";
+          const isLeader = myRole === "Leader";
+          const isFarmer = myRole === "Farmer" || myRole === "Hunter" || isPioneer || isLeader;
+          const isBuilder = myRole === "Builder" || isPioneer || isLeader;
+          const isForager = myRole === "Forager" || myRole === "Miner" || isPioneer || isLeader;
+          const isExplorer = myRole === "Explorer" || isPioneer || isLeader;
+          const isCrafter = myRole === "Crafter" || isBuilder || isPioneer || isLeader;
           const isGuard = myRole === "Guard";
 
           // Calculate exact resource needs for Houses -> Walls -> Gates
@@ -7642,7 +7987,45 @@ export function createLocomotionProp() {
             }
           }
 
-          // --- 5.2 Territory Ground Cleaning & Hauling to Warehouse/Stockpile (ALL SETTLERS: Leaders, Crafters, Scholars, Explorers, Farmers, Builders) ---
+          // --- 5.2 Road & Street Construction (Builders, Pioneers, Leaders & Explorers advance highways & roads without getting distracted) ---
+          const curW = getSimWorld();
+          const allGroups = curW?.groups || (activeWorld?.groups || []);
+          const roadBlueprints = getClanRoadBlueprints(group, allGroups);
+          const unbuiltRoads = roadBlueprints.filter(bp => !isRoadTile(bp.x, bp.y) && isRoadFrontierTile(bp.x, bp.y, group));
+
+          if (unbuiltRoads.length > 0 && !hasIntention && (isBuilder || isPioneer || isExplorer || (myRole === "Leader") || !hasUnbuiltStruct || energyRatio > 0.35)) {
+            let closestRoad = null;
+            let minRDist = 9999;
+            for (const rbp of unbuiltRoads) {
+              const rd = Math.abs(rbp.x - ent.x) + Math.abs(rbp.y - ent.y);
+              if (rd < minRDist) {
+                minRDist = rd;
+                closestRoad = rbp;
+              }
+            }
+
+            if (closestRoad) {
+              if (minRDist <= 1) {
+                createRoadEntity(closestRoad.x, closestRoad.y, closestRoad.groupId ? group : null, closestRoad.isSnapPoint);
+                ent.emote = 2;
+                chosenDx = 0;
+                chosenDy = 0;
+                hasIntention = true;
+              } else {
+                const path = findPathAStarLocal(ent.x, ent.y, closestRoad.x, closestRoad.y, world || curW, ent, 160, 48);
+                if (path && path.length > 0) {
+                  chosenDx = path[0].dx;
+                  chosenDy = path[0].dy;
+                } else {
+                  chosenDx = Math.sign(closestRoad.x - ent.x);
+                  chosenDy = Math.sign(closestRoad.y - ent.y);
+                }
+                hasIntention = true;
+              }
+            }
+          }
+
+          // --- 5.3 Territory Ground Cleaning & Hauling to Warehouse/Stockpile ---
           if (!hasIntention) {
             const looseGroundItems = getEntitiesInRadius(ent.x, ent.y, 40).filter(e =>
               !e.destroyed &&
@@ -7670,40 +8053,6 @@ export function createLocomotionProp() {
               if (closestItem) {
                 chosenDx = Math.sign(closestItem.x - ent.x);
                 chosenDy = Math.sign(closestItem.y - ent.y);
-                hasIntention = true;
-              }
-            }
-          }
-
-          // --- 5.3 Road & Street Construction (When no loose items clutter territory) ---
-          const curW = getSimWorld();
-          const allGroups = curW?.groups || (activeWorld?.groups || []);
-          const roadBlueprints = getClanRoadBlueprints(group, allGroups);
-          const unbuiltRoads = roadBlueprints.filter(bp => !isRoadTile(bp.x, bp.y));
-
-          if (unbuiltRoads.length > 0 && !hasIntention && (isBuilder || isPioneer || (myRole === "Leader") || !hasUnbuiltStruct)) {
-            let closestRoad = null;
-            let minRDist = 9999;
-            for (const rbp of unbuiltRoads) {
-              const rd = Math.abs(rbp.x - ent.x) + Math.abs(rbp.y - ent.y);
-              if (rd < minRDist) {
-                minRDist = rd;
-                closestRoad = rbp;
-              }
-            }
-
-            if (closestRoad) {
-              if (minRDist <= 1) {
-                const roadEnt = createRoadEntity(closestRoad.x, closestRoad.y, closestRoad.groupId ? group : null, closestRoad.isSnapPoint);
-                entities.push(roadEnt);
-                registerEntitySpatial(roadEnt);
-                ent.emote = 2;
-                chosenDx = 0;
-                chosenDy = 0;
-                hasIntention = true;
-              } else {
-                chosenDx = Math.sign(closestRoad.x - ent.x);
-                chosenDy = Math.sign(closestRoad.y - ent.y);
                 hasIntention = true;
               }
             }
@@ -7799,7 +8148,7 @@ export function createLocomotionProp() {
                 const curW = getSimWorld();
                 const allGroups = curW?.groups || (activeWorld?.groups || []);
                 const roadBlueprints = getClanRoadBlueprints(group, allGroups);
-                const unbuiltRoads = roadBlueprints.filter(bp => !isRoadTile(bp.x, bp.y));
+                const unbuiltRoads = roadBlueprints.filter(bp => !isRoadTile(bp.x, bp.y) && isRoadFrontierTile(bp.x, bp.y, group));
 
                 if (unbuiltRoads.length > 0) {
                   let closestRoad = null;
@@ -7814,9 +8163,7 @@ export function createLocomotionProp() {
 
                   if (closestRoad) {
                     if (minRDist <= 1) {
-                      const roadEnt = createRoadEntity(closestRoad.x, closestRoad.y, closestRoad.groupId ? group : null, closestRoad.isSnapPoint);
-                      entities.push(roadEnt);
-                      registerEntitySpatial(roadEnt);
+                      createRoadEntity(closestRoad.x, closestRoad.y, closestRoad.groupId ? group : null, closestRoad.isSnapPoint);
 
                       if (closestRoad.isHighway) {
                         const nearbyAllies = getEntitiesInRadius(ent.x, ent.y, 3).filter(o =>
@@ -8048,11 +8395,16 @@ export function createLocomotionProp() {
           ];
           let pool = dirs;
           if (isTerrestrial && !isAquatic && world) {
-            const landDirs = dirs.filter(d => {
-              const t = world.getTile(ent.x + d.dx, ent.y + d.dy);
-              return t !== 2 && t !== 5;
-            });
-            if (landDirs.length > 0) pool = landDirs;
+            const roadDirs = dirs.filter(d => isRoadTile(ent.x + d.dx, ent.y + d.dy));
+            if (roadDirs.length > 0 && Math.random() < 0.75) {
+              pool = roadDirs; // 75% preference to stroll along road network!
+            } else {
+              const landDirs = dirs.filter(d => {
+                const t = world.getTile(ent.x + d.dx, ent.y + d.dy);
+                return t !== 2 && t !== 5;
+              });
+              if (landDirs.length > 0) pool = landDirs;
+            }
           }
           const chosen = pool[Math.floor(Math.random() * pool.length)];
           ent._wanderHeading = {
@@ -8067,7 +8419,7 @@ export function createLocomotionProp() {
         chosenDy = ent._wanderHeading.dy;
       }
 
-      // Execute Movement with Land Priority, Contour Bypassing & Water Fallback
+      // Execute Movement with Land Priority, Road Highway Affinity & Water Fallback
       const mapW = (world && world.width) ? world.width : 512;
       const mapH = (world && world.height) ? world.height : 512;
 
@@ -8095,7 +8447,7 @@ export function createLocomotionProp() {
 
       if (!ent._recentPositions) ent._recentPositions = [];
 
-      // Sort candidate moves: alignment with target, with heavy penalty for recently visited tiles
+      // Sort candidate moves: alignment with target, highway road attraction, with penalty for recently visited tiles
       candidateMoves.sort((a, b) => {
         const ax = ent.x + a.dx;
         const ay = ent.y + a.dy;
@@ -8105,6 +8457,10 @@ export function createLocomotionProp() {
         // Alignment with chosen intention
         let aScore = (a.dx * chosenDx + a.dy * chosenDy);
         let bScore = (b.dx * chosenDx + b.dy * chosenDy);
+
+        // Road highway attraction bonus
+        if (isRoadTile(ax, ay)) aScore += 4.5;
+        if (isRoadTile(bx, by)) bScore += 4.5;
 
         // Penalize tiles in recent history (index 0 is oldest, last is most recent)
         const aRecIdx = ent._recentPositions.findIndex(p => p.x === ax && p.y === ay);

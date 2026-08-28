@@ -11,6 +11,11 @@ import {
   TILE_SAND,
   TILE_STONE,
   TILE_VOID,
+  TILE_ROAD_GRASS,
+  TILE_ROAD_SAND,
+  TILE_ROAD_STONE,
+  TILE_ROAD_WATER,
+  TILE_ROAD_SNAP,
   MAP_PRESET_ARCHIPELAGO,
   MAP_PRESET_CONTINENT,
   MAP_PRESET_HIGHLANDS,
@@ -18,7 +23,21 @@ import {
   world_gen_is_walkable
 } from "./world_gen.js";
 
-export { MAP_WIDTH, MAP_HEIGHT };
+export {
+  MAP_WIDTH,
+  MAP_HEIGHT,
+  TILE_FLOOR,
+  TILE_MOUNTAIN,
+  TILE_WATER,
+  TILE_SAND,
+  TILE_STONE,
+  TILE_VOID,
+  TILE_ROAD_GRASS,
+  TILE_ROAD_SAND,
+  TILE_ROAD_STONE,
+  TILE_ROAD_WATER,
+  TILE_ROAD_SNAP
+};
 
 export class WorldClock {
   constructor() {
@@ -102,6 +121,11 @@ export class World {
       case TILE_WATER: return "Ocean Water";
       case TILE_SAND: return "Sand Dunes / Desert";
       case TILE_STONE: return "Rocky Foothills / Stone";
+      case TILE_ROAD_GRASS: return "Estrada de Terra";
+      case TILE_ROAD_SAND: return "Trilha do Deserto";
+      case TILE_ROAD_STONE: return "Estrada de Pedra";
+      case TILE_ROAD_WATER: return "Ponte de Madeira";
+      case TILE_ROAD_SNAP: return "Praça Viária / Encaixe";
       default: return "Void";
     }
   }

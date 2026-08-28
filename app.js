@@ -172,6 +172,7 @@ function initSimWorker() {
           world.groups = data.groups;
         }
         updateLocalEntities(data.entities, data.registry);
+        rebuildSpatialGrid(entities, getZoneSize());
         if (Array.isArray(data.events)) {
           restoreWorldEvents(data.events);
         }
@@ -270,23 +271,13 @@ function updateLocalEntities(entitiesData, registryData) {
     for (const entData of entitiesData) {
       if (!entData) continue;
       let ent = entityRegistry.get(entData.id);
-      if (!ent) {
+      const isNew = !ent;
+      if (isNew) {
         ent = { id: entData.id, x: entData.x, y: entData.y, targetX: entData.x, targetY: entData.y, properties: {} };
         entityRegistry.set(ent.id, ent);
-        registerEntitySpatial(ent, zSize);
       }
       if (ent.targetX === undefined) ent.targetX = entData.x;
       if (ent.targetY === undefined) ent.targetY = entData.y;
-
-      // Teleport if position jump is large (>3 tiles), else set interpolation target
-      const dist = Math.hypot(entData.x - ent.x, entData.y - ent.y);
-      if (dist > 3.0) {
-        ent.x = entData.x;
-        ent.y = entData.y;
-        updateEntitySpatial(ent, zSize);
-      }
-      ent.targetX = entData.x;
-      ent.targetY = entData.y;
 
       ent.birthTick = entData.birthTick;
       ent.deathTick = entData.deathTick;
@@ -297,6 +288,20 @@ function updateLocalEntities(entitiesData, registryData) {
       ent.isConstructed = entData.isConstructed;
       ent.wallStyle = entData.wallStyle;
       ent.properties = entData.properties || {};
+
+      if (isNew) {
+        registerEntitySpatial(ent, zSize);
+      } else {
+        const dist = Math.hypot(entData.x - ent.x, entData.y - ent.y);
+        if (dist > 3.0) {
+          ent.x = entData.x;
+          ent.y = entData.y;
+          updateEntitySpatial(ent, zSize);
+        }
+      }
+      ent.targetX = entData.x;
+      ent.targetY = entData.y;
+
       if (!ent.destroyed) {
         curEntities.push(ent);
       }

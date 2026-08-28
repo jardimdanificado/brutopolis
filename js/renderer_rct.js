@@ -4,7 +4,7 @@
 
 import * as THREE from "https://esm.sh/three@0.160.0";
 import { ASSET_DATA } from "./assets_data.js";
-import { MAP_WIDTH, MAP_HEIGHT, TILE_FLOOR, TILE_MOUNTAIN, TILE_WATER, TILE_SAND, TILE_STONE, TILE_VOID } from "./world_gen.js";
+import { MAP_WIDTH, MAP_HEIGHT, TILE_FLOOR, TILE_MOUNTAIN, TILE_WATER, TILE_SAND, TILE_STONE, TILE_VOID, TILE_ROAD_GRASS, TILE_ROAD_SAND, TILE_ROAD_STONE, TILE_ROAD_WATER, TILE_ROAD_SNAP } from "./world_gen.js";
 import { globalWallCoords, resolveWallSkin, getEntitiesInViewport } from "./engine.js";
 import { getClanBlueprintTiles, currentZoneSize } from "./properties.js";
 
@@ -1303,6 +1303,36 @@ export class RCT3DRenderer {
         opacity: 1.0,
         side: THREE.DoubleSide
       }),
+      [TILE_ROAD_GRASS]: new THREE.MeshLambertMaterial({
+        map: createTintedTexture("Feature_Stone_B.png", 0xa67c52, 0x3d2816, 1.0),
+        dithering: true,
+        vertexColors: true,
+        side: THREE.DoubleSide
+      }),
+      [TILE_ROAD_SAND]: new THREE.MeshLambertMaterial({
+        map: createTintedTexture("Feature_Pebbles.png", 0xc8a060, 0x5c4220, 1.0),
+        dithering: true,
+        vertexColors: true,
+        side: THREE.DoubleSide
+      }),
+      [TILE_ROAD_STONE]: new THREE.MeshLambertMaterial({
+        map: createTintedTexture("Feature_Brick_A.png", 0x909098, 0x383842, 1.0),
+        dithering: true,
+        vertexColors: true,
+        side: THREE.DoubleSide
+      }),
+      [TILE_ROAD_WATER]: new THREE.MeshLambertMaterial({
+        map: createTintedTexture("Feature_Wood.png", 0x8a6038, 0x382412, 1.0),
+        dithering: true,
+        vertexColors: true,
+        side: THREE.DoubleSide
+      }),
+      [TILE_ROAD_SNAP]: new THREE.MeshLambertMaterial({
+        map: createTintedTexture("Feature_Pebbles.png", 0xd4aa70, 0x5c4220, 1.0),
+        dithering: true,
+        vertexColors: true,
+        side: THREE.DoubleSide
+      }),
       cliff: new THREE.MeshLambertMaterial({
         map: createTintedTexture("Feature_Stone_C.png", 0x887a6a, 0x2b2218, 1.0),
         dithering: true,
@@ -1991,9 +2021,14 @@ export class RCT3DRenderer {
   getTileBaseHeight(tileType) {
     switch (tileType) {
       case TILE_WATER: return 0.0;
-      case TILE_SAND: return 0.38;
-      case TILE_FLOOR: return 1.0;
-      case TILE_STONE: return 2.1;
+      case TILE_ROAD_WATER: return 0.06; // Flat bridge deck over water
+      case TILE_SAND:
+      case TILE_ROAD_SAND: return 0.38;
+      case TILE_FLOOR:
+      case TILE_ROAD_GRASS:
+      case TILE_ROAD_SNAP: return 1.0;
+      case TILE_STONE:
+      case TILE_ROAD_STONE: return 2.1;
       case TILE_MOUNTAIN: return 3.6;
       default: return 0.0;
     }
@@ -2598,7 +2633,12 @@ export class RCT3DRenderer {
       sandClean: { pos: [], uvs: [], colors: [] },
       [TILE_STONE]: { pos: [], uvs: [], colors: [] },
       [TILE_MOUNTAIN]: { pos: [], uvs: [], colors: [] },
-      [TILE_WATER]: { pos: [], uvs: [], colors: [] }
+      [TILE_WATER]: { pos: [], uvs: [], colors: [] },
+      [TILE_ROAD_GRASS]: { pos: [], uvs: [], colors: [] },
+      [TILE_ROAD_SAND]: { pos: [], uvs: [], colors: [] },
+      [TILE_ROAD_STONE]: { pos: [], uvs: [], colors: [] },
+      [TILE_ROAD_WATER]: { pos: [], uvs: [], colors: [] },
+      [TILE_ROAD_SNAP]: { pos: [], uvs: [], colors: [] }
     };
 
     const gridLinePositions = [];
@@ -3187,24 +3227,12 @@ export class RCT3DRenderer {
         }
       }
       // --- 3D PAVED ROADS, BRIDGES & SNAP POINTS (Adaptive Slopes, Ramps & Water Bridges) ---
+      // --- 3D PAVED ROADS & SNAP POINTS (Adaptive Slopes & Natural Ramps across Land) ---
       else if (isRoad) {
         const tx = Math.floor(e.x);
         const ty = Math.floor(e.y);
         const tileType = map?.getTile ? map.getTile(tx, ty) : 0;
-        const isOverWater = (tileType === 2) || (!!e.properties?.road?.isBridge);
-
-        if (isOverWater) {
-          const isStone = (e.properties?.road?.supportMaterial === "stone") || (e.properties?.name?.includes("Pedra"));
-          const bridgeH = 0.08;
-          mMatrix.identity();
-          mMatrix.setPosition(e.x + 0.5, bridgeH, e.y + 0.5);
-
-          if (isStone && stoneBridgeCount < 1600) {
-            this.instStoneBridges.setMatrixAt(stoneBridgeCount++, mMatrix);
-          } else if (!isStone && woodBridgeCount < 1600) {
-            this.instWoodBridges.setMatrixAt(woodBridgeCount++, mMatrix);
-          }
-        } else {
+        if (tileType !== 2 && tileType !== 5) {
           // Adaptive slope & ramp rotation for natural hill grades
           const h00 = map?.getElevation ? map.getElevation(tx, ty) : surfaceH;
           const h10 = map?.getElevation ? map.getElevation(tx + 1, ty) : surfaceH;
