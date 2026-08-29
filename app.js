@@ -1371,8 +1371,28 @@ function initTitleWorld(scenarioIdx = 0) {
   titleCamBaseX = scen.camX || 512;
   titleCamBaseY = scen.camY || 512;
 
-  titleWorldLoading = true;
+  currentMode = "TITLE";
+  currentTitleCamX = titleCamBaseX;
+  currentTitleCamY = titleCamBaseY;
+  titleJumpTimer = 0;
 
+  const zoomFactor = 1.8;
+  if (renderer) renderer.setCamera(titleCamBaseX, titleCamBaseY, zoomFactor);
+  if (rctRenderer) rctRenderer.setCamera(titleCamBaseX, titleCamBaseY, zoomFactor);
+
+  // If world already exists, smoothly reposition camera to the new scene rather than blocking the main thread with a world regeneration
+  if (world && world.map && world.map.length > 0 && !titleWorldLoading) {
+    if (world.clock) {
+      const times = [6.2, 12.0, 18.2, 0.0];
+      const t = times[scenarioIdx % times.length];
+      world.clock.hour = Math.floor(t);
+      world.clock.minute = Math.floor((t % 1) * 60);
+      world.clock.globalLight = (t >= 5 && t <= 19) ? 0.85 : 0.18;
+    }
+    return;
+  }
+
+  titleWorldLoading = true;
   if (simWorker) {
     simWorker.postMessage({
       type: "GENERATE_WORLD",
@@ -1399,14 +1419,6 @@ function initTitleWorld(scenarioIdx = 0) {
   lastSelectedId = -1;
   modalScroll = 0;
   inspectingLogEvent = null;
-  currentMode = "TITLE";
-  currentTitleCamX = titleCamBaseX;
-  currentTitleCamY = titleCamBaseY;
-  titleJumpTimer = 0;
-
-  const zoomFactor = 1.8;
-  if (renderer) renderer.setCamera(titleCamBaseX, titleCamBaseY, zoomFactor);
-  if (rctRenderer) rctRenderer.setCamera(titleCamBaseX, titleCamBaseY, zoomFactor);
 }
 
 function startNewGame(scenarioPreset = null, customSeed = null) {

@@ -1,10 +1,11 @@
 // =============================================================================
 // Brutopolis — FMOD Studio Audio Engine Integration
+// Optimized with decoupled 50Hz DSP clock & large buffer for zero-stutter playback
 // =============================================================================
 
 /**
  * AudioManager handles FMOD Studio initialization, Bank loading,
- * event playback (one-shots, loops, 3D spatialized), and per-frame updates.
+ * event playback (one-shots, loops, 3D spatialized), and decoupled background updates.
  */
 class AudioManager {
   constructor() {
@@ -29,15 +30,11 @@ class AudioManager {
     this.masterBus = null;
     this.musicBus = null;
     this.sfxBus = null;
+    this.updateInterval = null;
   }
 
   /**
    * Initializes the FMOD Studio WebAssembly runtime and System.
-   * @param {Object} options - Config options
-   * @param {string} options.wasmPath - Path to fmodstudio.wasm (default: 'lib/fmod/fmodstudio.wasm')
-   * @param {number} options.maxChannels - Max virtual channels (default: 512)
-   * @param {number} options.initialMemory - Heap memory in bytes (default: 64MB)
-   * @returns {Promise<AudioManager>}
    */
   async init(options = {}) {
     if (this.initPromise) return this.initPromise;
@@ -70,8 +67,9 @@ class AudioManager {
             this.checkResult(res, "getCoreSystem");
             this.coreSystem = outval.val;
 
-            // Larger DSP buffer gives headroom during heavy main-thread spikes (world gen, entity processing)
-            this.coreSystem.setDSPBufferSize(8192, 4);
+            // In FMOD, setDSPBufferSize MUST be called before system.initialize() to take effect in the WebAudio audio-driver mixer!
+            // 4096 samples with 4 buffers provides ~370ms of audio buffer headroom
+            this.coreSystem.setDSPBufferSize(4096, 4);
 
             // Initialize Studio System
             res = this.system.initialize(
@@ -85,14 +83,14 @@ class AudioManager {
             // Cache default buses if available
             this.refreshBuses();
 
-            // Decoupled timer for FMOD updates so audio doesn't depend solely on requestAnimationFrame
+            // Decoupled timer for FMOD updates at 50 Hz so audio never lags behind FPS drops
             if (!this.updateInterval) {
               this.updateInterval = setInterval(() => {
                 this.update();
-              }, 20); // 50 Hz constant update
+              }, 20);
             }
 
-            // Auto pause/resume when switching tabs to avoid audio buffer stutter
+            // Auto pause/resume when switching tabs
             document.addEventListener("visibilitychange", () => {
               if (document.hidden) {
                 if (this.coreSystem && this.coreSystem.mixerSuspend) {
@@ -130,9 +128,6 @@ class AudioManager {
     return this.initPromise;
   }
 
-  /**
-   * Helper to verify FMOD call results.
-   */
   checkResult(result, context = "") {
     if (result !== this.fmod.OK) {
       const errStr = this.fmod.ErrorString ? this.fmod.ErrorString(result) : `Error code: ${result}`;
@@ -143,20 +138,11 @@ class AudioManager {
     return true;
   }
 
-  /**
-   * Updates FMOD system state (call this inside your main requestAnimationFrame loop).
-   */
   update() {
     if (!this.isInitialized || !this.system) return;
     this.system.update();
   }
 
-  /**
-   * Loads a bank file via URL (mounts file into FMOD virtual filesystem).
-   * @param {string} url - URL or relative path to the .bank file
-   * @param {string} [bankId] - Optional key identifier for the bank
-   * @returns {Promise<any>} Loaded bank handle
-   */
   async loadBank(url, bankId = null) {
     if (!this.isInitialized) {
       console.warn("[FMOD] Cannot load bank before initialization.");
@@ -201,9 +187,7 @@ class AudioManager {
       this.loadedBanks.set(key, bank);
       console.log(`[FMOD] Successfully loaded bank: ${key}`);
 
-      // Refresh buses in case strings/master bus became available
       this.refreshBuses();
-
       return bank;
     } catch (err) {
       console.error(`[FMOD] Error loading bank ${url}:`, err);
@@ -211,10 +195,6 @@ class AudioManager {
     }
   }
 
-  /**
-   * Unloads a loaded bank.
-   * @param {string} bankId
-   */
   unloadBank(bankId) {
     if (!this.loadedBanks.has(bankId)) return;
     const bank = this.loadedBanks.get(bankId);
@@ -222,12 +202,8 @@ class AudioManager {
       bank.unload();
     }
     this.loadedBanks.delete(bankId);
-    console.log(`[FMOD] Bank unloaded: ${bankId}`);
   }
 
-  /**
-   * Refreshes default master / category buses.
-   */
   refreshBuses() {
     if (!this.system) return;
     const outval = {};
@@ -242,10 +218,6 @@ class AudioManager {
     }
   }
 
-  /**
-   * Sets the master volume (0.0 to 1.0).
-   * @param {number} vol
-   */
   setMasterVolume(vol) {
     this.masterVolume = Math.max(0, Math.min(1, vol));
     if (this.masterBus) {
@@ -253,11 +225,6 @@ class AudioManager {
     }
   }
 
-  /**
-   * Gets or loads an EventDescription handle by event path (e.g. "event:/UI/Click" or GUID).
-   * @param {string} pathOrGuid
-   * @returns {any} EventDescription handle
-   */
   getEventDescription(pathOrGuid) {
     if (this.eventDescriptions.has(pathOrGuid)) {
       return this.eventDescriptions.get(pathOrGuid);
@@ -273,19 +240,10 @@ class AudioManager {
     return null;
   }
 
-  /**
-   * Plays a one-shot event at 2D or 3D position and automatically releases it when finished.
-   * @param {string} eventPath - e.g. "event:/SFX/Explosion"
-   * @param {Object} [params] - Key-value map of parameter names and values
-   * @param {Object} [position3D] - Optional { x, y, z } for 3D spatial sound
-   * @returns {any} EventInstance handle or null
-   */
   playOneShot(eventPath, params = null, position3D = null) {
     if (!this.isInitialized) return null;
     const desc = this.getEventDescription(eventPath);
-    if (!desc) {
-      return null;
-    }
+    if (!desc) return null;
 
     const outval = {};
     let res = desc.createInstance(outval);
@@ -293,14 +251,12 @@ class AudioManager {
 
     const instance = outval.val;
 
-    // Apply parameters if supplied
     if (params && typeof params === "object") {
       for (const [key, val] of Object.entries(params)) {
         instance.setParameterByName(key, val, false);
       }
     }
 
-    // Set 3D attributes if supplied
     if (position3D && typeof position3D.x === "number") {
       const attributes = {
         position: { x: position3D.x, y: position3D.y || 0, z: position3D.z || 0 },
@@ -312,22 +268,12 @@ class AudioManager {
     }
 
     instance.start();
-    // Release frees the memory when sound playback completes
     instance.release();
     return instance;
   }
 
-  /**
-   * Creates a persistent instance (e.g. for looping music or continuous ambience).
-   * @param {string} nameKey - Custom identifier to retrieve/control later
-   * @param {string} eventPath - FMOD event path
-   * @param {boolean} [autoStart=true]
-   * @returns {any} EventInstance handle
-   */
   createInstance(nameKey, eventPath, autoStart = true) {
     if (!this.isInitialized) return null;
-
-    // Stop existing instance with same key if present
     this.stopInstance(nameKey, true);
 
     const desc = this.getEventDescription(eventPath);
@@ -350,11 +296,6 @@ class AudioManager {
     return instance;
   }
 
-  /**
-   * Stops and releases an active event instance.
-   * @param {string} nameKey
-   * @param {boolean} [immediate=false] - If true, stops immediately without fade-out
-   */
   stopInstance(nameKey, immediate = false) {
     if (!this.activeInstances.has(nameKey)) return;
     const instance = this.activeInstances.get(nameKey);
@@ -368,11 +309,6 @@ class AudioManager {
     this.activeInstances.delete(nameKey);
   }
 
-  /**
-   * Sets the volume on a named active instance.
-   * @param {string} nameKey
-   * @param {number} volume - 0.0 to 1.0
-   */
   setInstanceVolume(nameKey, volume) {
     const instance = this.activeInstances.get(nameKey);
     if (instance && typeof instance.setVolume === "function") {
@@ -380,12 +316,6 @@ class AudioManager {
     }
   }
 
-  /**
-   * Sets a parameter value on a named active instance.
-   * @param {string} nameKey
-   * @param {string} paramName
-   * @param {number} value
-   */
   setInstanceParameter(nameKey, paramName, value) {
     const instance = this.activeInstances.get(nameKey);
     if (instance) {
@@ -393,22 +323,11 @@ class AudioManager {
     }
   }
 
-  /**
-   * Sets a global FMOD Studio parameter by name.
-   * @param {string} paramName
-   * @param {number} value
-   */
   setGlobalParameter(paramName, value) {
     if (!this.system) return;
     this.system.setParameterByName(paramName, value, false);
   }
 
-  /**
-   * Updates 3D listener position and orientation (e.g. from camera).
-   * @param {Object} pos - { x, y, z }
-   * @param {Object} forward - { x, y, z }
-   * @param {Object} up - { x, y, z }
-   */
   setListenerPosition(pos, forward = { x: 0, y: 0, z: 1 }, up = { x: 0, y: 1, z: 0 }) {
     if (!this.system) return;
     const attributes = {
@@ -421,5 +340,4 @@ class AudioManager {
   }
 }
 
-// Export singleton
 export const audio = new AudioManager();

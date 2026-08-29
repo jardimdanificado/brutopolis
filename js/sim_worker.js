@@ -813,9 +813,11 @@ function serializeEvents() {
 }
 
 function postFullWorldState(startX = 256, startY = 256, firstLeaderId = -1, isTitleScreen = false) {
+  // Transfer a cloned buffer or transfer list to make postMessage instant without blocking main-thread JSON clone
+  const mapCopy = new Uint8Array(world.map);
   self.postMessage({
     type: "WORLD_INIT",
-    map: world.map,
+    map: mapCopy.buffer,
     width: world.width,
     height: world.height,
     preset: currentPreset,
@@ -837,7 +839,7 @@ function postFullWorldState(startX = 256, startY = 256, firstLeaderId = -1, isTi
     startY,
     firstLeaderId,
     isTitleScreen
-  });
+  }, [mapCopy.buffer]);
 }
 
 let pendingModifiedTiles = [];
