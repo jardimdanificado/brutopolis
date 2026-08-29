@@ -586,7 +586,7 @@ export function amputateLimb(entity, propKey, prop, entitiesArray, world) {
     skin = "Item_Cloak.png";
     color = 0xffe6e6f0;
   } else if (propKey.includes("arm") || propKey.includes("paw")) {
-    skin = "Creature_Hand_U.png";
+    skin = "Item_Steak.png";
     color = 0xffe65a5a;
   } else if (propKey.includes("leg")) {
     skin = "Item_Drumstick.png";
@@ -987,7 +987,8 @@ export function tickEntities(entities, dt, world) {
   // Fast in-place compaction (O(N) single-pass without array splice shifting)
   if (hasDead) {
     let writeIdx = 0;
-    for (let i = 0; i < entities.length; i++) {
+    const totalLen = entities.length;
+    for (let i = 0; i < totalLen; i++) {
       const e = entities[i];
       if (e && !e.destroyed) {
         entities[writeIdx++] = e;

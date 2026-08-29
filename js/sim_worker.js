@@ -642,71 +642,7 @@ function sanitizeForTransfer(obj, depth = 0) {
 
 function getSanitizedProperties(e) {
   if (!e.properties) return {};
-  if (!e._sanitizedProps || e._propsVersion !== e._lastSanitizedVersion) {
-    e._sanitizedProps = sanitizeForTransfer(e.properties);
-    e._lastSanitizedVersion = e._propsVersion || 0;
-  }
-
-  // Fast path for static flora and static items
-  if (!e.properties.life && !e.properties.house && !e.properties.warehouse && !e.properties.well && !e.properties.door && !e.properties.torch && !e.properties.campfire) {
-    return e._sanitizedProps;
-  }
-
-  if (e.properties.life && e._sanitizedProps.life) {
-    e._sanitizedProps.life.energy = e.properties.life.energy;
-    e._sanitizedProps.life.isSleeping = !!e.properties.life.isSleeping;
-  }
-  if (e.properties.brain && e._sanitizedProps.brain) {
-    e._sanitizedProps.brain.condition = e.properties.brain.condition;
-  }
-  if (e.properties.door && e._sanitizedProps.door) {
-    e._sanitizedProps.door.isOpen = !!e.properties.door.isOpen;
-  }
-  if (e.properties.torch && e._sanitizedProps.torch) {
-    e._sanitizedProps.torch.isLit = !!e.properties.torch.isLit;
-    e._sanitizedProps.torch.fuel = e.properties.torch.fuel;
-  }
-  if (e.properties.campfire && e._sanitizedProps.campfire) {
-    e._sanitizedProps.campfire.isLit = !!e.properties.campfire.isLit;
-    e._sanitizedProps.campfire.fuel = e.properties.campfire.fuel;
-  }
-  if (e.properties.house && e._sanitizedProps.house) {
-    e._sanitizedProps.house.isCompleted = !!e.properties.house.isCompleted;
-    e._sanitizedProps.house.woodCurrent = e.properties.house.woodCurrent;
-    e._sanitizedProps.house.stoneCurrent = e.properties.house.stoneCurrent;
-    e._sanitizedProps.house.ownerId = e.properties.house.ownerId;
-  }
-  if (e.properties.warehouse && e._sanitizedProps.warehouse) {
-    e._sanitizedProps.warehouse.isCompleted = !!e.properties.warehouse.isCompleted;
-    e._sanitizedProps.warehouse.woodCurrent = e.properties.warehouse.woodCurrent;
-    e._sanitizedProps.warehouse.stoneCurrent = e.properties.warehouse.stoneCurrent;
-  }
-  if (e.properties.well && e._sanitizedProps.well) {
-    e._sanitizedProps.well.isCompleted = !!e.properties.well.isCompleted;
-    e._sanitizedProps.well.woodCurrent = e.properties.well.woodCurrent;
-    e._sanitizedProps.well.stoneCurrent = e.properties.well.stoneCurrent;
-  }
-  if (e.properties.arm_left) {
-    const held = e.properties.arm_left.heldItem;
-    if (held !== e._lastHeldLeft) {
-      e._lastHeldLeft = held;
-      e._sanitizedProps.arm_left = sanitizeForTransfer(e.properties.arm_left);
-    }
-  }
-  if (e.properties.arm_right) {
-    const held = e.properties.arm_right.heldItem;
-    if (held !== e._lastHeldRight) {
-      e._lastHeldRight = held;
-      e._sanitizedProps.arm_right = sanitizeForTransfer(e.properties.arm_right);
-    }
-  }
-  if (e.properties.role !== undefined) {
-    e._sanitizedProps.role = e.properties.role;
-  }
-  if (e.properties.name !== undefined) {
-    e._sanitizedProps.name = e.properties.name;
-  }
-  return e._sanitizedProps;
+  return sanitizeForTransfer(e.properties);
 }
 
 function serializeEntities() {

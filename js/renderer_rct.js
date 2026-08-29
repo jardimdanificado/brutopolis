@@ -59,7 +59,10 @@ const EMOTE_SKINS = [
 ];
 
 function getCreatureEmoteSkin(e) {
-  if (e.properties?.life?.isSleeping) return "Emote_Sleeping.png";
+  if (!e || !e.properties) return null;
+  // Items, plants, structures and inanimate objects must NEVER display creature emotes
+  if (!e.properties.life || !e.properties.brain) return null;
+  if (e.properties.life?.isSleeping) return "Emote_Sleeping.png";
   if (e.emote !== undefined && e.emote >= 0 && e.emote < EMOTE_SKINS.length) {
     return EMOTE_SKINS[e.emote];
   }
@@ -92,7 +95,7 @@ function shouldSpawnGrassTuft(x, y) {
 
 function getEntityBounds(e) {
   const r = e.properties?.render;
-  const isItem = !e.properties?.life && (!!e.properties?.edible || !!e.properties?.resourceType || !!e.properties?.germination || e.properties?.species === "item");
+  const isItem = !e.properties?.life && (!!e.properties?.edible || !!e.properties?.resourceType || !!e.properties?.germination || e.properties?.species === "item" || !!e.properties?.weapon || !!e.properties?.armor || !!e.properties?.tool || !!e.properties?.material || !!e.properties?.lifespan);
   const isDoor = !!e.properties?.door;
   const isHouse = !!e.properties?.house || r?.skin === "Overworld_House.png" || e.properties?.name?.includes("Casa");
   const isWall = !isDoor && !isHouse && (e.properties?.structure || r?.skin?.startsWith("Wall_") || e.properties?.name?.includes("Muralha") || e.properties?.name?.includes("Wall"));
@@ -103,7 +106,7 @@ function getEntityBounds(e) {
   if (isHouse) return { radius: 1.3, h: 2.4, yBottom: 0.0 };
   if (isCactus) return { radius: 0.9, h: 2.0, yBottom: 0.0 };
   if (isWall) return { radius: 0.75, h: 1.5, yBottom: 0.0 };
-  if (isItem) return { radius: 0.45, h: 0.7, yBottom: 0.0 };
+  if (isItem) return { radius: 0.65, h: 0.9, yBottom: 0.0 }; // Generous 3D clickable radius for ground items
   return { radius: 0.55, h: 1.1, yBottom: 0.0 }; // Compact creatures
 }
 
@@ -2465,96 +2468,9 @@ export class RCT3DRenderer {
   // ---------------------------------------------------------------------------
 
   selectAt(screenX, screenY, entities, world = null) {
-    const rect = this.container.getBoundingClientRect();
-    const ndcX = ((screenX - rect.left) / this.width) * 2 - 1;
-    const ndcY = -((screenY - rect.top) / this.height) * 2 + 1;
-
-    this.raycaster.setFromCamera({ x: ndcX, y: ndcY }, this.camera);
-    const ray = this.raycaster.ray;
-
-    const map = (world && world.map) ? world.map : this.currentMap;
-
-    let bestEntId = -1;
-    let closestDist = Infinity;
-
-    const nx = 0.70710678;
-    const nz = 0.70710678;
-
-    for (let i = 0; i < entities.length; i++) {
-      const e = entities[i];
-      if (!e || e.destroyed || !e.properties?.render) continue;
-
-      const bounds = getEntityBounds(e);
-      const isStructureOrPlant = bounds.radius > 0.72;
-      const surfaceH = map
-        ? (isStructureOrPlant ? this.getTileSurfaceHeight(map, Math.floor(e.x), Math.floor(e.y)) : this.getSurfaceElevation(map, e.x, e.y))
-        : 1.0;
-
-      // 1. Ray-to-Plane Intersection
-      const denom = nx * ray.direction.x + nz * ray.direction.z;
-      if (Math.abs(denom) > 1e-4) {
-        const numer = nx * (e.x - ray.origin.x) + nz * (e.y - ray.origin.z);
-        const t = numer / denom;
-        if (t > 0 && t < closestDist) {
-          const ix = ray.origin.x + t * ray.direction.x;
-          const iy = ray.origin.y + t * ray.direction.y;
-          const iz = ray.origin.z + t * ray.direction.z;
-
-          const dy = iy - surfaceH;
-          const dx = nx * (ix - e.x) - nz * (iz - e.y);
-
-          if (dy >= bounds.yBottom && dy <= bounds.h && Math.abs(dx) <= bounds.radius) {
-            closestDist = t;
-            bestEntId = e.id;
-          }
-        }
-      }
-
-      // 2. 3D Capsule / Cylinder Center Check
-      const centerH = surfaceH + bounds.h * 0.45;
-      const entPos = new THREE.Vector3(e.x, centerH, e.y);
-      const distToRay = ray.distanceToPoint(entPos);
-      if (distToRay < Math.max(0.55, bounds.radius * 0.95)) {
-        const distAlong = ray.origin.distanceTo(entPos);
-        if (distAlong < closestDist) {
-          closestDist = distAlong;
-          bestEntId = e.id;
-        }
-      }
-    }
-
-    if (bestEntId !== -1) {
-      this.selectedEntityId = bestEntId;
-      return bestEntId;
-    }
-
-    // 3. Ground Intersection Fallback
-    const intersectPoint = new THREE.Vector3();
-    this.groundPlane.constant = -1.0;
-    if (this.raycaster.ray.intersectPlane(this.groundPlane, intersectPoint)) {
-      const tx = Math.floor(intersectPoint.x + 0.5);
-      const ty = Math.floor(intersectPoint.z + 0.5);
-      
-      let closestId = -1;
-      let minD = 1.3;
-      for (const e of entities) {
-        if (e.destroyed) continue;
-        const d = Math.hypot(e.x - tx, e.y - ty);
-        if (d < minD) {
-          minD = d;
-          closestId = e.id;
-        }
-      }
-      this.selectedEntityId = closestId;
-      return closestId;
-    }
-
-    this.selectedEntityId = -1;
-    return -1;
-  }
-
-  selectAt(screenX, screenY, entities, world = null) {
-    return this.getEntityAtScreen(screenX, screenY, entities, world);
+    const id = this.getEntityAtScreen(screenX, screenY, entities, world);
+    this.selectedEntityId = id;
+    return id;
   }
 
   getEntityAtScreen(screenX, screenY, entities, world = null) {
@@ -2579,15 +2495,39 @@ export class RCT3DRenderer {
       const e = entities[i];
       if (!e || e.destroyed || !e.properties?.render) continue;
 
+      const r = e.properties.render;
+      const isRoad = !e.properties.brain && (!!e.properties.road || e.properties.name?.includes("Estrada") || e.properties.name?.includes("Rua") || e.properties.name?.includes("Encaixe"));
+      const isCampfire = !e.properties.brain && !isRoad && (!!e.properties.campfire || e.properties.name?.includes("Campfire") || e.properties.name?.includes("Fogueira"));
+      const isTorch = !e.properties.brain && !isRoad && !isCampfire && (!!e.properties.torch || e.properties.name?.includes("Torch") || e.properties.name?.includes("Tocha"));
+      const isWarehouse = !e.properties.brain && !isRoad && (!!e.properties.warehouse || e.properties.name?.includes("Armazém") || e.properties.name?.includes("Depósito"));
+      const isSlaughterhouse = !e.properties.brain && !isRoad && !isWarehouse && (!!e.properties.slaughterhouse || e.properties.name?.includes("Abatedouro"));
+      const isKitchen = !e.properties.brain && !isRoad && !isWarehouse && !isSlaughterhouse && (!!e.properties.kitchen || e.properties.name?.includes("Cozinha"));
+      const isWell = !e.properties.brain && !isRoad && !isWarehouse && !isSlaughterhouse && !isKitchen && (!!e.properties.well || !!e.properties.isWell || e.properties.name?.includes("Poço") || e.properties.name?.includes("Well"));
+      const isDoor = !e.properties.brain && !isWarehouse && !isSlaughterhouse && !isKitchen && !isWell && !isTorch && !isCampfire && !isRoad && !!e.properties.door;
+
+      const isCactus = e.properties.species === "cactus" || e.properties.name?.toLowerCase().includes("cactus") || e.properties.name?.toLowerCase().includes("cacto");
+      const isTree = !isCactus && (e.properties.species === "oak" || e.properties.species === "pine" || e.properties.species === "willow" || e.properties.species === "tree" || !!e.properties.tree || (r.skin && r.skin.toLowerCase().includes("tree")));
+      const isWoodLog = !e.properties.brain && !isDoor && !isWarehouse && !isSlaughterhouse && !isKitchen && !isTorch && !isCampfire && !isRoad && (e.properties.resourceType === "wood" || e.properties.name?.includes("Wood Log") || e.properties.name?.includes("Madeira") || r.skin === "Item_Wood.png");
+      const isStoneItem = !e.properties.brain && !isDoor && !isWarehouse && !isSlaughterhouse && !isKitchen && !isTorch && !isCampfire && !isRoad && (e.properties.resourceType === "stone" || e.properties.name?.includes("Stone Block") || e.properties.name?.includes("Pedra"));
+      const isHouse = !e.properties.brain && !isWoodLog && !isStoneItem && !isTree && !isCactus && !isWarehouse && !isSlaughterhouse && !isKitchen && !isWell && !isTorch && !isCampfire && !isRoad && (!!e.properties.house || (e.properties.species === "structure" && (r.skin === "Overworld_House.png" || e.properties.name?.includes("Casa") || e.properties.name?.includes("Ossuário") || e.properties.name?.includes("Castelo") || e.properties.name?.includes("Cabana"))));
+      const isWall = !e.properties.brain && !isDoor && !isHouse && !isWarehouse && !isSlaughterhouse && !isKitchen && !isWell && !isTorch && !isCampfire && !isRoad && !isWoodLog && !isStoneItem && !isTree && !isCactus && (r.skin?.startsWith("Wall_") || e.properties.name?.includes("Muralha") || e.properties.name?.includes("Paliçada") || e.properties.name?.includes("Muro") || (e.properties.structure && !e.properties.edible && !e.properties.resourceType));
+
+      const isBuilding = isHouse || isWall || isDoor || isWarehouse || isSlaughterhouse || isKitchen || isWell;
+      const isPlantOrItem = isTree || isCactus || isWoodLog || isStoneItem || isTorch || isCampfire || isRoad;
+
+      const isItem = !e.properties.brain && !isBuilding && !isTree && !isCactus && !isWoodLog && !isStoneItem && !isTorch && !isCampfire && !isRoad;
+
+      const posX = (isBuilding || isPlantOrItem) ? e.x + 0.5 : e.x;
+      const posY = (isBuilding || isPlantOrItem) ? e.y + 0.5 : e.y;
+
       const bounds = getEntityBounds(e);
-      const isStructureOrPlant = bounds.radius > 0.72;
       const surfaceH = map
-        ? (isStructureOrPlant ? this.getTileSurfaceHeight(map, Math.floor(e.x), Math.floor(e.y)) : this.getSurfaceElevation(map, e.x, e.y))
+        ? (isBuilding ? this.getTileSurfaceHeight(map, Math.floor(e.x), Math.floor(e.y)) : this.getSurfaceElevation(map, posX, posY))
         : 1.0;
 
       const denom = nx * ray.direction.x + nz * ray.direction.z;
       if (Math.abs(denom) > 1e-4) {
-        const numer = nx * (e.x - ray.origin.x) + nz * (e.y - ray.origin.z);
+        const numer = nx * (posX - ray.origin.x) + nz * (posY - ray.origin.z);
         const t = numer / denom;
         if (t > 0 && t < closestDist) {
           const ix = ray.origin.x + t * ray.direction.x;
@@ -2595,19 +2535,19 @@ export class RCT3DRenderer {
           const iz = ray.origin.z + t * ray.direction.z;
 
           const dy = iy - surfaceH;
-          const dx = nx * (ix - e.x) - nz * (iz - e.y);
+          const dx = nx * (ix - posX) - nz * (iz - posY);
 
-          if (dy >= bounds.yBottom && dy <= bounds.h && Math.abs(dx) <= bounds.radius) {
+          if (dy >= -0.2 && dy <= Math.max(1.0, bounds.h) && Math.abs(dx) <= Math.max(0.75, bounds.radius)) {
             closestDist = t;
             bestEntId = e.id;
           }
         }
       }
 
-      const centerH = surfaceH + bounds.h * 0.45;
-      const entPos = new THREE.Vector3(e.x, centerH, e.y);
+      const centerH = surfaceH + (isItem ? 0.25 : bounds.h * 0.45);
+      const entPos = new THREE.Vector3(posX, centerH, posY);
       const distToRay = ray.distanceToPoint(entPos);
-      if (distToRay < Math.max(0.55, bounds.radius * 0.95)) {
+      if (distToRay < Math.max(0.75, bounds.radius * 0.95)) {
         const distAlong = ray.origin.distanceTo(entPos);
         if (distAlong < closestDist) {
           closestDist = distAlong;
@@ -3487,28 +3427,28 @@ export class RCT3DRenderer {
       }
 
       const r = e.properties.render;
-      const isRoad = !e.properties.life && (!!e.properties.road || e.properties.name?.includes("Estrada") || e.properties.name?.includes("Rua") || e.properties.name?.includes("Encaixe"));
-      const isCampfire = !e.properties.life && !isRoad && (!!e.properties.campfire || e.properties.name?.includes("Campfire") || e.properties.name?.includes("Fogueira"));
-      const isTorch = !e.properties.life && !isRoad && !isCampfire && (!!e.properties.torch || e.properties.name?.includes("Torch") || e.properties.name?.includes("Tocha"));
-      const isWarehouse = !e.properties.life && !isRoad && (!!e.properties.warehouse || e.properties.name?.includes("Armazém") || e.properties.name?.includes("Depósito"));
-      const isSlaughterhouse = !e.properties.life && !isRoad && !isWarehouse && (!!e.properties.slaughterhouse || e.properties.name?.includes("Abatedouro"));
-      const isKitchen = !e.properties.life && !isRoad && !isWarehouse && !isSlaughterhouse && (!!e.properties.kitchen || e.properties.name?.includes("Cozinha"));
-      const isWell = !e.properties.life && !isRoad && !isWarehouse && !isSlaughterhouse && !isKitchen && (!!e.properties.well || !!e.properties.isWell || e.properties.name?.includes("Poço") || e.properties.name?.includes("Well"));
-      const isDoor = !e.properties.life && !isWarehouse && !isSlaughterhouse && !isKitchen && !isWell && !isTorch && !isCampfire && !isRoad && !!e.properties.door;
+      const isRoad = !e.properties.brain && (!!e.properties.road || e.properties.name?.includes("Estrada") || e.properties.name?.includes("Rua") || e.properties.name?.includes("Encaixe"));
+      const isCampfire = !e.properties.brain && !isRoad && (!!e.properties.campfire || e.properties.name?.includes("Campfire") || e.properties.name?.includes("Fogueira"));
+      const isTorch = !e.properties.brain && !isRoad && !isCampfire && (!!e.properties.torch || e.properties.name?.includes("Torch") || e.properties.name?.includes("Tocha"));
+      const isWarehouse = !e.properties.brain && !isRoad && (!!e.properties.warehouse || e.properties.name?.includes("Armazém") || e.properties.name?.includes("Depósito"));
+      const isSlaughterhouse = !e.properties.brain && !isRoad && !isWarehouse && (!!e.properties.slaughterhouse || e.properties.name?.includes("Abatedouro"));
+      const isKitchen = !e.properties.brain && !isRoad && !isWarehouse && !isSlaughterhouse && (!!e.properties.kitchen || e.properties.name?.includes("Cozinha"));
+      const isWell = !e.properties.brain && !isRoad && !isWarehouse && !isSlaughterhouse && !isKitchen && (!!e.properties.well || !!e.properties.isWell || e.properties.name?.includes("Poço") || e.properties.name?.includes("Well"));
+      const isDoor = !e.properties.brain && !isWarehouse && !isSlaughterhouse && !isKitchen && !isWell && !isTorch && !isCampfire && !isRoad && !!e.properties.door;
 
       const isCactus = e.properties.species === "cactus" || e.properties.name?.toLowerCase().includes("cactus") || e.properties.name?.toLowerCase().includes("cacto");
       const isTree = !isCactus && (e.properties.species === "oak" || e.properties.species === "pine" || e.properties.species === "willow" || e.properties.species === "tree" || !!e.properties.tree || (r.skin && r.skin.toLowerCase().includes("tree")));
       const isPine = isTree && (e.properties.species === "pine" || (r.skin && r.skin.toLowerCase().includes("pine")));
 
-      const isWoodLog = !e.properties.life && !isDoor && !isWarehouse && !isSlaughterhouse && !isKitchen && !isTorch && !isCampfire && !isRoad && (e.properties.resourceType === "wood" || e.properties.name?.includes("Wood Log") || e.properties.name?.includes("Madeira") || r.skin === "Item_Wood.png");
-      const isStoneItem = !e.properties.life && !isDoor && !isWarehouse && !isSlaughterhouse && !isKitchen && !isTorch && !isCampfire && !isRoad && (e.properties.resourceType === "stone" || e.properties.name?.includes("Stone Block") || e.properties.name?.includes("Pedra"));
-      const isItem = !e.properties.life && !isDoor && !isTorch && !isCampfire && !isRoad && (!!e.properties.edible || !!e.properties.resourceType || !!e.properties.germination || e.properties.species === "item" || !!e.properties.weapon || !!e.properties.armor || !!e.properties.tool || !!e.properties.material);
+      const isWoodLog = !e.properties.brain && !isDoor && !isWarehouse && !isSlaughterhouse && !isKitchen && !isTorch && !isCampfire && !isRoad && (e.properties.resourceType === "wood" || e.properties.name?.includes("Wood Log") || e.properties.name?.includes("Madeira") || r.skin === "Item_Wood.png");
+      const isStoneItem = !e.properties.brain && !isDoor && !isWarehouse && !isSlaughterhouse && !isKitchen && !isTorch && !isCampfire && !isRoad && (e.properties.resourceType === "stone" || e.properties.name?.includes("Stone Block") || e.properties.name?.includes("Pedra"));
+      const isHouse = !e.properties.brain && !isWoodLog && !isStoneItem && !isTree && !isCactus && !isWarehouse && !isSlaughterhouse && !isKitchen && !isWell && !isTorch && !isCampfire && !isRoad && (!!e.properties.house || (e.properties.species === "structure" && (r.skin === "Overworld_House.png" || e.properties.name?.includes("Casa") || e.properties.name?.includes("Ossuário") || e.properties.name?.includes("Castelo") || e.properties.name?.includes("Cabana"))));
+      const isWall = !e.properties.brain && !isDoor && !isHouse && !isWarehouse && !isSlaughterhouse && !isKitchen && !isWell && !isTorch && !isCampfire && !isRoad && !isWoodLog && !isStoneItem && !isTree && !isCactus && (r.skin?.startsWith("Wall_") || e.properties.name?.includes("Muralha") || e.properties.name?.includes("Paliçada") || e.properties.name?.includes("Muro") || (e.properties.structure && !e.properties.edible && !e.properties.resourceType));
 
-      const isHouse = !e.properties.life && !isItem && !isWoodLog && !isStoneItem && !isTree && !isCactus && !isWarehouse && !isSlaughterhouse && !isKitchen && !isWell && !isTorch && !isCampfire && !isRoad && (!!e.properties.house || (e.properties.species === "structure" && (r.skin === "Overworld_House.png" || e.properties.name?.includes("Casa") || e.properties.name?.includes("Ossuário") || e.properties.name?.includes("Castelo") || e.properties.name?.includes("Cabana"))));
-      const isWall = !e.properties.life && !isDoor && !isHouse && !isWarehouse && !isSlaughterhouse && !isKitchen && !isWell && !isTorch && !isCampfire && !isRoad && !isItem && !isWoodLog && !isStoneItem && !isTree && !isCactus && (r.skin?.startsWith("Wall_") || e.properties.name?.includes("Muralha") || e.properties.name?.includes("Paliçada") || e.properties.name?.includes("Muro") || (e.properties.structure && !e.properties.edible && !e.properties.resourceType));
-
-      const isPlantOrItem = isTree || isCactus || isWoodLog || isStoneItem || isTorch || isCampfire || isRoad;
       const isBuilding = isHouse || isWall || isDoor || isWarehouse || isSlaughterhouse || isKitchen || isWell;
+      const isPlantOrItem = isTree || isCactus || isWoodLog || isStoneItem || isTorch || isCampfire || isRoad;
+
+      const isItem = !e.properties.brain && !isBuilding && !isTree && !isCactus && !isWoodLog && !isStoneItem && !isTorch && !isCampfire && !isRoad;
       const surfaceH = isBuilding
         ? this.getTileSurfaceHeight(map, Math.floor(e.x), Math.floor(e.y))
         : this.getSurfaceElevation(map, isPlantOrItem ? e.x + 0.5 : e.x, isPlantOrItem ? e.y + 0.5 : e.y);
@@ -3830,7 +3770,10 @@ export class RCT3DRenderer {
       // --- DYNAMIC BILLBOARDS (Creatures, Humanoids, Items, Doors) ---
       else {
         activeIds.add(e.id);
-        let skinName = r.skin || "Human_Knight_M.png";
+        let skinName = r.skin;
+        if (!skinName) {
+          skinName = isItem ? "Item_Nugget.png" : (e.properties?.brain ? "Human_Knight_M.png" : "Item_Nugget.png");
+        }
         if (isDoor) {
           skinName = e.properties.door.isOpen ? "Feature_Door_Open.png" : "Feature_Door_Closed.png";
         }
@@ -3869,7 +3812,7 @@ export class RCT3DRenderer {
           }
         }
 
-        const isSleeping = !!e.properties?.life?.isSleeping;
+        const isSleeping = !!e.properties?.life?.isSleeping && !!e.properties?.brain;
         const isStandingTorch = !!e.properties?.torch;
         if (isStandingTorch) {
           sprite.scale.set(0.68, 0.68, 0.68);
@@ -3910,8 +3853,9 @@ export class RCT3DRenderer {
           sprite.material.color.setHex(0xffffff); // Full bright
         }
 
-        // --- 3D FLOATING EMOTES & HELD ITEMS / BACKPACKS PER HAND ---
-        if (!isItem && !isDoor) {
+        // --- 3D FLOATING EMOTES & HELD ITEMS / BACKPACKS PER HAND (STRICTLY CONSCIOUS CREATURES) ---
+        const isConsciousCreature = !isItem && !isDoor && !!e.properties?.brain;
+        if (isConsciousCreature) {
           const emoteSkin = getCreatureEmoteSkin(e);
           const heldItems = [];
 

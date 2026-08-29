@@ -2576,7 +2576,8 @@ export function createGroup(name, founder, baseZone = null, claimedZones = null)
       { id: 4, type: "meeting", zx, zy, name: "Sala de Reunião", assignedMembers: [] }
     ],
     membersPerZone: 10,
-    campfire: null, // { x, y }
+    // Tree planting quota ratio: between 1 tree per 3 citizens (0.33) and 3 trees per citizen (3.0)
+    treesPerCitizen: 0.33 + Math.random() * (3.0 - 0.33),
     storage: [],
     createdTick: currentTick,
     color: groupColor,
@@ -2595,7 +2596,7 @@ export function createGroup(name, founder, baseZone = null, claimedZones = null)
 }
 
 /**
- * Dynamically expands clan territory to accommodate growing population (at least 1 zone for every 10 citizens).
+ * Dynamically expands clan territory to accommodate growing population (at least 1 zone for every 5 citizens).
  * Contiguously claims adjacent land zones with highest natural resource availability and routes new streets into the annexed zone.
  */
 export function expandClanTerritoryToPopulation(group, targetZoneCount, world, livingPop = 0) {
@@ -3566,7 +3567,7 @@ export function getClanBlueprintTiles(group) {
       if (group._housePlots[ownerId]) {
         const p = group._housePlots[ownerId];
         const tk = `${p.x}_${p.y}`;
-        if (!occupiedTiles.has(tk) && isLandTile(p.x, p.y) && !isRoadTile(p.x, p.y) && isFarEnoughFromBuildings(p.x, p.y, tiles, 2)) {
+        if (!occupiedTiles.has(tk) && isLandTile(p.x, p.y) && !isRoadTile(p.x, p.y) && isTileInClaimedZones(p.x, p.y, group.claimedZones) && isFarEnoughFromBuildings(p.x, p.y, tiles, 2)) {
           chosenPlot = p;
         }
       }
@@ -3574,32 +3575,75 @@ export function getClanBlueprintTiles(group) {
       if (!chosenPlot) {
         let bestCandidate = null;
 
-        // Search near existing village streets (distance 2 to 8 tiles from plaza with comfortable spacing)
-        for (let r = 2; r <= 8 && !bestCandidate; r++) {
-          for (let dy = -r; dy <= r && !bestCandidate; dy++) {
-            for (let dx = -r; dx <= r && !bestCandidate; dx++) {
-              if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
-              const px = whX + dx;
-              const py = whY + dy;
-              const tk = `${px}_${py}`;
+        // Spread houses across the entire claimed territory rather than cramming them within a tight radius around the plaza.
+        // We pick the best candidate plot with optimal building separation (at least 2 tiles) and proximity to roads.
+        if (candidatePlots.length > 0) {
+          // Sort candidate plots by a balanced score: prefer plots that maintain good spacing between existing buildings
+          // and spread evenly across claimed zones
+          let bestPlotIdx = -1;
+          let bestScore = -99999;
 
-              if (!isLandTile(px, py) || isRoadTile(px, py) || plannedRoadSet.has(tk) || occupiedTiles.has(tk)) continue;
-              if (!isFarEnoughFromBuildings(px, py, tiles, 2)) continue;
-              if (!isTileInClaimedZones(px, py, group.claimedZones)) continue;
+          for (let i = 0; i < candidatePlots.length; i++) {
+            const cp = candidatePlots[i];
+            const tk = `${cp.x}_${cp.y}`;
+            if (occupiedTiles.has(tk) || plannedRoadSet.has(tk) || !isLandTile(cp.x, cp.y) || isRoadTile(cp.x, cp.y)) continue;
+            if (!isTileInClaimedZones(cp.x, cp.y, group.claimedZones)) continue;
+            if (!isFarEnoughFromBuildings(cp.x, cp.y, tiles, 2)) continue;
 
-              const curW = getSimWorld();
-              if (curW && curW.getTile) {
-                if (curW.getTile(px, py) === 2 || curW.getTile(px, py) === 5) continue;
+            // Calculate min distance to any other existing building
+            let minBuildingDist = 999;
+            for (const t of tiles) {
+              if (t.type === "house" || t.type === "warehouse" || t.type === "campfire" || t.type === "well") {
+                const d = Math.hypot(cp.x - t.x, cp.y - t.y);
+                if (d < minBuildingDist) minBuildingDist = d;
               }
-
-              bestCandidate = { x: px, y: py };
             }
+
+            // Prefer plots with comfortable open breathing room (distance between 2.5 and 8 from neighbor buildings)
+            // while not straying infinitely far into untamed wilderness
+            const distToPlaza = Math.hypot(cp.x - whX, cp.y - whY);
+            const score = (minBuildingDist >= 2.5 ? 20 : 5) + Math.min(10, minBuildingDist) - (distToPlaza * 0.25);
+
+            if (score > bestScore) {
+              bestScore = score;
+              bestCandidate = cp;
+              bestPlotIdx = i;
+            }
+          }
+
+          if (bestCandidate && bestPlotIdx >= 0) {
+            candidatePlots.splice(bestPlotIdx, 1);
           }
         }
 
-        // Fallback to candidate plots if needed
-        if (!bestCandidate && candidatePlots.length > 0) {
-          bestCandidate = candidatePlots.shift();
+        // Fallback: search across all claimed zones with comfortable spacing
+        if (!bestCandidate) {
+          for (const zk of group.claimedZones) {
+            if (bestCandidate) break;
+            const zp = zk.includes("_") ? zk.split("_") : zk.split(",");
+            const zx = parseInt(zp[0], 10);
+            const zy = parseInt(zp[1], 10);
+
+            for (let ox = 1; ox < sz - 1; ox++) {
+              if (bestCandidate) break;
+              for (let oy = 1; oy < sz - 1; oy++) {
+                const px = zx * sz + ox;
+                const py = zy * sz + oy;
+                const tk = `${px}_${py}`;
+
+                if (!isLandTile(px, py) || isRoadTile(px, py) || plannedRoadSet.has(tk) || occupiedTiles.has(tk)) continue;
+                if (!isFarEnoughFromBuildings(px, py, tiles, 2)) continue;
+
+                const curW = getSimWorld();
+                if (curW && curW.getTile) {
+                  if (curW.getTile(px, py) === 2 || curW.getTile(px, py) === 5) continue;
+                }
+
+                bestCandidate = { x: px, y: py };
+                break;
+              }
+            }
+          }
         }
 
         if (bestCandidate) {
@@ -3624,7 +3668,7 @@ export function getClanBlueprintTiles(group) {
             }
           }
 
-          if (minD > 1 && minD <= 4) {
+          if (minD > 1 && minD <= 6) {
             const curW = getSimWorld();
             const roadExt = findOrganicLandPath(nearestRoad.x, nearestRoad.y, chosenPlot.x, chosenPlot.y, curW, 0, curW?.width || 1024, 0, curW?.height || 1024, 400);
             if (roadExt && roadExt.length > 0) {
@@ -6444,47 +6488,79 @@ const freeArm = Object.entries(ent.properties).find(([k, p]) => k.startsWith("ar
 
       // B. Farming / Cultivating (if holding Seed)
       if (isCarryingSeed && inClaimedZone) {
-        let canPlant = false;
-        let targetX = ent.x;
-        let targetY = ent.y;
+        // Enforce Group Tree Planting Quota (between 1 tree per 3 citizens and 3 trees per citizen)
+        if (group.treesPerCitizen === undefined) {
+          group.treesPerCitizen = 0.33 + Math.random() * (3.0 - 0.33);
+        }
+        const memberCount = Math.max(1, (group.members || []).length);
+        const maxAllowedTrees = Math.max(1, Math.round(memberCount * group.treesPerCitizen));
 
-        for (const off of [{dx:0,dy:0}, {dx:1,dy:0}, {dx:-1,dy:0}, {dx:0,dy:1}, {dx:0,dy:-1}]) {
-          const px = ent.x + off.dx;
-          const py = ent.y + off.dy;
-          const tile = world.getTile(px, py);
-          const isLand = (tile !== 2 && tile !== 5 && tile !== 1 && tile !== 4);
-          const hasNearbyPlant = hasEntityInRadius(px, py, 4, e => !e.destroyed && (e.properties.photosynthesis || e.properties.deep_root || e.properties.tree || e.properties.species === "tree" || e.properties.species === "oak" || e.properties.species === "pine" || e.properties.species === "willow" || e.properties.species === "cactus"));
-          if (isLand && !isRoadTile(px, py) && !hasNearbyPlant) {
-            targetX = px;
-            targetY = py;
-            canPlant = true;
-            break;
+        // Count living cultivated trees/flora in clan territory
+        let currentTreeCount = 0;
+        for (let i = 0; i < entities.length; i++) {
+          const e = entities[i];
+          if (!e.destroyed && (e.properties?.photosynthesis || e.properties?.deep_root || e.properties?.tree || e.properties?.species === "tree" || e.properties?.species === "oak" || e.properties?.species === "pine" || e.properties?.species === "willow" || e.properties?.species === "cactus")) {
+            if (isTileInClaimedZones(e.x, e.y, group.claimedZones)) {
+              currentTreeCount++;
+            }
           }
         }
 
-        if (canPlant && this.actionTimer >= 0.5) {
-          this.actionTimer = 0;
-          let seedSpecies = "oak";
+        if (currentTreeCount >= maxAllowedTrees) {
+          // Quota reached: deposit seed into clan storage or drop it instead of over-planting
           for (const [k, p] of Object.entries(ent.properties)) {
             if (k.startsWith("arm") && p && p.heldItem?.resourceType === "seed") {
-              seedSpecies = p.heldItem.seedSpecies || "oak";
+              if (!group.storage) group.storage = [];
+              if (group.storage.length < 40) {
+                group.storage.push(p.heldItem.name || "Seed");
+              }
               p.heldItem = null;
               break;
             }
           }
+        } else {
+          let canPlant = false;
+          let targetX = ent.x;
+          let targetY = ent.y;
 
-          let plantedTree = null;
-          const plantTile = world.getTile(targetX, targetY);
-          if (seedSpecies === "cactus" || plantTile === 3) plantedTree = createCactus(targetX, targetY);
-          else if (seedSpecies === "willow") plantedTree = createWillowTree(targetX, targetY);
-          else if (seedSpecies === "pine") plantedTree = createPineTree(targetX, targetY);
-          else if (seedSpecies === "berry") plantedTree = createBerryBush(targetX, targetY);
-          else plantedTree = createOakTree(targetX, targetY);
+          for (const off of [{dx:0,dy:0}, {dx:1,dy:0}, {dx:-1,dy:0}, {dx:0,dy:1}, {dx:0,dy:-1}]) {
+            const px = ent.x + off.dx;
+            const py = ent.y + off.dy;
+            const tile = world.getTile(px, py);
+            const isLand = (tile !== 2 && tile !== 5 && tile !== 1 && tile !== 4);
+            const hasNearbyPlant = hasEntityInRadius(px, py, 4, e => !e.destroyed && (e.properties.photosynthesis || e.properties.deep_root || e.properties.tree || e.properties.species === "tree" || e.properties.species === "oak" || e.properties.species === "pine" || e.properties.species === "willow" || e.properties.species === "cactus"));
+            if (isLand && !isRoadTile(px, py) && !hasNearbyPlant) {
+              targetX = px;
+              targetY = py;
+              canPlant = true;
+              break;
+            }
+          }
 
-          entities.push(plantedTree);
-          registerEntitySpatial(plantedTree);
-          ent.emote = 2;
-          return;
+          if (canPlant && this.actionTimer >= 0.5) {
+            this.actionTimer = 0;
+            let seedSpecies = "oak";
+            for (const [k, p] of Object.entries(ent.properties)) {
+              if (k.startsWith("arm") && p && p.heldItem?.resourceType === "seed") {
+                seedSpecies = p.heldItem.seedSpecies || "oak";
+                p.heldItem = null;
+                break;
+              }
+            }
+
+            let plantedTree = null;
+            const plantTile = world.getTile(targetX, targetY);
+            if (seedSpecies === "cactus" || plantTile === 3) plantedTree = createCactus(targetX, targetY);
+            else if (seedSpecies === "willow") plantedTree = createWillowTree(targetX, targetY);
+            else if (seedSpecies === "pine") plantedTree = createPineTree(targetX, targetY);
+            else if (seedSpecies === "berry") plantedTree = createBerryBush(targetX, targetY);
+            else plantedTree = createOakTree(targetX, targetY);
+
+            entities.push(plantedTree);
+            registerEntitySpatial(plantedTree);
+            ent.emote = 2;
+            return;
+          }
         }
       }
 
@@ -7206,7 +7282,7 @@ export function createCombatProp(attackInterval = 1.2, aggroRange = 3) {
             limbSkin = "Item_Cloak.png";
             limbColor = 0xffe6e6f0;
           } else if (primaryTarget.key.startsWith("arm") || primaryTarget.key.startsWith("paw")) {
-            limbSkin = "Creature_Hand_U.png";
+            limbSkin = "Item_Steak.png";
             limbColor = 0xffdc5050;
           } else if (primaryTarget.key.startsWith("leg")) {
             limbSkin = "Item_Drumstick.png";
@@ -7580,8 +7656,8 @@ export function evaluateAndAssignClanRoles(group, entities, world) {
   if (livingMembers.length === 0) return;
 
   // 0. Population-Driven Dynamic Territory Expansion:
-  // Every kingdom needs at least 1 zone base + 1 additional zone for every 10 citizens!
-  const minRequiredZones = Math.max(1, 1 + Math.floor(livingMembers.length / 10));
+  // Every kingdom needs at least 1 zone base + 1 additional zone for every 5 citizens!
+  const minRequiredZones = Math.max(1, 1 + Math.floor(livingMembers.length / 5));
   if (group.claimedZones && group.claimedZones.length < minRequiredZones) {
     expandClanTerritoryToPopulation(group, minRequiredZones, world || getSimWorld(), livingMembers.length);
   }
@@ -8773,30 +8849,54 @@ export function createLocomotionProp() {
 
           // --- 5.5 Agriculture / Farming (Farmers, Pioneers, Foragers, Leaders, and Free Settlers) ---
           if ((isFarmer || (!hasUnbuiltStruct && (isForager || isPioneer || energyRatio > 0.40))) && !hasIntention) {
-            let seedTarget = null;
-            if (ent._taskGoal && ent._taskGoal.type === "get_seed") {
-              const lSeed = getEntityById(ent._taskGoal.id);
-              const lockedSeed = (lSeed && !lSeed.destroyed && !lSeed.properties.photosynthesis && !lSeed.properties.deep_root) ? lSeed : null;
-              if (lockedSeed) {
-                seedTarget = lockedSeed;
-              } else {
-                ent._taskGoal = null;
+            // Check clan tree quota before actively foraging/seeking seeds to plant
+            let underTreeQuota = true;
+            if (group) {
+              if (group.treesPerCitizen === undefined) {
+                group.treesPerCitizen = 0.33 + Math.random() * (3.0 - 0.33);
+              }
+              const memberCount = Math.max(1, (group.members || []).length);
+              const maxAllowedTrees = Math.max(1, Math.round(memberCount * group.treesPerCitizen));
+              let currentTreeCount = 0;
+              for (let i = 0; i < entities.length; i++) {
+                const e = entities[i];
+                if (!e.destroyed && (e.properties?.photosynthesis || e.properties?.deep_root || e.properties?.tree || e.properties?.species === "tree" || e.properties?.species === "oak" || e.properties?.species === "pine" || e.properties?.species === "willow" || e.properties?.species === "cactus")) {
+                  if (isTileInClaimedZones(e.x, e.y, group.claimedZones)) {
+                    currentTreeCount++;
+                  }
+                }
+              }
+              if (currentTreeCount >= maxAllowedTrees) {
+                underTreeQuota = false;
               }
             }
 
-            if (!seedTarget) {
-              seedTarget = findClosestEntityInRadius(ent.x, ent.y, 22, e =>
-                !e.destroyed && !e.properties.photosynthesis && !e.properties.deep_root && (e.properties.germination || e.properties.resourceType === "seed" || e.properties.name?.includes("Seed") || e.properties.name?.includes("Semente") || (e.properties.edible?.foodType === "fruit" && e.properties.edible.seed))
-              );
+            if (underTreeQuota) {
+              let seedTarget = null;
+              if (ent._taskGoal && ent._taskGoal.type === "get_seed") {
+                const lSeed = getEntityById(ent._taskGoal.id);
+                const lockedSeed = (lSeed && !lSeed.destroyed && !lSeed.properties.photosynthesis && !lSeed.properties.deep_root) ? lSeed : null;
+                if (lockedSeed) {
+                  seedTarget = lockedSeed;
+                } else {
+                  ent._taskGoal = null;
+                }
+              }
+
+              if (!seedTarget) {
+                seedTarget = findClosestEntityInRadius(ent.x, ent.y, 22, e =>
+                  !e.destroyed && !e.properties.photosynthesis && !e.properties.deep_root && (e.properties.germination || e.properties.resourceType === "seed" || e.properties.name?.includes("Seed") || e.properties.name?.includes("Semente") || (e.properties.edible?.foodType === "fruit" && e.properties.edible.seed))
+                );
+                if (seedTarget) {
+                  ent._taskGoal = { type: "get_seed", id: seedTarget.id };
+                }
+              }
+
               if (seedTarget) {
-                ent._taskGoal = { type: "get_seed", id: seedTarget.id };
+                chosenDx = Math.sign(seedTarget.x - ent.x);
+                chosenDy = Math.sign(seedTarget.y - ent.y);
+                hasIntention = true;
               }
-            }
-
-            if (seedTarget) {
-              chosenDx = Math.sign(seedTarget.x - ent.x);
-              chosenDy = Math.sign(seedTarget.y - ent.y);
-              hasIntention = true;
             }
           }
 

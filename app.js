@@ -21,6 +21,7 @@ import {
   rebuildSpatialGrid,
   registerEntitySpatial,
   updateEntitySpatial,
+  unregisterEntitySpatial,
   getEntityAtTile,
   getEntitiesInRadius,
   getEntitiesInViewport,
@@ -305,8 +306,12 @@ function updateLocalEntities(entitiesData, registryData) {
   if (Array.isArray(entitiesData)) {
     const curEntities = [];
     const zSize = getZoneSize();
+    const receivedIds = new Set();
+    
     for (const entData of entitiesData) {
       if (!entData) continue;
+      receivedIds.add(entData.id);
+      
       let ent = entityRegistry.get(entData.id);
       const isNew = !ent;
       if (isNew) {
@@ -343,6 +348,18 @@ function updateLocalEntities(entitiesData, registryData) {
         curEntities.push(ent);
       }
     }
+    
+    // Clean up ghosts that the worker stopped sending (because they died)
+    if (entities && entities.length > 0) {
+      for (let i = 0; i < entities.length; i++) {
+        const oldEnt = entities[i];
+        if (oldEnt && !oldEnt.destroyed && !receivedIds.has(oldEnt.id)) {
+          oldEnt.destroyed = true;
+          unregisterEntitySpatial(oldEnt, zSize);
+        }
+      }
+    }
+
     entities = curEntities;
   }
 }
@@ -4163,26 +4180,32 @@ function renderCreatureSummaryBox() {
   const nameStr = (ent.properties.name || `Entity #${ent.id}`).slice(0, 18).toUpperCase();
   drawText8x8(nameStr, bx + 8, by + 8, "#f8b800", 1);
 
-  const speciesStr = (ent.properties.species || "Creature").toUpperCase();
-  const clanStr = (ent.properties.group?.name || "Solitary").slice(0, 10).toUpperCase();
+  const isCreature = !!ent.properties.brain;
+  const speciesStr = (ent.properties.species || (isCreature ? "Creature" : "Item")).toUpperCase();
+  const clanStr = (ent.properties.group?.name || (isCreature ? "Solitary" : "Resource")).slice(0, 10).toUpperCase();
   drawText8x8(`${speciesStr} | ${clanStr}`, bx + 8, by + 20, "#3cbcfc", 1);
 
-  if (ent.properties.life) {
+  if (ent.properties.life && isCreature) {
     drawNESProgressBar(bx + 8, by + 32, bw - 16, 12, ent.properties.life.energy, ent.properties.life.max || 100, "HP", "#58d854");
+  } else {
+    const info = ent.properties.edible ? `FOOD +${ent.properties.edible.nutrition}` : (ent.properties.resourceType ? `RESOURCE: ${ent.properties.resourceType.toUpperCase()}` : "ITEM / OBJECT");
+    drawText8x8(info, bx + 8, by + 34, "#a0e0a0", 1);
   }
 
-  // Toggles for Follow & Vision
-  const followTxt = isFollowMode ? "FOLLOW:ON" : "FOLLOW:OFF";
-  drawNESButton(bx + 8, by + 50, 108, 24, followTxt, isFollowMode, false);
-  registerClickableRegion(bx + 8, by + 50, 108, 24, () => {
-    isFollowMode = !isFollowMode;
-  });
+  // Toggles for Follow & Vision (Creatures only)
+  if (isCreature) {
+    const followTxt = isFollowMode ? "FOLLOW:ON" : "FOLLOW:OFF";
+    drawNESButton(bx + 8, by + 50, 108, 24, followTxt, isFollowMode, false);
+    registerClickableRegion(bx + 8, by + 50, 108, 24, () => {
+      isFollowMode = !isFollowMode;
+    });
 
-  const visionTxt = isCreatureVisionMode ? "VISION:ON" : "VISION:OFF";
-  drawNESButton(bx + 124, by + 50, 108, 24, visionTxt, isCreatureVisionMode, false);
-  registerClickableRegion(bx + 124, by + 50, 108, 24, () => {
-    isCreatureVisionMode = !isCreatureVisionMode;
-  });
+    const visionTxt = isCreatureVisionMode ? "VISION:ON" : "VISION:OFF";
+    drawNESButton(bx + 124, by + 50, 108, 24, visionTxt, isCreatureVisionMode, false);
+    registerClickableRegion(bx + 124, by + 50, 108, 24, () => {
+      isCreatureVisionMode = !isCreatureVisionMode;
+    });
+  }
 }
 
 /**
