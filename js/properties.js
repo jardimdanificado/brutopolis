@@ -1,4 +1,4 @@
-import { createEntity, getEntityById, entityRegistry, currentTick, getEntitiesInRadius, findEntityInRadius, hasEntityInRadius, findClosestEntityInRadius, forEachEntityInRadius, getEntityAtTile, getEntityAtTileByProp, setSpatialZoneSize, tileEntityMap, globalWallCoords, globalRoadCoords, getTileKey, registerEntitySpatial, dismemberCorpse, createCorpseEntity } from "./engine.js";
+import { createEntity, getEntityById, entityRegistry, currentTick, getEntitiesInRadius, findEntityInRadius, hasEntityInRadius, findClosestEntityInRadius, forEachEntityInRadius, countEntitiesInRadius, getEntityAtTile, getEntityAtTileByProp, setSpatialZoneSize, tileEntityMap, globalWallCoords, globalRoadCoords, getTileKey, registerEntitySpatial, dismemberCorpse, createCorpseEntity } from "./engine.js";
 import { MAP_WIDTH, MAP_HEIGHT, TILE_FLOOR, TILE_MOUNTAIN, TILE_WATER, TILE_SAND, TILE_STONE, TILE_VOID, TILE_ROAD_GRASS, TILE_ROAD_SAND, TILE_ROAD_STONE } from "./world_gen.js";
 import {
   recordWorldEvent,
@@ -4660,6 +4660,37 @@ export function gossipBetweenCreatures(speaker, listener, world, entities) {
     return;
   }
 
+  // E. Casual World & Weather Observation
+  if (Math.random() < 0.10) {
+    const timeOfDay = (world?.clock?.globalLight ?? 1) >= 0.5 ? "day" : "night";
+    const casualPhrases = [
+      `complained about the endless ${timeOfDay}.`,
+      `remarked how beautiful the ${timeOfDay} is today.`,
+      `wondered if it will rain soon.`,
+      `said the air smells strange today.`,
+      `talked about the stars and the moon.`,
+      `wished the sun was warmer.`,
+      `shared a strange dream they had last night.`,
+      `mentioned their feet were hurting from all the walking.`,
+      `asked ${listener.properties.name} if they heard a strange noise in the woods.`,
+      `complained about being incredibly hungry.`,
+      `talked about their favorite type of roasted meat.`
+    ];
+    const phrase = casualPhrases[Math.floor(Math.random() * casualPhrases.length)];
+    recordWorldEvent({
+      opcode: OP_DIALOGUE,
+      type: "DIALOGUE",
+      primaryEntityId: speaker.id,
+      secondaryEntityId: listener.id,
+      location: { x: speaker.x, y: speaker.y },
+      description: `${speaker.properties.name} ${phrase}`,
+      tick: currentTick,
+      timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
+      metadata: { primaryName: speaker.properties.name, secondaryName: listener.properties.name, topic: "casual" }
+    });
+    return;
+  }
+
   // 5. Truthful Organic Memory Sharing & Strategic Slander
   const isLiar = !!speaker.properties.liar;
   const lieChance = isLiar ? (speaker.properties.liar.type === "manipulator" ? 0.35 : 0.20) : 0.06;
@@ -4761,7 +4792,13 @@ export function createAndTransmitLie(speaker, listener, world, entities) {
     }
 
     // Filter candidate targets: MUST be known living creatures
-    const candidateLivingKnown = entities ? entities.filter(e => knownIds.has(e.id) && !e.destroyed && e.properties?.life && e.properties?.species !== "item" && e.properties?.name) : [];
+    const candidateLivingKnown = [];
+    for (const id of knownIds) {
+      const e = getEntityById(id);
+      if (e && !e.destroyed && e.properties?.life && e.properties?.species !== "item" && e.properties?.name) {
+        candidateLivingKnown.push(e);
+      }
+    }
 
     if (!isLiarTrait) {
       // NORMAL CREATURE: Lies must be purposeful based on affinities (slander enemy or exalt friend/self)
@@ -4777,26 +4814,30 @@ export function createAndTransmitLie(speaker, listener, world, entities) {
         accusedTarget = enemies[Math.floor(Math.random() * enemies.length)];
         const targetName = accusedTarget.properties.name;
         lieType = "PURPOSEFUL_SLANDER";
-        const slanderRoll = Math.random();
-        if (slanderRoll < 0.35) {
-          narrative = `${speaker.properties.name} spread the malicious rumor that ${targetName} committed treason and stole clan resources!`;
-        } else if (slanderRoll < 0.70) {
-          narrative = `${speaker.properties.name} falsely accused ${targetName} of fleeing in panic and acting like a vile coward!`;
-        } else {
-          narrative = `${speaker.properties.name} slandered ${targetName}, claiming they were humiliated and easily defeated in battle!`;
-        }
+        const slanderTemplates = [
+          `spread the malicious rumor that ${targetName} committed treason and stole clan resources!`,
+          `falsely accused ${targetName} of fleeing in panic and acting like a vile coward!`,
+          `slandered ${targetName}, claiming they were humiliated and easily defeated in battle!`,
+          `whispered that ${targetName} eats dirt when no one is looking!`,
+          `claimed ${targetName} secretly worships forbidden entities in the dark!`,
+          `started a rumor that ${targetName} sleeps during their guard shifts!`
+        ];
+        narrative = `${speaker.properties.name} ${slanderTemplates[Math.floor(Math.random() * slanderTemplates.length)]}`;
       } else if (friends.length > 0 || Math.random() < 0.50) {
         // Purpose: Exalt / Glorify a friend or self
         const exaltSelf = Math.random() < 0.40 || friends.length === 0;
         accusedTarget = exaltSelf ? speaker : friends[Math.floor(Math.random() * friends.length)];
         const targetName = accusedTarget.properties.name;
         lieType = "PURPOSEFUL_EXALT";
-        const exaltRoll = Math.random();
-        if (exaltRoll < 0.50) {
-          narrative = `${speaker.properties.name} boasted that ${targetName} single-handedly vanquished a monstrous beast in heroic combat!`;
-        } else {
-          narrative = `${speaker.properties.name} fabricated a legend that ${targetName} discovered a blessed sacred relic!`;
-        }
+        const exaltTemplates = [
+          `boasted that ${targetName} single-handedly vanquished a monstrous beast in heroic combat!`,
+          `fabricated a legend that ${targetName} discovered a blessed sacred relic!`,
+          `swore they saw ${targetName} lift a boulder with one hand!`,
+          `claimed ${targetName} has the wisdom of ancient kings!`,
+          `spread a tall tale that ${targetName} can communicate with the wind!`,
+          `told everyone that ${targetName} never misses a strike in battle!`
+        ];
+        narrative = `${speaker.properties.name} ${exaltTemplates[Math.floor(Math.random() * exaltTemplates.length)]}`;
       } else {
         return; // No purposeful emotional motive to fabricate a lie
       }
@@ -4814,20 +4855,17 @@ export function createAndTransmitLie(speaker, listener, world, entities) {
         realEventId = realEv.id;
         narrative = `${speaker.properties.name} falsely accused ${targetName} of being the culprit in event #${realEv.id} (${realEv.description})!`;
       } else {
-        const rollType = Math.random();
-        if (rollType < 0.30) {
-          lieType = "FABRICATED_MURDER";
-          narrative = `${speaker.properties.name} falsely claimed that ${targetName} murdered an innocent in cold blood!`;
-        } else if (rollType < 0.60) {
-          lieType = "FABRICATED_DEATH";
-          narrative = `${speaker.properties.name} spread a fake rumor that ${targetName} was slain in the wilderness!`;
-        } else if (rollType < 0.80) {
-          lieType = "FABRICATED_BIRTH";
-          narrative = `${speaker.properties.name} gossiped that ${targetName} had a secret illegitimate child!`;
-        } else {
-          lieType = "FABRICATED_ATTACK";
-          narrative = `${speaker.properties.name} claimed that ${targetName} secretly betrayed the clan!`;
-        }
+        const manipulatorLies = [
+          { type: "FABRICATED_MURDER", text: `falsely claimed that ${targetName} murdered an innocent in cold blood!` },
+          { type: "FABRICATED_DEATH", text: `spread a fake rumor that ${targetName} was slain in the wilderness!` },
+          { type: "FABRICATED_BIRTH", text: `gossiped that ${targetName} had a secret illegitimate child!` },
+          { type: "FABRICATED_ATTACK", text: `claimed that ${targetName} secretly betrayed the clan!` },
+          { type: "FABRICATED_STEAL", text: `swore they saw ${targetName} stealing food from the warehouse in the dead of night!` },
+          { type: "FABRICATED_CURSE", text: `told everyone that ${targetName} is cursed and brings bad luck to the village!` }
+        ];
+        const chosen = manipulatorLies[Math.floor(Math.random() * manipulatorLies.length)];
+        lieType = chosen.type;
+        narrative = `${speaker.properties.name} ${chosen.text}`;
       }
     }
 
@@ -7715,11 +7753,11 @@ export function evaluateAndAssignClanRoles(group, entities, world) {
   const homeBaseX = baseZx * 8 + 4;
   const homeBaseY = baseZy * 8 + 4;
 
-  const nearbyThreats = getEntitiesInRadius(homeBaseX, homeBaseY, 24).filter(e =>
+  const threatsCount = countEntitiesInRadius(homeBaseX, homeBaseY, 24, e =>
     e && !e.destroyed && e.properties.life && (!e.properties.group || e.properties.group.id !== group.id) &&
     (e.properties.violent || (group.wars && group.wars.includes(e.properties.group?.id)))
   );
-  if (nearbyThreats.length > 0) threatLevel += nearbyThreats.length;
+  if (threatsCount > 0) threatLevel += threatsCount;
 
   // 4. Determine Dynamic Role Quotas with Flexible Multi-Role Support
   const totalPop = livingMembers.length;
@@ -8728,8 +8766,8 @@ export function createLocomotionProp() {
               }
             } else if (needsWood) {
               // Felling wild trees (Strict: only when wood is genuinely needed)
-              const trees = getEntitiesInRadius(ent.x, ent.y, 20).filter(e => !e.destroyed && (e.properties.photosynthesis || e.properties.deep_root || e.properties.species === "oak" || e.properties.species === "willow" || e.properties.species === "pine" || e.properties.species === "tree"));
-              let nearbyTree = trees.find(t => !isTileInClaimedZones(t.x, t.y, group.claimedZones)) || trees[0];
+              const treePred = e => !e.destroyed && (e.properties.photosynthesis || e.properties.deep_root || e.properties.species === "oak" || e.properties.species === "willow" || e.properties.species === "pine" || e.properties.species === "tree");
+              let nearbyTree = findEntityInRadius(ent.x, ent.y, 20, e => treePred(e) && !isTileInClaimedZones(e.x, e.y, group.claimedZones)) || findEntityInRadius(ent.x, ent.y, 20, treePred);
 
               if (nearbyTree) {
                 chosenDx = Math.sign(nearbyTree.x - ent.x);
@@ -9014,8 +9052,8 @@ export function createLocomotionProp() {
                     }
                   }
 
-                  if (neighborUnownedZones.length > 0) {
-                    const wildItems = getEntitiesInRadius(ent.x, ent.y, 40).filter(e =>
+                  if (neighborUnownedZones.length > 0 && Math.random() < 0.25) {
+                    const wildItem = findEntityInRadius(ent.x, ent.y, 16, e =>
                       !e.destroyed &&
                       !e.properties.structure &&
                       !e.properties.house &&
@@ -9023,9 +9061,9 @@ export function createLocomotionProp() {
                       isTileInClaimedZones(e.x, e.y, neighborUnownedZones) &&
                       (!!e.properties.edible || !!e.properties.resourceType || !!e.properties.germination || e.properties.species === "item")
                     );
-                    if (wildItems.length > 0) {
-                      chosenDx = Math.sign(wildItems[0].x - ent.x);
-                      chosenDy = Math.sign(wildItems[0].y - ent.y);
+                    if (wildItem) {
+                      chosenDx = Math.sign(wildItem.x - ent.x);
+                      chosenDy = Math.sign(wildItem.y - ent.y);
                       hasIntention = true;
                     }
                   }
@@ -9052,11 +9090,10 @@ export function createLocomotionProp() {
                           hasIntention = true;
                           break;
                         } else if (distToOtherWh <= 3) {
-                          const foreignNeighbors = getEntitiesInRadius(ent.x, ent.y, 4).filter(o =>
+                          const foreignFriend = findEntityInRadius(ent.x, ent.y, 4, o => 
                             o !== ent && !o.destroyed && o.properties?.group?.id === otherGroup.id
                           );
-                          if (foreignNeighbors.length > 0) {
-                            const foreignFriend = foreignNeighbors[0];
+                          if (foreignFriend) {
                             const deltaAff = (Math.random() < 0.85) ? 2 : -1;
                             if (ent.properties?.brain?.affinities) {
                               ent.properties.brain.affinities[foreignFriend.id] = (ent.properties.brain.affinities[foreignFriend.id] || 0) + deltaAff;

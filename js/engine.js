@@ -401,6 +401,14 @@ export function forEachEntityInRadius(centerX, centerY, radiusTiles, callback, z
   }
 }
 
+export function countEntitiesInRadius(centerX, centerY, radiusTiles, predicate, zoneSize = activeZoneSize) {
+  let count = 0;
+  forEachEntityInRadius(centerX, centerY, radiusTiles, ent => {
+    if (!predicate || predicate(ent)) count++;
+  }, zoneSize);
+  return count;
+}
+
 export function getEntitiesInViewport(minX, maxX, minY, maxY, zoneSize = activeZoneSize, outArray = null) {
   const minZx = Math.floor(minX / zoneSize);
   const maxZx = Math.floor(maxX / zoneSize);
