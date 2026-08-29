@@ -2089,7 +2089,7 @@ export function createGenitaliaProp(type = "penis", isPregnant = false) {
           baby.properties.eye_right = createEyeProp("right", 8);
 
           // Physical Limbs
-          const hasPaws = Object.keys(ent.properties).some(k => k.startsWith("paw"));
+          let hasPaws = false; for (const k in ent.properties) { if (k.startsWith("paw")) { hasPaws = true; break; } }
           if (hasPaws) {
             baby.properties.paw_front_left = createPawProp("front_left", 0.8, 60, 60, 3, 3, 12);
             baby.properties.paw_front_right = createPawProp("front_right", 0.8, 60, 60, 3, 3, 12);
@@ -5078,7 +5078,7 @@ export function isCarryingItem(ent, resourceType = null) {
 }
 
 export function dropHeldItem(ent, entities, world) {
-  for (const [k, p] of Object.entries(ent.properties)) {
+  for (const k in ent.properties) { const p = ent.properties[k];
     if (k.startsWith("arm") && p && p.heldItem && p.heldItem.resourceType) {
       const it = p.heldItem;
       p.heldItem = null;
@@ -5544,7 +5544,7 @@ export function createGroupMemberProp() {
           warehouse.properties.warehouse.items = warehouse.properties.warehouse.items.filter(it => it && it.resourceType !== "torch" && !it.isTorch && !it.name?.includes("Torch") && !it.name?.includes("Tocha"));
         }
         if (distWh <= 1 && this.actionTimer >= 0.20) {
-          for (const [k, p] of Object.entries(ent.properties)) {
+          for (const k in ent.properties) { const p = ent.properties[k];
             if (k.startsWith("arm") && p && p.heldItem && !p.heldItem.isWeapon && !p.heldItem.isTool && !p.heldItem.isTorch && p.heldItem.resourceType !== "torch" && !p.heldItem.name?.includes("Torch") && !p.heldItem.name?.includes("Tocha")) {
               if (!warehouse.properties.warehouse.items) warehouse.properties.warehouse.items = [];
               warehouse.properties.warehouse.items.push(p.heldItem);
@@ -5559,7 +5559,7 @@ export function createGroupMemberProp() {
         if (group.storage && group.storage.length > 0) {
           group.storage = group.storage.filter(it => it !== "torch" && it !== "tocha");
         }
-        for (const [k, p] of Object.entries(ent.properties)) {
+        for (const k in ent.properties) { const p = ent.properties[k];
           if (k.startsWith("arm") && p && p.heldItem && !p.heldItem.isWeapon && !p.heldItem.isTool && !p.heldItem.isTorch && p.heldItem.resourceType !== "torch" && !p.heldItem.name?.includes("Torch") && !p.heldItem.name?.includes("Tocha")) {
             if (!group.storage) group.storage = [];
             group.storage.push(p.heldItem.resourceType || "item");
@@ -5573,7 +5573,7 @@ export function createGroupMemberProp() {
 
       // A2. Withdraw Needed Construction Materials from Warehouse if hands are free
       if (!isCarryingMat && warehouse && warehouse.properties.warehouse?.isCompleted && distWh <= 1 && this.actionTimer >= 0.20) {
-        const freeArm = Object.entries(ent.properties).find(([k, p]) => k.startsWith("arm") && p && !p.heldItem);
+        let freeArm = null; for (const k in ent.properties) { const p = ent.properties[k]; if (k.startsWith("arm") && p && !p.heldItem) { freeArm = [k, p]; break; } }
         if (freeArm && warehouse.properties.warehouse.items && warehouse.properties.warehouse.items.length > 0) {
           const blueprint = getClanBlueprintTiles(group);
           let needsWood = false;
@@ -5668,7 +5668,7 @@ export function createGroupMemberProp() {
             const warehouseEntity = getEntityAtTileByProp(bp.x, bp.y, "warehouse");
             if (!warehouseEntity && dist <= 1 && this.actionTimer >= 0.20) {
               let resType = null;
-              for (const [k, p] of Object.entries(ent.properties)) {
+              for (const k in ent.properties) { const p = ent.properties[k];
                 if (k.startsWith("arm") && p && (p.heldItem?.resourceType === "stone" || p.heldItem?.resourceType === "wood" || p.heldItem?.resourceType === "bone")) {
                   resType = p.heldItem.resourceType;
                   p.heldItem = null;
@@ -5686,7 +5686,7 @@ export function createGroupMemberProp() {
             } else if (warehouseEntity && !warehouseEntity.properties.warehouse?.isCompleted && dist <= 1 && this.actionTimer >= 0.20) {
               const wh = warehouseEntity.properties.warehouse;
               let contributed = false;
-              for (const [k, p] of Object.entries(ent.properties)) {
+              for (const k in ent.properties) { const p = ent.properties[k];
                 if (k.startsWith("arm") && p && p.heldItem) {
                   if (p.heldItem.resourceType === "wood" && wh.woodCurrent < wh.woodCost) {
                     wh.woodCurrent++;
@@ -5720,13 +5720,13 @@ export function createGroupMemberProp() {
               }
             } else if (warehouseEntity && warehouseEntity.properties.warehouse?.isCompleted && dist <= 1 && this.actionTimer >= 0.20) {
               const hasUnbuiltHouse = blueprint.some(b => b.type === "house" && (!getEntityAtTileByProp(b.x, b.y, "house") || !getEntityAtTileByProp(b.x, b.y, "house")?.properties.house?.isCompleted));
-              const isHoldingBuildingMat = Object.values(ent.properties).some(p => p && (p.heldItem?.resourceType === "wood" || p.heldItem?.resourceType === "stone" || p.heldItem?.resourceType === "bone"));
+              let isHoldingBuildingMat = false; for (const k in ent.properties) { const p = ent.properties[k]; if (p && (p.heldItem?.resourceType === "wood" || p.heldItem?.resourceType === "stone" || p.heldItem?.resourceType === "bone")) { isHoldingBuildingMat = true; break; } }
               if (!warehouseEntity.properties.warehouse.items) warehouseEntity.properties.warehouse.items = [];
               const whItems = warehouseEntity.properties.warehouse.items;
               const isHauler = ent.properties.role === "Hauler" || ent.properties.role === "Pioneer";
 
               // 1. Unload items from held basket
-              for (const [k, p] of Object.entries(ent.properties)) {
+              for (const k in ent.properties) { const p = ent.properties[k];
                 if (k.startsWith("arm") && p && p.heldItem?.container?.type === "basket") {
                   const bItems = p.heldItem.container.items;
                   while (bItems.length > 0) {
@@ -5744,7 +5744,7 @@ export function createGroupMemberProp() {
 
               // 3. Deposit directly held items in hands (unless holding a working basket)
               if (!hasUnbuiltHouse || !isHoldingBuildingMat) {
-                for (const [k, p] of Object.entries(ent.properties)) {
+                for (const k in ent.properties) { const p = ent.properties[k];
                   if (k.startsWith("arm") && p && p.heldItem && p.heldItem.resourceType && p.heldItem.resourceType !== "basket") {
                     whItems.push(p.heldItem);
                     p.heldItem = null;
@@ -5768,10 +5768,10 @@ export function createGroupMemberProp() {
 
               // 5. Hauler Hand Basket Equipping: Ensure Haulers hold 1 Basket in hand!
               if (isHauler) {
-                const hasBasket = Object.values(ent.properties).some(p => p && (p.heldItem?.resourceType === "basket" || p.heldItem?.container?.type === "basket"));
+                let hasBasket = false; for (const k in ent.properties) { const p = ent.properties[k]; if (p && (p.heldItem?.resourceType === "basket" || p.heldItem?.container?.type === "basket")) { hasBasket = true; break; } }
                 if (!hasBasket) {
                   const bIdx = whItems.findIndex(i => i.resourceType === "basket" || i.name?.includes("Cesto") || i.name?.includes("Basket"));
-                  const freeArm = Object.entries(ent.properties).find(([k, p]) => k.startsWith("arm") && p && !p.heldItem);
+                  let freeArm = null; for (const k in ent.properties) { const p = ent.properties[k]; if (k.startsWith("arm") && p && !p.heldItem) { freeArm = [k, p]; break; } }
                   if (bIdx >= 0 && freeArm) {
                     const bItem = whItems.splice(bIdx, 1)[0];
                     freeArm[1].heldItem = {
@@ -5814,7 +5814,7 @@ export function createGroupMemberProp() {
               }
 
               // 7. Withdraw needed resource to build houses
-const freeArm = Object.entries(ent.properties).find(([k, p]) => k.startsWith("arm") && p && !p.heldItem);
+let freeArm = null; for (const k in ent.properties) { const p = ent.properties[k]; if (k.startsWith("arm") && p && !p.heldItem) { freeArm = [k, p]; break; } }
               if (freeArm && whItems.length > 0) {
                 const itemIdx = whItems.findIndex(i => (needsWood && (i.resourceType === "wood" || i.name?.includes("Wood"))) || (needsStone && (i.resourceType === "stone" || i.resourceType === "bone" || i.name?.includes("Stone"))));
                 if (itemIdx >= 0) {
@@ -5852,7 +5852,7 @@ const freeArm = Object.entries(ent.properties).find(([k, p]) => k.startsWith("ar
             const campfireEntity = getEntityAtTileByProp(bp.x, bp.y, "campfire");
             if (!campfireEntity && dist <= 1 && this.actionTimer >= 0.20) {
               let resType = null;
-              for (const [k, p] of Object.entries(ent.properties)) {
+              for (const k in ent.properties) { const p = ent.properties[k];
                 if (k.startsWith("arm") && p && (p.heldItem?.resourceType === "wood" || p.heldItem?.resourceType === "stone" || p.heldItem?.resourceType === "bone")) {
                   resType = p.heldItem.resourceType;
                   p.heldItem = null;
@@ -5870,7 +5870,7 @@ const freeArm = Object.entries(ent.properties).find(([k, p]) => k.startsWith("ar
               return;
             } else if (campfireEntity && !campfireEntity.isConstructed && dist <= 1 && this.actionTimer >= 0.20) {
               let contributed = false;
-              for (const [k, p] of Object.entries(ent.properties)) {
+              for (const k in ent.properties) { const p = ent.properties[k];
                 if (k.startsWith("arm") && p && p.heldItem?.resourceType === "wood") {
                   p.heldItem = null;
                   campfireEntity.woodCurrent = (campfireEntity.woodCurrent || 1) + 1;
@@ -5901,7 +5901,7 @@ const freeArm = Object.entries(ent.properties).find(([k, p]) => k.startsWith("ar
             const wellEntity = getEntityAtTileByProp(bp.x, bp.y, "well");
             if (!wellEntity && dist <= 1 && this.actionTimer >= 0.20) {
               let resType = null;
-              for (const [k, p] of Object.entries(ent.properties)) {
+              for (const k in ent.properties) { const p = ent.properties[k];
                 if (k.startsWith("arm") && p && (p.heldItem?.resourceType === "stone" || p.heldItem?.resourceType === "wood" || p.heldItem?.resourceType === "bone")) {
                   resType = p.heldItem.resourceType;
                   p.heldItem = null;
@@ -5919,7 +5919,7 @@ const freeArm = Object.entries(ent.properties).find(([k, p]) => k.startsWith("ar
             } else if (wellEntity && !wellEntity.properties.well?.isCompleted && dist <= 1 && this.actionTimer >= 0.20) {
               const wl = wellEntity.properties.well;
               let contributed = false;
-              for (const [k, p] of Object.entries(ent.properties)) {
+              for (const k in ent.properties) { const p = ent.properties[k];
                 if (k.startsWith("arm") && p && p.heldItem) {
                   if (p.heldItem.resourceType === "wood" && wl.woodCurrent < wl.woodCost) {
                     wl.woodCurrent++;
@@ -5956,7 +5956,7 @@ const freeArm = Object.entries(ent.properties).find(([k, p]) => k.startsWith("ar
             const shEntity = getEntityAtTileByProp(bp.x, bp.y, "slaughterhouse");
             if (!shEntity && dist <= 1 && this.actionTimer >= 0.20) {
               let resType = null;
-              for (const [k, p] of Object.entries(ent.properties)) {
+              for (const k in ent.properties) { const p = ent.properties[k];
                 if (k.startsWith("arm") && p && (p.heldItem?.resourceType === "stone" || p.heldItem?.resourceType === "wood" || p.heldItem?.resourceType === "bone")) {
                   resType = p.heldItem.resourceType;
                   p.heldItem = null;
@@ -5975,7 +5975,7 @@ const freeArm = Object.entries(ent.properties).find(([k, p]) => k.startsWith("ar
             } else if (shEntity && !shEntity.properties.slaughterhouse?.isCompleted && dist <= 1 && this.actionTimer >= 0.20) {
               const sh = shEntity.properties.slaughterhouse;
               let contributed = false;
-              for (const [k, p] of Object.entries(ent.properties)) {
+              for (const k in ent.properties) { const p = ent.properties[k];
                 if (k.startsWith("arm") && p && p.heldItem) {
                   if (p.heldItem.resourceType === "wood" && sh.woodCurrent < sh.woodCost) {
                     sh.woodCurrent++;
@@ -6012,7 +6012,7 @@ const freeArm = Object.entries(ent.properties).find(([k, p]) => k.startsWith("ar
             const kitEntity = getEntityAtTileByProp(bp.x, bp.y, "kitchen");
             if (!kitEntity && dist <= 1 && this.actionTimer >= 0.20) {
               let resType = null;
-              for (const [k, p] of Object.entries(ent.properties)) {
+              for (const k in ent.properties) { const p = ent.properties[k];
                 if (k.startsWith("arm") && p && (p.heldItem?.resourceType === "stone" || p.heldItem?.resourceType === "wood" || p.heldItem?.resourceType === "bone")) {
                   resType = p.heldItem.resourceType;
                   p.heldItem = null;
@@ -6031,7 +6031,7 @@ const freeArm = Object.entries(ent.properties).find(([k, p]) => k.startsWith("ar
             } else if (kitEntity && !kitEntity.properties.kitchen?.isCompleted && dist <= 1 && this.actionTimer >= 0.20) {
               const kit = kitEntity.properties.kitchen;
               let contributed = false;
-              for (const [k, p] of Object.entries(ent.properties)) {
+              for (const k in ent.properties) { const p = ent.properties[k];
                 if (k.startsWith("arm") && p && p.heldItem) {
                   if (p.heldItem.resourceType === "wood" && kit.woodCurrent < kit.woodCost) {
                     kit.woodCurrent++;
@@ -6068,7 +6068,7 @@ const freeArm = Object.entries(ent.properties).find(([k, p]) => k.startsWith("ar
             const gateEntity = getEntityAtTileByProp(bp.x, bp.y, "door");
             if (!gateEntity && dist <= 1 && this.actionTimer >= 0.20) {
               let resType = null;
-              for (const [k, p] of Object.entries(ent.properties)) {
+              for (const k in ent.properties) { const p = ent.properties[k];
                 if (k.startsWith("arm") && p && (p.heldItem?.resourceType === "wood" || p.heldItem?.resourceType === "stone" || p.heldItem?.resourceType === "bone")) {
                   resType = p.heldItem.resourceType;
                   p.heldItem = null;
@@ -6084,7 +6084,7 @@ const freeArm = Object.entries(ent.properties).find(([k, p]) => k.startsWith("ar
               return;
             } else if (gateEntity && !gateEntity.isConstructed && dist <= 1 && this.actionTimer >= 0.20) {
               let contributed = false;
-              for (const [k, p] of Object.entries(ent.properties)) {
+              for (const k in ent.properties) { const p = ent.properties[k];
                 if (k.startsWith("arm") && p && p.heldItem?.resourceType === "wood") {
                   p.heldItem = null;
                   gateEntity.woodCurrent = (gateEntity.woodCurrent || 1) + 1;
@@ -6116,7 +6116,7 @@ const freeArm = Object.entries(ent.properties).find(([k, p]) => k.startsWith("ar
               // Initiate new house construction site
               let resType = null;
               let boneOwner = null;
-              for (const [k, p] of Object.entries(ent.properties)) {
+              for (const k in ent.properties) { const p = ent.properties[k];
                 if (k.startsWith("arm") && p && (p.heldItem?.resourceType === "stone" || p.heldItem?.resourceType === "wood" || p.heldItem?.resourceType === "bone")) {
                   resType = p.heldItem.resourceType;
                   boneOwner = p.heldItem.ownerName || p.heldItem.sourceName || null;
@@ -6192,7 +6192,7 @@ const freeArm = Object.entries(ent.properties).find(([k, p]) => k.startsWith("ar
               const wCost = h.woodCost ?? 2;
               const sCost = h.stoneCost ?? 2;
               const bCost = h.boneCost ?? 0;
-              for (const [k, p] of Object.entries(ent.properties)) {
+              for (const k in ent.properties) { const p = ent.properties[k];
                 if (k.startsWith("arm") && p && p.heldItem) {
                   const rType = p.heldItem.resourceType;
                   if (rType === "wood" && h.woodCurrent < wCost) {
@@ -6252,7 +6252,7 @@ const freeArm = Object.entries(ent.properties).find(([k, p]) => k.startsWith("ar
             const wallEntity = getEntityAtTileByProp(bp.x, bp.y, "structure");
             if (!wallEntity && dist <= 1 && this.actionTimer >= 0.20) {
               let resType = null;
-              for (const [k, p] of Object.entries(ent.properties)) {
+              for (const k in ent.properties) { const p = ent.properties[k];
                 if (k.startsWith("arm") && p && (p.heldItem?.resourceType === "stone" || p.heldItem?.resourceType === "bone")) {
                   resType = p.heldItem.resourceType;
                   p.heldItem = null;
@@ -6267,7 +6267,7 @@ const freeArm = Object.entries(ent.properties).find(([k, p]) => k.startsWith("ar
               return;
             } else if (wallEntity && !wallEntity.isConstructed && dist <= 1 && this.actionTimer >= 0.20) {
               let contributed = false;
-              for (const [k, p] of Object.entries(ent.properties)) {
+              for (const k in ent.properties) { const p = ent.properties[k];
                 if (k.startsWith("arm") && p && p.heldItem) {
                   if ((p.heldItem.resourceType === "stone" || p.heldItem.resourceType === "bone") && (wallEntity.stoneCurrent || 0) < (wallEntity.stoneCost ?? 2)) {
                     wallEntity.stoneCurrent = (wallEntity.stoneCurrent || 0) + 1;
@@ -6326,7 +6326,7 @@ const freeArm = Object.entries(ent.properties).find(([k, p]) => k.startsWith("ar
         if (!hasAnyUnbuiltBlueprint && (inClaimedZone || distToBase <= 4) && distToBase <= 2) {
           const warehouse = getGroupWarehouse(group, entities);
           if (warehouse) {
-            for (const [k, p] of Object.entries(ent.properties)) {
+            for (const k in ent.properties) { const p = ent.properties[k];
               if (k.startsWith("arm") && p && p.heldItem) {
                 warehouse.properties.warehouse.items.push(p.heldItem);
                 p.heldItem = null;
@@ -6341,7 +6341,7 @@ const freeArm = Object.entries(ent.properties).find(([k, p]) => k.startsWith("ar
       // B. Crafter Bone Sculpting (Crafting weapons and artifacts from bones)
       let carryingBone = null;
       let boneArmKey = null;
-      for (const [k, p] of Object.entries(ent.properties)) {
+      for (const k in ent.properties) { const p = ent.properties[k];
         if (k.startsWith("arm") && p && p.heldItem && (p.heldItem.resourceType === "bone" || p.heldItem.name?.includes("Osso") || p.heldItem.name?.includes("Dente"))) {
           carryingBone = p.heldItem;
           boneArmKey = k;
@@ -6411,7 +6411,7 @@ const freeArm = Object.entries(ent.properties).find(([k, p]) => k.startsWith("ar
         const distToHouse = Math.abs(ownHouse.x - ent.x) + Math.abs(ownHouse.y - ent.y);
         // Storing food when not starving
         if (isCarryingFood && distToHouse <= 1 && ent.properties.life?.energy >= (ent.properties.life?.max || 5000) * 0.60) {
-          for (const [k, p] of Object.entries(ent.properties)) {
+          for (const k in ent.properties) { const p = ent.properties[k];
             if (k.startsWith("arm") && p && p.heldItem && (p.heldItem.nutrition || p.heldItem.resourceType === "food" || p.heldItem.resourceType === "fruit" || p.heldItem.resourceType === "meat")) {
               if (!ownHouse.properties.house.foodStorage) ownHouse.properties.house.foodStorage = [];
               if (ownHouse.properties.house.foodStorage.length < 6) {
@@ -6462,7 +6462,7 @@ const freeArm = Object.entries(ent.properties).find(([k, p]) => k.startsWith("ar
           }
 
           // Deposit surplus items only (when hands hold items not immediately needed)
-          for (const [k, p] of Object.entries(ent.properties)) {
+          for (const k in ent.properties) { const p = ent.properties[k];
             if (k.startsWith("arm") && p && p.heldItem && p.heldItem.resourceType !== "torch" && p.heldItem.resourceType !== "seed") {
               const rType = p.heldItem.resourceType;
               const isNeededNow = (rType === "wood" && needsWood) || ((rType === "stone" || rType === "bone") && needsStone);
@@ -6508,7 +6508,7 @@ const freeArm = Object.entries(ent.properties).find(([k, p]) => k.startsWith("ar
 
         if (currentTreeCount >= maxAllowedTrees) {
           // Quota reached: deposit seed into clan storage or drop it instead of over-planting
-          for (const [k, p] of Object.entries(ent.properties)) {
+          for (const k in ent.properties) { const p = ent.properties[k];
             if (k.startsWith("arm") && p && p.heldItem?.resourceType === "seed") {
               if (!group.storage) group.storage = [];
               if (group.storage.length < 40) {
@@ -6540,7 +6540,7 @@ const freeArm = Object.entries(ent.properties).find(([k, p]) => k.startsWith("ar
           if (canPlant && this.actionTimer >= 0.5) {
             this.actionTimer = 0;
             let seedSpecies = "oak";
-            for (const [k, p] of Object.entries(ent.properties)) {
+            for (const k in ent.properties) { const p = ent.properties[k];
               if (k.startsWith("arm") && p && p.heldItem?.resourceType === "seed") {
                 seedSpecies = p.heldItem.seedSpecies || "oak";
                 p.heldItem = null;
@@ -6566,7 +6566,7 @@ const freeArm = Object.entries(ent.properties).find(([k, p]) => k.startsWith("ar
 
       // C. Stockpiling Food / Meat
       if (isCarryingMeat && (inClaimedZone || distToBase <= 4)) {
-        for (const [k, p] of Object.entries(ent.properties)) {
+        for (const k in ent.properties) { const p = ent.properties[k];
           if (k.startsWith("arm") && p && p.heldItem?.resourceType === "meat") {
             p.heldItem = null;
             break;
@@ -6758,7 +6758,7 @@ const freeArm = Object.entries(ent.properties).find(([k, p]) => k.startsWith("ar
 
             // Check if any held basket has available space
             let storedInBasket = false;
-            for (const [k, p] of Object.entries(ent.properties)) {
+            for (const k in ent.properties) { const p = ent.properties[k];
               if (k.startsWith("arm") && p && p.heldItem?.container?.type === "basket") {
                 const bCont = p.heldItem.container;
                 if (bCont.items.length < bCont.capacity) {
@@ -8306,7 +8306,7 @@ export function createLocomotionProp() {
           let minBuildDist = 9999;
 
           let heldResType = null;
-          for (const [k, p] of Object.entries(ent.properties)) {
+          for (const k in ent.properties) { const p = ent.properties[k];
             if (k.startsWith("arm") && p && (p.heldItem?.resourceType === "stone" || p.heldItem?.resourceType === "wood" || p.heldItem?.resourceType === "bone")) {
               heldResType = p.heldItem.resourceType;
               break;
@@ -9639,7 +9639,7 @@ export function createLocomotionProp() {
 
         // Social Gifting: If mood is positive (>= 30), occasionally gift surplus food or non-equipped item to a close friend
         if (ent.properties.brain?.mood >= 30 && Math.random() < 0.04) {
-          for (const [k, p] of Object.entries(ent.properties)) {
+          for (const k in ent.properties) { const p = ent.properties[k];
             if (k.startsWith("arm") && p && p.heldItem) {
               // Avoid giving away essential equipped profession tools
               const itemType = p.heldItem.resourceType || p.heldItem.type;

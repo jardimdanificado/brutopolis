@@ -280,6 +280,8 @@ function initSimWorker() {
   };
 }
 
+const _receivedIdsCache = new Set();
+
 function updateLocalEntities(entitiesData, registryData) {
   if (Array.isArray(registryData)) {
     for (const regData of registryData) {
@@ -306,7 +308,8 @@ function updateLocalEntities(entitiesData, registryData) {
   if (Array.isArray(entitiesData)) {
     const curEntities = [];
     const zSize = getZoneSize();
-    const receivedIds = new Set();
+    _receivedIdsCache.clear();
+    const receivedIds = _receivedIdsCache;
     
     for (const entData of entitiesData) {
       if (!entData) continue;

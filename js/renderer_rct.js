@@ -9,8 +9,11 @@ import { globalWallCoords, resolveWallSkin, getEntitiesInViewport } from "./engi
 import { getClanBlueprintTiles, currentZoneSize } from "./properties.js";
 
 // Cache for raw asset images
-const rawImages = new Map();
 const textureCache = new Map();
+const billboardMatCache = new Map();
+const depthMatCache = new Map();
+const uiMatCache = new Map();
+const rawImages = new Map();
 
 for (const item of ASSET_DATA) {
   const clean = item.filename.toLowerCase().replace(/\\/g, "/");
@@ -3732,23 +3735,38 @@ export class RCT3DRenderer {
           const fgHex = (houseClan && houseClan.color !== undefined ? houseClan.color : 0xffd700) & 0xffffff;
           const bgHex = (houseClan && houseClan.backcolor !== undefined ? houseClan.backcolor : 0x1e1e28) & 0xffffff;
           const flagTex = createTintedTexture(flagSkin, fgHex, bgHex, 1.0);
+          const flagMatKey = flagTex.uuid;
 
           let flagMesh = this.floatingUiSprites.get(flagKey);
           if (!flagMesh) {
-            const flagMat = new THREE.MeshBasicMaterial({
-              map: flagTex,
-              transparent: true,
-              alphaTest: 0.05,
-              depthTest: true,
-              side: THREE.DoubleSide
-            });
+            let flagMat = uiMatCache.get(flagMatKey);
+            if (!flagMat) {
+              flagMat = new THREE.MeshBasicMaterial({
+                map: flagTex,
+                transparent: true,
+                alphaTest: 0.05,
+                depthTest: true,
+                side: THREE.DoubleSide
+              });
+              uiMatCache.set(flagMatKey, flagMat);
+            }
             flagMesh = new THREE.Mesh(this.flagGeo, flagMat);
             flagMesh.renderOrder = 30;
             this.floatingUiGroup.add(flagMesh);
             this.floatingUiSprites.set(flagKey, flagMesh);
-          } else if (flagMesh.material.map !== flagTex) {
-            flagMesh.material.map = flagTex;
-            flagMesh.material.needsUpdate = true;
+          } else if (flagMesh.material !== uiMatCache.get(flagMatKey) || flagMesh.material.map !== flagTex) {
+            let flagMat = uiMatCache.get(flagMatKey);
+            if (!flagMat) {
+              flagMat = new THREE.MeshBasicMaterial({
+                map: flagTex,
+                transparent: true,
+                alphaTest: 0.05,
+                depthTest: true,
+                side: THREE.DoubleSide
+              });
+              uiMatCache.set(flagMatKey, flagMat);
+            }
+            flagMesh.material = flagMat;
           }
 
           const peakY = surfaceH + (1.20 + 0.78) * heightScale + 0.25;
@@ -3780,36 +3798,67 @@ export class RCT3DRenderer {
 
         const entFg = r.color !== undefined ? r.color : 0xffffff;
         const tex = createTintedTexture(skinName, entFg, 0x000000, 0.0);
+        // tex.uuid can be used as cache key since createTintedTexture returns a cached texture instance
+        const matKey = tex.uuid;
 
         let sprite = this.entitySprites.get(e.id);
         if (!sprite) {
-          const mat = new THREE.MeshLambertMaterial({
-            map: tex,
-            dithering: true,
-            transparent: true,
-            alphaTest: 0.08,
-            side: THREE.DoubleSide
-          });
-          applyRetroDitherToMaterial(mat);
+          let mat = billboardMatCache.get(matKey);
+          if (!mat) {
+            mat = new THREE.MeshLambertMaterial({
+              map: tex,
+              dithering: true,
+              transparent: true,
+              alphaTest: 0.08,
+              side: THREE.DoubleSide
+            });
+            applyRetroDitherToMaterial(mat);
+            billboardMatCache.set(matKey, mat);
+          }
+          
+          let depthMat = depthMatCache.get(matKey);
+          if (!depthMat) {
+            depthMat = new THREE.MeshDepthMaterial({
+              depthPacking: THREE.RGBADepthPacking,
+              map: tex,
+              alphaTest: 0.08
+            });
+            depthMatCache.set(matKey, depthMat);
+          }
+
           sprite = new THREE.Mesh(this.billboardGeo, mat);
           sprite.castShadow = true;
           sprite.receiveShadow = true;
-          sprite.customDepthMaterial = new THREE.MeshDepthMaterial({
-            depthPacking: THREE.RGBADepthPacking,
-            map: tex,
-            alphaTest: 0.08
-          });
+          sprite.customDepthMaterial = depthMat;
           sprite.renderOrder = 10;
           sprite.userData = { entityId: e.id };
           this.entityGroup.add(sprite);
           this.entitySprites.set(e.id, sprite);
-        } else if (sprite.material.map !== tex) {
-          sprite.material.map = tex;
-          sprite.material.needsUpdate = true;
-          if (sprite.customDepthMaterial) {
-            sprite.customDepthMaterial.map = tex;
-            sprite.customDepthMaterial.needsUpdate = true;
+        } else if (sprite.material !== billboardMatCache.get(matKey) || sprite.material.map !== tex) {
+          let mat = billboardMatCache.get(matKey);
+          if (!mat) {
+            mat = new THREE.MeshLambertMaterial({
+              map: tex,
+              dithering: true,
+              transparent: true,
+              alphaTest: 0.08,
+              side: THREE.DoubleSide
+            });
+            applyRetroDitherToMaterial(mat);
+            billboardMatCache.set(matKey, mat);
           }
+          sprite.material = mat;
+          
+          let depthMat = depthMatCache.get(matKey);
+          if (!depthMat) {
+            depthMat = new THREE.MeshDepthMaterial({
+              depthPacking: THREE.RGBADepthPacking,
+              map: tex,
+              alphaTest: 0.08
+            });
+            depthMatCache.set(matKey, depthMat);
+          }
+          sprite.customDepthMaterial = depthMat;
         }
 
         const isSleeping = !!e.properties?.life?.isSleeping && !!e.properties?.brain;
@@ -3868,8 +3917,10 @@ export class RCT3DRenderer {
             });
           }
 
-          for (const [k, p] of Object.entries(e.properties || {})) {
-            if ((k.toLowerCase().includes("arm") || k.toLowerCase().includes("hand")) && p && p.heldItem) {
+          const ep = e.properties || {};
+          for (const k in ep) {
+            const p = ep[k];
+            if ((k.includes("arm") || k.includes("hand") || k.includes("Arm") || k.includes("Hand")) && p && p.heldItem) {
               heldItems.push(p.heldItem);
             }
           }
@@ -3894,23 +3945,38 @@ export class RCT3DRenderer {
               activeUiIds.add(uiKey);
               const tintFg = (e.emote === 12) ? 0xff3c78 : (e.emote === 13) ? 0xff2828 : 0xfff064;
               const emTex = createTintedTexture(emoteSkin, tintFg, 0x000000, 0.0);
+              const emMatKey = emTex.uuid;
 
               let emMesh = this.floatingUiSprites.get(uiKey);
               if (!emMesh) {
-                const emMat = new THREE.MeshBasicMaterial({
-                  map: emTex,
-                  transparent: true,
-                  alphaTest: 0.1,
-                  depthTest: true,
-                  side: THREE.DoubleSide
-                });
+                let emMat = uiMatCache.get(emMatKey);
+                if (!emMat) {
+                  emMat = new THREE.MeshBasicMaterial({
+                    map: emTex,
+                    transparent: true,
+                    alphaTest: 0.1,
+                    depthTest: true,
+                    side: THREE.DoubleSide
+                  });
+                  uiMatCache.set(emMatKey, emMat);
+                }
                 emMesh = new THREE.Mesh(this.uiIconGeo, emMat);
                 emMesh.renderOrder = 25;
                 this.floatingUiGroup.add(emMesh);
                 this.floatingUiSprites.set(uiKey, emMesh);
-              } else if (emMesh.material.map !== emTex) {
-                emMesh.material.map = emTex;
-                emMesh.material.needsUpdate = true;
+              } else if (emMesh.material !== uiMatCache.get(emMatKey) || emMesh.material.map !== emTex) {
+                let emMat = uiMatCache.get(emMatKey);
+                if (!emMat) {
+                  emMat = new THREE.MeshBasicMaterial({
+                    map: emTex,
+                    transparent: true,
+                    alphaTest: 0.1,
+                    depthTest: true,
+                    side: THREE.DoubleSide
+                  });
+                  uiMatCache.set(emMatKey, emMat);
+                }
+                emMesh.material = emMat;
               }
 
               const offset = startOffset + iconIdx * iconSpacing;
@@ -3936,23 +4002,38 @@ export class RCT3DRenderer {
               }
               const tintColor = it.tint || (it.resourceType === "basket" ? 0xffd28c : (it.resourceType === "backpack" ? 0xcc8844 : 0xffffff));
               const itTex = createTintedTexture(skinName, tintColor, 0x000000, 0.0);
+              const itMatKey = itTex.uuid;
 
               let itMesh = this.floatingUiSprites.get(uiKey);
               if (!itMesh) {
-                const itMat = new THREE.MeshBasicMaterial({
-                  map: itTex,
-                  transparent: true,
-                  alphaTest: 0.1,
-                  depthTest: true,
-                  side: THREE.DoubleSide
-                });
+                let itMat = uiMatCache.get(itMatKey);
+                if (!itMat) {
+                  itMat = new THREE.MeshBasicMaterial({
+                    map: itTex,
+                    transparent: true,
+                    alphaTest: 0.1,
+                    depthTest: true,
+                    side: THREE.DoubleSide
+                  });
+                  uiMatCache.set(itMatKey, itMat);
+                }
                 itMesh = new THREE.Mesh(this.uiIconGeo, itMat);
                 itMesh.renderOrder = 25;
                 this.floatingUiGroup.add(itMesh);
                 this.floatingUiSprites.set(uiKey, itMesh);
-              } else if (itMesh.material.map !== itTex) {
-                itMesh.material.map = itTex;
-                itMesh.material.needsUpdate = true;
+              } else if (itMesh.material !== uiMatCache.get(itMatKey) || itMesh.material.map !== itTex) {
+                let itMat = uiMatCache.get(itMatKey);
+                if (!itMat) {
+                  itMat = new THREE.MeshBasicMaterial({
+                    map: itTex,
+                    transparent: true,
+                    alphaTest: 0.1,
+                    depthTest: true,
+                    side: THREE.DoubleSide
+                  });
+                  uiMatCache.set(itMatKey, itMat);
+                }
+                itMesh.material = itMat;
               }
 
               const offset = startOffset + iconIdx * iconSpacing;
@@ -4230,7 +4311,6 @@ export class RCT3DRenderer {
     for (const [id, spr] of this.entitySprites.entries()) {
       if (!activeIds.has(id)) {
         this.entityGroup.remove(spr);
-        if (spr.material) spr.material.dispose();
         this.entitySprites.delete(id);
       }
     }
@@ -4239,7 +4319,6 @@ export class RCT3DRenderer {
     for (const [key, spr] of this.floatingUiSprites.entries()) {
       if (!activeUiIds.has(key)) {
         this.floatingUiGroup.remove(spr);
-        if (spr.material) spr.material.dispose();
         this.floatingUiSprites.delete(key);
       }
     }
