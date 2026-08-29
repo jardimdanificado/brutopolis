@@ -459,7 +459,120 @@ export function amputateLimb(entity, propKey, prop, entitiesArray, world) {
 }
 
 /**
- * Helper to drop nutritional properties as food items on death
+ * Creates an intact whole Corpse on creature death that can be butchered/dismembered for meat & bones
+ */
+export function createCorpseEntity(entity, x = entity.x, y = entity.y) {
+  const entityName = entity.properties?.name || `Creature #${entity.id}`;
+  const species = entity.properties?.species || "creature";
+  const isHuman = species === "human";
+
+  let totalMeatCuts = 4;
+  let totalBones = 2;
+  if (species === "boar" || species === "bear" || species === "wolf") {
+    totalMeatCuts = 6;
+    totalBones = 3;
+  } else if (species === "chicken" || species === "rabbit") {
+    totalMeatCuts = 2;
+    totalBones = 1;
+  }
+
+  const corpse = createEntity(
+    {
+      name: `Corpo de ${entityName}`,
+      species: "corpse",
+      render: {
+        skin: isHuman ? "Other_Grave.png" : "Item_Skull.png",
+        color: isHuman ? 0xffc8c8c8 : 0xffe6e6d2,
+        backcolor: 0x00000000
+      },
+      corpse: {
+        sourceEntityId: entity.id,
+        sourceName: entityName,
+        species: species,
+        isHuman: isHuman,
+        remainingMeatCuts: totalMeatCuts,
+        remainingBones: totalBones,
+        nutritionPerCut: isHuman ? 1800 : 2200
+      },
+      edible: {
+        nutrition: totalMeatCuts * 1800,
+        foodType: "meat",
+        digestDuration: 35,
+        sourceName: entityName
+      },
+      lifespan: {
+        age: 0,
+        maxAge: 300.0,
+        effect(ent, dt) {
+          this.age = (this.age || 0) + (dt !== undefined ? dt : 1.0);
+          if (this.age >= this.maxAge) {
+            ent.destroyed = true;
+          }
+        }
+      }
+    },
+    x,
+    y
+  );
+
+  return corpse;
+}
+
+/**
+ * Dismembers / carves a piece of meat or bone from an intact corpse.
+ * Yields a fresh food item and reduces remaining meat cuts on the corpse.
+ */
+export function dismemberCorpse(creature, corpseEntity) {
+  if (!corpseEntity || !corpseEntity.properties?.corpse) return null;
+  const cData = corpseEntity.properties.corpse;
+
+  if (cData.remainingMeatCuts > 0) {
+    cData.remainingMeatCuts--;
+    const cutName = `Carne de ${cData.sourceName}`;
+    const meatCut = {
+      name: cutName,
+      resourceType: "meat",
+      nutrition: cData.nutritionPerCut || 1800,
+      foodType: "meat",
+      digestDuration: 30,
+      weight: 1
+    };
+
+    if (cData.remainingMeatCuts === 0) {
+      // All meat harvested: corpse becomes skeleton / bone
+      corpseEntity.properties.name = `Esqueleto de ${cData.sourceName}`;
+      corpseEntity.properties.resourceType = "bone";
+      if (corpseEntity.properties.render) {
+        corpseEntity.properties.render.skin = "Item_Bone.png";
+        corpseEntity.properties.render.color = 0xfff4f1e8;
+      }
+    }
+
+    return meatCut;
+  } else if (cData.remainingBones > 0) {
+    cData.remainingBones--;
+    const boneCut = {
+      name: `Osso de ${cData.sourceName}`,
+      resourceType: "bone",
+      nutrition: 300,
+      foodType: "bone",
+      digestDuration: 20,
+      weight: 1
+    };
+
+    if (cData.remainingBones === 0) {
+      corpseEntity.destroyed = true;
+    }
+
+    return boneCut;
+  }
+
+  corpseEntity.destroyed = true;
+  return null;
+}
+
+/**
+ * Handles death: spawns an intact corpse instead of scattering separate food explosions
  */
 export function explodeEntityOnDeath(entity, entitiesArray, world) {
   if (!entity || !entity.properties) return;
@@ -469,133 +582,12 @@ export function explodeEntityOnDeath(entity, entitiesArray, world) {
   const entityName = entity.properties.name || `Creature #${entity.id}`;
   const species = entity.properties.species || "unknown";
 
-  for (const [key, prop] of Object.entries(entity.properties)) {
-    if (prop && prop.nutrition && prop.foodType) {
-      let skin = "Item_Steak.png";
-      let color = 0xffe65a5a;
-      let name = `Meat of ${entityName} (${key})`;
-
-      if (key.includes("heart")) {
-        skin = "Other_Heart.png";
-        color = 0xffff1e3c;
-        name = `Heart of ${entityName}`;
-      } else if (key.includes("liver")) {
-        skin = "Other_Heart.png";
-        color = 0xff8c2828;
-        name = `Liver of ${entityName}`;
-      } else if (key.includes("intestine")) {
-        skin = "Item_Nugget.png";
-        color = 0xffdc8c78;
-        name = `Intestines of ${entityName}`;
-      } else if (key.includes("ear")) {
-        skin = "Item_Feather.png";
-        color = 0xffe6b496;
-        name = `Ear (${key}) of ${entityName}`;
-      } else if (key.includes("wing")) {
-        skin = "Item_Cloak.png";
-        color = 0xffe6e6f0;
-        name = `Wing (${key}) of ${entityName}`;
-      } else if (key.includes("arm") || key.includes("paw")) {
-        skin = "Creature_Hand_U.png";
-        color = 0xffe65a5a;
-        name = `Paw/Hand (${key}) of ${entityName}`;
-      } else if (key.includes("leg")) {
-        skin = "Item_Drumstick.png";
-        color = 0xffe65a5a;
-        name = `Leg/Limb (${key}) of ${entityName}`;
-      } else if (key.includes("eye")) {
-        skin = "Item_Eyeball.png";
-        color = 0xff58c8f8;
-        name = `Eye (${key}) of ${entityName}`;
-      } else if (prop.foodType === "meat") {
-        skin = "Item_Steak.png";
-        color = 0xffe65a5a;
-        name = `Meat Chunk (${key}) of ${entityName}`;
-      } else if (prop.foodType === "bone") {
-        skin = "Item_Bone.png";
-        color = 0xffe6e6d2;
-        name = `Bone (${key}) of ${entityName}`;
-      } else if (prop.foodType === "plant" || prop.foodType === "veg") {
-        skin = "Item_Vegetable.png";
-        color = 0xff78dc50;
-        name = `Vegetable (${key}) of ${entityName}`;
-      } else if (prop.foodType === "fruit") {
-        skin = "Item_Fruit.png";
-        color = 0xfffaa03c;
-        name = `Fruit (${key}) of ${entityName}`;
-      } else if (prop.foodType === "organ") {
-        skin = "Other_Heart.png";
-        color = 0xffc83232;
-        name = `Viscera (${key}) of ${entityName}`;
-      }
-
-      const foodItem = createEntity(
-        {
-          name,
-          render: { skin, color, backcolor: 0x00000000 },
-          edible: {
-            nutrition: prop.nutrition,
-            foodType: prop.foodType,
-            digestDuration: prop.digestDuration || 20,
-            sourceEntityId: entity.id,
-            sourceName: entityName,
-            sourceSpecies: species,
-            partKey: key
-          }
-        },
-        ex + (Math.floor(Math.random() * 3) - 1),
-        ey + (Math.floor(Math.random() * 3) - 1)
-      );
-
-      if (entitiesArray) {
-        entitiesArray.push(foodItem);
-
-        // Arms, Legs and Paws also yield Bone item for increased sustainability!
-        if (key.startsWith("arm") || key.startsWith("leg") || key.startsWith("paw")) {
-          const boneItem = createEntity(
-            {
-              name: `Bone (${key}) of ${entityName}`,
-              render: { skin: "Item_Bone.png", color: 0xffe6e6d2, backcolor: 0x00000000 },
-              edible: {
-                nutrition: 350,
-                foodType: "bone",
-                digestDuration: 30,
-                sourceEntityId: entity.id,
-                sourceName: entityName,
-                sourceSpecies: species,
-                partKey: `bone_${key}`
-              }
-            },
-            ex + (Math.floor(Math.random() * 3) - 1),
-            ey + (Math.floor(Math.random() * 3) - 1)
-          );
-        }
-      }
+  // Living creatures & humanoids leave a whole intact corpse
+  if (entity.properties.life || entity.properties.brain) {
+    const corpse = createCorpseEntity(entity, ex, ey);
+    if (entitiesArray) {
+      entitiesArray.push(corpse);
     }
-  }
-
-  // Drop remaining body fat reserve units as animal fat items
-  const fatUnits = entity.properties.stomach?.fatUnits || 0;
-  for (let f = 0; f < fatUnits; f++) {
-    const fatItem = createEntity(
-      {
-        name: `Animal Fat / Blubber of ${entityName}`,
-        render: { skin: "Item_Nugget.png", color: 0xfff0e6aa, backcolor: 0x00000000 },
-        edible: {
-          nutrition: 750,
-          foodType: "meat",
-          digestDuration: 30,
-          sourceEntityId: entity.id,
-          sourceName: entityName,
-          sourceSpecies: species,
-          partKey: "fat_unit"
-        },
-        lifespan: { age: 0, maxAge: 1800.0 }
-      },
-      ex + (Math.floor(Math.random() * 3) - 1),
-      ey + (Math.floor(Math.random() * 3) - 1)
-    );
-    if (entitiesArray) entitiesArray.push(fatItem);
   }
 
   // Check for severe physical wounds and amputations
@@ -695,6 +687,34 @@ export function explodeEntityOnDeath(entity, entitiesArray, world) {
   }
 }
 
+export function compileEntityEffects(entity) {
+  if (!entity || !entity.properties) return;
+  const effects = [];
+  const degradable = [];
+  const props = entity.properties;
+  for (const key in props) {
+    const prop = props[key];
+    if (!prop) continue;
+    if (typeof prop.effect === "function") {
+      effects.push(prop);
+    }
+    if (
+      typeof prop.condition === "number" &&
+      typeof prop.maxCondition === "number" &&
+      !key.startsWith("amputated_") &&
+      key !== "brain" &&
+      !key.includes("brain") &&
+      !prop.cannotAmputate &&
+      !prop.isBrain
+    ) {
+      degradable.push({ key, prop });
+    }
+  }
+  entity._activeEffects = effects;
+  entity._degradableLimbs = degradable;
+  entity._effectsVersion = entity._propsVersion || 0;
+}
+
 /**
  * Flat simulation tick over all active entities
  */
@@ -710,13 +730,16 @@ export function tickEntities(entities, dt, world) {
       continue;
     }
 
-    // 1. Run effects for all properties in the entity's property bag (direct loop without Object.entries GC overhead)
-    const props = entity.properties;
-    for (const key in props) {
-      const prop = props[key];
-      if (!prop) continue;
+    // 1. Run effects via fast compiled array (skips scanning static properties)
+    let effects = entity._activeEffects;
+    if (!effects || entity._effectsVersion !== entity._propsVersion) {
+      compileEntityEffects(entity);
+      effects = entity._activeEffects;
+    }
 
-      if (typeof prop.effect === "function") {
+    if (effects && effects.length > 0) {
+      for (let j = 0; j < effects.length; j++) {
+        const prop = effects[j];
         if (prop.rate !== undefined && prop.rate > 0) {
           prop._timer = (prop._timer || 0) + dt;
           while (prop._timer >= prop.rate) {
@@ -727,19 +750,17 @@ export function tickEntities(entities, dt, world) {
           prop.effect(entity, dt, world, entities, prop);
         }
       }
+    }
 
-      // 2. Check for limb condition degradation & automatic amputation (condition <= 0)
-      if (
-        typeof prop.condition === "number" &&
-        typeof prop.maxCondition === "number" &&
-        !key.startsWith("amputated_") &&
-        key !== "brain" &&
-        !key.includes("brain") &&
-        !prop.cannotAmputate &&
-        !prop.isBrain
-      ) {
-        if (prop.condition <= 0) {
-          amputateLimb(entity, key, prop, entities, world);
+    // 2. Check for limb condition degradation & automatic amputation
+    const degradable = entity._degradableLimbs;
+    if (degradable && degradable.length > 0) {
+      for (let j = 0; j < degradable.length; j++) {
+        const item = degradable[j];
+        if (item.prop.condition <= 0) {
+          amputateLimb(entity, item.key, item.prop, entities, world);
+          compileEntityEffects(entity);
+          break;
         }
       }
     }
@@ -748,6 +769,7 @@ export function tickEntities(entities, dt, world) {
     updateEntitySpatial(entity);
 
     // 3. Check Vital HP (Death Condition: Brain condition <= 0, or plant life with no roots/energy)
+    const props = entity.properties;
     let isDead = false;
     let explosionReason = null;
     if (props.brain && props.brain.condition <= 0) {

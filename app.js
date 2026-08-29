@@ -929,42 +929,62 @@ const EDITOR_TILES = [
 ];
 
 const EDITOR_CREATURES = [
-  { label: "HUMAN", fn: (x, y) => createHuman(x, y) },
-  { label: "ELF", fn: (x, y) => createElf(x, y) },
-  { label: "DWARF", fn: (x, y) => createDwarf(x, y) },
-  { label: "ORC", fn: (x, y) => createOrc(x, y) },
-  { label: "GOBLIN", fn: (x, y) => createGoblin(x, y) },
+  // Humanoids & Clan Settlers
+  { label: "HUMAN PIONEER", fn: (x, y) => createHuman(x, y) },
+  { label: "HUMAN HAULER", fn: (x, y) => createCreatureFromArchetype("human", x, y, { role: "Hauler" }) },
+  { label: "HUMAN BUILDER", fn: (x, y) => createCreatureFromArchetype("human", x, y, { role: "Builder" }) },
+  { label: "HUMAN BUTCHER", fn: (x, y) => createCreatureFromArchetype("human", x, y, { role: "Butcher" }) },
+  { label: "HUMAN COOK", fn: (x, y) => createCreatureFromArchetype("human", x, y, { role: "Cook" }) },
+  { label: "ELF ARCHER", fn: (x, y) => createElf(x, y) },
+  { label: "DWARF MINER", fn: (x, y) => createDwarf(x, y) },
+  { label: "ORC WARRIOR", fn: (x, y) => createOrc(x, y) },
+  { label: "GOBLIN SCOUT", fn: (x, y) => createGoblin(x, y) },
+  { label: "EMBARK CLAN", fn: (x, y) => { const res = createEmbarkParty(x, y, world, entities); return res.members[0]; } },
+  // Fauna & Wild Beasts
   { label: "BOAR", fn: (x, y) => createBoar(x, y) },
   { label: "DEER", fn: (x, y) => createDeer(x, y) },
-  { label: "SPIDER", fn: (x, y) => createSpider(x, y) },
   { label: "WOLF", fn: (x, y) => createWolf(x, y) },
   { label: "BEAR", fn: (x, y) => createBear(x, y) },
   { label: "CAT", fn: (x, y) => createCat(x, y) },
   { label: "GOAT", fn: (x, y) => createMountainGoat(x, y) },
   { label: "BAT", fn: (x, y) => createBat(x, y) },
+  { label: "SPIDER", fn: (x, y) => createSpider(x, y) },
   { label: "SCORPION", fn: (x, y) => createScorpion(x, y) },
   { label: "LIZARD", fn: (x, y) => createLizard(x, y) },
   { label: "DRAGON", fn: (x, y) => createDragon(x, y) },
-  { label: "SERPENT", fn: (x, y) => createSeaSerpent(x, y) },
-  { label: "EMBARK CLAN", fn: (x, y) => { const res = createEmbarkParty(x, y, world, entities); return res.members[0]; } }
+  { label: "SERPENT", fn: (x, y) => createSeaSerpent(x, y) }
 ];
 
 const EDITOR_ITEMS = [
+  // Buildings & Structures
+  { label: "WAREHOUSE", fn: (x, y) => createWarehouseEntity(x, y) },
+  { label: "SLAUGHTERHOUSE", fn: (x, y) => createSlaughterhouseEntity(x, y) },
+  { label: "KITCHEN", fn: (x, y) => createKitchenEntity(x, y) },
+  { label: "WATER WELL", fn: (x, y) => createWaterWellEntity(x, y) },
+  { label: "STONE WALL", fn: (x, y) => createStoneWallEntity(x, y) },
+  { label: "DIRT ROAD", fn: (x, y) => createRoadEntity(x, y, null, false) },
+  // Containers & Equipment
+  { label: "BASKET (MED)", fn: (x, y) => createBasketItem(x, y, "medium") },
+  { label: "BASKET (LRG)", fn: (x, y) => createBasketItem(x, y, "large") },
+  { label: "BACKPACK", fn: (x, y) => createBackpackItem(x, y, "medium") },
+  { label: "EXPEDITION PACK", fn: (x, y) => createBackpackItem(x, y, "large") },
+  // Prepared Meals & Foods
+  { label: "MEAT BENTO", fn: (x, y) => createMeatBento(x, y) },
+  { label: "VEGAN BENTO", fn: (x, y) => createVeganBento(x, y) },
+  { label: "GOURMET BENTO", fn: (x, y) => createGourmetBento(x, y) },
+  { label: "ROASTED MEAT", fn: (x, y) => createRoastedMeat(x, y) },
+  { label: "GRILLED VEGGIES", fn: (x, y) => createGrilledVeggies(x, y) },
+  // Raw Resources & Flora
+  { label: "WOOD LOG", fn: (x, y) => createWoodItem(x, y) },
+  { label: "STONE BLOCK", fn: (x, y) => createStoneItem(x, y) },
+  { label: "OAK SEED", fn: (x, y) => createSeedEntity(x, y, "large", "oak") },
   { label: "OAK TREE", fn: (x, y) => createOakTree(x, y) },
   { label: "PINE TREE", fn: (x, y) => createPineTree(x, y) },
-  { label: "WILLOW", fn: (x, y) => createWillowTree(x, y) },
+  { label: "WILLOW TREE", fn: (x, y) => createWillowTree(x, y) },
   { label: "CACTUS", fn: (x, y) => createCactus(x, y) },
   { label: "SHRUB", fn: (x, y) => createAlpineShrub(x, y) },
   { label: "WATER LILY", fn: (x, y) => createWaterLily(x, y) },
-  { label: "SEAWEED", fn: (x, y) => createSeaweed(x, y) },
-  { label: "WOOD ITEM", fn: (x, y) => createWoodItem(x, y) },
-  { label: "STONE ITEM", fn: (x, y) => createStoneItem(x, y) },
-  { label: "STONE WALL", fn: (x, y) => createStoneWallEntity(x, y) },
-  { label: "WATER WELL", fn: (x, y) => createWaterWellEntity(x, y) },
-  { label: "DIRT ROAD", fn: (x, y) => createRoadEntity(x, y, null, false) },
-  { label: "ROAD SNAP POINT", fn: (x, y) => createRoadEntity(x, y, null, true) },
-  { label: "OAK SEED", fn: (x, y) => createSeedEntity(x, y, "large", "oak") },
-  { label: "FRUIT", fn: (x, y) => createFruit(x, y, "large", "oak") }
+  { label: "SEAWEED", fn: (x, y) => createSeaweed(x, y) }
 ];
 
 function applyTileBrush(cx, cy, tileType, brushSize) {
@@ -2434,11 +2454,40 @@ function renderDossierModal() {
 function getFilteredEntities() {
   return entities.filter(e => {
     if (e.destroyed) return false;
-    if (entityFilter === "LIVING") return !!e.properties.life && e.properties.species !== "item";
-    if (entityFilter === "ITEMS") return !!e.properties.edible || !!e.properties.resourceType || !!e.properties.germination || e.properties.species === "item";
-    if (entityFilter === "HUMANOID") return !e.properties.edible && e.properties.species !== "item" && !!e.properties.life && (e.properties.species === "human" || e.properties.species === "goblin" || e.properties.name?.includes("Knight") || e.properties.name?.includes("Archer") || e.properties.name?.includes("Goblin") || e.properties.name?.includes("Human"));
-    if (entityFilter === "BEAST") return !e.properties.edible && e.properties.species !== "item" && (e.properties.species === "wolf" || e.properties.species === "bear" || e.properties.species === "cat" || e.properties.species === "scorpion" || e.properties.species === "lizard" || e.properties.species === "goat" || e.properties.species === "dragon" || e.properties.species === "bat" || e.properties.species === "serpent");
-    if (entityFilter === "FLORA") return e.properties.species === "oak" || e.properties.species === "willow" || e.properties.species === "pine" || e.properties.species === "cactus" || e.properties.species === "shrub";
+    if (entityFilter === "COLONISTS") {
+      return !e.properties.edible && e.properties.species !== "item" && !!e.properties.life && (
+        !!e.properties.group || !!e.properties.role || !!e.properties.group_member || !!e.properties.surname ||
+        e.properties.species === "human" || e.properties.species === "elf" || e.properties.species === "dwarf" || e.properties.species === "orc" || e.properties.species === "goblin"
+      );
+    }
+    if (entityFilter === "BEASTS") {
+      return !e.properties.edible && e.properties.species !== "item" && !!e.properties.life && !e.properties.group && (
+        e.properties.species === "wolf" || e.properties.species === "bear" || e.properties.species === "boar" || e.properties.species === "deer" ||
+        e.properties.species === "spider" || e.properties.species === "cat" || e.properties.species === "goat" || e.properties.species === "dragon" ||
+        e.properties.species === "bat" || e.properties.species === "scorpion" || e.properties.species === "lizard" || e.properties.species === "serpent"
+      );
+    }
+    if (entityFilter === "CORPSES") {
+      return e.properties.species === "corpse" || !!e.properties.corpse || (e.properties.name?.includes("Corpo") || e.properties.name?.includes("Esqueleto"));
+    }
+    if (entityFilter === "BUILDINGS") {
+      return e.properties.species === "structure" || !!e.properties.structure || !!e.properties.house || !!e.properties.warehouse || !!e.properties.slaughterhouse || !!e.properties.kitchen || !!e.properties.isWell || !!e.properties.well || !!e.properties.campfire || !!e.properties.door;
+    }
+    if (entityFilter === "FOOD & MEALS") {
+      return !!e.properties.edible || e.properties.resourceType === "meat" || e.properties.resourceType === "food" || (e.properties.name?.includes("Marmita") || e.properties.name?.includes("Assada") || e.properties.name?.includes("Grelhado") || e.properties.name?.includes("Carne") || e.properties.name?.includes("Fruit"));
+    }
+    if (entityFilter === "EQUIP") {
+      return e.properties.resourceType === "basket" || e.properties.resourceType === "backpack" || !!e.properties.container || !!e.properties.basket || !!e.properties.backpack || !!e.properties.attackBonus || !!e.properties.isWeapon || !!e.properties.torch;
+    }
+    if (entityFilter === "FLORA") {
+      return !!e.properties.photosynthesis || !!e.properties.deep_root || e.properties.species === "oak" || e.properties.species === "willow" || e.properties.species === "pine" || e.properties.species === "cactus" || e.properties.species === "shrub" || e.properties.species === "water_lily" || e.properties.species === "seaweed";
+    }
+    if (entityFilter === "ITEMS") {
+      return !!e.properties.resourceType || !!e.properties.germination || e.properties.species === "item" || (!e.properties.life && !e.properties.structure);
+    }
+    if (entityFilter === "LIVING") {
+      return !!e.properties.life && e.properties.species !== "item" && e.properties.species !== "corpse";
+    }
     return true;
   });
 }
@@ -2462,20 +2511,20 @@ function renderEntitiesModal() {
   const list = getFilteredEntities();
   drawText8x8(`ENTITIES (${list.length})`, mx + 16, my + 14, "#f8b800", 1);
 
-  // Filter Buttons
-  const filters = ["ALL", "LIVING", "HUMANOID", "BEAST", "FLORA", "ITEMS"];
+  // Expanded Filter Buttons
+  const filters = ["ALL", "COLONISTS", "BEASTS", "CORPSES", "BUILDINGS", "FOOD & MEALS", "EQUIP", "FLORA", "ITEMS"];
   let fx = mx + 16;
-  const fw = isMobile ? Math.floor((mw - 32) / 6) : 64;
+  const fw = isMobile ? Math.floor((mw - 32) / filters.length) : 74;
   for (const f of filters) {
     const isAct = entityFilter === f;
-    const flabel = isMobile ? f.slice(0, 4) : f;
-    const btnW = isMobile ? fw : f.length * 8 + 16;
+    const flabel = isMobile ? f.slice(0, 3) : f;
+    const btnW = isMobile ? fw : Math.max(52, f.length * 8 + 12);
     drawNESButton(fx, my + 36, btnW, 22, flabel, isAct, false);
     registerClickableRegion(fx, my + 36, btnW, 22, () => {
       entityFilter = f;
       modalScroll = 0;
     });
-    fx += btnW + (isMobile ? 2 : 6);
+    fx += btnW + (isMobile ? 2 : 4);
   }
 
   // Table Box

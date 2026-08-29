@@ -31,6 +31,7 @@ import {
   allEvents
 } from "./event_log.js";
 import {
+  createCreatureFromArchetype,
   createHuman,
   createElf,
   createDwarf,
@@ -73,6 +74,16 @@ import {
   createSeedEntity,
   createStoneWallEntity,
   createWaterWellEntity,
+  createWarehouseEntity,
+  createSlaughterhouseEntity,
+  createKitchenEntity,
+  createBasketItem,
+  createBackpackItem,
+  createMeatBento,
+  createVeganBento,
+  createGourmetBento,
+  createRoastedMeat,
+  createGrilledVeggies,
   createRoadEntity,
   createEmbarkParty,
   rebindEntityMethods,
@@ -101,6 +112,9 @@ let groupsDirty = false;
 
 const SPAWNERS = {
   HUMAN: (x, y) => createHuman(x, y),
+  HAULER: (x, y) => createCreatureFromArchetype("human", x, y, { role: "Hauler" }),
+  BUTCHER: (x, y) => createCreatureFromArchetype("human", x, y, { role: "Butcher" }),
+  COOK: (x, y) => createCreatureFromArchetype("human", x, y, { role: "Cook" }),
   ELF: (x, y) => createElf(x, y),
   DWARF: (x, y) => createDwarf(x, y),
   ORC: (x, y) => createOrc(x, y),
@@ -134,6 +148,18 @@ const SPAWNERS = {
   STONE: (x, y) => createStoneItem(x, y),
   WALL: (x, y) => createStoneWallEntity(x, y),
   WELL: (x, y) => createWaterWellEntity(x, y),
+  WAREHOUSE: (x, y) => createWarehouseEntity(x, y),
+  SLAUGHTERHOUSE: (x, y) => createSlaughterhouseEntity(x, y),
+  KITCHEN: (x, y) => createKitchenEntity(x, y),
+  "BASKET (MED)": (x, y) => createBasketItem(x, y, "medium"),
+  "BASKET (LRG)": (x, y) => createBasketItem(x, y, "large"),
+  BACKPACK: (x, y) => createBackpackItem(x, y, "medium"),
+  "EXPEDITION PACK": (x, y) => createBackpackItem(x, y, "large"),
+  "MEAT BENTO": (x, y) => createMeatBento(x, y),
+  "VEGAN BENTO": (x, y) => createVeganBento(x, y),
+  "GOURMET BENTO": (x, y) => createGourmetBento(x, y),
+  "ROASTED MEAT": (x, y) => createRoastedMeat(x, y),
+  "GRILLED VEGGIES": (x, y) => createGrilledVeggies(x, y),
   "DIRT ROAD": (x, y) => createRoadEntity(x, y, null, false),
   "ROAD SNAP POINT": (x, y) => createRoadEntity(x, y, null, true)
 };
@@ -247,12 +273,10 @@ function generateConfiguredWorld(config) {
   spawnRandomGlobal(floraCount(80), createWaterLily, (x, y) => inBounds(x, y) && world.getTile(x, y) === 2, spawnBounds);
   spawnRandomGlobal(floraCount(100), createSeaweed, (x, y) => inBounds(x, y) && world.getTile(x, y) === 2, spawnBounds);
 
-  spawnRandomGlobal(floraCount(60), (x, y) => createSeedEntity(x, y, "large", "oak"), (x, y) => inBounds(x, y) && world.getTile(x, y) === 0 && !isRoadTile(x, y), spawnBounds);
-  spawnRandomGlobal(floraCount(40), (x, y) => createSeedEntity(x, y, "small", "willow"), (x, y) => inBounds(x, y) && (world.getTile(x, y) === 0 || world.getTile(x, y) === 3) && !isRoadTile(x, y), spawnBounds);
-  spawnRandomGlobal(floraCount(30), (x, y) => createFruit(x, y, "large", "cactus"), (x, y) => inBounds(x, y) && world.getTile(x, y) === 3 && !isRoadTile(x, y), spawnBounds);
-  spawnRandomGlobal(floraCount(40), (x, y) => createFruit(x, y, "large", "oak"), (x, y) => inBounds(x, y) && world.isWalkable(x, y) && !isRoadTile(x, y), spawnBounds);
-  spawnRandomGlobal(floraCount(50), createWoodItem, (x, y) => inBounds(x, y) && world.getTile(x, y) === 0 && !isRoadTile(x, y), spawnBounds);
-  spawnRandomGlobal(floraCount(50), createStoneItem, (x, y) => inBounds(x, y) && (world.getTile(x, y) === 4 || world.getTile(x, y) === 1) && !isRoadTile(x, y), spawnBounds);
+  spawnRandomGlobal(floraCount(10), (x, y) => createSeedEntity(x, y, "large", "oak"), (x, y) => inBounds(x, y) && world.getTile(x, y) === 0 && !isRoadTile(x, y), spawnBounds);
+  spawnRandomGlobal(floraCount(10), (x, y) => createFruit(x, y, "large", "oak"), (x, y) => inBounds(x, y) && world.isWalkable(x, y) && !isRoadTile(x, y), spawnBounds);
+  spawnRandomGlobal(floraCount(12), createWoodItem, (x, y) => inBounds(x, y) && world.getTile(x, y) === 0 && !isRoadTile(x, y), spawnBounds);
+  spawnRandomGlobal(floraCount(12), createStoneItem, (x, y) => inBounds(x, y) && (world.getTile(x, y) === 4 || world.getTile(x, y) === 1) && !isRoadTile(x, y), spawnBounds);
 
   let centerPlayX = minX + Math.floor(genWidth / 2);
   let centerPlayY = minY + Math.floor(genHeight / 2);

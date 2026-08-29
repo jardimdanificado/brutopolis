@@ -1,4 +1,4 @@
-import { createEntity, getEntityById, entityRegistry, currentTick, getEntitiesInRadius, getEntityAtTile, getEntityAtTileByProp, setSpatialZoneSize, tileEntityMap, globalWallCoords, globalRoadCoords, getTileKey, registerEntitySpatial } from "./engine.js";
+import { createEntity, getEntityById, entityRegistry, currentTick, getEntitiesInRadius, getEntityAtTile, getEntityAtTileByProp, setSpatialZoneSize, tileEntityMap, globalWallCoords, globalRoadCoords, getTileKey, registerEntitySpatial, dismemberCorpse, createCorpseEntity } from "./engine.js";
 import { MAP_WIDTH, MAP_HEIGHT, TILE_FLOOR, TILE_MOUNTAIN, TILE_WATER, TILE_SAND, TILE_STONE, TILE_VOID, TILE_ROAD_GRASS, TILE_ROAD_SAND, TILE_ROAD_STONE } from "./world_gen.js";
 import {
   recordWorldEvent,
@@ -708,16 +708,41 @@ export function createCampfireEntity(x, y, ownerId = null) {
 }
 
 
-export function createHouseEntity(x, y, style = "mixed", ownerId = null, ownerName = null, supportMaterial = "wood") {
+const HOUSE_STYLES = [
+  { id: "wood_cabin", label: "Cabana de Madeira", skin: "Overworld_House.png", color: 0xffd4a373, woodCost: 4, stoneCost: 2, condition: 10000 },
+  { id: "stone_cottage", label: "Chalé de Pedra", skin: "Overworld_House.png", color: 0xffc8c8c8, woodCost: 2, stoneCost: 5, condition: 16000 },
+  { id: "thatched_hut", label: "Cabana de Palha", skin: "Overworld_House.png", color: 0xffe6c86e, woodCost: 3, stoneCost: 1, condition: 7500 },
+  { id: "log_lodge", label: "Mansarda de Troncos", skin: "Overworld_House.png", color: 0xff8b5a2b, woodCost: 6, stoneCost: 2, condition: 12000 },
+  { id: "half_timbered", label: "Casa Enxaimel", skin: "Overworld_House.png", color: 0xfff0e6d2, woodCost: 4, stoneCost: 4, condition: 14000 },
+  { id: "mud_brick_adobe", label: "Casa de Adobe", skin: "Overworld_House.png", color: 0xffd2965a, woodCost: 2, stoneCost: 4, condition: 11000 },
+  { id: "mountain_stilt", label: "Palafita Alpina", skin: "Overworld_House.png", color: 0xff968278, woodCost: 5, stoneCost: 3, condition: 11500 },
+  { id: "longhouse", label: "Casa Comunal Nórdica", skin: "Overworld_House.png", color: 0xffa06432, woodCost: 7, stoneCost: 2, condition: 15000 },
+  { id: "bone_ossuary", label: "Ossuário Macabro", skin: "Overworld_House.png", color: 0xfff5f5dc, woodCost: 2, stoneCost: 2, boneCost: 4, condition: 13000 },
+  { id: "watchtower_villa", label: "Vila com Torreão", skin: "Overworld_House.png", color: 0xffb47850, woodCost: 3, stoneCost: 6, condition: 18000 }
+];
+
+export function createHouseEntity(x, y, style = "mixed", ownerId = null, ownerName = null, supportMaterial = "wood", forcedVariant = null) {
   if (isRoadTile(x, y)) return null;
   const curW = getSimWorld();
   const isOverWater = curW ? (curW.getTile ? curW.getTile(x, y) === 2 : false) : false;
-  let woodCost = 3;
-  let stoneCost = 2;
-  let boneCost = 0;
-  let condition = 10000;
-  let defense = 80;
-  let houseTypeLabel = isOverWater ? "Palafita / Plataforma" : "Cabana Rústica";
+
+  // Determine architectural variant index (0..9)
+  let variantIdx = 0;
+  if (forcedVariant !== null) {
+    variantIdx = Math.abs(forcedVariant) % 10;
+  } else if (ownerId) {
+    variantIdx = (Math.abs(ownerId) + Math.abs(x * 7 + y * 13)) % 10;
+  } else {
+    variantIdx = (Math.abs(x * 17 + y * 31)) % 10;
+  }
+
+  const hDef = HOUSE_STYLES[variantIdx] || HOUSE_STYLES[0];
+  let woodCost = hDef.woodCost;
+  let stoneCost = hDef.stoneCost;
+  let boneCost = hDef.boneCost || 0;
+  let condition = hDef.condition;
+  let defense = 80 + variantIdx * 5;
+  let houseTypeLabel = isOverWater ? "Palafita / Plataforma" : hDef.label;
 
   if (isOverWater) {
     if (supportMaterial === "stone") {
@@ -731,25 +756,6 @@ export function createHouseEntity(x, y, style = "mixed", ownerId = null, ownerNa
       condition += 1500;
       houseTypeLabel = "Palafita de Madeira";
     }
-  } else if (style === "stone") {
-    woodCost = 2;
-    stoneCost = 4;
-    condition = 15000;
-    defense = 120;
-    houseTypeLabel = "Casa de Pedra";
-  } else if (style === "wood") {
-    woodCost = 5;
-    stoneCost = 1;
-    condition = 8000;
-    defense = 60;
-    houseTypeLabel = "Cabana de Troncos";
-  } else if (style === "bone") {
-    woodCost = 1;
-    stoneCost = 1;
-    boneCost = 4;
-    condition = 12000;
-    defense = 90;
-    houseTypeLabel = "Ossuário Macabro";
   }
 
   const houseTitle = ownerName ? `${houseTypeLabel} de ${ownerName}` : houseTypeLabel;
@@ -762,7 +768,8 @@ export function createHouseEntity(x, y, style = "mixed", ownerId = null, ownerNa
       defense: defense
     },
     house: {
-      style: style,
+      style: hDef.id,
+      houseVariant: variantIdx,
       ownerId: ownerId,
       ownerName: ownerName,
       partnerId: null,
@@ -781,7 +788,7 @@ export function createHouseEntity(x, y, style = "mixed", ownerId = null, ownerNa
     blocking: true,
     render: {
       skin: "Overworld_House.png",
-      color: isOverWater ? (supportMaterial === "stone" ? 0xffc8c8c8 : 0xff8b5a2b) : 0xffd4a373,
+      color: isOverWater ? (supportMaterial === "stone" ? 0xffc8c8c8 : 0xff8b5a2b) : hDef.color,
       backcolor: 0x00000000
     }
   }, x, y);
@@ -789,27 +796,243 @@ export function createHouseEntity(x, y, style = "mixed", ownerId = null, ownerNa
 
 /**
  * Warehouse / Central Clan Stockpile Building (Grande Armazém do Clã)
- * Broad central structure storing materials (wood, stone, bones), tools, weapons, and artifacts (non-food, non-feces).
+ * 2 Variations: Timber Barn vs Stone Depot
  */
-export function createWarehouseEntity(x, y, group = null) {
+export function createWarehouseEntity(x, y, group = null, variant = 0) {
   const gName = group?.name || "Clã";
+  const label = variant === 1 ? `Depósito de Cantaria de ${gName}` : `Grande Armazém de ${gName}`;
   return createEntity(
     {
-      name: `Grande Armazém de ${gName}`,
+      name: label,
       species: "structure",
       warehouse: {
         groupId: group?.id || null,
         groupName: gName,
+        variant: variant,
         items: [],
-        woodCost: 2,
-        stoneCost: 2,
+        maxCapacity: 40,
+        woodCost: variant === 1 ? 3 : 5,
+        stoneCost: variant === 1 ? 5 : 3,
         woodCurrent: 0,
         stoneCurrent: 0,
         isCompleted: false
       },
-      structure: { condition: 12000, maxCondition: 12000, defense: 100 },
-      render: { skin: "Feature_Wood.png", color: 0xffd4a373, backcolor: 0xff3b271a },
+      structure: { condition: 15000, maxCondition: 15000, defense: 110 },
+      render: { skin: "Feature_Wood.png", color: variant === 1 ? 0xffc8c8c8 : 0xffd4a373, backcolor: 0xff3b271a },
       blocking: true
+    },
+    x,
+    y
+  );
+}
+
+/**
+ * Slaughterhouse Structure (Abatedouro da Aldeia)
+ * 2 Variations: Timber Abatedouro vs Stone Abattoir
+ */
+export function createSlaughterhouseEntity(x, y, group = null, variant = 0) {
+  const gName = group?.name || "Clã";
+  const label = variant === 1 ? `Abatedouro de Pedra de ${gName}` : `Abatedouro de Madeira de ${gName}`;
+  return createEntity(
+    {
+      name: label,
+      species: "structure",
+      slaughterhouse: {
+        groupId: group?.id || null,
+        groupName: gName,
+        variant: variant,
+        woodCost: variant === 1 ? 4 : 6,
+        stoneCost: variant === 1 ? 6 : 4,
+        woodCurrent: 0,
+        stoneCurrent: 0,
+        isCompleted: false,
+        carcasses: [],
+        hangingMeat: []
+      },
+      structure: { condition: 14000, maxCondition: 14000, defense: 100 },
+      render: { skin: "Feature_Cauldron.png", color: 0xffe65a5a, backcolor: 0xff3b1a1a },
+      blocking: true
+    },
+    x,
+    y
+  );
+}
+
+/**
+ * Kitchen Structure (Cozinha da Aldeia)
+ * 2 Variations: Brick Oven Kitchen vs Timber Smokery
+ */
+export function createKitchenEntity(x, y, group = null, variant = 0) {
+  const gName = group?.name || "Clã";
+  const label = variant === 1 ? `Defumador e Cozinha de ${gName}` : `Padaria e Cozinha de ${gName}`;
+  return createEntity(
+    {
+      name: label,
+      species: "structure",
+      kitchen: {
+        groupId: group?.id || null,
+        groupName: gName,
+        variant: variant,
+        woodCost: variant === 1 ? 6 : 4,
+        stoneCost: variant === 1 ? 4 : 6,
+        woodCurrent: 0,
+        stoneCurrent: 0,
+        isCompleted: false,
+        stoveFuel: 100,
+        preparedMeals: []
+      },
+      structure: { condition: 12000, maxCondition: 12000, defense: 90 },
+      render: { skin: "Feature_Cauldron.png", color: 0xfffaa03c, backcolor: 0xff3b271a },
+      blocking: true
+    },
+    x,
+    y
+  );
+}
+
+/**
+ * Hand-Carried Baskets (Cestos de Mão para Transporte e Coleta)
+ */
+export function createBasketItem(x, y, size = "medium") {
+  const cap = size === "small" ? 3 : (size === "large" ? 10 : 6);
+  const name = size === "small" ? "Cesto Pequeno" : (size === "large" ? "Cesto Grande" : "Cesto Médio");
+  return createEntity(
+    {
+      name,
+      resourceType: "basket",
+      render: { skin: "Item_Cloak.png", color: 0xffc8a064, backcolor: 0x00000000 },
+      container: {
+        type: "basket",
+        capacity: cap,
+        items: []
+      },
+      weight: 1.0,
+      lifespan: createLifespanProp(600.0)
+    },
+    x,
+    y
+  );
+}
+
+/**
+ * Body-Worn Backpacks (Mochilas de Transporte para o Tronco)
+ */
+export function createBackpackItem(x, y, size = "medium") {
+  const cap = size === "small" ? 6 : (size === "large" ? 20 : 12);
+  const name = size === "small" ? "Mochila Pequena" : (size === "large" ? "Mochila Grande de Expedição" : "Mochila Média");
+  return createEntity(
+    {
+      name,
+      resourceType: "backpack",
+      render: { skin: "Item_Cloak.png", color: 0xff8b5a2b, backcolor: 0x00000000 },
+      container: {
+        type: "backpack",
+        capacity: cap,
+        items: []
+      },
+      weight: 2.0,
+      lifespan: createLifespanProp(900.0)
+    },
+    x,
+    y
+  );
+}
+
+/**
+ * Fancy Prepared Meals & Culinary Recipes
+ */
+export function createRoastedMeat(x, y, sourceName = "Besta") {
+  return createEntity(
+    {
+      name: `Carne Assada de ${sourceName}`,
+      resourceType: "food",
+      render: { skin: "Item_Steak.png", color: 0xffc85032, backcolor: 0x00000000 },
+      edible: {
+        nutrition: 2800,
+        foodType: "meat",
+        digestDuration: 40,
+        moodBonus: 25,
+        sourceName
+      },
+      lifespan: createLifespanProp(400.0)
+    },
+    x,
+    y
+  );
+}
+
+export function createGrilledVeggies(x, y) {
+  return createEntity(
+    {
+      name: "Legumes Grelhados",
+      resourceType: "food",
+      render: { skin: "Item_Vegetable.png", color: 0xff8cd232, backcolor: 0x00000000 },
+      edible: {
+        nutrition: 2200,
+        foodType: "veg",
+        digestDuration: 35,
+        moodBonus: 20
+      },
+      lifespan: createLifespanProp(400.0)
+    },
+    x,
+    y
+  );
+}
+
+export function createMeatBento(x, y, sourceName = "Besta") {
+  return createEntity(
+    {
+      name: `Marmita de Carne de ${sourceName}`,
+      resourceType: "food",
+      render: { skin: "Item_Drumstick.png", color: 0xffd26432, backcolor: 0x00000000 },
+      edible: {
+        nutrition: 4500,
+        foodType: "meat",
+        digestDuration: 50,
+        moodBonus: 40,
+        sourceName
+      },
+      lifespan: createLifespanProp(600.0)
+    },
+    x,
+    y
+  );
+}
+
+export function createVeganBento(x, y) {
+  return createEntity(
+    {
+      name: "Marmita Vegana",
+      resourceType: "food",
+      render: { skin: "Item_Fruit.png", color: 0xff50c850, backcolor: 0x00000000 },
+      edible: {
+        nutrition: 4000,
+        foodType: "veg",
+        digestDuration: 45,
+        moodBonus: 35
+      },
+      lifespan: createLifespanProp(600.0)
+    },
+    x,
+    y
+  );
+}
+
+export function createGourmetBento(x, y, sourceName = "Besta") {
+  return createEntity(
+    {
+      name: `Marmita Mista Completa (${sourceName})`,
+      resourceType: "food",
+      render: { skin: "Item_Steak.png", color: 0xfff0a028, backcolor: 0x00000000 },
+      edible: {
+        nutrition: 5500,
+        foodType: "meat",
+        digestDuration: 60,
+        moodBonus: 60,
+        sourceName
+      },
+      lifespan: createLifespanProp(800.0)
     },
     x,
     y
@@ -2522,24 +2745,39 @@ export function generateWorldRoadNetwork(world, minX, maxX, minY, maxY, sz = 8, 
           }
         }
       }
-      if (bestHub) hubNodes.push(bestHub);
+      if (bestHub) {
+        // Measure landmass score (dry land tiles around hub)
+        let landScore = 0;
+        for (let dy = -10; dy <= 10; dy += 2) {
+          for (let dx = -10; dx <= 10; dx += 2) {
+            const tx = bestHub.x + dx;
+            const ty = bestHub.y + dy;
+            if (tx >= minX && tx < maxX && ty >= minY && ty < maxY) {
+              const t = world.getTile(tx, ty);
+              if (t === 0 || t === 3 || t === 4) landScore++;
+            }
+          }
+        }
+        bestHub.landScore = landScore;
+        hubNodes.push(bestHub);
+      }
     }
   }
+
+  // Sort hubs so the largest continental landmass hub is root (index 0)
+  hubNodes.sort((a, b) => (b.landScore || 0) - (a.landScore || 0));
 
   function addRoadTile(x, y) {
     if (x < minX || x >= maxX || y < minY || y >= maxY) return;
     const t = world.getTile ? world.getTile(x, y) : (world.map ? world.map[y * (world.width || 1024) + x] : 0);
-    // Never build on water (2) or void (5)
     if (t === 2 || t === 5) return;
 
-    // Clear any plant, tree, wood or stone deposit currently on this tile
     if (entities && entities.length > 0) {
       for (let i = entities.length - 1; i >= 0; i--) {
         const e = entities[i];
         if (e && !e.destroyed && e.x === x && e.y === y) {
           if (e.properties?.wood || e.properties?.photosynthesis || e.properties?.deep_root || e.properties?.plant_flesh || e.properties?.stone_deposit || e.properties?.item) {
             e.destroyed = true;
-            entities.splice(i, 1);
           }
         }
       }
@@ -2547,11 +2785,11 @@ export function generateWorldRoadNetwork(world, minX, maxX, minY, maxY, sz = 8, 
 
     let roadTile = TILE_ROAD_GRASS;
     if (t === 3) {
-      roadTile = TILE_ROAD_SAND; // Sand with road
+      roadTile = TILE_ROAD_SAND;
     } else if (t === 4 || t === 1) {
-      roadTile = TILE_ROAD_STONE; // Mountain/Stone with road
+      roadTile = TILE_ROAD_STONE;
     } else {
-      roadTile = TILE_ROAD_GRASS; // Grass with road
+      roadTile = TILE_ROAD_GRASS;
     }
 
     world.setTile(x, y, roadTile);
@@ -2560,7 +2798,7 @@ export function generateWorldRoadNetwork(world, minX, maxX, minY, maxY, sz = 8, 
     roadCoords.set(`${x}_${y}`, { x, y, tile: roadTile });
   }
 
-  // 2. Connect Regional Hubs into a Connected Land Spanning Network
+  // 2. Connect Regional Continental Hubs into a Connected Land Spanning Network
   if (hubNodes.length > 0) {
     const connectedHubs = [hubNodes[0]];
     const unconnectedHubs = hubNodes.slice(1);
@@ -2601,7 +2839,7 @@ export function generateWorldRoadNetwork(world, minX, maxX, minY, maxY, sz = 8, 
       }
     }
 
-    // Add cross-connections for alternate loop routes on the same landmass
+    // Add cross-connections for alternate loop routes on the same continental landmass
     for (let i = 0; i < connectedHubs.length; i++) {
       const nodeA = connectedHubs[i];
       const otherNodes = connectedHubs
@@ -2622,27 +2860,41 @@ export function generateWorldRoadNetwork(world, minX, maxX, minY, maxY, sz = 8, 
     }
   }
 
-  // 3. Flood Fill Verification: Guarantee 100% contiguous connectivity
+  // 3. Flood Fill Verification: Guarantee Largest Continental Component is Preserved
   const allRoadsArray = Array.from(roadCoords.values());
   if (allRoadsArray.length > 0) {
-    const mainComponent = new Set();
-    const queue = [allRoadsArray[0]];
-    mainComponent.add(`${allRoadsArray[0].x}_${allRoadsArray[0].y}`);
-
+    const visitedRoads = new Set();
+    const components = [];
     const cardDirs = [{ dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 }];
 
-    while (queue.length > 0) {
-      const curr = queue.shift();
-      for (const d of cardDirs) {
-        const nx = curr.x + d.dx;
-        const ny = curr.y + d.dy;
-        const nk = `${nx}_${ny}`;
-        if (roadCoords.has(nk) && !mainComponent.has(nk)) {
-          mainComponent.add(nk);
-          queue.push(roadCoords.get(nk));
+    for (const r of allRoadsArray) {
+      const rk = `${r.x}_${r.y}`;
+      if (visitedRoads.has(rk)) continue;
+
+      const comp = new Set();
+      const queue = [r];
+      comp.add(rk);
+      visitedRoads.add(rk);
+
+      while (queue.length > 0) {
+        const curr = queue.shift();
+        for (const d of cardDirs) {
+          const nx = curr.x + d.dx;
+          const ny = curr.y + d.dy;
+          const nk = `${nx}_${ny}`;
+          if (roadCoords.has(nk) && !comp.has(nk)) {
+            comp.add(nk);
+            visitedRoads.add(nk);
+            queue.push(roadCoords.get(nk));
+          }
         }
       }
+      components.push(comp);
     }
+
+    // Largest connected component is the continental highway network
+    components.sort((a, b) => b.size - a.size);
+    const mainComponent = components[0] || new Set();
 
     // Connect or clean any detached land road fragments
     for (const r of allRoadsArray) {
@@ -2822,69 +3074,43 @@ export function initClanRoadNetwork(group) {
   // Anchor village center snap
   setTile(baseX, baseY, true);
 
-  // 2. Completely Randomized & Organic Village Street Generation (Asymmetric branches, winding alleys, cul-de-sacs)
-  const cardDirs = [
-    { dx: 1, dy: 0 },
-    { dx: -1, dy: 0 },
-    { dx: 0, dy: 1 },
-    { dx: 0, dy: -1 }
-  ];
+  // 2. Structured Village Central Crossroads & Plaza Ring (Clean main streets connecting the village center)
+  const plazaRadius = 5;
+  // East-West Main Thoroughfare
+  for (let dx = -plazaRadius; dx <= plazaRadius; dx++) {
+    if (isLandTile(baseX + dx, baseY)) {
+      setTile(baseX + dx, baseY, dx === -plazaRadius || dx === plazaRadius);
+      maybeClaimZone(baseX + dx, baseY);
+    }
+  }
+  // North-South Main Thoroughfare
+  for (let dy = -plazaRadius; dy <= plazaRadius; dy++) {
+    if (isLandTile(baseX, baseY + dy)) {
+      setTile(baseX, baseY + dy, dy === -plazaRadius || dy === plazaRadius);
+      maybeClaimZone(baseX, baseY + dy);
+    }
+  }
 
-  // Number of organic radiating branches: 3 to 6
-  const numBranches = Math.floor(Math.random() * 4) + 3;
-  const branchDirs = [...cardDirs, ...cardDirs].sort(() => Math.random() - 0.5);
-
-  for (let b = 0; b < numBranches; b++) {
-    const startDir = branchDirs[b % branchDirs.length];
-    let curDx = startDir.dx;
-    let curDy = startDir.dy;
-
-    let cx = baseX;
-    let cy = baseY;
-    const branchLength = Math.floor(Math.random() * 8) + 5; // 5 to 12 tiles
-
-    for (let s = 1; s <= branchLength; s++) {
-      // 25% chance to wander / meander organically to a perpendicular direction
-      if (s > 2 && Math.random() < 0.25) {
-        if (curDx !== 0) {
-          curDy = Math.random() < 0.5 ? 1 : -1;
-          curDx = 0;
-        } else {
-          curDx = Math.random() < 0.5 ? 1 : -1;
-          curDy = 0;
-        }
-      }
-
-      const nx = cx + curDx;
-      const ny = cy + curDy;
-      if (!isLandTile(nx, ny)) {
-        setTile(cx, cy);
-        break;
-      }
-
-      cx = nx;
-      cy = ny;
-      maybeClaimZone(cx, cy);
-      setTile(cx, cy);
-
-      // 30% chance to spawn an asymmetric short side alley
-      if (s > 3 && s % 4 === 0 && Math.random() < 0.5) {
-        const perpDx = -curDy;
-        const perpDy = curDx;
-        const alleyLen = Math.floor(Math.random() * 4) + 3;
-        let ax = cx;
-        let ay = cy;
-        for (let as = 1; as <= alleyLen; as++) {
-          const anx = ax + perpDx;
-          const any = ay + perpDy;
-          if (!isLandTile(anx, any)) {
-            setTile(ax, ay);
-            break;
+  // Connect Plaza Buildings if already established
+  const plaza = group._plaza;
+  if (plaza) {
+    for (const bKey of ["warehouse", "well", "campfire", "kitchen", "slaughterhouse"]) {
+      const b = plaza[bKey];
+      if (b && isLandTile(b.x, b.y)) {
+        // Connect building doorstep to nearest main road tile
+        const dx = Math.sign(baseX - b.x);
+        const dy = Math.sign(baseY - b.y);
+        let cx = b.x;
+        let cy = b.y;
+        for (let step = 0; step < 8; step++) {
+          if (roadMap.has(`${cx}_${cy}`)) break;
+          if (isLandTile(cx, cy)) {
+            setTile(cx, cy);
+            maybeClaimZone(cx, cy);
           }
-          ax = anx;
-          ay = any;
-          maybeClaimZone(ax, ay);
-          setTile(ax, ay);
+          if (cx !== baseX) cx += dx;
+          else if (cy !== baseY) cy += dy;
+          else break;
         }
       }
     }
@@ -2895,15 +3121,14 @@ export function initClanRoadNetwork(group) {
 }
 
 /**
- * Expands the clan road network by digging more dirt roads.
+ * Expands the clan road network by connecting candidate plots cleanly to the main thoroughfare.
  */
-export function expandClanRoadNetwork(group, count = 3) {
+export function expandClanRoadNetwork(group, count = 2) {
   if (!group) return [];
   if (!group._plannedRoads || group._plannedRoads.length === 0) {
     return initClanRoadNetwork(group);
   }
 
-  const sz = currentZoneSize || 8;
   const planned = group._plannedRoads;
   const roadMap = new Map();
   for (const r of planned) {
@@ -2914,57 +3139,32 @@ export function expandClanRoadNetwork(group, count = 3) {
     if (!isLandTile(x, y)) return;
     const k = `${x}_${y}`;
     if (!roadMap.has(k)) {
-      const hasParallelLeftRight = (roadMap.has(`${x-1}_${y}`) && roadMap.has(`${x-1}_${y-1}`)) || (roadMap.has(`${x+1}_${y}`) && roadMap.has(`${x+1}_${y-1}`));
-      const hasParallelUpDown = (roadMap.has(`${x}_${y-1}`) && roadMap.has(`${x-1}_${y-1}`)) || (roadMap.has(`${x}_${y+1}`) && roadMap.has(`${x-1}_${y+1}`));
-      if (hasParallelLeftRight || hasParallelUpDown) return;
-
       const entry = { x, y, type: "road", groupId: group.id };
       roadMap.set(k, entry);
       planned.push(entry);
     }
   }
 
-  function maybeClaimZone(x, y) {
-    const zx = Math.floor(x / sz);
-    const zy = Math.floor(y / sz);
-    const zk = `${zx}_${zy}`;
-    if (!group.claimedZones.includes(zk) && isLandTile(x, y)) {
-      group.claimedZones.push(zk);
-    }
-  }
-
-  const cardDirs = [
+  // Extend main streets by 2 tiles in cardinal directions if land is available
+  const extremes = [
     { dx: 1, dy: 0 },
     { dx: -1, dy: 0 },
     { dx: 0, dy: 1 },
     { dx: 0, dy: -1 }
   ];
 
-  for (let i = 0; i < count; i++) {
-    if (planned.length > 0) {
-      const shuffledRoads = [...planned].sort(() => Math.random() - 0.5);
-      for (const startRoad of shuffledRoads) {
-        const availableDirs = cardDirs.filter(d => isLandTile(startRoad.x + d.dx, startRoad.y + d.dy) && !roadMap.has(`${startRoad.x + d.dx}_${startRoad.y + d.dy}`));
-        if (availableDirs.length === 0) continue;
-
-        const dir = availableDirs[Math.floor(Math.random() * availableDirs.length)];
-        const len = Math.floor(Math.random() * 5) + 6; // 6 to 10 tiles
-
-        let cx = startRoad.x;
-        let cy = startRoad.y;
-        for (let s = 1; s <= len; s++) {
-          const nx = cx + dir.dx;
-          const ny = cy + dir.dy;
-          if (!isLandTile(nx, ny)) {
-            setTile(cx, cy);
-            break;
-          }
-          cx = nx;
-          cy = ny;
-          maybeClaimZone(cx, cy);
-          setTile(cx, cy);
+  for (const dir of extremes) {
+    const matchingRoads = planned.filter(r => isLandTile(r.x + dir.dx, r.y + dir.dy) && !roadMap.has(`${r.x + dir.dx}_${r.y + dir.dy}`));
+    if (matchingRoads.length > 0) {
+      const endRoad = matchingRoads[0];
+      for (let s = 1; s <= count; s++) {
+        const nx = endRoad.x + dir.dx * s;
+        const ny = endRoad.y + dir.dy * s;
+        if (isLandTile(nx, ny)) {
+          setTile(nx, ny);
+        } else {
+          break;
         }
-        break;
       }
     }
   }
@@ -2982,10 +3182,14 @@ export function expandClanRoadNetwork(group, count = 3) {
 export function initClanPlaza(group) {
   if (!group) return null;
   if (group._plaza && group._plaza.warehouse && group._plaza.campfire && group._plaza.well) {
+    if (!group._plaza.slaughterhouse) {
+      group._plaza.slaughterhouse = { x: group._plaza.warehouse.x - 3, y: group._plaza.warehouse.y - 2 };
+    }
+    if (!group._plaza.kitchen) {
+      group._plaza.kitchen = { x: group._plaza.warehouse.x + 3, y: group._plaza.warehouse.y + 2 };
+    }
     return group._plaza;
   }
-
-  initClanRoadNetwork(group);
 
   const sz = currentZoneSize || 8;
   let baseX = 32 * sz + 4;
@@ -3053,18 +3257,22 @@ export function initClanPlaza(group) {
   for (const t of validTiles) {
     if (plazaPicks.every(p => Math.max(Math.abs(t.x - p.x), Math.abs(t.y - p.y)) >= 3)) {
       plazaPicks.push(t);
-      if (plazaPicks.length === 3) break;
+      if (plazaPicks.length === 5) break;
     }
   }
 
   const whPos = existingWh || plazaPicks[0] || validTiles[0] || { x: baseX + 2, y: baseY + 2 };
   const cfPos = existingCf || plazaPicks[1] || validTiles[1] || { x: baseX - 2, y: baseY + 2 };
   const wellPos = existingWell || plazaPicks[2] || validTiles[2] || { x: baseX + 2, y: baseY - 2 };
+  const shPos = plazaPicks[3] || { x: baseX - 3, y: baseY - 2 };
+  const kitPos = plazaPicks[4] || { x: baseX + 3, y: baseY + 2 };
 
   group._plaza = {
     warehouse: whPos,
     campfire: cfPos,
-    well: wellPos
+    well: wellPos,
+    slaughterhouse: shPos,
+    kitchen: kitPos
   };
 
   return group._plaza;
@@ -3095,8 +3303,9 @@ export function isPraçaCompleted(group) {
 
 /**
  * Returns prioritized blueprint tiles for a clan:
- * 1. Praça First (Warehouse, Campfire, Well).
- * 2. Only after Praça is built: plan houses along normal road borders.
+ * 1. Praça First (Warehouse, Campfire, Well, Slaughterhouse, Kitchen).
+ * 2. Demand-Driven Additional Warehouses if storage is >= 75% full.
+ * 3. Houses along road borders.
  */
 export function getClanBlueprintTiles(group) {
   if (!group || !group.claimedZones) return [];
@@ -3118,29 +3327,47 @@ export function getClanBlueprintTiles(group) {
   let warehouseEnt = null;
   let campfireEnt = null;
   let wellEnt = null;
+  let slaughterhouseEnt = null;
+  let kitchenEnt = null;
+  const existingWarehouses = [];
 
   for (const e of entityRegistry.values()) {
     if (!e.destroyed && isTileInClaimedZones(e.x, e.y, group.claimedZones)) {
-      if (e.properties?.warehouse && !warehouseEnt) warehouseEnt = e;
+      if (e.properties?.warehouse) {
+        if (!warehouseEnt) warehouseEnt = e;
+        existingWarehouses.push(e);
+      }
       if (e.properties?.campfire && !campfireEnt) campfireEnt = e;
       if (e.properties?.well && !wellEnt) wellEnt = e;
+      if (e.properties?.slaughterhouse && !slaughterhouseEnt) slaughterhouseEnt = e;
+      if (e.properties?.kitchen && !kitchenEnt) kitchenEnt = e;
     }
   }
 
-  const whX = warehouseEnt ? warehouseEnt.x : plaza.warehouse.x;
-  const whY = warehouseEnt ? warehouseEnt.y : plaza.warehouse.y;
+  const whX = warehouseEnt ? warehouseEnt.x : (plaza?.warehouse?.x ?? 0);
+  const whY = warehouseEnt ? warehouseEnt.y : (plaza?.warehouse?.y ?? 0);
   tiles.push({ x: whX, y: whY, type: "warehouse" });
   occupiedTiles.add(`${whX}_${whY}`);
 
-  const cfX = campfireEnt ? campfireEnt.x : plaza.campfire.x;
-  const cfY = campfireEnt ? campfireEnt.y : plaza.campfire.y;
+  const cfX = campfireEnt ? campfireEnt.x : (plaza?.campfire?.x ?? (whX - 2));
+  const cfY = campfireEnt ? campfireEnt.y : (plaza?.campfire?.y ?? (whY + 2));
   tiles.push({ x: cfX, y: cfY, type: "campfire" });
   occupiedTiles.add(`${cfX}_${cfY}`);
 
-  const wellX = wellEnt ? wellEnt.x : plaza.well.x;
-  const wellY = wellEnt ? wellEnt.y : plaza.well.y;
+  const wellX = wellEnt ? wellEnt.x : (plaza?.well?.x ?? (whX + 2));
+  const wellY = wellEnt ? wellEnt.y : (plaza?.well?.y ?? (whY - 2));
   tiles.push({ x: wellX, y: wellY, type: "well" });
   occupiedTiles.add(`${wellX}_${wellY}`);
+
+  const shX = slaughterhouseEnt ? slaughterhouseEnt.x : (plaza?.slaughterhouse?.x ?? (whX - 3));
+  const shY = slaughterhouseEnt ? slaughterhouseEnt.y : (plaza?.slaughterhouse?.y ?? (whY - 2));
+  tiles.push({ x: shX, y: shY, type: "slaughterhouse" });
+  occupiedTiles.add(`${shX}_${shY}`);
+
+  const kitX = kitchenEnt ? kitchenEnt.x : (plaza?.kitchen?.x ?? (whX + 3));
+  const kitY = kitchenEnt ? kitchenEnt.y : (plaza?.kitchen?.y ?? (whY + 2));
+  tiles.push({ x: kitX, y: kitY, type: "kitchen" });
+  occupiedTiles.add(`${kitX}_${kitY}`);
 
   for (const ent of entityRegistry.values()) {
     if (!ent.destroyed && ent.properties.house && isTileInClaimedZones(ent.x, ent.y, group.claimedZones)) {
@@ -3181,7 +3408,7 @@ export function getClanBlueprintTiles(group) {
 
   collectCandidatePlots();
 
-  if (candidatePlots.length < Math.max(4, members.length)) {
+  if (candidatePlots.length < Math.max(6, members.length + 2)) {
     expandClanRoadNetwork(group, 2);
     plannedRoadSet = new Set((group._plannedRoads || []).map(r => `${r.x}_${r.y}`));
     collectCandidatePlots();
@@ -3192,6 +3419,17 @@ export function getClanBlueprintTiles(group) {
     const db = Math.abs(b.x - whX) + Math.abs(b.y - whY);
     return da - db;
   });
+
+  // Demand-Driven Warehouse: If total storage is >= 75% capacity (>= 30 items per warehouse)
+  const totalStoredItems = existingWarehouses.reduce((sum, w) => sum + (w.properties.warehouse?.items?.length || 0), 0);
+  const totalCapacity = existingWarehouses.length * 40;
+  if (existingWarehouses.length > 0 && (totalCapacity === 0 || totalStoredItems >= totalCapacity * 0.75)) {
+    const extraPlot = candidatePlots.shift();
+    if (extraPlot) {
+      tiles.push({ x: extraPlot.x, y: extraPlot.y, type: "warehouse" });
+      occupiedTiles.add(`${extraPlot.x}_${extraPlot.y}`);
+    }
+  }
 
   if (!group._housePlots) group._housePlots = {};
   const memberSet = new Set(members);
@@ -3226,25 +3464,22 @@ export function getClanBlueprintTiles(group) {
       }
 
       if (!chosenPlot) {
-        // Pioneers (first 7 members) and expanding settlers pick distinct plots situated away from the main road
         let isolatedCand = null;
 
-        // Search in circular rings from 5 to 16 tiles away from the clan plaza
-        for (let r = 5; r <= 20 && !isolatedCand; r += 2) {
+        // 1. Search in circular rings from 3 to 22 tiles away from the clan plaza
+        for (let r = 3; r <= 22 && !isolatedCand; r += 2) {
           for (let dy = -r; dy <= r && !isolatedCand; dy += 2) {
             for (let dx = -r; dx <= r && !isolatedCand; dx += 2) {
               const px = whX + dx;
               const py = whY + dy;
               const tk = `${px}_${py}`;
               if (!isLandTile(px, py) || isRoadTile(px, py) || plannedRoadSet.has(tk) || occupiedTiles.has(tk)) continue;
-              if (!isFarEnoughFromBuildings(px, py, tiles, 3)) continue;
+              if (!isFarEnoughFromBuildings(px, py, tiles, 2)) continue;
               if (!isTileInClaimedZones(px, py, group.claimedZones)) continue;
 
-              // Avoid water borders
               const curW = getSimWorld();
               if (curW && curW.getTile) {
                 if (curW.getTile(px, py) === 2 || curW.getTile(px, py) === 5) continue;
-                if (curW.getTile(px+1, py) === 2 || curW.getTile(px-1, py) === 2 || curW.getTile(px, py+1) === 2 || curW.getTile(px, py-1) === 2) continue;
               }
 
               isolatedCand = { x: px, y: py };
@@ -3252,12 +3487,32 @@ export function getClanBlueprintTiles(group) {
           }
         }
 
+        // 2. Fallback to candidate plots
         if (!isolatedCand && candidatePlots.length > 0) {
           for (const cand of candidatePlots) {
             const tk = `${cand.x}_${cand.y}`;
-            if (!occupiedTiles.has(tk) && isFarEnoughFromBuildings(cand.x, cand.y, tiles, 2)) {
+            if (!occupiedTiles.has(tk) && isFarEnoughFromBuildings(cand.x, cand.y, tiles, 1)) {
               isolatedCand = cand;
               break;
+            }
+          }
+        }
+
+        // 3. Fallback: Any free land tile in claimed territory
+        if (!isolatedCand) {
+          for (const zk of group.claimedZones) {
+            const zp = zk.includes("_") ? zk.split("_") : zk.split(",");
+            const zx = parseInt(zp[0], 10);
+            const zy = parseInt(zp[1], 10);
+            for (let ox = 0; ox < sz && !isolatedCand; ox++) {
+              for (let oy = 0; oy < sz && !isolatedCand; oy++) {
+                const px = zx * sz + ox;
+                const py = zy * sz + oy;
+                const tk = `${px}_${py}`;
+                if (isLandTile(px, py) && !isRoadTile(px, py) && !occupiedTiles.has(tk)) {
+                  isolatedCand = { x: px, y: py };
+                }
+              }
             }
           }
         }
@@ -4765,22 +5020,27 @@ export function isTileInClaimedZones(x, y, claimedZones) {
   if (!claimedZones || !Array.isArray(claimedZones) || claimedZones.length === 0) return false;
   const zx = Math.floor(x / currentZoneSize);
   const zy = Math.floor(y / currentZoneSize);
+  const intKey = (zx << 16) | (zy & 0xffff);
 
-  let fastSet = claimedZones._fastSet;
-  if (!fastSet || fastSet.size < claimedZones.length) {
-    fastSet = new Set();
+  let fastIntSet = claimedZones._fastIntSet;
+  if (!fastIntSet || claimedZones._fastIntVersion !== claimedZones.length) {
+    fastIntSet = new Set();
     for (let i = 0; i < claimedZones.length; i++) {
       const k = claimedZones[i];
-      fastSet.add(k);
-      if (k.includes("_")) {
-        const [cx, cy] = k.split("_");
-        fastSet.add(`${cx},${cy}`);
+      if (typeof k === "number") {
+        fastIntSet.add(k);
+      } else {
+        const parts = k.includes("_") ? k.split("_") : k.split(",");
+        const cx = parseInt(parts[0], 10) || 0;
+        const cy = parseInt(parts[1], 10) || 0;
+        fastIntSet.add((cx << 16) | (cy & 0xffff));
       }
     }
-    claimedZones._fastSet = fastSet;
+    claimedZones._fastIntSet = fastIntSet;
+    claimedZones._fastIntVersion = claimedZones.length;
   }
 
-  return fastSet.has(`${zx}_${zy}`) || fastSet.has(`${zx},${zy}`);
+  return fastIntSet.has(intKey);
 }
 
 export function isPerimeterEdge(zx, zy, ox, oy, claimedZones) {
@@ -5331,26 +5591,30 @@ export function createGroupMemberProp() {
                 return;
               }
             } else if (warehouseEntity && warehouseEntity.properties.warehouse?.isCompleted && dist <= 1 && this.actionTimer >= 0.20) {
-              // Deposit held resource into completed warehouse
-              let deposited = false;
-              for (const [k, p] of Object.entries(ent.properties)) {
-                if (k.startsWith("arm") && p && p.heldItem && p.heldItem.resourceType) {
-                  warehouseEntity.properties.warehouse.items.push(p.heldItem);
-                  p.heldItem = null;
-                  deposited = true;
-                  break;
+              const hasUnbuiltHouse = blueprint.some(b => b.type === "house" && (!getEntityAtTileByProp(b.x, b.y, "house") || !getEntityAtTileByProp(b.x, b.y, "house")?.properties.house?.isCompleted));
+              const isHoldingBuildingMat = Object.values(ent.properties).some(p => p && (p.heldItem?.resourceType === "wood" || p.heldItem?.resourceType === "stone" || p.heldItem?.resourceType === "bone"));
+
+              // Only deposit building materials if all houses are done or colonist is holding non-construction goods (food, items)
+              if (!hasUnbuiltHouse || !isHoldingBuildingMat) {
+                let deposited = false;
+                for (const [k, p] of Object.entries(ent.properties)) {
+                  if (k.startsWith("arm") && p && p.heldItem && p.heldItem.resourceType) {
+                    warehouseEntity.properties.warehouse.items.push(p.heldItem);
+                    p.heldItem = null;
+                    deposited = true;
+                    break;
+                  }
                 }
               }
-              // Or withdraw needed resource to build well or houses
-              if (!deposited) {
-                const freeArm = Object.entries(ent.properties).find(([k, p]) => k.startsWith("arm") && p && !p.heldItem);
-                if (freeArm && warehouseEntity.properties.warehouse.items && warehouseEntity.properties.warehouse.items.length > 0) {
-                  const itemIdx = warehouseEntity.properties.warehouse.items.findIndex(i => (needsWood && (i.resourceType === "wood" || i.name?.includes("Wood"))) || (needsStone && (i.resourceType === "stone" || i.resourceType === "bone" || i.name?.includes("Stone"))));
-                  if (itemIdx >= 0) {
-                    const item = warehouseEntity.properties.warehouse.items.splice(itemIdx, 1)[0];
-                    freeArm[1].heldItem = item;
-                    this.actionTimer = 0;
-                  }
+
+              // Withdraw needed resource to build houses
+              const freeArm = Object.entries(ent.properties).find(([k, p]) => k.startsWith("arm") && p && !p.heldItem);
+              if (freeArm && warehouseEntity.properties.warehouse.items && warehouseEntity.properties.warehouse.items.length > 0) {
+                const itemIdx = warehouseEntity.properties.warehouse.items.findIndex(i => (needsWood && (i.resourceType === "wood" || i.name?.includes("Wood"))) || (needsStone && (i.resourceType === "stone" || i.resourceType === "bone" || i.name?.includes("Stone"))));
+                if (itemIdx >= 0) {
+                  const item = warehouseEntity.properties.warehouse.items.splice(itemIdx, 1)[0];
+                  freeArm[1].heldItem = item;
+                  this.actionTimer = 0;
                 }
               }
             }
@@ -5453,6 +5717,118 @@ export function createGroupMemberProp() {
                     tick: currentTick,
                     timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
                     metadata: { structureName: wellEntity.properties.name, clan: group.name }
+                  });
+                }
+                return;
+              }
+            }
+          } else if (bp.type === "slaughterhouse") {
+            const shEntity = getEntityAtTileByProp(bp.x, bp.y, "slaughterhouse");
+            if (!shEntity && dist <= 1 && this.actionTimer >= 0.20) {
+              let resType = null;
+              for (const [k, p] of Object.entries(ent.properties)) {
+                if (k.startsWith("arm") && p && (p.heldItem?.resourceType === "stone" || p.heldItem?.resourceType === "wood" || p.heldItem?.resourceType === "bone")) {
+                  resType = p.heldItem.resourceType;
+                  p.heldItem = null;
+                  break;
+                }
+              }
+              this.actionTimer = 0;
+              const variant = (Math.abs(bp.x * 11 + bp.y * 19)) % 2;
+              const sh = createSlaughterhouseEntity(bp.x, bp.y, group, variant);
+              sh.properties.slaughterhouse.woodCurrent = resType === "wood" ? 1 : 0;
+              sh.properties.slaughterhouse.stoneCurrent = (resType === "stone" || resType === "bone") ? 1 : 0;
+              sh.properties.slaughterhouse.isCompleted = (sh.properties.slaughterhouse.woodCurrent >= sh.properties.slaughterhouse.woodCost && sh.properties.slaughterhouse.stoneCurrent >= sh.properties.slaughterhouse.stoneCost);
+              entities.push(sh);
+              registerEntitySpatial(sh);
+              return;
+            } else if (shEntity && !shEntity.properties.slaughterhouse?.isCompleted && dist <= 1 && this.actionTimer >= 0.20) {
+              const sh = shEntity.properties.slaughterhouse;
+              let contributed = false;
+              for (const [k, p] of Object.entries(ent.properties)) {
+                if (k.startsWith("arm") && p && p.heldItem) {
+                  if (p.heldItem.resourceType === "wood" && sh.woodCurrent < sh.woodCost) {
+                    sh.woodCurrent++;
+                    p.heldItem = null;
+                    contributed = true;
+                    break;
+                  } else if ((p.heldItem.resourceType === "stone" || p.heldItem.resourceType === "bone") && sh.stoneCurrent < sh.stoneCost) {
+                    sh.stoneCurrent++;
+                    p.heldItem = null;
+                    contributed = true;
+                    break;
+                  }
+                }
+              }
+              if (contributed) {
+                this.actionTimer = 0;
+                if (sh.woodCurrent >= sh.woodCost && sh.stoneCurrent >= sh.stoneCost) {
+                  sh.isCompleted = true;
+                  recordWorldEvent({
+                    opcode: OP_BUILD,
+                    type: "BUILD",
+                    primaryEntityId: ent.id,
+                    location: { x: bp.x, y: bp.y },
+                    description: `${ent.properties.name} concluiu o ${shEntity.properties.name || "Abatedouro"} do reino '${group.name}'!`,
+                    tick: currentTick,
+                    timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
+                    metadata: { structureName: shEntity.properties.name, clan: group.name }
+                  });
+                }
+                return;
+              }
+            }
+          } else if (bp.type === "kitchen") {
+            const kitEntity = getEntityAtTileByProp(bp.x, bp.y, "kitchen");
+            if (!kitEntity && dist <= 1 && this.actionTimer >= 0.20) {
+              let resType = null;
+              for (const [k, p] of Object.entries(ent.properties)) {
+                if (k.startsWith("arm") && p && (p.heldItem?.resourceType === "stone" || p.heldItem?.resourceType === "wood" || p.heldItem?.resourceType === "bone")) {
+                  resType = p.heldItem.resourceType;
+                  p.heldItem = null;
+                  break;
+                }
+              }
+              this.actionTimer = 0;
+              const variant = (Math.abs(bp.x * 7 + bp.y * 23)) % 2;
+              const kit = createKitchenEntity(bp.x, bp.y, group, variant);
+              kit.properties.kitchen.woodCurrent = resType === "wood" ? 1 : 0;
+              kit.properties.kitchen.stoneCurrent = (resType === "stone" || resType === "bone") ? 1 : 0;
+              kit.properties.kitchen.isCompleted = (kit.properties.kitchen.woodCurrent >= kit.properties.kitchen.woodCost && kit.properties.kitchen.stoneCurrent >= kit.properties.kitchen.stoneCost);
+              entities.push(kit);
+              registerEntitySpatial(kit);
+              return;
+            } else if (kitEntity && !kitEntity.properties.kitchen?.isCompleted && dist <= 1 && this.actionTimer >= 0.20) {
+              const kit = kitEntity.properties.kitchen;
+              let contributed = false;
+              for (const [k, p] of Object.entries(ent.properties)) {
+                if (k.startsWith("arm") && p && p.heldItem) {
+                  if (p.heldItem.resourceType === "wood" && kit.woodCurrent < kit.woodCost) {
+                    kit.woodCurrent++;
+                    p.heldItem = null;
+                    contributed = true;
+                    break;
+                  } else if ((p.heldItem.resourceType === "stone" || p.heldItem.resourceType === "bone") && kit.stoneCurrent < kit.stoneCost) {
+                    kit.stoneCurrent++;
+                    p.heldItem = null;
+                    contributed = true;
+                    break;
+                  }
+                }
+              }
+              if (contributed) {
+                this.actionTimer = 0;
+                if (kit.woodCurrent >= kit.woodCost && kit.stoneCurrent >= kit.stoneCost) {
+                  kit.isCompleted = true;
+                  recordWorldEvent({
+                    opcode: OP_BUILD,
+                    type: "BUILD",
+                    primaryEntityId: ent.id,
+                    location: { x: bp.x, y: bp.y },
+                    description: `${ent.properties.name} concluiu a ${kitEntity.properties.name || "Cozinha"} do reino '${group.name}'!`,
+                    tick: currentTick,
+                    timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
+                    metadata: { structureName: kitEntity.properties.name, clan: group.name }
                   });
                 }
                 return;
@@ -5566,17 +5942,19 @@ export function createGroupMemberProp() {
                 style = "mixed";
               }
 
-              const newHouse = createHouseEntity(bp.x, bp.y, houseOwnerId, ownerName, style, boneOwner);
-              newHouse.properties.group = group;
-              newHouse.properties.groupId = group.id;
-              newHouse.properties.house.ownerId = houseOwnerId;
-              newHouse.properties.house.ownerName = ownerName;
-              newHouse.properties.house.woodCurrent = resType === "wood" ? 1 : 0;
-              newHouse.properties.house.stoneCurrent = resType === "stone" ? 1 : 0;
-              newHouse.properties.house.boneCurrent = resType === "bone" ? 1 : 0;
-              newHouse.properties.house.isCompleted = (newHouse.properties.house.woodCurrent >= (newHouse.properties.house.woodCost ?? 2) && newHouse.properties.house.stoneCurrent >= (newHouse.properties.house.stoneCost ?? 2) && (newHouse.properties.house.boneCurrent || 0) >= (newHouse.properties.house.boneCost ?? 0));
-              entities.push(newHouse);
-              registerEntitySpatial(newHouse);
+              const newHouse = createHouseEntity(bp.x, bp.y, style, houseOwnerId, ownerName, "wood");
+              if (newHouse) {
+                newHouse.properties.group = group;
+                newHouse.properties.groupId = group.id;
+                newHouse.properties.house.ownerId = houseOwnerId;
+                newHouse.properties.house.ownerName = ownerName;
+                newHouse.properties.house.woodCurrent = resType === "wood" ? 1 : 0;
+                newHouse.properties.house.stoneCurrent = resType === "stone" ? 1 : 0;
+                newHouse.properties.house.boneCurrent = resType === "bone" ? 1 : 0;
+                newHouse.properties.house.isCompleted = (newHouse.properties.house.woodCurrent >= (newHouse.properties.house.woodCost ?? 2) && newHouse.properties.house.stoneCurrent >= (newHouse.properties.house.stoneCost ?? 2) && (newHouse.properties.house.boneCurrent || 0) >= (newHouse.properties.house.boneCost ?? 0));
+                entities.push(newHouse);
+                registerEntitySpatial(newHouse);
+              }
               return;
             } else if (houseEntity && !houseEntity.properties.house?.isCompleted && dist <= 1 && this.actionTimer >= 0.20) {
               const h = houseEntity.properties.house;
@@ -5889,7 +6267,7 @@ export function createGroupMemberProp() {
           const py = ent.y + off.dy;
           const tile = world.getTile(px, py);
           const isLand = (tile !== 2 && tile !== 5 && tile !== 1 && tile !== 4);
-          const hasNearbyPlant = !!getEntityAtTileByProp(px, py, "photosynthesis") || !!getEntityAtTileByProp(px, py, "deep_root");
+          const hasNearbyPlant = getEntitiesInRadius(px, py, 4).some(e => !e.destroyed && (e.properties.photosynthesis || e.properties.deep_root || e.properties.tree || e.properties.species === "tree" || e.properties.species === "oak" || e.properties.species === "pine" || e.properties.species === "willow" || e.properties.species === "cactus"));
           if (isLand && !isRoadTile(px, py) && !hasNearbyPlant) {
             targetX = px;
             targetY = py;
@@ -5951,6 +6329,26 @@ export function createGroupMemberProp() {
           nearbyFecesInBase.destroyed = true;
           freeArm.heldItem = { name: "Excrement / Feces", resourceType: "feces", weight: 1 };
           return;
+        }
+
+        // B. Butchering / Dismembering Corpses for Meat & Bones (Desmembrar e Comer)
+        const nearbyCorpse = getEntitiesInRadius(ent.x, ent.y, 1).find(e => !e.destroyed && e.properties.corpse && (e.properties.corpse.remainingMeatCuts > 0 || e.properties.corpse.remainingBones > 0));
+        if (nearbyCorpse) {
+          const cut = dismemberCorpse(ent, nearbyCorpse);
+          if (cut) {
+            freeArm.heldItem = cut;
+            ent.emote = 2;
+            recordWorldEvent({
+              opcode: OP_FEED,
+              type: "HARVEST",
+              primaryEntityId: ent.id,
+              secondaryEntityId: nearbyCorpse.id,
+              location: { x: ent.x, y: ent.y },
+              description: `${ent.properties.name} desmembrou ${cut.name} de um corpo para alimentação e suprimentos!`,
+              tick: currentTick
+            });
+            return;
+          }
         }
 
         // Calculate exact resource needs for Houses -> Walls -> Gates
@@ -6071,7 +6469,7 @@ export function createGroupMemberProp() {
           }
         }
 
-        // E. Territory Ground Cleaning & Hauling to Warehouse/Pantry (Collect loose items & food to save FPS and stock base)
+        // E. Territory Ground Cleaning & Hauling to Warehouse/Pantry with Basket Support
         if (inClaimedZone) {
           const nearbyGroundItem = getEntitiesInRadius(ent.x, ent.y, 2).find(e =>
             !e.destroyed &&
@@ -6089,13 +6487,93 @@ export function createGroupMemberProp() {
           if (nearbyGroundItem) {
             nearbyGroundItem.destroyed = true;
             const resType = nearbyGroundItem.properties.resourceType || (nearbyGroundItem.properties.edible ? (nearbyGroundItem.properties.edible.foodType || "food") : "item");
-            freeArm.heldItem = {
+            const itemObj = {
               name: nearbyGroundItem.properties.name || (nearbyGroundItem.properties.resourceType ? `${nearbyGroundItem.properties.resourceType}` : "Item"),
               resourceType: resType,
               nutrition: nearbyGroundItem.properties.edible?.nutrition || 600,
               weight: 1
             };
+
+            // Check if any held basket has available space
+            let storedInBasket = false;
+            for (const [k, p] of Object.entries(ent.properties)) {
+              if (k.startsWith("arm") && p && p.heldItem?.container?.type === "basket") {
+                const bCont = p.heldItem.container;
+                if (bCont.items.length < bCont.capacity) {
+                  bCont.items.push(itemObj);
+                  storedInBasket = true;
+                  ent.emote = 2;
+                  break;
+                }
+              }
+            }
+
+            if (!storedInBasket && freeArm && !freeArm.heldItem) {
+              freeArm.heldItem = itemObj;
+            }
             return;
+          }
+        }
+
+        // F. Culinary Cooking at Kitchen (Cook Role or Farmer/Pioneer)
+        const nearbyKitchen = getEntitiesInRadius(ent.x, ent.y, 2).find(e => !e.destroyed && e.properties.kitchen?.isCompleted);
+        if (nearbyKitchen && (ent.properties.role === "Cook" || ent.properties.role === "Farmer" || ent.properties.role === "Pioneer") && this.actionTimer >= 0.40) {
+          const completedWarehouse = getGroupWarehouse(group, entities);
+          if (completedWarehouse && completedWarehouse.properties.warehouse?.items?.length >= 2) {
+            const whItems = completedWarehouse.properties.warehouse.items;
+            const meatIndices = [];
+            const vegIndices = [];
+            const seedIndices = [];
+            for (let idx = 0; idx < whItems.length; idx++) {
+              const it = whItems[idx];
+              if (it.resourceType === "meat" || it.foodType === "meat") meatIndices.push(idx);
+              else if (it.resourceType === "seed" || it.foodType === "seed") seedIndices.push(idx);
+              else if (it.edible || it.resourceType === "food" || it.foodType === "fruit" || it.foodType === "veg") vegIndices.push(idx);
+            }
+
+            let preparedDish = null;
+            if (meatIndices.length >= 1 && vegIndices.length >= 1 && seedIndices.length >= 1) {
+              // Gourmet Bento
+              whItems.splice(seedIndices[0], 1);
+              whItems.splice(vegIndices[0], 1);
+              whItems.splice(meatIndices[0], 1);
+              preparedDish = createGourmetBento(nearbyKitchen.x, nearbyKitchen.y, group.name);
+            } else if (meatIndices.length >= 2) {
+              // Meat Bento
+              whItems.splice(meatIndices[1], 1);
+              whItems.splice(meatIndices[0], 1);
+              preparedDish = createMeatBento(nearbyKitchen.x, nearbyKitchen.y, group.name);
+            } else if (vegIndices.length >= 2 && seedIndices.length >= 1) {
+              // Vegan Bento
+              whItems.splice(seedIndices[0], 1);
+              whItems.splice(vegIndices[1], 1);
+              whItems.splice(vegIndices[0], 1);
+              preparedDish = createVeganBento(nearbyKitchen.x, nearbyKitchen.y);
+            } else if (meatIndices.length >= 1) {
+              // Roasted Meat
+              whItems.splice(meatIndices[0], 1);
+              preparedDish = createRoastedMeat(nearbyKitchen.x, nearbyKitchen.y, group.name);
+            } else if (vegIndices.length >= 1) {
+              // Grilled Veggies
+              whItems.splice(vegIndices[0], 1);
+              preparedDish = createGrilledVeggies(nearbyKitchen.x, nearbyKitchen.y);
+            }
+
+            if (preparedDish) {
+              this.actionTimer = 0;
+              entities.push(preparedDish);
+              registerEntitySpatial(preparedDish);
+              ent.emote = 2;
+              recordWorldEvent({
+                opcode: OP_CRAFT,
+                type: "CRAFT",
+                primaryEntityId: ent.id,
+                location: { x: nearbyKitchen.x, y: nearbyKitchen.y },
+                description: `${ent.properties.name} preparou um delicioso '${preparedDish.properties.name}' na Cozinha do reino '${group.name}'!`,
+                tick: currentTick
+              });
+              return;
+            }
           }
         }
       }
@@ -6107,6 +6585,9 @@ export function createGroupMemberProp() {
 export function createMinerProp() { return createGroupMemberProp(); }
 export function createBuilderProp() { return createGroupMemberProp(); }
 export function createCrafterProp() { return createGroupMemberProp(); }
+export function createButcherProp() { return createGroupMemberProp(); }
+export function createCookProp() { return createGroupMemberProp(); }
+export function createHaulerProp() { return createGroupMemberProp(); }
 export function createFarmerProp() { return createGroupMemberProp(); }
 export function createHunterProp() { return createGroupMemberProp(); }
 export function createExplorerProp() { return createGroupMemberProp(); }
@@ -6119,7 +6600,8 @@ export function createWoodItem(x, y) {
     {
       name: "Wood Log",
       resourceType: "wood",
-      render: { skin: "Item_Wood.png", color: 0xffa06e32, backcolor: 0x00000000 }
+      render: { skin: "Item_Wood.png", color: 0xffa06e32, backcolor: 0x00000000 },
+      lifespan: createLifespanProp(180.0) // Decomposes after 3 minutes if ignored in the wild
     },
     x,
     y
@@ -6134,7 +6616,8 @@ export function createStoneItem(x, y) {
     {
       name: "Stone Block",
       resourceType: "stone",
-      render: { skin: "Feature_Boulders.png", color: 0xffc8c8c8, backcolor: 0x00000000 }
+      render: { skin: "Feature_Boulders.png", color: 0xffc8c8c8, backcolor: 0x00000000 },
+      lifespan: createLifespanProp(240.0) // Sinks into earth after 4 minutes if ignored in the wild
     },
     x,
     y
@@ -6151,7 +6634,8 @@ export function createToothItem(x, y, ownerName = "Creature") {
       resourceType: "bone",
       ownerName: ownerName,
       render: { skin: "Item_Bone.png", color: 0xfff5f5f0, backcolor: 0x00000000 },
-      edible: { nutrition: 150, foodType: "bone", digestDuration: 15, sourceName: ownerName }
+      edible: { nutrition: 150, foodType: "bone", digestDuration: 15, sourceName: ownerName },
+      lifespan: createLifespanProp(90.0)
     },
     x,
     y
@@ -6168,7 +6652,8 @@ export function createBoneItem(x, y, ownerName = "Creature") {
       resourceType: "bone",
       ownerName: ownerName,
       render: { skin: "Item_Bone.png", color: 0xfff4f1e8, backcolor: 0x00000000 },
-      edible: { nutrition: 120, foodType: "bone", digestDuration: 20, sourceName: ownerName }
+      edible: { nutrition: 120, foodType: "bone", digestDuration: 20, sourceName: ownerName },
+      lifespan: createLifespanProp(120.0)
     },
     x,
     y
@@ -6964,9 +7449,10 @@ export function evaluateAndAssignClanRoles(group, entities, world) {
 
   // Larger groups (4+ members) -> Dynamic role distribution with fallbacks
   let guardsNeeded = threatLevel > 0 ? Math.min(Math.ceil(totalPop * 0.35), threatLevel + 1) : (totalPop >= 6 ? 1 : 0);
-  let farmersNeeded = foodCount < totalPop * 2 ? Math.max(1, Math.ceil(totalPop * 0.30)) : 1;
-  let buildersNeeded = unbuiltCount > 0 ? Math.max(1, Math.ceil(totalPop * 0.35)) : 1;
-  let foragersNeeded = (stoneCount + woodCount < 8) ? Math.max(1, Math.ceil(totalPop * 0.25)) : 1;
+  let haulersNeeded = totalPop >= 4 ? Math.max(1, Math.ceil(totalPop * 0.25)) : 0;
+  let buildersNeeded = unbuiltCount > 0 ? Math.max(1, Math.ceil(totalPop * 0.30)) : 1;
+  let farmersNeeded = foodCount < totalPop * 2 ? Math.max(1, Math.ceil(totalPop * 0.25)) : 1;
+  let foragersNeeded = (stoneCount + woodCount < 8) ? Math.max(1, Math.ceil(totalPop * 0.20)) : 1;
 
   for (const m of livingMembers) {
     if (m.id === group.leaderId) {
@@ -6980,6 +7466,9 @@ export function evaluateAndAssignClanRoles(group, entities, world) {
     if (threatLevel > 0 && guardsNeeded > 0 && (hasWeapon || isViolent)) {
       m.properties.role = "Guard";
       guardsNeeded--;
+    } else if (haulersNeeded > 0) {
+      m.properties.role = "Hauler";
+      haulersNeeded--;
     } else if (unbuiltCount > 0 && buildersNeeded > 0) {
       m.properties.role = "Builder";
       buildersNeeded--;
@@ -7058,6 +7547,25 @@ export function createLocomotionProp() {
       if (waterRatio <= 0.15) {
         speedFactor *= 0.65; // Sluggish / fatigued when severely dehydrated
       }
+
+      // Dynamic Weight Encumbrance: Calculate load from held items, baskets, and backpacks
+      let totalCarriedWeight = 0;
+      for (const k in ent.properties) {
+        const p = ent.properties[k];
+        if (!p) continue;
+        if (k.startsWith("arm") && p.heldItem) {
+          totalCarriedWeight += (p.heldItem.weight || 1.0);
+          if (p.heldItem.container && p.heldItem.container.items) {
+            totalCarriedWeight += p.heldItem.container.items.length * 0.5;
+          }
+        }
+        if (p.container && p.container.items) {
+          totalCarriedWeight += p.container.items.length * 0.4;
+        }
+      }
+      const encumbranceMult = 1.0 / (1.0 + totalCarriedWeight * 0.08);
+      speedFactor *= encumbranceMult;
+
       const moveInterval = Math.max(0.10, 0.85 / Math.max(0.1, speedFactor));
 
       this.stepTimer = (this.stepTimer || 0) + dt;
@@ -7502,9 +8010,34 @@ export function createLocomotionProp() {
           const completedHousesCount = entities.filter(e => !e.destroyed && e.properties.house?.isCompleted && (group.members?.includes(e.properties.house.ownerId) || group.members?.includes(e.properties.house.partnerId))).length;
           const allMembersHoused = completedHousesCount >= Math.max(1, livingClanMembers.length);
 
-          // Priority 2.0: Warehouse First (Top Priority for the Settlement), Clan Houses Second
+          // Priority 2.0: Own House (Top Personal Priority) -> Other Houses -> Settlement Infrastructure
           for (const bp of blueprint) {
-            if (bp.type === "warehouse") {
+            if (bp.type === "house") {
+              const houseEnt = getEntityAtTileByProp(bp.x, bp.y, "house");
+              let needsThisMat = false;
+              if (!houseEnt) {
+                needsThisMat = true;
+              } else if (!houseEnt.properties.house?.isCompleted) {
+                const h = houseEnt.properties.house;
+                const wCost = h.woodCost ?? 3;
+                const sCost = h.stoneCost ?? 2;
+                const bCost = h.boneCost ?? 0;
+                if (heldResType === "wood" && (h.woodCurrent || 0) < wCost) needsThisMat = true;
+                if (heldResType === "stone" && (h.stoneCurrent || 0) < sCost) needsThisMat = true;
+                if (heldResType === "bone" && (h.boneCurrent || 0) < bCost) needsThisMat = true;
+                if (!needsThisMat && ((h.woodCurrent || 0) < wCost || (h.stoneCurrent || 0) < sCost || (h.boneCurrent || 0) < bCost)) needsThisMat = true;
+              }
+
+              if (needsThisMat) {
+                const dist = Math.abs(bp.x - ent.x) + Math.abs(bp.y - ent.y);
+                const isOwnHouse = (bp.ownerId === ent.id);
+                const weightDist = isOwnHouse ? dist * 0.05 : dist * 0.25;
+                if (weightDist < minBuildDist) {
+                  minBuildDist = weightDist;
+                  targetBuild = { x: bp.x, y: bp.y, type: "house" };
+                }
+              }
+            } else if (bp.type === "warehouse") {
               const wh = getEntityAtTileByProp(bp.x, bp.y, "warehouse");
               let needsThisMat = false;
               if (!wh) {
@@ -7519,7 +8052,7 @@ export function createLocomotionProp() {
 
               if (needsThisMat) {
                 const dist = Math.abs(bp.x - ent.x) + Math.abs(bp.y - ent.y);
-                const weightDist = dist * 0.1; // TOP PRIORITY: Construct warehouse first!
+                const weightDist = dist * 0.50;
                 if (weightDist < minBuildDist) {
                   minBuildDist = weightDist;
                   targetBuild = { x: bp.x, y: bp.y, type: "warehouse" };
@@ -7537,8 +8070,9 @@ export function createLocomotionProp() {
 
               if (needsThisMat) {
                 const dist = Math.abs(bp.x - ent.x) + Math.abs(bp.y - ent.y);
-                if (dist < minBuildDist) {
-                  minBuildDist = dist;
+                const weightDist = dist * 0.60;
+                if (weightDist < minBuildDist) {
+                  minBuildDist = weightDist;
                   targetBuild = { x: bp.x, y: bp.y, type: "campfire" };
                 }
               }
@@ -7557,34 +8091,52 @@ export function createLocomotionProp() {
 
               if (needsThisMat) {
                 const dist = Math.abs(bp.x - ent.x) + Math.abs(bp.y - ent.y);
-                if (dist < minBuildDist) {
-                  minBuildDist = dist;
+                const weightDist = dist * 0.60;
+                if (weightDist < minBuildDist) {
+                  minBuildDist = weightDist;
                   targetBuild = { x: bp.x, y: bp.y, type: "well" };
                 }
               }
-            } else if (bp.type === "house") {
-              const houseEnt = getEntityAtTileByProp(bp.x, bp.y, "house");
+            } else if (bp.type === "slaughterhouse") {
+              const sh = getEntityAtTileByProp(bp.x, bp.y, "slaughterhouse");
               let needsThisMat = false;
-              if (!houseEnt) {
+              if (!sh) {
                 needsThisMat = true;
-              } else if (!houseEnt.properties.house?.isCompleted) {
-                const h = houseEnt.properties.house;
-                const wCost = h.woodCost ?? 3;
-                const sCost = h.stoneCost ?? 2;
-                const bCost = h.boneCost ?? 0;
-                if (heldResType === "wood" && (h.woodCurrent || 0) < wCost) needsThisMat = true;
-                if (heldResType === "stone" && (h.stoneCurrent || 0) < sCost) needsThisMat = true;
-                if (heldResType === "bone" && (h.boneCurrent || 0) < bCost) needsThisMat = true;
-                if (!needsThisMat && ((h.woodCurrent || 0) < wCost || (h.stoneCurrent || 0) < sCost || (h.boneCurrent || 0) < bCost)) needsThisMat = true;
+              } else if (!sh.properties.slaughterhouse?.isCompleted) {
+                const s = sh.properties.slaughterhouse;
+                const wCost = s.woodCost ?? 3;
+                const sCost = s.stoneCost ?? 2;
+                if (heldResType === "wood" && (s.woodCurrent || 0) < wCost) needsThisMat = true;
+                if ((heldResType === "stone" || heldResType === "bone") && (s.stoneCurrent || 0) < sCost) needsThisMat = true;
               }
 
               if (needsThisMat) {
                 const dist = Math.abs(bp.x - ent.x) + Math.abs(bp.y - ent.y);
-                const isOwnHouse = bp.ownerId === ent.id;
-                const weightDist = isOwnHouse ? dist * 0.4 : dist;
+                const weightDist = dist * 0.70;
                 if (weightDist < minBuildDist) {
                   minBuildDist = weightDist;
-                  targetBuild = { x: bp.x, y: bp.y, type: "house" };
+                  targetBuild = { x: bp.x, y: bp.y, type: "slaughterhouse" };
+                }
+              }
+            } else if (bp.type === "kitchen") {
+              const kit = getEntityAtTileByProp(bp.x, bp.y, "kitchen");
+              let needsThisMat = false;
+              if (!kit) {
+                needsThisMat = true;
+              } else if (!kit.properties.kitchen?.isCompleted) {
+                const k = kit.properties.kitchen;
+                const wCost = k.woodCost ?? 2;
+                const sCost = k.stoneCost ?? 3;
+                if (heldResType === "wood" && (k.woodCurrent || 0) < wCost) needsThisMat = true;
+                if ((heldResType === "stone" || heldResType === "bone") && (k.stoneCurrent || 0) < sCost) needsThisMat = true;
+              }
+
+              if (needsThisMat) {
+                const dist = Math.abs(bp.x - ent.x) + Math.abs(bp.y - ent.y);
+                const weightDist = dist * 0.70;
+                if (weightDist < minBuildDist) {
+                  minBuildDist = weightDist;
+                  targetBuild = { x: bp.x, y: bp.y, type: "kitchen" };
                 }
               }
             }
@@ -7606,7 +8158,7 @@ export function createLocomotionProp() {
               if (needsThisMat) {
                 const dist = Math.abs(e.x - ent.x) + Math.abs(e.y - ent.y);
                 const isOwn = (h.ownerId === ent.id || h.partnerId === ent.id);
-                const weightDist = isOwn ? dist * 0.4 : dist;
+                const weightDist = isOwn ? dist * 0.05 : dist * 0.25;
                 if (weightDist < minBuildDist) {
                   minBuildDist = weightDist;
                   targetBuild = { x: e.x, y: e.y, type: "house" };
@@ -7704,7 +8256,11 @@ export function createLocomotionProp() {
           const myRole = ent.properties.role || "Pioneer";
           const isPioneer = myRole === "Pioneer";
           const isLeader = myRole === "Leader";
-          const isFarmer = myRole === "Farmer" || myRole === "Hunter" || isPioneer || isLeader;
+          const isHauler = myRole === "Hauler" || isPioneer;
+          const isHunter = myRole === "Hunter" || isPioneer;
+          const isButcher = myRole === "Butcher" || isHunter;
+          const isCook = myRole === "Cook" || myRole === "Farmer";
+          const isFarmer = myRole === "Farmer" || isHunter || isPioneer || isLeader;
           const isBuilder = myRole === "Builder" || isPioneer || isLeader;
           const isForager = myRole === "Forager" || myRole === "Miner" || isPioneer || isLeader;
           const isExplorer = myRole === "Explorer" || isPioneer || isLeader;
@@ -7973,6 +8529,29 @@ export function createLocomotionProp() {
               if (pDist > 1 && pDist <= 12) {
                 chosenDx = Math.sign(targetPartner.x - ent.x);
                 chosenDy = Math.sign(targetPartner.y - ent.y);
+                hasIntention = true;
+              }
+            }
+          }
+
+          // --- 5.38 Corpse Butchering & Feeding (Butcher and eat whole fallen carcasses) ---
+          if (!hasIntention && (energyRatio < 0.65 || isHunter || isForager)) {
+            const nearbyCorpses = getEntitiesInRadius(ent.x, ent.y, 20).filter(e =>
+              !e.destroyed && e.properties.corpse && (e.properties.corpse.remainingMeatCuts > 0 || e.properties.corpse.remainingBones > 0)
+            );
+            if (nearbyCorpses.length > 0) {
+              let closestCorpse = null;
+              let minCDist = 9999;
+              for (const c of nearbyCorpses) {
+                const cd = Math.abs(c.x - ent.x) + Math.abs(c.y - ent.y);
+                if (cd < minCDist) {
+                  minCDist = cd;
+                  closestCorpse = c;
+                }
+              }
+              if (closestCorpse) {
+                chosenDx = Math.sign(closestCorpse.x - ent.x);
+                chosenDy = Math.sign(closestCorpse.y - ent.y);
                 hasIntention = true;
               }
             }
@@ -10461,41 +11040,13 @@ export function createEmbarkParty(centerX, centerY, world, entities, customOpts 
     { id: 4, type: "meeting", zx: Math.floor(centerX / currentZoneSize), zy: Math.floor(centerY / currentZoneSize), name: "Sala de Reunião", assignedMembers: [] }
   ];
 
-  for (let i = 1; i < members.length; i++) {
-    const m = members[i];
-    clan.rooms.push({
-      id: clan.rooms.length + 1,
-      type: "residential",
-      zx: Math.floor(centerX / currentZoneSize),
-      zy: Math.floor(centerY / currentZoneSize),
-      name: `Quarto de ${m.properties.name}`,
-      assignedMembers: [m.id]
-    });
-  }
-
-  // Spawn starter stockpile resources for Praça & initial construction (9 wood, 8 stone, seeds, food)
+  // Spawn only essential starting stockpile items (1 wood log, 1 stone block, 1 fruit, 1 seed)
   if (entities) {
     const starterItems = [
       createWoodItem(centerX + 1, centerY - 1),
-      createWoodItem(centerX + 2, centerY),
-      createWoodItem(centerX + 2, centerY - 1),
-      createWoodItem(centerX + 1, centerY - 2),
-      createWoodItem(centerX + 2, centerY - 2),
-      createWoodItem(centerX + 3, centerY - 1),
-      createWoodItem(centerX + 3, centerY),
-      createWoodItem(centerX + 3, centerY - 2),
-      createWoodItem(centerX + 1, centerY + 1),
       createStoneItem(centerX - 1, centerY - 1),
-      createStoneItem(centerX - 2, centerY),
-      createStoneItem(centerX - 2, centerY - 1),
-      createStoneItem(centerX - 1, centerY - 2),
-      createStoneItem(centerX - 2, centerY - 2),
-      createStoneItem(centerX - 3, centerY - 1),
-      createStoneItem(centerX - 3, centerY),
-      createStoneItem(centerX - 3, centerY - 2),
       createSeedEntity(centerX, centerY + 2, "large", "oak"),
-      createFruit(centerX + 1, centerY + 2, "large", "oak"),
-      createFruit(centerX - 1, centerY + 2, "large", "oak")
+      createFruit(centerX + 1, centerY + 2, "large", "oak")
     ];
     for (const item of starterItems) {
       entities.push(item);
