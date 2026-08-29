@@ -2101,7 +2101,7 @@ function renderTopHudBar() {
     const timeStr = `D${clock.day} ${String(clock.hour).padStart(2, "0")}:${String(clock.minute).padStart(2, "0")}`;
     drawText8x8(timeStr, 8, 13, "#ffffff", 1);
     const rawZMob = is3DMode && rctRenderer ? rctRenderer.zoom : (renderer ? renderer.zoom : 1.0);
-    const curNormZoomMob = is3DMode && rctRenderer 
+    const curNormZoomMob = is3DMode && rctRenderer
       ? Math.max(0.0, Math.min(1.0, (rawZMob - 0.08) / (5.0 - 0.08)))
       : Math.max(0.0, Math.min(1.0, (rawZMob - 0.3) / (2.5 - 0.3)));
     drawText8x8(`Z:${curNormZoomMob.toFixed(2)}`, 74, 13, "#a0e040", 1);
@@ -4492,7 +4492,7 @@ function renderTitleScreen() {
 
   // 3. Subtitle / Tagline
   const subY = chronY + (chronScale * 8) + (isMobile ? 8 : 12);
-  const subText = "Chronicles of Brutopolis - Early days";
+  const subText = "Chronicles of Brutopolis";
   drawText8x8Centered(subText, subY, "#3cbcfc", 1, "#000000", 1);
 
   const curScen = PREFAB_SCENARIOS[selectedScenarioIdx] || PREFAB_SCENARIOS[0];
@@ -4553,7 +4553,7 @@ function renderTitleScreen() {
 
   // Footer text
   const footY = CANVAS_HEIGHT - 18;
-  const footText = "game by jardimdanificado, music by kayoa";
+  const footText = "a game by jardimdanificado and music by kayoa";
   drawText8x8Centered(footText, footY, "#888888", 1, "#000000", 1);
 
   ctx.restore();
