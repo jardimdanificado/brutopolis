@@ -5679,6 +5679,7 @@ export function createGroupMemberProp() {
               const isHoldingBuildingMat = Object.values(ent.properties).some(p => p && (p.heldItem?.resourceType === "wood" || p.heldItem?.resourceType === "stone" || p.heldItem?.resourceType === "bone"));
               if (!warehouseEntity.properties.warehouse.items) warehouseEntity.properties.warehouse.items = [];
               const whItems = warehouseEntity.properties.warehouse.items;
+              const isHauler = ent.properties.role === "Hauler" || ent.properties.role === "Pioneer";
 
               // 1. Unload items from held basket
               for (const [k, p] of Object.entries(ent.properties)) {
@@ -7661,6 +7662,19 @@ export function evaluateAndAssignClanRoles(group, entities, world) {
     } else if (haulersNeeded > 0) {
       m.properties.role = "Hauler";
       haulersNeeded--;
+      if (!m.properties.backpack) {
+        m.properties.backpack = { type: "backpack", size: "large", capacity: 20, items: [] };
+      }
+      if (!m.properties.arm_left) m.properties.arm_left = createArmProp("Braço Esquerdo", "left");
+      if (!m.properties.arm_left.heldItem || m.properties.arm_left.heldItem.resourceType !== "basket") {
+        m.properties.arm_left.heldItem = {
+          name: "Cesto de Transporte",
+          resourceType: "basket",
+          skin: "Item_Bag.png",
+          container: { type: "basket", capacity: 10, items: [] },
+          weight: 1.0
+        };
+      }
     } else if (unbuiltCount > 0 && buildersNeeded > 0) {
       m.properties.role = "Builder";
       buildersNeeded--;
@@ -7672,6 +7686,11 @@ export function evaluateAndAssignClanRoles(group, entities, world) {
       foragersNeeded--;
     } else {
       m.properties.role = "Crafter";
+    }
+
+    // Ensure all citizens have backpacks for personal storage
+    if (!m.properties.backpack) {
+      m.properties.backpack = { type: "backpack", size: "medium", capacity: 12, items: [] };
     }
   }
 }

@@ -3817,10 +3817,20 @@ export class RCT3DRenderer {
           sprite.material.color.setHex(0xffffff); // Full bright
         }
 
-        // --- 3D FLOATING EMOTES & HELD ITEMS PER HAND ---
+        // --- 3D FLOATING EMOTES & HELD ITEMS / BACKPACKS PER HAND ---
         if (!isItem && !isDoor) {
           const emoteSkin = getCreatureEmoteSkin(e);
           const heldItems = [];
+
+          if (e.properties?.backpack) {
+            heldItems.push({
+              name: "Mochila",
+              skin: "Item_Bag.png",
+              resourceType: "backpack",
+              tint: 0xd4a373
+            });
+          }
+
           for (const [k, p] of Object.entries(e.properties || {})) {
             if ((k.toLowerCase().includes("arm") || k.toLowerCase().includes("hand")) && p && p.heldItem) {
               heldItems.push(p.heldItem);
@@ -3877,8 +3887,18 @@ export class RCT3DRenderer {
               const uiKey = `${e.id}_held_${h}`;
               activeUiIds.add(uiKey);
 
-              const skinName = it.skin || it.render?.skin || (typeof it === "string" ? it : it.name) || "Item_Nugget.png";
-              const itTex = createTintedTexture(skinName, 0xffffff, 0x000000, 0.0);
+              let skinName = it.skin || it.render?.skin;
+              if (!skinName) {
+                if (it.resourceType === "basket" || it.name?.includes("Cesto") || it.name?.includes("Basket")) skinName = "Item_Bag.png";
+                else if (it.resourceType === "backpack" || it.name?.includes("Mochila") || it.name?.includes("Bolsa")) skinName = "Item_Bag.png";
+                else if (it.resourceType === "wood") skinName = "Item_Wood.png";
+                else if (it.resourceType === "stone") skinName = "Feature_Boulders.png";
+                else if (it.resourceType === "meat") skinName = "Item_Steak.png";
+                else if (it.resourceType === "food") skinName = "Item_Vegetable.png";
+                else skinName = (typeof it === "string" ? it : it.name) || "Item_Nugget.png";
+              }
+              const tintColor = it.tint || (it.resourceType === "basket" ? 0xffd28c : (it.resourceType === "backpack" ? 0xcc8844 : 0xffffff));
+              const itTex = createTintedTexture(skinName, tintColor, 0x000000, 0.0);
 
               let itMesh = this.floatingUiSprites.get(uiKey);
               if (!itMesh) {

@@ -112,7 +112,19 @@ let groupsDirty = false;
 
 const SPAWNERS = {
   HUMAN: (x, y) => createHuman(x, y),
-  HAULER: (x, y) => createCreatureFromArchetype("human", x, y, { role: "Hauler" }),
+  HAULER: (x, y) => {
+    const c = createCreatureFromArchetype("human", x, y, { role: "Hauler" });
+    c.properties.backpack = { type: "backpack", size: "large", capacity: 20, items: [] };
+    c.properties.arm_left = c.properties.arm_left || createArmProp("Braço Esquerdo", "left");
+    c.properties.arm_left.heldItem = {
+      name: "Cesto de Transporte",
+      resourceType: "basket",
+      skin: "Item_Bag.png",
+      container: { type: "basket", capacity: 10, items: [] },
+      weight: 1.0
+    };
+    return c;
+  },
   BUTCHER: (x, y) => createCreatureFromArchetype("human", x, y, { role: "Butcher" }),
   COOK: (x, y) => createCreatureFromArchetype("human", x, y, { role: "Cook" }),
   ELF: (x, y) => createElf(x, y),

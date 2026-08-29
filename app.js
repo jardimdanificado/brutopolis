@@ -931,7 +931,19 @@ const EDITOR_TILES = [
 const EDITOR_CREATURES = [
   // Humanoids & Clan Settlers
   { label: "HUMAN PIONEER", fn: (x, y) => createHuman(x, y) },
-  { label: "HUMAN HAULER", fn: (x, y) => createCreatureFromArchetype("human", x, y, { role: "Hauler" }) },
+  { label: "HUMAN HAULER", fn: (x, y) => {
+    const c = createCreatureFromArchetype("human", x, y, { role: "Hauler" });
+    c.properties.backpack = { type: "backpack", size: "large", capacity: 20, items: [] };
+    c.properties.arm_left = c.properties.arm_left || createArmProp("Braço Esquerdo", "left");
+    c.properties.arm_left.heldItem = {
+      name: "Cesto de Transporte",
+      resourceType: "basket",
+      skin: "Item_Bag.png",
+      container: { type: "basket", capacity: 10, items: [] },
+      weight: 1.0
+    };
+    return c;
+  } },
   { label: "HUMAN BUILDER", fn: (x, y) => createCreatureFromArchetype("human", x, y, { role: "Builder" }) },
   { label: "HUMAN BUTCHER", fn: (x, y) => createCreatureFromArchetype("human", x, y, { role: "Butcher" }) },
   { label: "HUMAN COOK", fn: (x, y) => createCreatureFromArchetype("human", x, y, { role: "Cook" }) },
