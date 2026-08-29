@@ -70,8 +70,8 @@ class AudioManager {
             this.checkResult(res, "getCoreSystem");
             this.coreSystem = outval.val;
 
-            // Configure DSP buffer size for WebAudio stability (larger buffer prevents underruns during heavy rendering)
-            this.coreSystem.setDSPBufferSize(4096, 4);
+            // Larger DSP buffer gives headroom during heavy main-thread spikes (world gen, entity processing)
+            this.coreSystem.setDSPBufferSize(8192, 4);
 
             // Initialize Studio System
             res = this.system.initialize(
@@ -366,6 +366,18 @@ class AudioManager {
       instance.release();
     }
     this.activeInstances.delete(nameKey);
+  }
+
+  /**
+   * Sets the volume on a named active instance.
+   * @param {string} nameKey
+   * @param {number} volume - 0.0 to 1.0
+   */
+  setInstanceVolume(nameKey, volume) {
+    const instance = this.activeInstances.get(nameKey);
+    if (instance && typeof instance.setVolume === "function") {
+      instance.setVolume(Math.max(0, Math.min(1, volume)));
+    }
   }
 
   /**

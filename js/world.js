@@ -38,17 +38,17 @@ export {
 export class WorldClock {
   constructor() {
     this.day = 0;
-    this.hour = 10;
+    this.hour = 0;
     this.minute = 0;
-    this.globalLight = 1.0;
+    this.globalLight = 0.18;
     this.minuteTimer = 0;
   }
 
   reset() {
     this.day = 0;
-    this.hour = 10;
+    this.hour = 0;
     this.minute = 0;
-    this.globalLight = 1.0;
+    this.globalLight = 0.18;
     this.minuteTimer = 0;
   }
 

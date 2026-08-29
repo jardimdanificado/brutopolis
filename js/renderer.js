@@ -330,7 +330,7 @@ export class Renderer {
     this.camX = x;
     this.camY = y;
     if (typeof zoom === "number") {
-      this.zoom = Math.max(0.2, Math.min(4.0, zoom));
+      this.zoom = Math.max(0.2, Math.min(8.0, zoom));
     }
   }
 

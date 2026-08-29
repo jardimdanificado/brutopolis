@@ -709,16 +709,16 @@ export function createCampfireEntity(x, y, ownerId = null) {
 
 
 const HOUSE_STYLES = [
-  { id: "wood_cabin", label: "Cabana de Madeira", skin: "Overworld_House.png", color: 0xffd4a373, woodCost: 4, stoneCost: 2, condition: 10000 },
-  { id: "stone_cottage", label: "Chalé de Pedra", skin: "Overworld_House.png", color: 0xffc8c8c8, woodCost: 2, stoneCost: 5, condition: 16000 },
-  { id: "thatched_hut", label: "Cabana de Palha", skin: "Overworld_House.png", color: 0xffe6c86e, woodCost: 3, stoneCost: 1, condition: 7500 },
-  { id: "log_lodge", label: "Mansarda de Troncos", skin: "Overworld_House.png", color: 0xff8b5a2b, woodCost: 6, stoneCost: 2, condition: 12000 },
-  { id: "half_timbered", label: "Casa Enxaimel", skin: "Overworld_House.png", color: 0xfff0e6d2, woodCost: 4, stoneCost: 4, condition: 14000 },
-  { id: "mud_brick_adobe", label: "Casa de Adobe", skin: "Overworld_House.png", color: 0xffd2965a, woodCost: 2, stoneCost: 4, condition: 11000 },
-  { id: "mountain_stilt", label: "Palafita Alpina", skin: "Overworld_House.png", color: 0xff968278, woodCost: 5, stoneCost: 3, condition: 11500 },
-  { id: "longhouse", label: "Casa Comunal Nórdica", skin: "Overworld_House.png", color: 0xffa06432, woodCost: 7, stoneCost: 2, condition: 15000 },
-  { id: "bone_ossuary", label: "Ossuário Macabro", skin: "Overworld_House.png", color: 0xfff5f5dc, woodCost: 2, stoneCost: 2, boneCost: 4, condition: 13000 },
-  { id: "watchtower_villa", label: "Vila com Torreão", skin: "Overworld_House.png", color: 0xffb47850, woodCost: 3, stoneCost: 6, condition: 18000 }
+  { id: "wood_cabin", label: "Timber Cabin", skin: "Overworld_House.png", color: 0xffd4a373, woodCost: 4, stoneCost: 2, condition: 10000 },
+  { id: "stone_cottage", label: "Stone Cottage", skin: "Overworld_House.png", color: 0xffc8c8c8, woodCost: 2, stoneCost: 5, condition: 16000 },
+  { id: "thatched_hut", label: "Thatched Hut", skin: "Overworld_House.png", color: 0xffe6c86e, woodCost: 3, stoneCost: 1, condition: 7500 },
+  { id: "log_lodge", label: "Log Lodge", skin: "Overworld_House.png", color: 0xff8b5a2b, woodCost: 6, stoneCost: 2, condition: 12000 },
+  { id: "half_timbered", label: "Half-Timbered House", skin: "Overworld_House.png", color: 0xfff0e6d2, woodCost: 4, stoneCost: 4, condition: 14000 },
+  { id: "mud_brick_adobe", label: "Adobe Dwelling", skin: "Overworld_House.png", color: 0xffd2965a, woodCost: 2, stoneCost: 4, condition: 11000 },
+  { id: "mountain_stilt", label: "Alpine Stilt House", skin: "Overworld_House.png", color: 0xff968278, woodCost: 5, stoneCost: 3, condition: 11500 },
+  { id: "longhouse", label: "Nordic Longhouse", skin: "Overworld_House.png", color: 0xffa06432, woodCost: 7, stoneCost: 2, condition: 15000 },
+  { id: "bone_ossuary", label: "Ancient Ossuary", skin: "Overworld_House.png", color: 0xfff5f5dc, woodCost: 2, stoneCost: 2, boneCost: 4, condition: 13000 },
+  { id: "watchtower_villa", label: "Turreted Villa", skin: "Overworld_House.png", color: 0xffb47850, woodCost: 3, stoneCost: 6, condition: 18000 }
 ];
 
 export function createHouseEntity(x, y, style = "mixed", ownerId = null, ownerName = null, supportMaterial = "wood", forcedVariant = null) {
@@ -795,12 +795,12 @@ export function createHouseEntity(x, y, style = "mixed", ownerId = null, ownerNa
 }
 
 /**
- * Warehouse / Central Clan Stockpile Building (Grande Armazém do Clã)
+ * Warehouse / Central Clan Stockpile Building (Grand Warehouse)
  * 2 Variations: Timber Barn vs Stone Depot
  */
 export function createWarehouseEntity(x, y, group = null, variant = 0) {
-  const gName = group?.name || "Clã";
-  const label = variant === 1 ? `Depósito de Cantaria de ${gName}` : `Grande Armazém de ${gName}`;
+  const gName = group?.name || "Clan";
+  const label = variant === 1 ? `Masonry Depot of ${gName}` : `Grand Warehouse of ${gName}`;
   return createEntity(
     {
       name: label,
@@ -827,12 +827,12 @@ export function createWarehouseEntity(x, y, group = null, variant = 0) {
 }
 
 /**
- * Slaughterhouse Structure (Abatedouro da Aldeia)
- * 2 Variations: Timber Abatedouro vs Stone Abattoir
+ * Slaughterhouse Structure (Village Abattoir)
+ * 2 Variations: Timber Slaughterhouse vs Stone Abattoir
  */
 export function createSlaughterhouseEntity(x, y, group = null, variant = 0) {
-  const gName = group?.name || "Clã";
-  const label = variant === 1 ? `Abatedouro de Pedra de ${gName}` : `Abatedouro de Madeira de ${gName}`;
+  const gName = group?.name || "Clan";
+  const label = variant === 1 ? `Stone Abattoir of ${gName}` : `Timber Slaughterhouse of ${gName}`;
   return createEntity(
     {
       name: label,
@@ -859,12 +859,12 @@ export function createSlaughterhouseEntity(x, y, group = null, variant = 0) {
 }
 
 /**
- * Kitchen Structure (Cozinha da Aldeia)
+ * Kitchen Structure (Village Kitchen)
  * 2 Variations: Brick Oven Kitchen vs Timber Smokery
  */
 export function createKitchenEntity(x, y, group = null, variant = 0) {
-  const gName = group?.name || "Clã";
-  const label = variant === 1 ? `Defumador e Cozinha de ${gName}` : `Padaria e Cozinha de ${gName}`;
+  const gName = group?.name || "Clan";
+  const label = variant === 1 ? `Smokery & Kitchen of ${gName}` : `Bakery & Kitchen of ${gName}`;
   return createEntity(
     {
       name: label,
@@ -891,11 +891,11 @@ export function createKitchenEntity(x, y, group = null, variant = 0) {
 }
 
 /**
- * Hand-Carried Baskets (Cestos de Mão para Transporte e Coleta)
+ * Hand-Carried Baskets (Gathering & Transport Baskets)
  */
 export function createBasketItem(x, y, size = "medium") {
   const cap = size === "small" ? 3 : (size === "large" ? 10 : 6);
-  const name = size === "small" ? "Cesto Pequeno" : (size === "large" ? "Cesto Grande" : "Cesto Médio");
+  const name = size === "small" ? "Small Basket" : (size === "large" ? "Large Basket" : "Medium Basket");
   return createEntity(
     {
       name,
@@ -915,11 +915,11 @@ export function createBasketItem(x, y, size = "medium") {
 }
 
 /**
- * Body-Worn Backpacks (Mochilas de Transporte para o Tronco)
+ * Body-Worn Backpacks (Hauler Expedition Packs)
  */
 export function createBackpackItem(x, y, size = "medium") {
   const cap = size === "small" ? 6 : (size === "large" ? 20 : 12);
-  const name = size === "small" ? "Mochila Pequena" : (size === "large" ? "Mochila Grande de Expedição" : "Mochila Média");
+  const name = size === "small" ? "Small Backpack" : (size === "large" ? "Large Expedition Pack" : "Medium Backpack");
   return createEntity(
     {
       name,
@@ -939,12 +939,12 @@ export function createBackpackItem(x, y, size = "medium") {
 }
 
 /**
- * Fancy Prepared Meals & Culinary Recipes
+ * Prepared Meals & Culinary Recipes
  */
-export function createRoastedMeat(x, y, sourceName = "Besta") {
+export function createRoastedMeat(x, y, sourceName = "Game") {
   return createEntity(
     {
-      name: `Carne Assada de ${sourceName}`,
+      name: `Roasted Meat (${sourceName})`,
       resourceType: "food",
       render: { skin: "Item_Steak.png", color: 0xffc85032, backcolor: 0x00000000 },
       edible: {
@@ -964,7 +964,7 @@ export function createRoastedMeat(x, y, sourceName = "Besta") {
 export function createGrilledVeggies(x, y) {
   return createEntity(
     {
-      name: "Legumes Grelhados",
+      name: "Grilled Veggies",
       resourceType: "food",
       render: { skin: "Item_Vegetable.png", color: 0xff8cd232, backcolor: 0x00000000 },
       edible: {
@@ -980,10 +980,10 @@ export function createGrilledVeggies(x, y) {
   );
 }
 
-export function createMeatBento(x, y, sourceName = "Besta") {
+export function createMeatBento(x, y, sourceName = "Game") {
   return createEntity(
     {
-      name: `Marmita de Carne de ${sourceName}`,
+      name: `Meat Bento (${sourceName})`,
       resourceType: "food",
       render: { skin: "Item_Drumstick.png", color: 0xffd26432, backcolor: 0x00000000 },
       edible: {
@@ -1003,7 +1003,7 @@ export function createMeatBento(x, y, sourceName = "Besta") {
 export function createVeganBento(x, y) {
   return createEntity(
     {
-      name: "Marmita Vegana",
+      name: "Vegan Bento",
       resourceType: "food",
       render: { skin: "Item_Fruit.png", color: 0xff50c850, backcolor: 0x00000000 },
       edible: {
@@ -1019,10 +1019,10 @@ export function createVeganBento(x, y) {
   );
 }
 
-export function createGourmetBento(x, y, sourceName = "Besta") {
+export function createGourmetBento(x, y, sourceName = "Game") {
   return createEntity(
     {
-      name: `Marmita Mista Completa (${sourceName})`,
+      name: `Gourmet Bento (${sourceName})`,
       resourceType: "food",
       render: { skin: "Item_Steak.png", color: 0xfff0a028, backcolor: 0x00000000 },
       edible: {
@@ -1040,14 +1040,14 @@ export function createGourmetBento(x, y, sourceName = "Besta") {
 }
 
 /**
- * Water Well Building Entity (Poço de Água da Aldeia)
+ * Water Well Building Entity (Village Water Well)
  * Village infrastructure that provides fresh drinking water to settlers.
  */
 export function createWaterWellEntity(x, y, group = null) {
-  const gName = group?.name || "Clã";
+  const gName = group?.name || "Clan";
   return createEntity(
     {
-      name: `Poço de Água de ${gName}`,
+      name: `Water Well of ${gName}`,
       species: "structure",
       well: {
         groupId: group?.id || null,
@@ -2665,7 +2665,7 @@ export function expandClanTerritoryToPopulation(group, targetZoneCount, world, l
       type: "EXPANSION",
       primaryEntityId: group.leaderId,
       location: { x: bestCandidate.zx * sz + Math.floor(sz / 2), y: bestCandidate.zy * sz + Math.floor(sz / 2) },
-      description: `O reino '${group.name}' expandiu seu território para a zona (${bestCandidate.zx}, ${bestCandidate.zy}) devido ao crescimento da população (${livingPop || group.members?.length || 10} cidadãos)!`,
+      description: `The clan '${group.name}' expanded territory to zone (${bestCandidate.zx}, ${bestCandidate.zy}) due to population growth (${livingPop || group.members?.length || 10} citizens)!`,
       tick: currentTick
     });
   }
@@ -5068,7 +5068,7 @@ export function dropHeldItem(ent, entities, world) {
  * Wall Entity with Material Variants (Stone, Wood, Mixed)
  */
 export function createWallEntity(x, y, groupName = null, style = "stone", boneOwnerName = null) {
-  const name = groupName ? `Muralha de Pedra (${groupName})` : "Muralha de Pedra";
+  const name = groupName ? `Stone Wall (${groupName})` : "Stone Wall";
   const condition = 6000;
   const defense = 90;
   const woodCost = 0;
@@ -5770,13 +5770,37 @@ export function createGroupMemberProp() {
               }
 
               // 7. Withdraw needed resource to build houses
-              const freeArm = Object.entries(ent.properties).find(([k, p]) => k.startsWith("arm") && p && !p.heldItem);
+const freeArm = Object.entries(ent.properties).find(([k, p]) => k.startsWith("arm") && p && !p.heldItem);
               if (freeArm && whItems.length > 0) {
                 const itemIdx = whItems.findIndex(i => (needsWood && (i.resourceType === "wood" || i.name?.includes("Wood"))) || (needsStone && (i.resourceType === "stone" || i.resourceType === "bone" || i.name?.includes("Stone"))));
                 if (itemIdx >= 0) {
                   const item = whItems.splice(itemIdx, 1)[0];
-                  freeArm[1].heldItem = item;
+                  freeArm.heldItem = item;
                   this.actionTimer = 0;
+                }
+              }
+              
+              // Feed logic
+              if (ent.properties.stomach && ent.properties.stomach.items.length < ent.properties.stomach.capacity) {
+                const foodIdx = whItems.findIndex(i => i.nutrition || i.resourceType === "food" || i.resourceType === "fruit" || i.resourceType === "meat");
+                if (foodIdx !== -1) {
+                  const consumedFood = whItems.splice(foodIdx, 1)[0];
+                  ent.properties.stomach.items.push({
+                    name: consumedFood.name || "Pantry Food",
+                    foodType: consumedFood.foodType || "fruit",
+                    nutrition: consumedFood.nutrition || 600,
+                    totalTurns: consumedFood.digestDuration || 25,
+                    remainingTurns: consumedFood.digestDuration || 25
+                  });
+                  recordWorldEvent({
+                    opcode: OP_FEED,
+                    type: "FEED",
+                    primaryEntityId: ent.id,
+                    location: { x: ent.x, y: ent.y },
+                    description: `${ent.properties.name} ate ${consumedFood.name || "food"} from the Grand Warehouse of '${group.name}'!`,
+                    tick: currentTick,
+                    timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
+                  });
                 }
               }
             }
@@ -5820,10 +5844,10 @@ export function createGroupMemberProp() {
                     type: "BUILD",
                     primaryEntityId: ent.id,
                     location: { x: bp.x, y: bp.y },
-                    description: `${ent.properties.name} construiu a Fogueira Central do reino '${group.name}'!`,
+                    description: `${ent.properties.name} built the Central Hearth for '${group.name}'!`,
                     tick: currentTick,
                     timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
-                    metadata: { structureName: "Fogueira Central", clan: group.name }
+                    metadata: { structureName: "Central Hearth", clan: group.name }
                   });
                 }
                 return;
@@ -5875,7 +5899,7 @@ export function createGroupMemberProp() {
                     type: "BUILD",
                     primaryEntityId: ent.id,
                     location: { x: bp.x, y: bp.y },
-                    description: `${ent.properties.name} concluiu o ${wellEntity.properties.name || "Poço de Água"} do reino '${group.name}'!`,
+                    description: `${ent.properties.name} completed ${wellEntity.properties.name || "Water Well"} for '${group.name}'!`,
                     tick: currentTick,
                     timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
                     metadata: { structureName: wellEntity.properties.name, clan: group.name }
@@ -5931,7 +5955,7 @@ export function createGroupMemberProp() {
                     type: "BUILD",
                     primaryEntityId: ent.id,
                     location: { x: bp.x, y: bp.y },
-                    description: `${ent.properties.name} concluiu o ${shEntity.properties.name || "Abatedouro"} do reino '${group.name}'!`,
+                    description: `${ent.properties.name} completed ${shEntity.properties.name || "Slaughterhouse"} for '${group.name}'!`,
                     tick: currentTick,
                     timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
                     metadata: { structureName: shEntity.properties.name, clan: group.name }
@@ -5987,7 +6011,7 @@ export function createGroupMemberProp() {
                     type: "BUILD",
                     primaryEntityId: ent.id,
                     location: { x: bp.x, y: bp.y },
-                    description: `${ent.properties.name} concluiu a ${kitEntity.properties.name || "Cozinha"} do reino '${group.name}'!`,
+                    description: `${ent.properties.name} completed ${kitEntity.properties.name || "Kitchen"} for '${group.name}'!`,
                     tick: currentTick,
                     timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
                     metadata: { structureName: kitEntity.properties.name, clan: group.name }
@@ -6033,10 +6057,10 @@ export function createGroupMemberProp() {
                     type: "BUILD",
                     primaryEntityId: ent.id,
                     location: { x: bp.x, y: bp.y },
-                    description: `${ent.properties.name} concluiu o Portão Fortificado do reino '${group.name}'!`,
+                    description: `${ent.properties.name} completed the Fortified Gate for '${group.name}'!`,
                     tick: currentTick,
                     timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
-                    metadata: { structureName: "Portão do Reino", clan: group.name }
+                    metadata: { structureName: "Fortified Gate", clan: group.name }
                   });
                 }
                 return;
@@ -6065,7 +6089,7 @@ export function createGroupMemberProp() {
                 houseOwnerId = unhousedMember || ent.id;
               }
               const owner = getEntityById(houseOwnerId);
-              const ownerName = owner?.properties?.name || (houseOwnerId ? `Membro #${houseOwnerId}` : ent.properties.name);
+              const ownerName = owner?.properties?.name || (houseOwnerId ? `Member #${houseOwnerId}` : ent.properties.name);
 
               // Select house style: Mixed houses are PREFERRED whenever both wood and stone are accessible!
               const clanStock = getGroupStockpile(group, entities);
@@ -6163,7 +6187,7 @@ export function createGroupMemberProp() {
                     if (homeless) {
                       h.ownerId = homeless.id;
                       h.ownerName = homeless.properties.name;
-                      houseEntity.properties.name = `Casa de ${homeless.properties.name}`;
+                      houseEntity.properties.name = `Cottage of ${homeless.properties.name}`;
                     }
                   }
                   recordWorldEvent({
@@ -6171,7 +6195,7 @@ export function createGroupMemberProp() {
                     type: "BUILD",
                     primaryEntityId: ent.id,
                     location: { x: bp.x, y: bp.y },
-                    description: `${ent.properties.name} concluiu a construção de '${houseEntity.properties.name || "Casa"}'!`,
+                    description: `${ent.properties.name} completed construction of '${houseEntity.properties.name || "Cottage"}'!`,
                     tick: currentTick,
                     timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
                     metadata: { structureName: houseEntity.properties.name, clan: group.name }
@@ -6218,7 +6242,7 @@ export function createGroupMemberProp() {
                     type: "BUILD",
                     primaryEntityId: ent.id,
                     location: { x: bp.x, y: bp.y },
-                    description: `${ent.properties.name} ergueu a Muralha de Pedra para o reino '${group.name}'!`,
+                    description: `${ent.properties.name} erected a Stone Wall for '${group.name}'!`,
                     tick: currentTick,
                     timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
                     metadata: { structureName: wallEntity.properties.name, clan: group.name }
@@ -6747,7 +6771,7 @@ export function createGroupMemberProp() {
                 type: "CRAFT",
                 primaryEntityId: ent.id,
                 location: { x: nearbyKitchen.x, y: nearbyKitchen.y },
-                description: `${ent.properties.name} preparou um delicioso '${preparedDish.properties.name}' e estocou no Armazém do reino '${group.name}'!`,
+                description: `${ent.properties.name} prepared a delicious '${preparedDish.properties.name}' and stored it in the warehouse of '${group.name}'!`,
                 tick: currentTick
               });
               return;

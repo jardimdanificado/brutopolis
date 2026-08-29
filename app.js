@@ -164,23 +164,55 @@ function initSimWorker() {
           world.clock.day = data.clock.day;
           world.clock.hour = data.clock.hour;
           world.clock.minute = data.clock.minute;
-          world.clock.globalLight = data.clock.globalLight;
           world.clock.totalSeconds = data.clock.totalSeconds;
+          // Recompute globalLight immediately so the first rendered frame has
+          // the correct lighting - avoids the one-frame full-brightness flash
+          if (data.clock.globalLight !== undefined) {
+            world.clock.globalLight = data.clock.globalLight;
+          } else {
+            const tod = world.clock.hour + world.clock.minute / 60.0;
+            if (tod >= 5.0 && tod <= 19.0) {
+              const sunAngle = ((tod - 5.0) / 14.0) * Math.PI;
+              world.clock.globalLight = 0.18 + 0.82 * Math.pow(Math.sin(sunAngle), 0.85);
+            } else {
+              world.clock.globalLight = 0.18;
+            }
+          }
         }
         setActiveWorld(world);
         if (Array.isArray(data.groups)) {
           world.groups = data.groups;
         }
-        updateLocalEntities(data.entities, data.registry);
-        rebuildSpatialGrid(entities, getZoneSize());
-        if (Array.isArray(data.events)) {
-          restoreWorldEvents(data.events);
+
+        if (data.isTitleScreen) {
+          // Defer heavy entity processing so audio.update() can run before the spike
+          const deferredEntities = data.entities;
+          const deferredRegistry = data.registry;
+          const deferredEvents = Array.isArray(data.events) ? data.events : [];
+          setTimeout(() => {
+            updateLocalEntities(deferredEntities, deferredRegistry);
+            rebuildSpatialGrid(entities, getZoneSize());
+            if (deferredEvents.length) restoreWorldEvents(deferredEvents);
+          }, 0);
+        } else {
+          updateLocalEntities(data.entities, data.registry);
+          rebuildSpatialGrid(entities, getZoneSize());
+          if (Array.isArray(data.events)) {
+            restoreWorldEvents(data.events);
+          }
         }
 
         if (data.startX !== undefined && data.startY !== undefined) {
-          const zoomFactor = data.width <= 128 ? 3.0 : data.width <= 256 ? 2.0 : 1.5;
+          const zoomFactor = data.isTitleScreen ? 1.8 : (data.width <= 128 ? 3.0 : data.width <= 256 ? 2.0 : 1.5);
           if (renderer) renderer.setCamera(data.startX, data.startY, zoomFactor);
           if (rctRenderer) rctRenderer.setCamera(data.startX, data.startY, zoomFactor);
+          if (data.isTitleScreen) {
+            titleCamBaseX = data.startX;
+            titleCamBaseY = data.startY;
+            currentTitleCamX = data.startX;
+            currentTitleCamY = data.startY;
+            titleJumpTimer = 0;
+          }
         }
         if (data.firstLeaderId && data.firstLeaderId > 0) {
           lastSelectedId = data.firstLeaderId;
@@ -188,7 +220,12 @@ function initSimWorker() {
           if (rctRenderer) rctRenderer.selectEntity(lastSelectedId);
         }
         if (rctRenderer) rctRenderer.lastBuiltCamTileX = -9999;
-        currentMode = "MAP";
+        if (data.isTitleScreen) {
+          currentMode = "TITLE";
+          titleWorldLoading = false; // World fully ready, allow background rendering
+        } else {
+          currentMode = "MAP";
+        }
         break;
       }
 
@@ -797,6 +834,17 @@ function wrapText8x8(text, maxCharsPerLine) {
   return lines;
 }
 
+function drawText8x8Centered(text, startY, color = "#ffffff", scale = 1, shadowColor = "#000000", shadowOffset = 2) {
+  if (text === undefined || text === null) return;
+  const str = String(text);
+  const textWidth = str.length * 8 * scale;
+  const startX = Math.floor((CANVAS_WIDTH - textWidth) / 2);
+  if (shadowColor) {
+    drawText8x8(str, startX + shadowOffset, startY + shadowOffset, shadowColor, scale);
+  }
+  drawText8x8(str, startX, startY, color, scale);
+}
+
 // ---------------------------------------------------------------------------
 // Canvas & Simulation Setup
 // ---------------------------------------------------------------------------
@@ -897,8 +945,8 @@ let tpsCounter = 0;
 let measuredTps = 60;
 let lastTpsUpdate = performance.now();
 
-// Active In-Game Screen Mode ("MAP", "INSPECT", "ENTITIES", "GROUPS", "LOGS")
-let currentMode = "MAP";
+// Active In-Game Screen Mode ("TITLE", "SCENARIOS", "MAP", "INSPECT", "ENTITIES", "GROUPS", "LOGS", "GENERATOR")
+let currentMode = "TITLE";
 let modalScroll = 0;
 let inspectingLogEvent = null;
 let inspectingGroup = null; // Currently inspected clan for full dossier/stockpile view
@@ -908,6 +956,76 @@ let inspectingFromCreature = false;
 let visualizedGroupId = null; // ID of clan whose claimed territory is being highlighted on map
 let isFollowMode = false; // Camera automatically follows and locks onto selected creature
 let isCreatureVisionMode = false; // "See through creature's eyes" perception FOV & Fog of War
+
+// Prefab Scenarios for Title Screen & Game Presets
+const PREFAB_SCENARIOS = [
+  {
+    id: 0,
+    preset: 0,
+    name: "EMERALD ARCHIPELAGO",
+    badge: "ISLANDS & SEAS",
+    desc: "Lush tropical islands with calm beaches, crystal lagoons, and seaweed reefs.",
+    seed: 482910,
+    camX: 512,
+    camY: 512,
+    color: "#3cbcfc"
+  },
+  {
+    id: 1,
+    preset: 1,
+    name: "WILD CONTINENT",
+    badge: "FORESTS & RIVERS",
+    desc: "Vast continental landmass covered in dense oak woodlands and fertile plains.",
+    seed: 819234,
+    camX: 512,
+    camY: 512,
+    color: "#58d854"
+  },
+  {
+    id: 2,
+    preset: 2,
+    name: "ROCKY HIGHLANDS",
+    badge: "MOUNTAINS & PEAKS",
+    desc: "Towering craggy mountain ranges, stone ravines, and hardy alpine flora.",
+    seed: 671203,
+    camX: 512,
+    camY: 512,
+    color: "#f8b800"
+  },
+  {
+    id: 3,
+    preset: 0,
+    name: "DESERT OASIS",
+    badge: "DUNES & CACTI",
+    desc: "Golden arid dunes dotted with ancient cacti and hidden freshwater oases.",
+    seed: 334190,
+    camX: 512,
+    camY: 512,
+    color: "#ff8800"
+  },
+  {
+    id: 4,
+    preset: 2,
+    name: "PINE VALLEY",
+    badge: "TEMPERATE WOODLAND",
+    desc: "Sheltered alpine valleys, evergreen pine groves, and rich natural resources.",
+    seed: 951478,
+    camX: 512,
+    camY: 512,
+    color: "#33bb77"
+  }
+];
+
+let selectedScenarioIdx = 0;
+let titleCamTime = 0;
+let titleAutoCycleTimer = 0;
+let titleJumpTimer = 0;
+let currentTitleCamX = 512;
+let currentTitleCamY = 512;
+let titleCamBaseX = 512;
+let titleCamBaseY = 512;
+let titleWorldLoading = false; // true while worker is generating the title background world
+let isAudioMuted = false;
 
 // Real-Time Floating Corner Map Editor State
 let isEditorOpen = false; // Floating corner editor menu visibility
@@ -931,19 +1049,21 @@ const EDITOR_TILES = [
 const EDITOR_CREATURES = [
   // Humanoids & Clan Settlers
   { label: "HUMAN PIONEER", fn: (x, y) => createHuman(x, y) },
-  { label: "HUMAN HAULER", fn: (x, y) => {
-    const c = createCreatureFromArchetype("human", x, y, { role: "Hauler" });
-    c.properties.backpack = { type: "backpack", size: "large", capacity: 20, items: [] };
-    c.properties.arm_left = c.properties.arm_left || createArmProp("Braço Esquerdo", "left");
-    c.properties.arm_left.heldItem = {
-      name: "Cesto de Transporte",
-      resourceType: "basket",
-      skin: "Item_Bag.png",
-      container: { type: "basket", capacity: 10, items: [] },
-      weight: 1.0
-    };
-    return c;
-  } },
+  {
+    label: "HUMAN HAULER", fn: (x, y) => {
+      const c = createCreatureFromArchetype("human", x, y, { role: "Hauler" });
+      c.properties.backpack = { type: "backpack", size: "large", capacity: 20, items: [] };
+      c.properties.arm_left = c.properties.arm_left || createArmProp("left", 1.0, 100, 100);
+      c.properties.arm_left.heldItem = {
+        name: "Transport Basket",
+        resourceType: "basket",
+        skin: "Item_Bag.png",
+        container: { type: "basket", capacity: 10, items: [] },
+        weight: 1.0
+      };
+      return c;
+    }
+  },
   { label: "HUMAN BUILDER", fn: (x, y) => createCreatureFromArchetype("human", x, y, { role: "Builder" }) },
   { label: "HUMAN BUTCHER", fn: (x, y) => createCreatureFromArchetype("human", x, y, { role: "Butcher" }) },
   { label: "HUMAN COOK", fn: (x, y) => createCreatureFromArchetype("human", x, y, { role: "Cook" }) },
@@ -1227,6 +1347,129 @@ let genPlantDensity = "NORMAL"; // "SPARSE", "NORMAL", "DENSE"
 let genSpawnPioneers = true;
 let genEmbarkCount = Math.floor(Math.random() * 5) + 3; // Random 3 to 7 Embarks by default
 
+function toggleAudio() {
+  isAudioMuted = !isAudioMuted;
+  if (audio && audio.isInitialized) {
+    try {
+      if (audio.masterBus) {
+        audio.masterBus.setVolume(isAudioMuted ? 0.0 : 1.0);
+      } else if (audio.setGlobalParameter) {
+        audio.setGlobalParameter("Volume", isAudioMuted ? 0 : 1);
+      }
+    } catch (e) {
+      console.warn("Audio toggle error:", e);
+    }
+  }
+}
+
+function initTitleWorld(scenarioIdx = 0) {
+  const scen = PREFAB_SCENARIOS[scenarioIdx] || PREFAB_SCENARIOS[0];
+  selectedScenarioIdx = scenarioIdx;
+  currentPreset = scen.preset;
+  genPreset = scen.preset;
+  genSeed = scen.seed;
+  titleCamBaseX = scen.camX || 512;
+  titleCamBaseY = scen.camY || 512;
+
+  titleWorldLoading = true;
+
+  if (simWorker) {
+    simWorker.postMessage({
+      type: "GENERATE_WORLD",
+      preset: scen.preset,
+      width: genWidth,
+      height: genHeight,
+      zoneSize: genZoneSize,
+      seed: scen.seed,
+      creatureDensity: "NONE",
+      plantDensity: "NORMAL",
+      spawnPioneers: false,
+      embarkCount: 0,
+      spawnRoads: false,
+      isTitleScreen: true
+    });
+  } else {
+    world.generate(scen.preset, scen.seed);
+    titleWorldLoading = false;
+  }
+
+  resetEngineTicks();
+  resetWorldEvents();
+  entities = [];
+  lastSelectedId = -1;
+  modalScroll = 0;
+  inspectingLogEvent = null;
+  currentMode = "TITLE";
+  currentTitleCamX = titleCamBaseX;
+  currentTitleCamY = titleCamBaseY;
+  titleJumpTimer = 0;
+
+  const zoomFactor = 1.8;
+  if (renderer) renderer.setCamera(titleCamBaseX, titleCamBaseY, zoomFactor);
+  if (rctRenderer) rctRenderer.setCamera(titleCamBaseX, titleCamBaseY, zoomFactor);
+}
+
+function startNewGame(scenarioPreset = null, customSeed = null) {
+  const preset = scenarioPreset !== null ? scenarioPreset : genPreset;
+  const seed = customSeed !== null ? customSeed : (Math.floor(Math.random() * 1000000) + 1);
+  genPreset = preset;
+  genSeed = seed;
+  genEmbarkCount = Math.floor(Math.random() * 5) + 3;
+
+  if (simWorker) {
+    simWorker.postMessage({
+      type: "GENERATE_WORLD",
+      preset: genPreset,
+      width: genWidth,
+      height: genHeight,
+      zoneSize: genZoneSize,
+      seed: genSeed,
+      creatureDensity: genCreatureDensity,
+      plantDensity: genPlantDensity,
+      spawnPioneers: true,
+      embarkCount: genEmbarkCount,
+      spawnRoads: true,
+      isTitleScreen: false
+    });
+  } else {
+    world.generate(genPreset, genSeed);
+  }
+
+  resetEngineTicks();
+  resetWorldEvents();
+  if (world) world.refresh();
+  entities = [];
+  lastSelectedId = -1;
+  modalScroll = 0;
+  inspectingLogEvent = null;
+
+  const zoomFactor = genWidth <= 128 ? 3.0 : genWidth <= 256 ? 2.0 : 1.5;
+  const startX = 512;
+  const startY = 512;
+  if (renderer) renderer.setCamera(startX, startY, zoomFactor);
+  if (rctRenderer) {
+    rctRenderer.setCamera(startX, startY, zoomFactor);
+    if (lastSelectedId > 0) rctRenderer.selectEntity(lastSelectedId);
+  }
+  currentMode = "MAP";
+
+  // Stop menu theme with fade-out when transitioning to gameplay
+  audio.stopInstance("menuTheme", false);
+}
+
+function returnToTitleScreen() {
+  isEditorOpen = false;
+  editorTool = null;
+  inspectingLogEvent = null;
+  inspectingGroup = null;
+  initTitleWorld(selectedScenarioIdx);
+
+  // Resume menu theme when going back to title
+  if (audio.isInitialized && !audio.activeInstances.has("menuTheme")) {
+    audio.createInstance("menuTheme", "event:/Musica/Menu", true);
+  }
+}
+
 function generateConfiguredWorld() {
   if (simWorker) {
     simWorker.postMessage({
@@ -1239,7 +1482,9 @@ function generateConfiguredWorld() {
       creatureDensity: genCreatureDensity,
       plantDensity: genPlantDensity,
       spawnPioneers: genSpawnPioneers,
-      embarkCount: genEmbarkCount
+      embarkCount: genEmbarkCount,
+      spawnRoads: true,
+      isTitleScreen: false
     });
   } else {
     world.generate(genPreset, genSeed);
@@ -1588,6 +1833,15 @@ canvas.addEventListener("wheel", (e) => {
 window.addEventListener("keydown", (e) => {
   keysDown.add(e.code);
 
+  if (currentMode === "TITLE") {
+    if (e.code === "Space" || e.code === "Enter") {
+      e.preventDefault();
+      const curScen = PREFAB_SCENARIOS[selectedScenarioIdx] || PREFAB_SCENARIOS[0];
+      startNewGame(curScen.preset, curScen.seed);
+      return;
+    }
+  }
+
   if (e.code === "F3" || e.code === "KeyT") {
     e.preventDefault();
     toggle3DMode();
@@ -1656,6 +1910,8 @@ window.addEventListener("keydown", (e) => {
       inspectingLogEvent = null;
     } else if (inspectingGroup) {
       inspectingGroup = null;
+    } else if (currentMode === "GENERATOR" || currentMode === "SCENARIOS") {
+      currentMode = "TITLE";
     } else {
       currentMode = "MAP";
     }
@@ -1796,44 +2052,48 @@ function renderTopHudBar() {
 
     drawText8x8(`${currentFps}FPS`, 360, 13, "#bcbcbc", 1);
 
+    // MENU / TITLE Button
+    drawNESButton(CANVAS_WIDTH - 64, 5, 56, 24, "MENU", false, false);
+    registerClickableRegion(CANVAS_WIDTH - 64, 5, 56, 24, returnToTitleScreen);
+
     // NEW WORLD Generator Button
     const isGenAct = currentMode === "GENERATOR";
-    drawNESButton(CANVAS_WIDTH - 102, 5, 94, 24, "NEW WORLD", isGenAct, false);
-    registerClickableRegion(CANVAS_WIDTH - 102, 5, 94, 24, () => {
+    drawNESButton(CANVAS_WIDTH - 164, 5, 94, 24, "NEW WORLD", isGenAct, false);
+    registerClickableRegion(CANVAS_WIDTH - 164, 5, 94, 24, () => {
       currentMode = currentMode === "GENERATOR" ? "MAP" : "GENERATOR";
       modalScroll = 0;
     });
 
     // LOAD Button
-    drawNESButton(CANVAS_WIDTH - 160, 5, 52, 24, "LOAD", false, false);
-    registerClickableRegion(CANVAS_WIDTH - 160, 5, 52, 24, openSaveFilePicker);
+    drawNESButton(CANVAS_WIDTH - 222, 5, 52, 24, "LOAD", false, false);
+    registerClickableRegion(CANVAS_WIDTH - 222, 5, 52, 24, openSaveFilePicker);
 
     // SAVE Button
-    drawNESButton(CANVAS_WIDTH - 218, 5, 52, 24, "SAVE", false, false);
-    registerClickableRegion(CANVAS_WIDTH - 218, 5, 52, 24, saveWorldState);
+    drawNESButton(CANVAS_WIDTH - 280, 5, 52, 24, "SAVE", false, false);
+    registerClickableRegion(CANVAS_WIDTH - 280, 5, 52, 24, saveWorldState);
 
     if (is3DMode && rctRenderer) {
       const fullWorldActive = rctRenderer.isFullWorldMode ? rctRenderer.isFullWorldMode() : false;
       const fullTxt = fullWorldActive ? "FULL 3D" : "CHUNK 3D";
-      drawNESButton(CANVAS_WIDTH - 530, 5, 78, 24, fullTxt, fullWorldActive, false);
-      registerClickableRegion(CANVAS_WIDTH - 530, 5, 78, 24, () => rctRenderer.toggleFullWorld());
+      drawNESButton(CANVAS_WIDTH - 592, 5, 78, 24, fullTxt, fullWorldActive, false);
+      registerClickableRegion(CANVAS_WIDTH - 592, 5, 78, 24, () => rctRenderer.toggleFullWorld());
 
       const shdMode = rctRenderer.getShadowsModeName ? rctRenderer.getShadowsModeName() : (rctRenderer.shadowsEnabled ? "ON" : "OFF");
       const shdTxt = "SHD:" + shdMode;
       const isShdActive = shdMode === "ON";
-      drawNESButton(CANVAS_WIDTH - 446, 5, 68, 24, shdTxt, isShdActive, false);
-      registerClickableRegion(CANVAS_WIDTH - 446, 5, 68, 24, () => rctRenderer.toggleShadows());
+      drawNESButton(CANVAS_WIDTH - 508, 5, 68, 24, shdTxt, isShdActive, false);
+      registerClickableRegion(CANVAS_WIDTH - 508, 5, 68, 24, () => rctRenderer.toggleShadows());
 
       const resMode = rctRenderer.getResolutionName ? rctRenderer.getResolutionName() : "100%";
       const resTxt = "RES:" + resMode;
-      drawNESButton(CANVAS_WIDTH - 374, 5, 72, 24, resTxt, resMode !== "100%", false);
-      registerClickableRegion(CANVAS_WIDTH - 374, 5, 72, 24, () => rctRenderer.toggleResolution());
+      drawNESButton(CANVAS_WIDTH - 436, 5, 72, 24, resTxt, resMode !== "100%", false);
+      registerClickableRegion(CANVAS_WIDTH - 436, 5, 72, 24, () => rctRenderer.toggleResolution());
 
       const wireMode = rctRenderer.getWireframeModeName ? rctRenderer.getWireframeModeName() : (rctRenderer.isWireframe ? "ON" : "OFF");
       const wireTxt = "WIRE:" + wireMode;
       const isWireActive = wireMode !== "OFF";
-      drawNESButton(CANVAS_WIDTH - 296, 5, 72, 24, wireTxt, isWireActive, false);
-      registerClickableRegion(CANVAS_WIDTH - 296, 5, 72, 24, () => rctRenderer.toggleWireframe());
+      drawNESButton(CANVAS_WIDTH - 358, 5, 72, 24, wireTxt, isWireActive, false);
+      registerClickableRegion(CANVAS_WIDTH - 358, 5, 72, 24, () => rctRenderer.toggleWireframe());
     }
   } else {
     // Mobile responsive top bar
@@ -1842,6 +2102,10 @@ function renderTopHudBar() {
     drawText8x8(`${currentFps}F`, 82, 13, "#888888", 1);
 
     let topBtnX = CANVAS_WIDTH - 44;
+    drawNESButton(topBtnX, 5, 38, 24, "MENU", false, false);
+    registerClickableRegion(topBtnX, 5, 38, 24, returnToTitleScreen);
+    topBtnX -= 42;
+
     const modeTxt = is3DMode ? "3D" : "2D";
     drawNESButton(topBtnX, 5, 38, 24, modeTxt, is3DMode, false);
     registerClickableRegion(topBtnX, 5, 38, 24, toggle3DMode);
@@ -2143,10 +2407,10 @@ function renderDossierModal() {
 
     // Perks & Traits
     const perks = [];
-    if (props.skeptic) perks.push("SKEPTIC 🧐");
-    if (props.gullible) perks.push("GULLIBLE 🥺");
-    if (props.schizophrenic) perks.push("SCHIZOPHRENIC 🌀");
-    if (props.liar) perks.push(props.liar.type === "believer" ? "BELIEVER 🤥" : "LIAR 🤥");
+    if (props.skeptic) perks.push("SKEPTIC");
+    if (props.gullible) perks.push("GULLIBLE");
+    if (props.schizophrenic) perks.push("SCHIZOPHRENIC");
+    if (props.liar) perks.push(props.liar.type === "believer" ? "BELIEVER" : "LIAR");
 
     const orientStr = props.homosexual ? "HOMOSEXUAL" : props.bisexual ? "BISEXUAL" : "HETEROSEXUAL";
     const orientCol = props.homosexual ? "#ff60a0" : props.bisexual ? "#d3869b" : "#3cbcfc";
@@ -2193,7 +2457,7 @@ function renderDossierModal() {
       const partner = entityRegistry.get(partnerId);
       const pName = (partner?.properties?.name || `Entity #${partnerId}`).toUpperCase().slice(0, 14);
       drawText8x8("PARTNER:", mx + 440, lineageY + 30, "#bcbcbc", 1);
-      drawNESButton(mx + 510, lineageY + 24, 140, 22, `${pName} ❤️`, false, false);
+      drawNESButton(mx + 510, lineageY + 24, 140, 22, `${pName} [PARTNER]`, false, false);
       registerClickableRegion(mx + 510, lineageY + 24, 140, 22, () => {
         lastSelectedId = partnerId;
         modalScroll = 0;
@@ -2319,7 +2583,7 @@ function renderDossierModal() {
 
         // Relationship badge
         const isPartner = props.monogamy?.partnerId === otherId;
-        let relBadge = isPartner ? "❤️ LOVER" : affVal >= 60 ? "💚 CLOSE FRIEND" : affVal >= 20 ? "🙂 FRIEND" : affVal <= -50 ? "💀 ENEMY" : affVal <= -15 ? "😠 RIVAL" : "😐 NEUTRAL";
+        let relBadge = isPartner ? "LOVER" : affVal >= 60 ? "CLOSE FRIEND" : affVal >= 20 ? "FRIEND" : affVal <= -50 ? "ENEMY" : affVal <= -15 ? "RIVAL" : "NEUTRAL";
         let relCol = isPartner ? "#ff60a0" : affVal >= 20 ? "#58d854" : affVal <= -15 ? "#f83800" : "#bcbcbc";
         drawText8x8(relBadge, mx + 260, curY + 6, relCol, 1);
 
@@ -4165,15 +4429,126 @@ function renderGeneratorModal() {
     ebx += bw + 6;
   }
 
+  // Return to Title Button
+  drawNESButton(mx + mw - 180, my + 6, 140, 24, "TITLE MENU", false, false);
+  registerClickableRegion(mx + mw - 180, my + 6, 140, 24, returnToTitleScreen);
+
   // Action Button at Bottom: [GENERATE WORLD]
   const genBtnW = 380;
   const genBtnX = mx + (mw - genBtnW) / 2;
   const genBtnY = my + mh - 36;
-  const genBtnLabel = `▶ GENERATE WORLD (${genWidth}x${genHeight} | ZONE ${genZoneSize}x${genZoneSize})`;
+  const genBtnLabel = `GENERATE WORLD (${genWidth}x${genHeight} | ZONE ${genZoneSize}x${genZoneSize})`;
   drawNESButton(genBtnX, genBtnY, genBtnW, 28, genBtnLabel, true, false);
   registerClickableRegion(genBtnX, genBtnY, genBtnW, 28, () => {
     generateConfiguredWorld();
   });
+
+  ctx.restore();
+}
+
+// ---------------------------------------------------------------------------
+// 9. Title Screen & Prefab Scenarios Selector
+// ---------------------------------------------------------------------------
+
+function renderTitleScreen() {
+  const isMobile = CANVAS_WIDTH <= 680;
+  const isSmall = CANVAS_WIDTH < 920;
+
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+  if ("mozImageSmoothingEnabled" in ctx) ctx.mozImageSmoothingEnabled = false;
+  if ("webkitImageSmoothingEnabled" in ctx) ctx.webkitImageSmoothingEnabled = false;
+  if ("msImageSmoothingEnabled" in ctx) ctx.msImageSmoothingEnabled = false;
+
+  // Subtle dark gradient vignette for contrast and depth
+  const grad = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
+  grad.addColorStop(0, "rgba(0, 0, 0, 0.65)");
+  grad.addColorStop(0.35, "rgba(0, 0, 0, 0.15)");
+  grad.addColorStop(0.70, "rgba(0, 0, 0, 0.35)");
+  grad.addColorStop(1, "rgba(0, 0, 0, 0.85)");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+  // Logo Typography: BRUTOPOLIS CHRONICLES
+  // "brutopolis" ~1/3 smaller than "chronicles", chronicles is yellow
+  let chronScale = isMobile ? 3 : isSmall ? 5 : 6;
+  let brutoScale = isMobile ? 2 : isSmall ? 3 : 4;
+
+  const titleTopY = isMobile ? 28 : isSmall ? 48 : 64;
+  const shadowOffset = isMobile ? 2 : 3;
+
+  // 1. Draw "BRUTOPOLIS" in off-white with crisp dark shadow
+  drawText8x8Centered("BRUTOPOLIS", titleTopY, "#ffffff", brutoScale, "#000000", shadowOffset);
+
+  // 2. Draw "CHRONICLES" in vibrant NES Yellow with shadow
+  const chronY = titleTopY + (brutoScale * 8) + (isMobile ? 6 : 10);
+  drawText8x8Centered("CHRONICLES", chronY, "#fcee21", chronScale, "#000000", shadowOffset + 1);
+
+  // 3. Subtitle / Tagline
+  const subY = chronY + (chronScale * 8) + (isMobile ? 8 : 12);
+  const subText = "Chronicles of Brutopolis - Early days";
+  drawText8x8Centered(subText, subY, "#3cbcfc", 1, "#000000", 1);
+
+  const curScen = PREFAB_SCENARIOS[selectedScenarioIdx] || PREFAB_SCENARIOS[0];
+
+  // 4. Main Action Menu Box (Clean centered list)
+  const menuBoxW = Math.min(420, CANVAS_WIDTH - 32);
+  const menuBoxX = Math.floor((CANVAS_WIDTH - menuBoxW) / 2);
+  let menuY = subY + (isMobile ? 24 : 36);
+
+  // Button 1: NEW WORLD (Highlighted)
+  drawNESButton(menuBoxX, menuY, menuBoxW, 32, "NEW WORLD", true, false);
+  registerClickableRegion(menuBoxX, menuY, menuBoxW, 32, () => {
+    startNewGame(curScen.preset, curScen.seed);
+  });
+  menuY += 40;
+
+  // Button 2: CUSTOM GENERATOR
+  drawNESButton(menuBoxX, menuY, menuBoxW, 28, "CUSTOM WORLD GENERATOR", false, false);
+  registerClickableRegion(menuBoxX, menuY, menuBoxW, 28, () => {
+    currentMode = "GENERATOR";
+    modalScroll = 0;
+  });
+  menuY += 34;
+
+  // Button 3: CONTINUE (Quicksave)
+  const hasSave = !!localStorage.getItem("brutopolis_quicksave");
+  const saveLabel = hasSave ? "CONTINUE SAVED GAME" : "CONTINUE (NO SAVE FOUND)";
+  drawNESButton(menuBoxX, menuY, menuBoxW, 28, saveLabel, hasSave, false);
+  if (hasSave) {
+    registerClickableRegion(menuBoxX, menuY, menuBoxW, 28, () => {
+      try {
+        const raw = localStorage.getItem("brutopolis_quicksave");
+        if (raw) {
+          const saveObj = JSON.parse(raw);
+          loadWorldState(saveObj);
+        }
+      } catch (err) {
+        console.error("Error loading quicksave:", err);
+      }
+    });
+  }
+  menuY += 34;
+
+  // Button 4: LOAD JSON FILE
+  drawNESButton(menuBoxX, menuY, menuBoxW, 28, "LOAD .JSON SAVE FILE", false, false);
+  registerClickableRegion(menuBoxX, menuY, menuBoxW, 28, openSaveFilePicker);
+  menuY += 34;
+
+  // Button 5: Quick Settings Row (2D/3D & Audio)
+  const halfW = Math.floor((menuBoxW - 8) / 2);
+  const view3DLabel = is3DMode ? "VIEW: 3D ISO" : "VIEW: 2D MAP";
+  drawNESButton(menuBoxX, menuY, halfW, 28, view3DLabel, is3DMode, false);
+  registerClickableRegion(menuBoxX, menuY, halfW, 28, toggle3DMode);
+
+  const audioLabel = isAudioMuted ? "AUDIO: MUTED" : "AUDIO: ON";
+  drawNESButton(menuBoxX + halfW + 8, menuY, halfW, 28, audioLabel, !isAudioMuted, false);
+  registerClickableRegion(menuBoxX + halfW + 8, menuY, halfW, 28, toggleAudio);
+
+  // Footer text
+  const footY = CANVAS_HEIGHT - 18;
+  const footText = "game by jardimdanificado, music by kayoa";
+  drawText8x8Centered(footText, footY, "#888888", 1, "#000000", 1);
 
   ctx.restore();
 }
@@ -4185,6 +4560,12 @@ function renderGeneratorModal() {
 function frame(time) {
   const dt = lastTime > 0 ? (time - lastTime) * 0.001 : 0.016;
   lastTime = time;
+
+  // Enforce crisp nearest-neighbor pixel rendering (no bilinear filtering)
+  ctx.imageSmoothingEnabled = false;
+  if ("mozImageSmoothingEnabled" in ctx) ctx.mozImageSmoothingEnabled = false;
+  if ("webkitImageSmoothingEnabled" in ctx) ctx.webkitImageSmoothingEnabled = false;
+  if ("msImageSmoothingEnabled" in ctx) ctx.msImageSmoothingEnabled = false;
 
   // FPS Counter
   fpsFrames++;
@@ -4198,7 +4579,7 @@ function frame(time) {
   activeUiRegions = [];
 
   // Automatic Camera Tracking / Follow Mode (2D and 3D)
-  if (isFollowMode && lastSelectedId > 0) {
+  if (isFollowMode && lastSelectedId > 0 && currentMode === "MAP") {
     const target = getEntityById(lastSelectedId);
     if (target && !target.destroyed) {
       if (is3DMode && rctRenderer) {
@@ -4210,6 +4591,16 @@ function frame(time) {
       }
     } else {
       isFollowMode = false;
+    }
+  }
+
+  // Title Screen: Scenario auto-cycle every 15 seconds, static camera per scenario
+  if (currentMode === "TITLE") {
+    titleAutoCycleTimer += dt;
+    if (titleAutoCycleTimer >= 15.0) {
+      titleAutoCycleTimer = 0;
+      selectedScenarioIdx = (selectedScenarioIdx + 1) % PREFAB_SCENARIOS.length;
+      initTitleWorld(selectedScenarioIdx);
     }
   }
 
@@ -4243,7 +4634,16 @@ function frame(time) {
     }
 
     // 2. High-performance Frustum Culling & Rendering (2D or 3D RCT)
-    if (is3DMode && rctRenderer) {
+    // Skip rendering while a new title world is being generated to prevent lighting flash
+    if (titleWorldLoading && currentMode === "TITLE") {
+      // Fill both canvases with black while the new world loads
+      ctx.fillStyle = "#000000";
+      ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+      if (renderer && renderer.canvas) {
+        const rc = renderer.canvas.getContext("2d");
+        if (rc) { rc.fillStyle = "#000"; rc.fillRect(0, 0, renderer.canvas.width, renderer.canvas.height); }
+      }
+    } else if (is3DMode && rctRenderer) {
       rctRenderer.setPaused(isPaused);
       if (isEditorOpen && editorTool) {
         const hoverTile = getEditorHoverTile();
@@ -4265,47 +4665,125 @@ function frame(time) {
       renderer.render(world, entities, time * 0.001, dt, simSpeed);
     }
 
-    // 6. Draw Pure In-Engine Canvas UI Overlay using Renderer's 8x8 Font
-    renderCreatureVisionOverlay();
-    renderTerritoryOverlay();
-    renderTopHudBar();
-    renderBottomToolbar();
-    renderHoverTooltip();
-    renderCreatureSummaryBox();
-    renderCreatureEventLogPanel();
-    renderMapEditorOverlay();
-    renderCompactEditorPanel();
+    // 3. Mode-specific UI Overlay Rendering
+    if (currentMode === "TITLE") {
+      renderTitleScreen();
+    } else {
+      renderCreatureVisionOverlay();
+      renderTerritoryOverlay();
+      renderTopHudBar();
+      renderBottomToolbar();
+      renderHoverTooltip();
+      renderCreatureSummaryBox();
+      renderCreatureEventLogPanel();
+      renderMapEditorOverlay();
+      renderCompactEditorPanel();
 
-    if (inspectingLogEvent) {
-      const mx = 30;
-      const my = 30;
-      const mw = CANVAS_WIDTH - 60;
-      const mh = CANVAS_HEIGHT - 60;
-      renderLogDetailView(mx, my, mw, mh, inspectingLogEvent);
-    } else if (currentMode === "INSPECT") renderDossierModal();
-    else if (currentMode === "ENTITIES") renderEntitiesModal();
-    else if (currentMode === "GROUPS") renderGroupsModal();
-    else if (currentMode === "LOGS") renderLogsModal();
-    else if (currentMode === "GENERATOR") renderGeneratorModal();
+      if (inspectingLogEvent) {
+        const mx = 30;
+        const my = 30;
+        const mw = CANVAS_WIDTH - 60;
+        const mh = CANVAS_HEIGHT - 60;
+        renderLogDetailView(mx, my, mw, mh, inspectingLogEvent);
+      } else if (currentMode === "INSPECT") renderDossierModal();
+      else if (currentMode === "ENTITIES") renderEntitiesModal();
+      else if (currentMode === "GROUPS") renderGroupsModal();
+      else if (currentMode === "LOGS") renderLogsModal();
+      else if (currentMode === "GENERATOR") renderGeneratorModal();
+    }
   }
 
-  // FMOD Studio per-frame update & Altitude parameter synchronization
+  // FMOD Studio per-frame update (complement to setInterval update for jank resistance)
   if (audio.isInitialized) {
-    // Current camera zoom ranges from 0.2 (zoomed far out / sky level) to 4.0 (zoomed close in / ground level)
-    let zoom = 1.0;
+    audio.update();
+
+    let rawZoom = 1.0;
     if (is3DMode && rctRenderer) {
-      zoom = rctRenderer.getCameraZoom ? rctRenderer.getCameraZoom() : 1.0;
+      rawZoom = rctRenderer.getCameraZoom ? rctRenderer.getCameraZoom() : 1.0;
     } else if (renderer) {
-      zoom = renderer.getCameraZoom ? renderer.getCameraZoom() : 1.0;
+      rawZoom = renderer.getCameraZoom ? renderer.getCameraZoom() : 1.0;
     }
 
-    // Normalize zoom strictly from 0.0 (min zoom: 0.2, sky) to 1.0 (max zoom: 4.0, ground)
-    const normZoom = Math.max(0.0, Math.min(1.0, (zoom - 0.2) / (4.0 - 0.2)));
+    // Dynamic zoom mapping:
+    // rawZoom ranges from ~0.2 (high orbit/satellite) to ~3.0 - 5.0 (close ground)
+    // normZoom: 0.0 (high altitude sky) -> 1.0 (close ground)
+    const normZoom = Math.max(0.0, Math.min(1.0, (rawZoom - 0.3) / (2.5 - 0.3)));
 
-    if (Math.abs((window._lastAudioZoom || 0) - normZoom) > 0.002) {
-      window._lastAudioZoom = normZoom;
-      audio.setInstanceParameter("skyMusic", "Zoom", normZoom);
-      audio.setGlobalParameter("Zoom", normZoom);
+    if (currentMode === "MAP") {
+      // 1. High Altitude Audio Layers:
+      // - Vento: Atmospheric wind dispersion in the heights
+      if (!audio.activeInstances.has("vento")) {
+        audio.createInstance("vento", "event:/Ambiente/Vento", true);
+      }
+
+      // - Choir: Ethereal altitude choir/music
+      if (!audio.activeInstances.has("choir")) {
+        const c = audio.createInstance("choir", "event:/Ambiente/Choir", true);
+        if (!c) audio.createInstance("choir", "event:/Ambiente/timeline1", true);
+      }
+
+      // 2. Ground Nature Layer:
+      // - Passaros: Birds singing, trees, insects & cicadas near ground
+      if (!audio.activeInstances.has("passaros")) {
+        const p = audio.createInstance("passaros", "event:/Ambiente/Passaros", true);
+        if (!p) audio.createInstance("passaros", "event:/Ambiente/Passaros_Natureza", true);
+      }
+
+      // 3. Scripting API Parameter & Dynamic Volume Synchronization:
+      if (Math.abs((window._lastAudioZoom || -1) - normZoom) > 0.002) {
+        window._lastAudioZoom = normZoom;
+
+        // FMOD Parameter Zoom (0 = High Sky / Altitude, 1 = Close Ground)
+        audio.setInstanceParameter("vento", "Zoom", normZoom);
+        audio.setInstanceParameter("choir", "Zoom", normZoom);
+        audio.setInstanceParameter("passaros", "Zoom", normZoom);
+        audio.setGlobalParameter("Zoom", normZoom);
+
+        // --- ALTITUDE CUTOFF & DISPERSION LOGIC ---
+        // 1. Choir: Celestial high-stratosphere choir (normZoom < 0.20).
+        // Attenuated volume for a delicate, expansive background ambient.
+        const choirFactor = Math.max(0.0, (1.0 - normZoom / 0.20));
+        const altitudeChoirVol = 0.16 * Math.pow(choirFactor, 1.8);
+        audio.setInstanceVolume("choir", altitudeChoirVol);
+
+        // 2. Vento: Stronger presence, reaches maximum volume around normZoom 0.4 up to high sky.
+        const windFactor = normZoom <= 0.4 ? 1.0 : Math.max(0.0, 1.0 - (normZoom - 0.4) / 0.6);
+        const altitudeWindVol = 0.15 + 0.65 * Math.pow(windFactor, 1.2);
+        audio.setInstanceVolume("vento", altitudeWindVol);
+
+        // --- GROUND NATURE LOGIC ---
+        // 3. Passaros: Starts becoming audible early (normZoom > 0.08) and quickly fills the soundscape (1.0)
+        const groundFactor = Math.max(0.0, Math.min(1.0, (normZoom - 0.08) / 0.50));
+        const groundNatureVol = 1.0 * Math.pow(groundFactor, 0.5); // Clear, loud and immediate
+        audio.setInstanceVolume("passaros", groundNatureVol);
+      }
+
+      // Sync time of day ('tempo dos dias' parameter: 0 to 24h) for birds/insects/cicadas
+      if (world && world.clock) {
+        const timeOfDay = world.clock.hour + (world.clock.minute / 60.0);
+        if (Math.abs((window._lastAudioTod || -1) - timeOfDay) > 0.05) {
+          window._lastAudioTod = timeOfDay;
+          audio.setInstanceParameter("passaros", "tempo dos dias", timeOfDay);
+          audio.setInstanceParameter("choir", "tempo dos dias", timeOfDay);
+          audio.setGlobalParameter("tempo dos dias", timeOfDay);
+        }
+      }
+    } else {
+      // Stop in-game ambiences when returning to menus or not in gameplay
+      if (audio.activeInstances.has("vento")) {
+        audio.stopInstance("vento", false);
+      }
+      if (audio.activeInstances.has("choir")) {
+        audio.stopInstance("choir", false);
+      }
+      if (audio.activeInstances.has("passaros")) {
+        audio.stopInstance("passaros", false);
+      }
+      if (audio.activeInstances.has("timeline1")) {
+        audio.stopInstance("timeline1", false);
+      }
+      window._lastAudioZoom = -1;
+      window._lastAudioTod = -1;
     }
   }
 
@@ -4327,16 +4805,13 @@ async function init() {
         console.log("[Audio] Loading FMOD Banks...");
         await audio.loadBank("assets/banks/Master.strings.bank");
         await audio.loadBank("assets/banks/Master.bank");
-        console.log("[Audio] Banks loaded successfully. Starting SkyTheme...");
+        console.log("[Audio] Banks loaded. Starting menu theme...");
 
-        // Start background music event
-        const skyMusic = audio.createInstance("Vento", "event:/Ambiente/Vento", true);
-        if (!skyMusic) {
-          console.log("[Audio] Trying alternate event paths...");
-          audio.createInstance("Vento", "event:/Vento", true);
-        }
+        // Start menu theme - softened volume for pleasant ambiance
+        audio.createInstance("menuTheme", "event:/Musica/Menu", true);
+        audio.setInstanceVolume("menuTheme", 0.55);
       } catch (bankErr) {
-        console.warn("[Audio] Error loading banks or starting Vento:", bankErr);
+        console.warn("[Audio] Error loading banks or starting menu theme:", bankErr);
       }
     }).catch(err => {
       console.warn("[Audio] FMOD initialization deferred or failed:", err);
@@ -4344,22 +4819,25 @@ async function init() {
 
     renderer = new Renderer(canvas);
     await renderer.initPromise;
-    world = new World(0, genSeed);
+    const firstScen = PREFAB_SCENARIOS[0];
+    world = new World(firstScen.preset, firstScen.seed);
     setActiveWorld(world);
     initSimWorker();
     simWorker.postMessage({
       type: "INIT_WORLD",
-      preset: 0,
+      preset: firstScen.preset,
       width: genWidth,
       height: genHeight,
       zoneSize: genZoneSize,
-      seed: genSeed,
-      creatureDensity: genCreatureDensity,
-      plantDensity: genPlantDensity,
-      spawnPioneers: genSpawnPioneers,
-      embarkCount: genEmbarkCount
+      seed: firstScen.seed,
+      creatureDensity: "NONE",
+      plantDensity: "NORMAL",
+      spawnPioneers: false,
+      embarkCount: 0,
+      spawnRoads: false,
+      isTitleScreen: true
     });
-    console.log("✓ Brutopolis (Worker Simulation & Pure JS Canvas Renderer) initialized successfully!");
+    console.log("[Title] Brutopolis Title Screen initialized successfully.");
     requestAnimationFrame(frame);
   } catch (err) {
     console.error("Failed to load Brutopolis:", err);
