@@ -2529,8 +2529,39 @@ export function createGroup(name, founder, baseZone = null, claimedZones = null)
   const maxZY = Math.max(1, Math.floor((activeWorld?.height || 512) / sz));
 
   zx = Math.max(0, Math.min(maxZX - 1, zx));
-  // Group begins with a single core territory zone (expands strictly on-demand)
+
+  // Groups begin with 3 contiguous dry land zones
   const defaultZones = [`${zx}_${zy}`];
+  const claimedSet = new Set(defaultZones);
+  const candDirs = [
+    { dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 },
+    { dx: 1, dy: 1 }, { dx: -1, dy: -1 }, { dx: 1, dy: -1 }, { dx: -1, dy: 1 }
+  ];
+
+  for (const off of candDirs) {
+    if (defaultZones.length >= 3) break;
+    const nzx = zx + off.dx;
+    const nzy = zy + off.dy;
+    const nzk = `${nzx}_${nzy}`;
+    if (nzx >= 0 && nzx < maxZX && nzy >= 0 && nzy < maxZY && !claimedSet.has(nzk)) {
+      let hasLand = false;
+      const curW = activeWorld || getSimWorld();
+      if (curW && curW.getTile) {
+        for (let ox = 0; ox < sz && !hasLand; ox += 2) {
+          for (let oy = 0; oy < sz && !hasLand; oy += 2) {
+            const t = curW.getTile(nzx * sz + ox, nzy * sz + oy);
+            if (t !== 2 && t !== 5) hasLand = true;
+          }
+        }
+      } else {
+        hasLand = true;
+      }
+      if (hasLand) {
+        claimedSet.add(nzk);
+        defaultZones.push(nzk);
+      }
+    }
+  }
 
   const group = {
     id: nextGroupId++,
@@ -2544,7 +2575,7 @@ export function createGroup(name, founder, baseZone = null, claimedZones = null)
       { id: 3, type: "dining", zx, zy, name: "Refeitório do Clã", assignedMembers: [] },
       { id: 4, type: "meeting", zx, zy, name: "Sala de Reunião", assignedMembers: [] }
     ],
-    membersPerZone: Math.floor(Math.random() * 9) + 1, // 1 to 9 members required per zone expansion
+    membersPerZone: 10,
     campfire: null, // { x, y }
     storage: [],
     createdTick: currentTick,
@@ -2556,11 +2587,112 @@ export function createGroup(name, founder, baseZone = null, claimedZones = null)
     _housePlots: {}
   };
 
-  // Pre-initialize road network (3 initial dirt roads interconnected by snap points) and central plaza (stockpile, well, campfire)
+  // Pre-initialize road network and central plaza (stockpile, well, campfire)
   initClanRoadNetwork(group);
   initClanPlaza(group);
 
   return group;
+}
+
+/**
+ * Dynamically expands clan territory to accommodate growing population (at least 1 zone for every 10 citizens).
+ * Contiguously claims adjacent land zones with highest natural resource availability and routes new streets into the annexed zone.
+ */
+export function expandClanTerritoryToPopulation(group, targetZoneCount, world, livingPop = 0) {
+  if (!group || !group.claimedZones) return;
+  const sz = currentZoneSize || 8;
+  const maxZX = Math.max(1, Math.floor((world?.width || 512) / sz));
+  const maxZY = Math.max(1, Math.floor((world?.height || 512) / sz));
+
+  const claimedSet = new Set(group.claimedZones);
+
+  while (group.claimedZones.length < targetZoneCount) {
+    let bestCandidate = null;
+    let bestScore = -999999;
+
+    for (const zk of group.claimedZones) {
+      const parts = zk.includes("_") ? zk.split("_") : zk.split(",");
+      const zx = parseInt(parts[0], 10);
+      const zy = parseInt(parts[1], 10);
+
+      for (const off of [{dx: 1, dy: 0}, {dx: -1, dy: 0}, {dx: 0, dy: 1}, {dx: 0, dy: -1}]) {
+        const czx = zx + off.dx;
+        const czy = zy + off.dy;
+        const czk = `${czx}_${czy}`;
+
+        if (czx < 0 || czx >= maxZX || czy < 0 || czy >= maxZY) continue;
+        if (claimedSet.has(czk)) continue;
+
+        // Check land quality of this candidate zone
+        let landTiles = 0;
+        let resourceScore = 0;
+        for (let ox = 0; ox < sz; ox++) {
+          for (let oy = 0; oy < sz; oy++) {
+            const tx = czx * sz + ox;
+            const ty = czy * sz + oy;
+            if (isLandTile(tx, ty)) {
+              landTiles++;
+              if (world && world.getTile) {
+                const t = world.getTile(tx, ty);
+                if (t === 4 || t === 1) resourceScore += 2; // Stone / Mountain ore
+                else if (t === 0 || t === 3) resourceScore += 1; // Grass / Fertile soil
+              }
+            }
+          }
+        }
+
+        if (landTiles < Math.floor((sz * sz) * 0.25)) continue; // Must have at least 25% dry land
+
+        // Prefer zones with more land and resources
+        const score = landTiles * 2 + resourceScore;
+        if (score > bestScore) {
+          bestScore = score;
+          bestCandidate = { zx: czx, zy: czy, zk: czk };
+        }
+      }
+    }
+
+    if (!bestCandidate) break;
+
+    claimedSet.add(bestCandidate.zk);
+    group.claimedZones.push(bestCandidate.zk);
+    group.claimedZones._fastIntVersion = group.claimedZones.length;
+
+    // Extend road network into the new territory zone so colonists will pave/dig the new street!
+    const newCenter = { x: bestCandidate.zx * sz + Math.floor(sz / 2), y: bestCandidate.zy * sz + Math.floor(sz / 2) };
+    if (group._plannedRoads && group._plannedRoads.length > 0) {
+      let nearestRoad = group._plannedRoads[0];
+      let minD = 9999;
+      for (const r of group._plannedRoads) {
+        const d = Math.abs(r.x - newCenter.x) + Math.abs(r.y - newCenter.y);
+        if (d < minD) {
+          minD = d;
+          nearestRoad = r;
+        }
+      }
+      const curW = world || getSimWorld();
+      const extRoad = findOrganicLandPath(nearestRoad.x, nearestRoad.y, newCenter.x, newCenter.y, curW, 0, curW?.width || 1024, 0, curW?.height || 1024, 400);
+      if (extRoad && extRoad.length > 0) {
+        const plannedRoadSet = new Set((group._plannedRoads || []).map(r => `${r.x}_${r.y}`));
+        for (const pt of extRoad) {
+          const rtk = `${pt.x}_${pt.y}`;
+          if (!plannedRoadSet.has(rtk) && isLandTile(pt.x, pt.y)) {
+            plannedRoadSet.add(rtk);
+            group._plannedRoads.push({ x: pt.x, y: pt.y, type: "road", groupId: group.id });
+          }
+        }
+      }
+    }
+
+    recordWorldEvent({
+      opcode: OP_RELATION,
+      type: "EXPANSION",
+      primaryEntityId: group.leaderId,
+      location: { x: bestCandidate.zx * sz + Math.floor(sz / 2), y: bestCandidate.zy * sz + Math.floor(sz / 2) },
+      description: `O reino '${group.name}' expandiu seu território para a zona (${bestCandidate.zx}, ${bestCandidate.zy}) devido ao crescimento da população (${livingPop || group.members?.length || 10} cidadãos)!`,
+      tick: currentTick
+    });
+  }
 }
 
 /**
@@ -3464,61 +3596,57 @@ export function getClanBlueprintTiles(group) {
       }
 
       if (!chosenPlot) {
-        let isolatedCand = null;
+        let bestCandidate = null;
+        let maxDistToRoad = -1;
 
-        // 1. Search in circular rings from 3 to 22 tiles away from the clan plaza
-        for (let r = 3; r <= 22 && !isolatedCand; r += 2) {
-          for (let dy = -r; dy <= r && !isolatedCand; dy += 2) {
-            for (let dx = -r; dx <= r && !isolatedCand; dx += 2) {
-              const px = whX + dx;
-              const py = whY + dy;
+        // Pioneer House Strategy: Search all claimed territory zones to find the tile with MAXIMUM distance to any existing road.
+        // This guarantees that the pioneer house is built as far as possible from the center/road, maximizing the road length!
+        for (const zk of group.claimedZones) {
+          const zp = zk.includes("_") ? zk.split("_") : zk.split(",");
+          const zx = parseInt(zp[0], 10);
+          const zy = parseInt(zp[1], 10);
+
+          for (let ox = 0; ox < sz; ox++) {
+            for (let oy = 0; oy < sz; oy++) {
+              const px = zx * sz + ox;
+              const py = zy * sz + oy;
               const tk = `${px}_${py}`;
+
               if (!isLandTile(px, py) || isRoadTile(px, py) || plannedRoadSet.has(tk) || occupiedTiles.has(tk)) continue;
               if (!isFarEnoughFromBuildings(px, py, tiles, 2)) continue;
-              if (!isTileInClaimedZones(px, py, group.claimedZones)) continue;
 
               const curW = getSimWorld();
               if (curW && curW.getTile) {
                 if (curW.getTile(px, py) === 2 || curW.getTile(px, py) === 5) continue;
               }
 
-              isolatedCand = { x: px, y: py };
-            }
-          }
-        }
-
-        // 2. Fallback to candidate plots
-        if (!isolatedCand && candidatePlots.length > 0) {
-          for (const cand of candidatePlots) {
-            const tk = `${cand.x}_${cand.y}`;
-            if (!occupiedTiles.has(tk) && isFarEnoughFromBuildings(cand.x, cand.y, tiles, 1)) {
-              isolatedCand = cand;
-              break;
-            }
-          }
-        }
-
-        // 3. Fallback: Any free land tile in claimed territory
-        if (!isolatedCand) {
-          for (const zk of group.claimedZones) {
-            const zp = zk.includes("_") ? zk.split("_") : zk.split(",");
-            const zx = parseInt(zp[0], 10);
-            const zy = parseInt(zp[1], 10);
-            for (let ox = 0; ox < sz && !isolatedCand; ox++) {
-              for (let oy = 0; oy < sz && !isolatedCand; oy++) {
-                const px = zx * sz + ox;
-                const py = zy * sz + oy;
-                const tk = `${px}_${py}`;
-                if (isLandTile(px, py) && !isRoadTile(px, py) && !occupiedTiles.has(tk)) {
-                  isolatedCand = { x: px, y: py };
+              // Compute distance to closest road
+              let minDToRoad = 9999;
+              if (group._plannedRoads && group._plannedRoads.length > 0) {
+                for (const r of group._plannedRoads) {
+                  const d = Math.abs(r.x - px) + Math.abs(r.y - py);
+                  if (d < minDToRoad) minDToRoad = d;
                 }
+              } else {
+                minDToRoad = Math.abs(whX - px) + Math.abs(whY - py);
+              }
+
+              // Prioritize the tile with MAXIMUM distance from the road network
+              if (minDToRoad > maxDistToRoad) {
+                maxDistToRoad = minDToRoad;
+                bestCandidate = { x: px, y: py };
               }
             }
           }
         }
 
-        if (isolatedCand) {
-          chosenPlot = isolatedCand;
+        // Fallback to any free tile in candidatePlots if needed
+        if (!bestCandidate && candidatePlots.length > 0) {
+          bestCandidate = candidatePlots[candidatePlots.length - 1];
+        }
+
+        if (bestCandidate) {
+          chosenPlot = bestCandidate;
           group._housePlots[ownerId] = { x: chosenPlot.x, y: chosenPlot.y };
         }
       }
@@ -7376,6 +7504,13 @@ export function evaluateAndAssignClanRoles(group, entities, world) {
   }).filter(Boolean);
 
   if (livingMembers.length === 0) return;
+
+  // 0. Population-Driven Dynamic Territory Expansion:
+  // Every kingdom needs at least 1 zone base + 1 additional zone for every 10 citizens!
+  const minRequiredZones = Math.max(1, 1 + Math.floor(livingMembers.length / 10));
+  if (group.claimedZones && group.claimedZones.length < minRequiredZones) {
+    expandClanTerritoryToPopulation(group, minRequiredZones, world || getSimWorld(), livingMembers.length);
+  }
 
   // 1. Analyze Food Stockpile (Storage + Ground in claimed zones)
   let foodCount = (group.storage || []).filter(it => it === "meat" || it === "fruit" || it === "food").length;
