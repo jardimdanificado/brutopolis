@@ -74,6 +74,7 @@ import {
   createSeedEntity,
   createHouseEntity,
   createWallEntity,
+  createTorchEntity,
   createCampfireEntity,
   createStoneWallEntity,
   createWaterWellEntity,
@@ -568,6 +569,34 @@ function spawnGhostTownRuins(world, minX, maxX, minY, maxY, centerX, centerY, en
             const curTile = world.getTile(tx, ty);
             if (curTile === 0 || curTile === 3 || curTile === 4) {
               world.setTile(tx, ty, (curTile === 3) ? 7 : (curTile === 4 ? 8 : 6));
+            }
+          }
+        }
+      }
+    }
+
+    // 7. Atmospheric Village Standing Torches (3 to 5 torches illuminating ruins and pathways)
+    const torchOffsets = [
+      { dx: -2, dy: -2 }, { dx: 2, dy: -2 }, { dx: -2, dy: 2 }, { dx: 2, dy: 2 },
+      { dx: 0, dy: -4 }, { dx: 0, dy: 4 }, { dx: -4, dy: 0 }, { dx: 4, dy: 0 }
+    ];
+    let spawnedTorches = 0;
+    for (const tOff of torchOffsets) {
+      if (spawnedTorches >= 4) break;
+      if (Math.random() < 0.75) {
+        const tox = cx + tOff.dx;
+        const toy = cy + tOff.dy;
+        if (tox >= minX && tox < maxX && toy >= minY && toy < maxY && world.isWalkable(tox, toy)) {
+          const hasEnt = entities.some(e => !e.destroyed && e.x === tox && e.y === toy);
+          if (!hasEnt) {
+            const torch = createTorchEntity(tox, toy, null);
+            if (torch) {
+              if (torch.properties?.torch) {
+                torch.properties.torch.isLit = true;
+                torch.properties.torch.fuel = 9999;
+              }
+              entities.push(torch);
+              spawnedTorches++;
             }
           }
         }

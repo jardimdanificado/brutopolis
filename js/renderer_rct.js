@@ -2127,6 +2127,98 @@ export class RCT3DRenderer {
     this.raycaster = new THREE.Raycaster();
     this.groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 
+    // 3D Dithered Stratosphere Cloud Deck (Visible only from zoom 0.0 to 0.4)
+    const cloudGeo = new THREE.PlaneGeometry(1200, 1200, 32, 32);
+    cloudGeo.rotateX(-Math.PI / 2);
+    this.cloudMat = new THREE.ShaderMaterial({
+      uniforms: {
+        uTime: { value: 0.0 },
+        uFade: { value: 0.0 },
+        uSunColor: { value: new THREE.Color(1.0, 1.0, 1.0) },
+        uAmbColor: { value: new THREE.Color(0.6, 0.7, 0.8) }
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        varying vec3 vWorldPos;
+        void main() {
+          vUv = uv;
+          vec4 wp = modelMatrix * vec4(position, 1.0);
+          vWorldPos = wp.xyz;
+          gl_Position = projectionMatrix * viewMatrix * wp;
+        }
+      `,
+      fragmentShader: `
+        uniform float uTime;
+        uniform float uFade;
+        uniform vec3 uSunColor;
+        uniform vec3 uAmbColor;
+        varying vec2 vUv;
+        varying vec3 vWorldPos;
+
+        // Procedural FBM Perlin-like Noise
+        float hash(vec2 p) {
+          return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+        }
+        float noise(vec2 p) {
+          vec2 i = floor(p);
+          vec2 f = fract(p);
+          vec2 u = f * f * (3.0 - 2.0 * f);
+          return mix(mix(hash(i + vec2(0.0,0.0)), hash(i + vec2(1.0,0.0)), u.x),
+                     mix(hash(i + vec2(0.0,1.0)), hash(i + vec2(1.0,1.0)), u.x), u.y);
+        }
+        float fbm(vec2 p) {
+          float v = 0.0;
+          float a = 0.5;
+          for (int i = 0; i < 4; ++i) {
+            v += a * noise(p);
+            p *= 2.05;
+            a *= 0.5;
+          }
+          return v;
+        }
+
+        // Ordered 4x4 Bayer Dithering Matrix
+        const mat4 bayerMatrix = mat4(
+          0.0/16.0,  8.0/16.0,  2.0/16.0, 10.0/16.0,
+          12.0/16.0, 4.0/16.0, 14.0/16.0,  6.0/16.0,
+          3.0/16.0, 11.0/16.0,  1.0/16.0,  9.0/16.0,
+          15.0/16.0, 7.0/16.0, 13.0/16.0,  5.0/16.0
+        );
+
+        void main() {
+          if (uFade <= 0.001) discard;
+
+          vec2 cloudUv = (vWorldPos.xz * 0.006) + vec2(uTime * 0.003, uTime * 0.0018);
+          float n = fbm(cloudUv * 3.5);
+          float n2 = fbm((cloudUv + vec2(5.2, 1.3)) * 6.0);
+          float density = smoothstep(0.38, 0.72, n * 0.7 + n2 * 0.3);
+
+          // Bayer 4x4 Dither Threshold
+          ivec2 pixelCoord = ivec2(mod(gl_FragCoord.xy, 4.0));
+          float ditherThreshold = bayerMatrix[pixelCoord.x][pixelCoord.y];
+
+          // Effective alpha combined with zoom fade
+          float effectiveAlpha = density * uFade;
+
+          // As camera approaches (uFade decreases), dithering expands and dissolves clouds
+          if (effectiveAlpha < ditherThreshold) {
+            discard;
+          }
+
+          vec3 cloudCol = mix(uAmbColor, uSunColor * 1.25, density * 0.7);
+          gl_FragColor = vec4(cloudCol, 1.0);
+        }
+      `,
+      depthWrite: false,
+      depthTest: true,
+      side: THREE.DoubleSide
+    });
+    this.cloudMesh = new THREE.Mesh(cloudGeo, this.cloudMat);
+    this.cloudMesh.position.set(512, 18.0, 512); // High altitude stratosphere deck
+    this.cloudMesh.renderOrder = 500;
+    this.cloudMesh.frustumCulled = false;
+    this.scene.add(this.cloudMesh);
+
     // Persistent reusable collections to eliminate per-frame GC allocations
     this._activeIds = new Set();
     this._activeUiIds = new Set();
@@ -4216,6 +4308,28 @@ export class RCT3DRenderer {
       this.reticleMesh.visible = true;
     } else {
       this.reticleMesh.visible = false;
+    }
+
+    // Update 3D Dithered Cloud Deck
+    if (this.cloudMesh && this.cloudMat) {
+      // NormZoom: 0.0 (high sky) to 1.0 (ground)
+      const normZoom = Math.max(0.0, Math.min(1.0, (this.zoom - 0.25) / (4.0 - 0.25)));
+      // Clouds appear strictly from 0.00 to 0.10 zoom (high stratosphere).
+      // At zoom 0.0, uFade = 1.0 (dense full clouds).
+      // As zoom approaches 0.10, uFade decreases and dithering dissolves them away.
+      // Any zoom > 0.10 is completely free of clouds.
+      const cloudFade = normZoom <= 0.10 ? Math.max(0.0, 1.0 - (normZoom / 0.10)) : 0.0;
+
+      if (cloudFade > 0.001) {
+        this.cloudMesh.visible = true;
+        this.cloudMesh.position.set(this.camX, 16.0, this.camY);
+        this.cloudMat.uniforms.uTime.value = performance.now() * 0.001;
+        this.cloudMat.uniforms.uFade.value = cloudFade;
+        this.cloudMat.uniforms.uSunColor.value.copy(this.sunLight.color);
+        this.cloudMat.uniforms.uAmbColor.value.copy(this.ambientLight.color);
+      } else {
+        this.cloudMesh.visible = false;
+      }
     }
 
     // Draw WebGL Frame

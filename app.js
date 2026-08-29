@@ -1817,6 +1817,7 @@ canvas.addEventListener("wheel", (e) => {
 
   if (is3DMode && rctRenderer) {
     let zoom = rctRenderer.getCameraZoom();
+    // Zoom range: 0.25 (highest orbit / normZoom 0.00) to 4.0 (closest ground / normZoom 1.00)
     zoom = (e.deltaY < 0) ? Math.min(4.0, zoom * 1.15) : Math.max(0.25, zoom / 1.15);
     rctRenderer.setCamera(rctRenderer.getCameraX(), rctRenderer.getCameraY(), zoom);
     if (renderer) renderer.setCamera(rctRenderer.getCameraX(), rctRenderer.getCameraY(), zoom);
@@ -1824,7 +1825,7 @@ canvas.addEventListener("wheel", (e) => {
     let zoom = renderer.getCameraZoom();
     const cx = renderer.getCameraX();
     const cy = renderer.getCameraY();
-    zoom = (e.deltaY < 0) ? Math.min(8.0, zoom * 1.15) : Math.max(0.15, zoom / 1.15);
+    zoom = (e.deltaY < 0) ? Math.min(4.0, zoom * 1.15) : Math.max(0.25, zoom / 1.15);
     renderer.setCamera(cx, cy, zoom);
     if (rctRenderer) rctRenderer.setCamera(cx, cy, zoom);
   }
@@ -2099,7 +2100,12 @@ function renderTopHudBar() {
     // Mobile responsive top bar
     const timeStr = `D${clock.day} ${String(clock.hour).padStart(2, "0")}:${String(clock.minute).padStart(2, "0")}`;
     drawText8x8(timeStr, 8, 13, "#ffffff", 1);
-    drawText8x8(`${currentFps}F`, 82, 13, "#888888", 1);
+    const rawZMob = is3DMode && rctRenderer ? rctRenderer.zoom : (renderer ? renderer.zoom : 1.0);
+    const curNormZoomMob = is3DMode && rctRenderer 
+      ? Math.max(0.0, Math.min(1.0, (rawZMob - 0.08) / (5.0 - 0.08)))
+      : Math.max(0.0, Math.min(1.0, (rawZMob - 0.3) / (2.5 - 0.3)));
+    drawText8x8(`Z:${curNormZoomMob.toFixed(2)}`, 74, 13, "#a0e040", 1);
+    drawText8x8(`${currentFps}F`, 126, 13, "#888888", 1);
 
     let topBtnX = CANVAS_WIDTH - 44;
     drawNESButton(topBtnX, 5, 38, 24, "MENU", false, false);
@@ -4705,9 +4711,9 @@ function frame(time) {
     }
 
     // Dynamic zoom mapping:
-    // rawZoom ranges from ~0.2 (high orbit/satellite) to ~3.0 - 5.0 (close ground)
-    // normZoom: 0.0 (high altitude sky) -> 1.0 (close ground)
-    const normZoom = Math.max(0.0, Math.min(1.0, (rawZoom - 0.3) / (2.5 - 0.3)));
+    // rawZoom ranges from 0.25 (high orbit/satellite) to 4.0 (close ground)
+    // normZoom: exactly 0.0 (high altitude sky) -> 1.0 (close ground)
+    const normZoom = Math.max(0.0, Math.min(1.0, (rawZoom - 0.25) / (4.0 - 0.25)));
 
     if (currentMode === "MAP") {
       // 1. High Altitude Audio Layers:
@@ -4741,21 +4747,68 @@ function frame(time) {
 
         // --- ALTITUDE CUTOFF & DISPERSION LOGIC ---
         // 1. Choir: Celestial high-stratosphere choir (normZoom < 0.20).
-        // Attenuated volume for a delicate, expansive background ambient.
         const choirFactor = Math.max(0.0, (1.0 - normZoom / 0.20));
         const altitudeChoirVol = 0.16 * Math.pow(choirFactor, 1.8);
         audio.setInstanceVolume("choir", altitudeChoirVol);
 
-        // 2. Vento: Stronger presence, reaches maximum volume around normZoom 0.4 up to high sky.
+        // 2. Vento: Strong presence in sky, peaks at ~0.4 zoom, softly recedes on ground.
         const windFactor = normZoom <= 0.4 ? 1.0 : Math.max(0.0, 1.0 - (normZoom - 0.4) / 0.6);
         const altitudeWindVol = 0.15 + 0.65 * Math.pow(windFactor, 1.2);
         audio.setInstanceVolume("vento", altitudeWindVol);
 
         // --- GROUND NATURE LOGIC ---
-        // 3. Passaros: Starts becoming audible early (normZoom > 0.08) and quickly fills the soundscape (1.0)
-        const groundFactor = Math.max(0.0, Math.min(1.0, (normZoom - 0.08) / 0.50));
-        const groundNatureVol = 1.0 * Math.pow(groundFactor, 0.5); // Clear, loud and immediate
+        // 3. Passaros: Long-range reach, starts resonating from high distance (0.45 vol at high altitude) and reaches 1.0 on ground
+        const groundNatureVol = 0.45 + 0.55 * Math.pow(normZoom, 0.6);
         audio.setInstanceVolume("passaros", groundNatureVol);
+      }
+
+      // 4. FMOD 3D Spatial Audio Listener Sync (Camera position & height):
+      let camX = 512, camY = 512;
+      if (is3DMode && rctRenderer) {
+        camX = rctRenderer.getCameraX();
+        camY = rctRenderer.getCameraY();
+      } else if (renderer) {
+        camX = renderer.getCameraX();
+        camY = renderer.getCameraY();
+      }
+      // Camera height in world space derived from zoom (close = low Z, zoom out = high Z)
+      const listenerZ = 8.0 + (1.0 - normZoom) * 45.0;
+      audio.setListenerPosition({ x: camX, y: camY, z: listenerZ });
+
+      // 5. 3D Procedural Town & Entity Activity Audio (Footsteps, Construction & Human Chatter):
+      if (!window._lastActivitySoundTimer) window._lastActivitySoundTimer = 0;
+      const now = performance.now();
+      if (now - window._lastActivitySoundTimer > 150 && entities && entities.length > 0 && normZoom > 0.25) {
+        window._lastActivitySoundTimer = now;
+
+        // Find entities close to camera view (within ~40 tiles radius)
+        const visibleAudibleEntities = entities.filter(e => e && !e.destroyed && Math.hypot(e.x - camX, e.y - camY) < 38);
+        if (visibleAudibleEntities.length > 0) {
+          const pickedEntity = visibleAudibleEntities[Math.floor(Math.random() * visibleAudibleEntities.length)];
+          const isWalking = pickedEntity.vx !== 0 || pickedEntity.vy !== 0 || pickedEntity.state === "WALK" || pickedEntity.isMoving;
+          const isUnderConstruction = pickedEntity.isConstructed === false || (pickedEntity.properties?.house && !pickedEntity.properties.house.isCompleted) || (pickedEntity.properties?.warehouse && !pickedEntity.properties.warehouse.isCompleted);
+          const isCitizen = pickedEntity.properties?.brain || pickedEntity.properties?.group || (pickedEntity.properties?.job && pickedEntity.properties.job !== "IDLE");
+
+          const roll = Math.random();
+          if (isUnderConstruction || (isCitizen && pickedEntity.properties?.job === "BUILD")) {
+            // 3D Construction & Building hammer/tool sounds
+            if (roll < 0.60) {
+              audio.playOneShot("event:/SFX/Activity_Town", null, { x: pickedEntity.x, y: pickedEntity.y, z: 0 });
+            }
+          } else if (isWalking) {
+            // 3D Spatial Footsteps on Grass
+            if (roll < 0.55) {
+              audio.playOneShot("event:/SFX/Footstep_Grass", null, { x: pickedEntity.x, y: pickedEntity.y, z: 0 });
+            }
+          } else if (isCitizen) {
+            // 3D Human Mumbling / Grunting / Village Chatter
+            if (roll < 0.35) {
+              audio.playOneShot("event:/SFX/Mumble_Human", null, { x: pickedEntity.x, y: pickedEntity.y, z: 0 });
+            } else if (roll < 0.60) {
+              audio.playOneShot("event:/SFX/Activity_Town", null, { x: pickedEntity.x, y: pickedEntity.y, z: 0 });
+            }
+          }
+        }
       }
 
       // Sync time of day ('tempo dos dias' parameter: 0 to 24h) for birds/insects/cicadas
