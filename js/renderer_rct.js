@@ -1356,8 +1356,8 @@ export class RCT3DRenderer {
     this.sunLight = new THREE.DirectionalLight(0xfffaea, 1.4);
     this.sunLight.position.set(40, 80, 50);
     this.sunLight.castShadow = true;
-    this.sunLight.shadow.mapSize.width = 1024;
-    this.sunLight.shadow.mapSize.height = 1024;
+    this.sunLight.shadow.mapSize.width = 512;
+    this.sunLight.shadow.mapSize.height = 512;
     this.sunLight.shadow.camera.near = 1;
     this.sunLight.shadow.camera.far = 350;
     const sd = 60;
@@ -1370,8 +1370,8 @@ export class RCT3DRenderer {
     this.scene.add(this.sunLight);
     this.scene.add(this.sunLight.target);
 
-    // Dynamic Night Point Light Pool (Placed strictly at intelligent creatures, houses, and walls)
-    this.maxNightLights = 28;
+    // Dynamic Night Point Light Pool (Optimized pool for low-end dual-core hardware)
+    this.maxNightLights = 16;
     this.maxShadowPointLights = 0; // Point lights do direct local shading; sun/moon provides directional shadows
     this.nightLightPool = [];
     for (let i = 0; i < this.maxNightLights; i++) {
@@ -2225,6 +2225,7 @@ export class RCT3DRenderer {
     this._occupiedHouseTiles = new Set();
     this._clanGroups = new Map();
     this._knownZones = new Set();
+    this._visibleEntitiesArray = [];
     this._mMatrix = new THREE.Matrix4();
     this._scaleMatrix = new THREE.Matrix4();
     this._platMat = new THREE.Matrix4();
@@ -3408,7 +3409,7 @@ export class RCT3DRenderer {
 
     // Render 3D Volumetric Instanced Entities
     const map = world.map;
-    const visibleEntities = getEntitiesInViewport(this.renderedMinTx, this.renderedMaxTx, this.renderedMinTy, this.renderedMaxTy);
+    const visibleEntities = getEntitiesInViewport(this.renderedMinTx, this.renderedMaxTx, this.renderedMinTy, this.renderedMaxTy, 8, this._visibleEntitiesArray);
     this._activeIds.clear();
     this._activeUiIds.clear();
     const activeIds = this._activeIds;

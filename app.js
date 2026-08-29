@@ -4565,7 +4565,7 @@ function renderTitleScreen() {
 
   // Footer text
   const footY = CANVAS_HEIGHT - 18;
-  const footText = "a game by jardimdanificado and music by kayoa";
+  const footText = "a game by jardimdanificado and kayoa";
   drawText8x8Centered(footText, footY, "#888888", 1, "#000000", 1);
 
   ctx.restore();

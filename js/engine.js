@@ -108,24 +108,32 @@ export function unregisterEntitySpatial(entity, zoneSize = activeZoneSize) {
 
 export function updateEntitySpatial(entity, zoneSize = activeZoneSize) {
   if (!entity || entity.destroyed) return;
-  if (entity.x === entity._lastSpatialX && entity.y === entity._lastSpatialY) return;
+  const curTileX = Math.floor(entity.x);
+  const curTileY = Math.floor(entity.y);
+  const lastTileX = entity._lastSpatialTileX;
+  const lastTileY = entity._lastSpatialTileY;
+
+  if (curTileX === lastTileX && curTileY === lastTileY) return;
 
   // Tile map update
-  if (entity._lastSpatialX !== undefined && entity._lastSpatialY !== undefined) {
-    const oldTk = getTileKey(entity._lastSpatialX, entity._lastSpatialY);
+  if (lastTileX !== undefined && lastTileY !== undefined) {
+    const oldTk = ((lastTileX & 0xFFFF) << 16) | (lastTileY & 0xFFFF);
     const oldTileBucket = tileEntityMap.get(oldTk);
     if (oldTileBucket) {
       oldTileBucket.delete(entity);
       if (oldTileBucket.size === 0) tileEntityMap.delete(oldTk);
     }
   }
-  const newTk = getTileKey(entity.x, entity.y);
+  const newTk = ((curTileX & 0xFFFF) << 16) | (curTileY & 0xFFFF);
   let newTileBucket = tileEntityMap.get(newTk);
   if (!newTileBucket) {
     newTileBucket = new Set();
     tileEntityMap.set(newTk, newTileBucket);
   }
   newTileBucket.add(entity);
+
+  entity._lastSpatialTileX = curTileX;
+  entity._lastSpatialTileY = curTileY;
 
   // Zone bucket update
   const newZk = getSpatialZoneKey(entity.x, entity.y, zoneSize);
@@ -393,13 +401,15 @@ export function forEachEntityInRadius(centerX, centerY, radiusTiles, callback, z
   }
 }
 
-export function getEntitiesInViewport(minX, maxX, minY, maxY, zoneSize = activeZoneSize) {
+export function getEntitiesInViewport(minX, maxX, minY, maxY, zoneSize = activeZoneSize, outArray = null) {
   const minZx = Math.floor(minX / zoneSize);
   const maxZx = Math.floor(maxX / zoneSize);
   const minZy = Math.floor(minY / zoneSize);
   const maxZy = Math.floor(maxY / zoneSize);
 
-  const results = [];
+  const results = outArray || [];
+  if (outArray) results.length = 0;
+
   for (let zy = minZy; zy <= maxZy; zy++) {
     const zyPart = (zy & 0xFFFF);
     for (let zx = minZx; zx <= maxZx; zx++) {
@@ -909,9 +919,15 @@ export function tickEntities(entities, dt, world) {
         const prop = effects[j];
         if (prop.rate !== undefined && prop.rate > 0) {
           prop._timer = (prop._timer || 0) + dt;
-          while (prop._timer >= prop.rate) {
-            prop._timer -= prop.rate;
-            prop.effect(entity, prop.rate, world, entities, prop);
+          if (prop._timer >= prop.rate) {
+            // Analytical Macro Step: if speed is high, run at most 2 aggregated passes instead of dozens of micro-ticks
+            const triggers = Math.floor(prop._timer / prop.rate);
+            prop._timer %= prop.rate;
+            if (triggers > 1) {
+              prop.effect(entity, triggers * prop.rate, world, entities, prop);
+            } else {
+              prop.effect(entity, prop.rate, world, entities, prop);
+            }
           }
         } else {
           prop.effect(entity, dt, world, entities, prop);

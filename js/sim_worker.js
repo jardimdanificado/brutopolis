@@ -1107,9 +1107,31 @@ function simulationLoop() {
   lastTickTime = now;
 
   if (!isPaused && world) {
-    if (typeof simSpeed === "number" && simSpeed > 1.0) {
-      const subTicks = Math.min(Math.round(simSpeed), 4);
-      const subDt = (realDt * simSpeed) / subTicks;
+    const speedVal = typeof simSpeed === "number" ? Math.max(0.25, simSpeed) : 1.0;
+
+    if (speedVal > 4.0) {
+      // --- PREDICTIVE MACRO-SIMULATION (Speeds > 4x: e.g. 8x, 16x, 32x) ---
+      // Instead of running 32 distinct sub-tick loops (which crushes weak CPUs),
+      // we execute a single predictive macro-pass with aggregated delta-time.
+      const effectiveDt = realDt * speedVal;
+      world.groups = getAllGroups();
+
+      // Fast-forward world clock in a single analytical step
+      const clockDt = isTitleWorld ? effectiveDt * 8.0 : effectiveDt;
+      world.clock.tick(clockDt);
+
+      // Increment tick counter proportionally without spinning iterations
+      const virtualTicks = Math.max(1, Math.round(speedVal));
+      for (let i = 0; i < virtualTicks; i++) {
+        incrementEngineTick();
+      }
+
+      // Single-pass predictive physics, metabolism & behavior step
+      tickEntities(entities, effectiveDt, world);
+    } else if (speedVal > 1.0) {
+      // Precise micro-ticks for low fast-forward (2x to 4x)
+      const subTicks = Math.round(speedVal);
+      const subDt = (realDt * speedVal) / subTicks;
       for (let s = 0; s < subTicks; s++) {
         world.groups = getAllGroups();
         world.clock.tick(subDt);
@@ -1117,14 +1139,12 @@ function simulationLoop() {
         tickEntities(entities, subDt, world);
       }
     } else {
-      const speedVal = typeof simSpeed === "number" ? simSpeed : 1.0;
-      const effectiveDt = realDt * speedVal;
+      // Standard 1x speed
       world.groups = getAllGroups();
-      // Title world runs at 8x time speed so day/night transitions are visible and varied
-      const clockDt = isTitleWorld ? effectiveDt * 8.0 : effectiveDt;
+      const clockDt = isTitleWorld ? realDt * 8.0 : realDt;
       world.clock.tick(clockDt);
       incrementEngineTick();
-      tickEntities(entities, effectiveDt, world);
+      tickEntities(entities, realDt, world);
     }
 
     postSimSync(false);
