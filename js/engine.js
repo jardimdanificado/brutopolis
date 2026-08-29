@@ -226,6 +226,173 @@ export function getEntitiesInRadius(centerX, centerY, radiusTiles, zoneSize = ac
   return results;
 }
 
+export function findEntityInRadius(centerX, centerY, radiusTiles, predicate, zoneSize = activeZoneSize) {
+  if (radiusTiles === 0) {
+    const tk = getTileKey(centerX, centerY);
+    const bucket = tileEntityMap.get(tk);
+    if (!bucket) return null;
+    for (const ent of bucket) {
+      if (!ent.destroyed && (!predicate || predicate(ent))) return ent;
+    }
+    return null;
+  }
+
+  if (radiusTiles <= 2) {
+    const rSq = radiusTiles * radiusTiles;
+    for (let dy = -radiusTiles; dy <= radiusTiles; dy++) {
+      for (let dx = -radiusTiles; dx <= radiusTiles; dx++) {
+        if (dx * dx + dy * dy <= rSq) {
+          const tk = getTileKey(centerX + dx, centerY + dy);
+          const bucket = tileEntityMap.get(tk);
+          if (bucket) {
+            for (const ent of bucket) {
+              if (!ent.destroyed && (!predicate || predicate(ent))) return ent;
+            }
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  const minZx = Math.floor((centerX - radiusTiles) / zoneSize);
+  const maxZx = Math.floor((centerX + radiusTiles) / zoneSize);
+  const minZy = Math.floor((centerY - radiusTiles) / zoneSize);
+  const maxZy = Math.floor((centerY + radiusTiles) / zoneSize);
+  const rSq = radiusTiles * radiusTiles;
+
+  for (let zy = minZy; zy <= maxZy; zy++) {
+    const zyPart = (zy & 0xFFFF);
+    for (let zx = minZx; zx <= maxZx; zx++) {
+      const zk = ((zx & 0xFFFF) << 16) | zyPart;
+      const bucket = spatialGrid.get(zk);
+      if (bucket) {
+        for (const ent of bucket) {
+          if (!ent.destroyed) {
+            const dx = ent.x - centerX;
+            const dy = ent.y - centerY;
+            if (dx * dx + dy * dy <= rSq && (!predicate || predicate(ent))) {
+              return ent;
+            }
+          }
+        }
+      }
+    }
+  }
+  return null;
+}
+
+export function hasEntityInRadius(centerX, centerY, radiusTiles, predicate, zoneSize = activeZoneSize) {
+  return findEntityInRadius(centerX, centerY, radiusTiles, predicate, zoneSize) !== null;
+}
+
+export function findClosestEntityInRadius(centerX, centerY, radiusTiles, predicate, zoneSize = activeZoneSize) {
+  let closest = null;
+  let minDistSq = (radiusTiles * radiusTiles) + 1;
+
+  if (radiusTiles <= 2) {
+    for (let dy = -radiusTiles; dy <= radiusTiles; dy++) {
+      for (let dx = -radiusTiles; dx <= radiusTiles; dx++) {
+        const dSq = dx * dx + dy * dy;
+        if (dSq < minDistSq) {
+          const tk = getTileKey(centerX + dx, centerY + dy);
+          const bucket = tileEntityMap.get(tk);
+          if (bucket) {
+            for (const ent of bucket) {
+              if (!ent.destroyed && (!predicate || predicate(ent))) {
+                minDistSq = dSq;
+                closest = ent;
+              }
+            }
+          }
+        }
+      }
+    }
+    return closest;
+  }
+
+  const minZx = Math.floor((centerX - radiusTiles) / zoneSize);
+  const maxZx = Math.floor((centerX + radiusTiles) / zoneSize);
+  const minZy = Math.floor((centerY - radiusTiles) / zoneSize);
+  const maxZy = Math.floor((centerY + radiusTiles) / zoneSize);
+
+  for (let zy = minZy; zy <= maxZy; zy++) {
+    const zyPart = (zy & 0xFFFF);
+    for (let zx = minZx; zx <= maxZx; zx++) {
+      const zk = ((zx & 0xFFFF) << 16) | zyPart;
+      const bucket = spatialGrid.get(zk);
+      if (bucket) {
+        for (const ent of bucket) {
+          if (!ent.destroyed) {
+            const dx = ent.x - centerX;
+            const dy = ent.y - centerY;
+            const dSq = dx * dx + dy * dy;
+            if (dSq < minDistSq && (!predicate || predicate(ent))) {
+              minDistSq = dSq;
+              closest = ent;
+            }
+          }
+        }
+      }
+    }
+  }
+  return closest;
+}
+
+export function forEachEntityInRadius(centerX, centerY, radiusTiles, callback, zoneSize = activeZoneSize) {
+  if (radiusTiles === 0) {
+    const tk = getTileKey(centerX, centerY);
+    const bucket = tileEntityMap.get(tk);
+    if (!bucket) return;
+    for (const ent of bucket) {
+      if (!ent.destroyed) callback(ent);
+    }
+    return;
+  }
+
+  const rSq = radiusTiles * radiusTiles;
+  if (radiusTiles <= 2) {
+    for (let dy = -radiusTiles; dy <= radiusTiles; dy++) {
+      for (let dx = -radiusTiles; dx <= radiusTiles; dx++) {
+        if (dx * dx + dy * dy <= rSq) {
+          const tk = getTileKey(centerX + dx, centerY + dy);
+          const bucket = tileEntityMap.get(tk);
+          if (bucket) {
+            for (const ent of bucket) {
+              if (!ent.destroyed) callback(ent);
+            }
+          }
+        }
+      }
+    }
+    return;
+  }
+
+  const minZx = Math.floor((centerX - radiusTiles) / zoneSize);
+  const maxZx = Math.floor((centerX + radiusTiles) / zoneSize);
+  const minZy = Math.floor((centerY - radiusTiles) / zoneSize);
+  const maxZy = Math.floor((centerY + radiusTiles) / zoneSize);
+
+  for (let zy = minZy; zy <= maxZy; zy++) {
+    const zyPart = (zy & 0xFFFF);
+    for (let zx = minZx; zx <= maxZx; zx++) {
+      const zk = ((zx & 0xFFFF) << 16) | zyPart;
+      const bucket = spatialGrid.get(zk);
+      if (bucket) {
+        for (const ent of bucket) {
+          if (!ent.destroyed) {
+            const dx = ent.x - centerX;
+            const dy = ent.y - centerY;
+            if (dx * dx + dy * dy <= rSq) {
+              callback(ent);
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
 export function getEntitiesInViewport(minX, maxX, minY, maxY, zoneSize = activeZoneSize) {
   const minZx = Math.floor(minX / zoneSize);
   const maxZx = Math.floor(maxX / zoneSize);

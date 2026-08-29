@@ -2126,6 +2126,16 @@ export class RCT3DRenderer {
     // Raycaster & Ground Plane
     this.raycaster = new THREE.Raycaster();
     this.groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+
+    // Persistent reusable collections to eliminate per-frame GC allocations
+    this._activeIds = new Set();
+    this._activeUiIds = new Set();
+    this._occupiedHouseTiles = new Set();
+    this._clanGroups = new Map();
+    this._knownZones = new Set();
+    this._mMatrix = new THREE.Matrix4();
+    this._scaleMatrix = new THREE.Matrix4();
+    this._platMat = new THREE.Matrix4();
   }
 
   // ---------------------------------------------------------------------------
@@ -3285,7 +3295,8 @@ export class RCT3DRenderer {
     let knownZones = null;
 
     if (visionCreature && !visionCreature.destroyed) {
-      knownZones = new Set();
+      this._knownZones.clear();
+      knownZones = this._knownZones;
       curVisionZx = Math.floor(visionCreature.x / zoneSz);
       curVisionZy = Math.floor(visionCreature.y / zoneSz);
       knownZones.add(`${curVisionZx}_${curVisionZy}`);
@@ -3306,8 +3317,10 @@ export class RCT3DRenderer {
     // Render 3D Volumetric Instanced Entities
     const map = world.map;
     const visibleEntities = getEntitiesInViewport(this.renderedMinTx, this.renderedMaxTx, this.renderedMinTy, this.renderedMaxTy);
-    const activeIds = new Set();
-    const activeUiIds = new Set();
+    this._activeIds.clear();
+    this._activeUiIds.clear();
+    const activeIds = this._activeIds;
+    const activeUiIds = this._activeUiIds;
     let selectedPos = null;
 
     let oakCount = 0;
@@ -3352,8 +3365,10 @@ export class RCT3DRenderer {
     const hoverTime = (time || 0) * 3.5;
     const floatBob = Math.sin(hoverTime) * 0.04;
 
-    const occupiedHouseTiles = new Set();
-    const clanGroups = new Map();
+    this._occupiedHouseTiles.clear();
+    this._clanGroups.clear();
+    const occupiedHouseTiles = this._occupiedHouseTiles;
+    const clanGroups = this._clanGroups;
 
     if (world?.groups && Array.isArray(world.groups)) {
       for (let i = 0; i < world.groups.length; i++) {

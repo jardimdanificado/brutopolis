@@ -512,20 +512,36 @@ function serializeEntities() {
   for (let i = 0; i < entities.length; i++) {
     const ent = entities[i];
     if (!ent) continue;
-    result.push({
-      id: ent.id,
-      x: ent.x,
-      y: ent.y,
-      birthTick: ent.birthTick,
-      deathTick: ent.deathTick,
-      destroyed: !!ent.destroyed,
-      emote: ent.emote,
-      motor: ent.motor,
-      combatFlash: ent.combatFlash,
-      isConstructed: ent.isConstructed,
-      wallStyle: ent.wallStyle,
-      properties: getSanitizedProperties(ent)
-    });
+    let s = ent._serializedEntry;
+    if (!s) {
+      s = {
+        id: ent.id,
+        x: ent.x,
+        y: ent.y,
+        birthTick: ent.birthTick,
+        deathTick: ent.deathTick,
+        destroyed: false,
+        emote: ent.emote,
+        motor: ent.motor,
+        combatFlash: ent.combatFlash,
+        isConstructed: ent.isConstructed,
+        wallStyle: ent.wallStyle,
+        properties: null
+      };
+      ent._serializedEntry = s;
+    }
+    s.x = ent.x;
+    s.y = ent.y;
+    s.birthTick = ent.birthTick;
+    s.deathTick = ent.deathTick;
+    s.destroyed = !!ent.destroyed;
+    s.emote = ent.emote;
+    s.motor = ent.motor;
+    s.combatFlash = ent.combatFlash;
+    s.isConstructed = ent.isConstructed;
+    s.wallStyle = ent.wallStyle;
+    s.properties = getSanitizedProperties(ent);
+    result.push(s);
   }
   return result;
 }
