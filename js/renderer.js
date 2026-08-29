@@ -588,7 +588,11 @@ export class Renderer {
         let entBg = r.backcolor !== undefined ? hexToRgba32(r.backcolor, 0) : rgba32(20, 20, 20, 0);
 
         // Group / Clan palette override
-        const entGroup = e.properties.group || (e.properties.house?.ownerId && entities.find(m => m.id === e.properties.house.ownerId)?.properties.group);
+        let entGroup = e.properties.group;
+        if (!entGroup && e.properties.house?.ownerId) {
+          const owner = entities.find ? entities.find(m => m.id === e.properties.house.ownerId) : null;
+          if (owner?.properties?.group) entGroup = owner.properties.group;
+        }
         if (entGroup && entGroup.color) {
           entFg = hexToRgba32(entGroup.color, 255);
           if (entGroup.backcolor) {

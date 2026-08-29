@@ -161,6 +161,42 @@ export function getEntitiesInRadius(centerX, centerY, radiusTiles, zoneSize = ac
     }
     return res;
   }
+
+  // Fast direct tile lookup for small radii (95% of AI checks)
+  if (radiusTiles === 1) {
+    const results = [];
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const tk = getTileKey(centerX + dx, centerY + dy);
+        const bucket = tileEntityMap.get(tk);
+        if (bucket) {
+          for (const ent of bucket) {
+            if (!ent.destroyed) results.push(ent);
+          }
+        }
+      }
+    }
+    return results;
+  }
+
+  if (radiusTiles === 2) {
+    const results = [];
+    for (let dy = -2; dy <= 2; dy++) {
+      for (let dx = -2; dx <= 2; dx++) {
+        if (dx * dx + dy * dy <= 4) {
+          const tk = getTileKey(centerX + dx, centerY + dy);
+          const bucket = tileEntityMap.get(tk);
+          if (bucket) {
+            for (const ent of bucket) {
+              if (!ent.destroyed) results.push(ent);
+            }
+          }
+        }
+      }
+    }
+    return results;
+  }
+
   const minZx = Math.floor((centerX - radiusTiles) / zoneSize);
   const maxZx = Math.floor((centerX + radiusTiles) / zoneSize);
   const minZy = Math.floor((centerY - radiusTiles) / zoneSize);
@@ -664,11 +700,13 @@ export function explodeEntityOnDeath(entity, entitiesArray, world) {
  */
 export function tickEntities(entities, dt, world) {
   if (world) currentWorld = world;
-  for (let i = entities.length - 1; i >= 0; i--) {
+  const initialLen = entities.length;
+  let hasDead = false;
+
+  for (let i = 0; i < initialLen; i++) {
     const entity = entities[i];
-    if (entity.destroyed) {
-      entities.splice(i, 1);
-      unregisterEntitySpatial(entity);
+    if (!entity || entity.destroyed) {
+      hasDead = true;
       continue;
     }
 
@@ -725,6 +763,7 @@ export function tickEntities(entities, dt, world) {
     if (isDead) {
       entity.destroyed = true;
       entity.deathTick = currentTick;
+      hasDead = true;
       if (explosionReason === "BRAIN_COLLAPSE") {
         recordWorldEvent({
           type: "EXPLOSION",
@@ -736,9 +775,20 @@ export function tickEntities(entities, dt, world) {
         });
       }
       explodeEntityOnDeath(entity, entities, world);
-      entities.splice(i, 1);
       unregisterEntitySpatial(entity);
     }
+  }
+
+  // Fast in-place compaction (O(N) single-pass without array splice shifting)
+  if (hasDead) {
+    let writeIdx = 0;
+    for (let i = 0; i < entities.length; i++) {
+      const e = entities[i];
+      if (e && !e.destroyed) {
+        entities[writeIdx++] = e;
+      }
+    }
+    entities.length = writeIdx;
   }
 }
 

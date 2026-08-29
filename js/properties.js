@@ -226,7 +226,7 @@ export function createLifeProp(energy = 4000, max = 4000, basalRate = 1.8, initi
     effect(ent, dt, world, entities) {
       // Check if entity is currently inside their completed private home/house (O(1) Spatial Hash Lookup)
       let inOwnHouse = false;
-      const tileEnts = tileEntityMap.get(`${ent.x}_${ent.y}`);
+      const tileEnts = tileEntityMap.get(getTileKey(ent.x, ent.y));
       if (tileEnts) {
         for (const e of tileEnts) {
           if (!e.destroyed && e.properties?.house?.isCompleted) {
@@ -247,7 +247,9 @@ export function createLifeProp(energy = 4000, max = 4000, basalRate = 1.8, initi
           this.max = 4500;
           this.energy = Math.min(this.max, Math.max(this.energy, 2800));
         }
-        for (const [k, p] of Object.entries(ent.properties)) {
+        const props = ent.properties;
+        for (const k in props) {
+          const p = props[k];
           if (p && typeof p.condition === "number" && typeof p.maxCondition === "number" && p.maxCondition < 100) {
             p.maxCondition = 100;
             p.condition = 100;
@@ -966,7 +968,9 @@ export function createBodyRegenerationProp(rate = 1.0, maxRegenPerTick = 4, ener
     effect(ent) {
       if (!ent.properties.life || ent.properties.life.energy < 300) return;
 
-      for (const [key, prop] of Object.entries(ent.properties)) {
+      const props = ent.properties;
+      for (const key in props) {
+        const prop = props[key];
         if (prop && typeof prop.condition === "number" && typeof prop.maxCondition === "number") {
           if (prop.condition < prop.maxCondition) {
             const needed = prop.maxCondition - prop.condition;
@@ -1000,7 +1004,6 @@ export function createStomachProp(capacity = 4, diet = { meat: 1.0, plant: 0.8, 
     fatSurplus: 0,
     effect(ent, dt, world, entities) {
       // Note: Energy restoration and fat burning are strictly handled during sleep in createLifeProp.
-      // The stomach holds food items in storage until the creature sleeps to digest them.
     }
   };
 }
@@ -1021,6 +1024,7 @@ export function createBladderProp(water = 1000, maxWater = 1000) {
 export function createKidneyProp(ratio = 1.0) {
   return {
     ratio,
+    rate: 0.5,
     condition: 100,
     maxCondition: 100,
     nutrition: 500,
@@ -1029,7 +1033,6 @@ export function createKidneyProp(ratio = 1.0) {
       if (!ent.properties.bladder) return;
 
       const mult = getDamagedEnergyMultiplier(this.condition, this.maxCondition);
-      // Exertion increases water consumption via perspiration / body heat
       let exertionMult = 1.0;
       if (ent.motor === 5 || ent.properties.combat?.inCombat) exertionMult += 0.8;
       if (ent.motor === 1) exertionMult += 0.25;
@@ -1054,13 +1057,13 @@ export function createKidneyProp(ratio = 1.0) {
  */
 export function createHeartProp() {
   return {
+    rate: 0.5,
     condition: 100,
     maxCondition: 100,
     nutrition: 900,
     foodType: "organ",
     effect(ent, dt) {
       if (!ent.properties.brain) return;
-      // If heart is damaged, brain loses condition due to lack of blood supply
       if (this.condition < 40) {
         const dmg = (1.0 - (this.condition / 40)) * 2.0 * dt;
         ent.properties.brain.condition = Math.max(0, ent.properties.brain.condition - dmg);
@@ -1074,12 +1077,12 @@ export function createHeartProp() {
  */
 export function createLiverProp() {
   return {
+    rate: 0.5,
     condition: 100,
     maxCondition: 100,
     nutrition: 800,
     foodType: "organ",
     effect(ent, dt) {
-      // Intact liver passively cleanses and stabilizes body condition only when creature is nourished
       const hasFood = ent.properties.stomach && ent.properties.stomach.items && ent.properties.stomach.items.length > 0;
       const isFed = hasFood || (ent.properties.life && ent.properties.life.energy > ent.properties.life.max * 0.40);
       if (this.condition >= 50 && isFed && ent.properties.brain && ent.properties.brain.condition < ent.properties.brain.maxCondition) {
@@ -1347,8 +1350,8 @@ export function createBrainProp(maxPath = 16, personality = { bravery: 0.7, curi
         }
       }
 
-      // 6. Group Expulsion Check: Expelled if majority of group members dislike entity (affinity <= 0)
-      if (ent.properties.group && entities) {
+      // 6. Group Expulsion Check: Expelled if majority of group members dislike entity (affinity <= 0, evaluated every 120 ticks)
+      if (ent.properties.group && entities && (currentTick % 120 === (ent.id % 120))) {
         const group = ent.properties.group;
         let hateCount = 0;
         let totalCount = 0;
@@ -1402,7 +1405,9 @@ export function createBrainProp(maxPath = 16, personality = { bravery: 0.7, curi
           if (ent.properties.life && ent.properties.life.isSleeping && ent.properties.life.energy < ent.properties.life.max) {
             ent.properties.life.energy = Math.min(ent.properties.life.max, ent.properties.life.energy + 2.5);
           }
-          for (const [k, p] of Object.entries(ent.properties)) {
+          const props = ent.properties;
+          for (const k in props) {
+            const p = props[k];
             if (p && typeof p.condition === "number" && typeof p.maxCondition === "number" && p.condition < p.maxCondition) {
               p.condition = Math.min(p.maxCondition, p.condition + 1.5);
             }
@@ -1412,7 +1417,8 @@ export function createBrainProp(maxPath = 16, personality = { bravery: 0.7, curi
           if (!ownHouse.properties.house.pantry) ownHouse.properties.house.pantry = [];
           const pantry = ownHouse.properties.house.pantry;
 
-          for (const [k, p] of Object.entries(ent.properties)) {
+          for (const k in props) {
+            const p = props[k];
             if (k.startsWith("arm") && p && p.heldItem && (p.heldItem.resourceType === "meat" || p.heldItem.resourceType === "fruit" || p.heldItem.foodType)) {
               if (pantry.length < 2) {
                 pantry.push({
@@ -3453,7 +3459,8 @@ export function getCanonicalHighway(groupA, groupB, sz = 8) {
 }
 
 /**
- * Generates road network blueprints for a clan (3 Initial Dirt Roads + Snap Points + Inter-Village Highways).
+ * Generates local road network blueprints strictly for the clan's village (3 Initial Dirt Roads + House connections).
+ * Inter-village travel uses the pre-existing continental world highways without creatures attempting long intercity construction.
  */
 export function getClanRoadBlueprints(group, allGroups = null) {
   if (!group || !group.claimedZones || group.claimedZones.length === 0) return [];
@@ -3465,53 +3472,7 @@ export function getClanRoadBlueprints(group, allGroups = null) {
     initClanRoadNetwork(group);
   }
 
-  const roadTiles = new Map();
-  for (const r of (group._plannedRoads || [])) {
-    roadTiles.set(`${r.x}_${r.y}`, r);
-  }
-
-  const groups = (allGroups && allGroups.length > 0) ? allGroups : getAllWorldGroups();
-
-  // Inter-Village Highways (Shared Neutral Highways linking closest Snap Points)
-  if (groups && Array.isArray(groups)) {
-    const sz = currentZoneSize || 8;
-    const firstZone = group.claimedZones[0];
-    const zp = firstZone.includes("_") ? firstZone.split("_") : firstZone.split(",");
-    const baseZx = parseInt(zp[0], 10) || 32;
-    const baseZy = parseInt(zp[1], 10) || 32;
-    const defaultBaseA = { x: baseZx * sz + Math.floor(sz / 2), y: baseZy * sz + Math.floor(sz / 2) };
-
-    // Connect only to the 1 or 2 closest peaceful neighbor clans
-    const neighborClans = groups
-      .filter(other => other.id !== group.id && canBuildInterVillageRoad(group, other))
-      .map(other => {
-        const otherFirstZone = other.claimedZones?.[0] || "32_32";
-        const otherZp = otherFirstZone.includes("_") ? otherFirstZone.split("_") : otherFirstZone.split(",");
-        const otherZx = parseInt(otherZp[0], 10) || 32;
-        const otherZy = parseInt(otherZp[1], 10) || 32;
-        const otherBase = { x: otherZx * sz + Math.floor(sz / 2), y: otherZy * sz + Math.floor(sz / 2) };
-        const dist = Math.abs(otherBase.x - defaultBaseA.x) + Math.abs(otherBase.y - defaultBaseA.y);
-        return { other, dist };
-      })
-      .sort((a, b) => a.dist - b.dist)
-      .slice(0, 2);
-
-    for (const { other: otherGroup } of neighborClans) {
-      const highwayTiles = getCanonicalHighway(group, otherGroup, sz);
-      for (const ht of highwayTiles) {
-        const k = `${ht.x}_${ht.y}`;
-        if (!roadTiles.has(k)) {
-          const inGroupA = isTileInClaimedZones(ht.x, ht.y, group.claimedZones);
-          roadTiles.set(k, {
-            ...ht,
-            groupId: inGroupA ? group.id : null
-          });
-        }
-      }
-    }
-  }
-
-  const result = Array.from(roadTiles.values());
+  const result = group._plannedRoads ? [...group._plannedRoads] : [];
   group._cachedRoadBlueprints = result;
   group._cachedRoadBlueprintsTick = currentTick;
   return result;
@@ -6750,27 +6711,62 @@ export function findPathAStarLocal(startX, startY, targetX, targetY, world, ent,
 
   const startKey = toKey(startX, startY);
   const openMap = new Map();
-  const openArray = [{ x: startX, y: startY, g: 0, f: dist, parent: null }];
-  openMap.set(startKey, openArray[0]);
+  const openArray = [];
+
+  function pushHeap(node) {
+    openArray.push(node);
+    let idx = openArray.length - 1;
+    while (idx > 0) {
+      const pIdx = (idx - 1) >> 1;
+      if (openArray[idx].f < openArray[pIdx].f) {
+        const tmp = openArray[idx];
+        openArray[idx] = openArray[pIdx];
+        openArray[pIdx] = tmp;
+        idx = pIdx;
+      } else break;
+    }
+  }
+
+  function popHeap() {
+    const top = openArray[0];
+    const bottom = openArray.pop();
+    if (openArray.length > 0) {
+      openArray[0] = bottom;
+      let idx = 0;
+      const len = openArray.length;
+      while (true) {
+        let left = (idx << 1) + 1;
+        let right = left + 1;
+        let smallest = idx;
+        if (left < len && openArray[left].f < openArray[smallest].f) smallest = left;
+        if (right < len && openArray[right].f < openArray[smallest].f) smallest = right;
+        if (smallest !== idx) {
+          const tmp = openArray[idx];
+          openArray[idx] = openArray[smallest];
+          openArray[smallest] = tmp;
+          idx = smallest;
+        } else break;
+      }
+    }
+    return top;
+  }
+
+  const startNode = { x: startX, y: startY, g: 0, f: dist, parent: null };
+  pushHeap(startNode);
+  openMap.set(startKey, startNode);
 
   const closedSet = new Set();
   const gScores = new Map();
   gScores.set(startKey, 0);
 
   let iterations = 0;
-  let closestNode = openArray[0];
+  let closestNode = startNode;
   let minH = dist;
 
   while (openArray.length > 0 && iterations < maxNodes) {
     iterations++;
-
-    let bestIdx = 0;
-    for (let i = 1; i < openArray.length; i++) {
-      if (openArray[i].f < openArray[bestIdx].f) bestIdx = i;
-    }
-    const current = openArray[bestIdx];
-    openArray[bestIdx] = openArray[openArray.length - 1];
-    openArray.pop();
+    const current = popHeap();
+    if (!current) break;
 
     const curKey = toKey(current.x, current.y);
     openMap.delete(curKey);
@@ -6862,7 +6858,7 @@ export function findPathAStarLocal(startX, startY, targetX, targetY, world, ent,
           existingNode.parent = current;
         } else {
           openMap.set(nbKey, neighborNode);
-          openArray.push(neighborNode);
+          pushHeap(neighborNode);
         }
       }
     }
@@ -7901,10 +7897,23 @@ export function createLocomotionProp() {
                 chosenDy = 0;
                 hasIntention = true;
               } else {
-                const path = findPathAStarLocal(ent.x, ent.y, closestRoad.x, closestRoad.y, world || curW, ent, 160, 48);
-                if (path && path.length > 0) {
-                  chosenDx = path[0].dx;
-                  chosenDy = path[0].dy;
+                if (!ent._cachedRoadPath || ent._cachedRoadPath.length === 0 || ent._cachedRoadTargetX !== closestRoad.x || ent._cachedRoadTargetY !== closestRoad.y) {
+                  ent._cachedRoadPath = findPathAStarLocal(ent.x, ent.y, closestRoad.x, closestRoad.y, world || curW, ent, 120, 32);
+                  ent._cachedRoadTargetX = closestRoad.x;
+                  ent._cachedRoadTargetY = closestRoad.y;
+                }
+                if (ent._cachedRoadPath && ent._cachedRoadPath.length > 0) {
+                  if (ent._cachedRoadPath[0].x === ent.x && ent._cachedRoadPath[0].y === ent.y) {
+                    ent._cachedRoadPath.shift();
+                  }
+                  if (ent._cachedRoadPath.length > 0) {
+                    const step = ent._cachedRoadPath[0];
+                    chosenDx = Math.sign(step.x - ent.x);
+                    chosenDy = Math.sign(step.y - ent.y);
+                  } else {
+                    chosenDx = Math.sign(closestRoad.x - ent.x);
+                    chosenDy = Math.sign(closestRoad.y - ent.y);
+                  }
                 } else {
                   chosenDx = Math.sign(closestRoad.x - ent.x);
                   chosenDy = Math.sign(closestRoad.y - ent.y);
