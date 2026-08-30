@@ -36,8 +36,6 @@ import {
   getCitationsForEvent,
   exportWorldChronicleJSON,
   downloadChronicleJSON,
-  exportWorldSaveJSON,
-  downloadWorldSaveJSON,
   restoreWorldEvents,
   appendWorldEvents,
   recordWorldEvent,
@@ -262,19 +260,6 @@ function initSimWorker() {
           }
         }
         if (rctRenderer) rctRenderer.lastBuiltCamTileX = -9999;
-        break;
-      }
-
-      case "SAVE_DATA_READY": {
-        if (data.saveData) {
-          const customWorld = data.saveData.world;
-          const filename = downloadWorldSaveJSON(customWorld, entities, currentTick, entityRegistry, world.groups || [], data.saveData.camera, genSeed, currentPreset);
-          try {
-            localStorage.setItem("brutopolis_quicksave", JSON.stringify(data.saveData));
-          } catch (e) {
-            console.warn("Could not save to localStorage:", e);
-          }
-        }
         break;
       }
     }
@@ -1065,85 +1050,95 @@ let isPainting = false;
 let editorPage = 0; // Pagination for mob/item lists in compact bar
 
 const EDITOR_TILES = [
-  { id: 0, label: "GRASS / SOIL", color: "#58d854", desc: "Fertile land / forest" },
-  { id: 1, label: "MOUNTAIN PEAK", color: "#f8f8f8", desc: "High rocky terrain" },
-  { id: 2, label: "OCEAN WATER", color: "#0078f8", desc: "Deep / ocean water" },
+  { id: 0, label: "GRASS/SOIL", color: "#58d854", desc: "Fertile land / forest" },
   { id: 3, label: "DESERT SAND", color: "#f8b800", desc: "Arid desert dunes" },
   { id: 4, label: "FOOTHILLS", color: "#888888", desc: "Stone & mineral hills" },
-  { id: 5, label: "VOID / ABYSS", color: "#222222", desc: "Impassable bedrock" }
+  { id: 1, label: "MOUNTAIN", color: "#f8f8f8", desc: "High rocky terrain" },
+  { id: 2, label: "OCEAN WATER", color: "#0078f8", desc: "Deep ocean water" },
+  { id: 5, label: "VOID/ABYSS", color: "#222222", desc: "Impassable bedrock" },
+  { id: 6, label: "DIRT ROAD", color: "#c88c50", desc: "Packed dirt road" },
+  { id: 7, label: "SAND ROAD", color: "#e0c068", desc: "Sandstone path" },
+  { id: 8, label: "STONE ROAD", color: "#a0a0b0", desc: "Cobblestone highway" }
+];
+
+const EDITOR_NATURE = [
+  { id: "OAK_TREE", label: "OAK TREE" },
+  { id: "PINE_TREE", label: "PINE TREE" },
+  { id: "WILLOW_TREE", label: "WILLOW TREE" },
+  { id: "CACTUS", label: "CACTUS" },
+  { id: "SHRUB", label: "ALPINE SHRUB" },
+  { id: "WATER_LILY", label: "WATER LILY" },
+  { id: "SEAWEED", label: "SEAWEED" },
+  { id: "WOOD_LOG", label: "WOOD LOG" },
+  { id: "STONE_BLOCK", label: "STONE BLOCK" },
+  { id: "OAK_SEED", label: "OAK SEED" },
+  { id: "PINE_SEED", label: "PINE SEED" },
+  { id: "WILLOW_SEED", label: "WILLOW SEED" },
+  { id: "CACTUS_SEED", label: "CACTUS SEED" },
+  { id: "FRUIT", label: "WILD FRUIT" }
+];
+
+const EDITOR_BUILDINGS = [
+  { id: "STONE_WALL", label: "STONE WALL" },
+  { id: "WOOD_WALL", label: "WOOD WALL" },
+  { id: "DOOR", label: "WOODEN DOOR" },
+  { id: "CAMPFIRE", label: "CAMPFIRE" },
+  { id: "TORCH", label: "TORCH" },
+  { id: "WAREHOUSE", label: "WAREHOUSE" },
+  { id: "WATER_WELL", label: "WATER WELL" },
+  { id: "KITCHEN", label: "KITCHEN" },
+  { id: "SLAUGHTERHOUSE", label: "BUTCHERY" },
+  { id: "HOUSE", label: "PRE-FAB HOUSE" }
 ];
 
 const EDITOR_CREATURES = [
-  // Humanoids & Clan Settlers
-  { label: "HUMAN PIONEER", fn: (x, y) => createHuman(x, y) },
-  {
-    label: "HUMAN HAULER", fn: (x, y) => {
-      const c = createCreatureFromArchetype("human", x, y, { role: "Hauler" });
-      c.properties.backpack = { type: "backpack", size: "large", capacity: 20, items: [] };
-      c.properties.arm_left = c.properties.arm_left || createArmProp("left", 1.0, 100, 100);
-      c.properties.arm_left.heldItem = {
-        name: "Transport Basket",
-        resourceType: "basket",
-        skin: "Item_Bag.png",
-        container: { type: "basket", capacity: 10, items: [] },
-        weight: 1.0
-      };
-      return c;
-    }
-  },
-  { label: "HUMAN BUILDER", fn: (x, y) => createCreatureFromArchetype("human", x, y, { role: "Builder" }) },
-  { label: "HUMAN BUTCHER", fn: (x, y) => createCreatureFromArchetype("human", x, y, { role: "Butcher" }) },
-  { label: "HUMAN COOK", fn: (x, y) => createCreatureFromArchetype("human", x, y, { role: "Cook" }) },
-  { label: "ELF ARCHER", fn: (x, y) => createElf(x, y) },
-  { label: "DWARF MINER", fn: (x, y) => createDwarf(x, y) },
-  { label: "ORC WARRIOR", fn: (x, y) => createOrc(x, y) },
-  { label: "GOBLIN SCOUT", fn: (x, y) => createGoblin(x, y) },
-  { label: "EMBARK CLAN", fn: (x, y) => { const res = createEmbarkParty(x, y, world, entities); return res.members[0]; } },
-  // Fauna & Wild Beasts
-  { label: "BOAR", fn: (x, y) => createBoar(x, y) },
-  { label: "DEER", fn: (x, y) => createDeer(x, y) },
-  { label: "WOLF", fn: (x, y) => createWolf(x, y) },
-  { label: "BEAR", fn: (x, y) => createBear(x, y) },
-  { label: "CAT", fn: (x, y) => createCat(x, y) },
-  { label: "GOAT", fn: (x, y) => createMountainGoat(x, y) },
-  { label: "BAT", fn: (x, y) => createBat(x, y) },
-  { label: "SPIDER", fn: (x, y) => createSpider(x, y) },
-  { label: "SCORPION", fn: (x, y) => createScorpion(x, y) },
-  { label: "LIZARD", fn: (x, y) => createLizard(x, y) },
-  { label: "DRAGON", fn: (x, y) => createDragon(x, y) },
-  { label: "SERPENT", fn: (x, y) => createSeaSerpent(x, y) }
+  // Humanoids & Settlers
+  { id: "HUMAN", label: "HUMAN PIONEER" },
+  { id: "BUILDER", label: "HUMAN BUILDER" },
+  { id: "MINER", label: "HUMAN MINER" },
+  { id: "FARMER", label: "HUMAN FARMER" },
+  { id: "HUNTER", label: "HUMAN HUNTER" },
+  { id: "COOK", label: "HUMAN COOK" },
+  { id: "HAULER", label: "HUMAN HAULER" },
+  { id: "ELF", label: "ELF ARCHER" },
+  { id: "DWARF", label: "DWARF MINER" },
+  { id: "ORC", label: "ORC WARRIOR" },
+  { id: "GOBLIN", label: "GOBLIN SCOUT" },
+  { id: "KOBOLD", label: "KOBOLD" },
+  { id: "LIZARDFOLK", label: "LIZARDFOLK" },
+  { id: "CATFOLK", label: "CATFOLK" },
+  { id: "CENTAUR", label: "CENTAUR" },
+  // Wildlife & Fauna
+  { id: "BOAR", label: "WILD BOAR" },
+  { id: "DEER", label: "DEER" },
+  { id: "WOLF", label: "WOLF" },
+  { id: "BEAR", label: "BEAR" },
+  { id: "CAT", label: "CAT" },
+  { id: "GOAT", label: "MOUNTAIN GOAT" },
+  { id: "CAPYBARA", label: "CAPYBARA" },
+  { id: "COW", label: "COW" },
+  { id: "CHICKEN", label: "CHICKEN" },
+  { id: "DUCK", label: "DUCK" },
+  { id: "FROG", label: "FROG" },
+  { id: "RABBIT", label: "RABBIT" },
+  { id: "BAT", label: "BAT" },
+  { id: "SPIDER", label: "SPIDER" },
+  { id: "SCORPION", label: "SCORPION" },
+  { id: "LIZARD", label: "LIZARD" },
+  { id: "DRAGON", label: "FIRE DRAGON" },
+  { id: "SERPENT", label: "SEA SERPENT" }
 ];
 
 const EDITOR_ITEMS = [
-  // Buildings & Structures
-  { label: "WAREHOUSE", fn: (x, y) => createWarehouseEntity(x, y) },
-  { label: "SLAUGHTERHOUSE", fn: (x, y) => createSlaughterhouseEntity(x, y) },
-  { label: "KITCHEN", fn: (x, y) => createKitchenEntity(x, y) },
-  { label: "WATER WELL", fn: (x, y) => createWaterWellEntity(x, y) },
-  { label: "STONE WALL", fn: (x, y) => createStoneWallEntity(x, y) },
-  { label: "DIRT ROAD", fn: (x, y) => createRoadEntity(x, y, null, false) },
-  // Containers & Equipment
-  { label: "BASKET (MED)", fn: (x, y) => createBasketItem(x, y, "medium") },
-  { label: "BASKET (LRG)", fn: (x, y) => createBasketItem(x, y, "large") },
-  { label: "BACKPACK", fn: (x, y) => createBackpackItem(x, y, "medium") },
-  { label: "EXPEDITION PACK", fn: (x, y) => createBackpackItem(x, y, "large") },
-  // Prepared Meals & Foods
-  { label: "MEAT BENTO", fn: (x, y) => createMeatBento(x, y) },
-  { label: "VEGAN BENTO", fn: (x, y) => createVeganBento(x, y) },
-  { label: "GOURMET BENTO", fn: (x, y) => createGourmetBento(x, y) },
-  { label: "ROASTED MEAT", fn: (x, y) => createRoastedMeat(x, y) },
-  { label: "GRILLED VEGGIES", fn: (x, y) => createGrilledVeggies(x, y) },
-  // Raw Resources & Flora
-  { label: "WOOD LOG", fn: (x, y) => createWoodItem(x, y) },
-  { label: "STONE BLOCK", fn: (x, y) => createStoneItem(x, y) },
-  { label: "OAK SEED", fn: (x, y) => createSeedEntity(x, y, "large", "oak") },
-  { label: "OAK TREE", fn: (x, y) => createOakTree(x, y) },
-  { label: "PINE TREE", fn: (x, y) => createPineTree(x, y) },
-  { label: "WILLOW TREE", fn: (x, y) => createWillowTree(x, y) },
-  { label: "CACTUS", fn: (x, y) => createCactus(x, y) },
-  { label: "SHRUB", fn: (x, y) => createAlpineShrub(x, y) },
-  { label: "WATER LILY", fn: (x, y) => createWaterLily(x, y) },
-  { label: "SEAWEED", fn: (x, y) => createSeaweed(x, y) }
+  { id: "ROASTED_MEAT", label: "ROASTED MEAT" },
+  { id: "GRILLED_VEGGIES", label: "GRILLED VEGGIES" },
+  { id: "MEAT_BENTO", label: "MEAT BENTO" },
+  { id: "VEGAN_BENTO", label: "VEGAN BENTO" },
+  { id: "GOURMET_BENTO", label: "GOURMET BENTO" },
+  { id: "BASKET_MED", label: "BASKET (MED)" },
+  { id: "BASKET_LRG", label: "BASKET (LRG)" },
+  { id: "BACKPACK", label: "BACKPACK" },
+  { id: "EXPEDITION_PACK", label: "EXPEDITION PACK" }
 ];
 
 function applyTileBrush(cx, cy, tileType, brushSize) {
@@ -1179,50 +1174,14 @@ function getEditorHoverTile() {
 function applyEditorActionAt(tileX, tileY) {
   if (!world || tileX < 0 || tileX >= (world.width || 512) || tileY < 0 || tileY >= (world.height || 512)) return;
 
+  if (editorTool === "EYEDROPPER") {
+    const sampled = world.getTile(tileX, tileY);
+    editorSelectedTile = sampled;
+    editorTool = "PAINT";
+    return;
+  }
+
   if (simWorker) {
-    let spawnerKey = null;
-    if (editorTool === "SPAWN" && editorActiveSpawner?.label) {
-      const lbl = editorActiveSpawner.label.toUpperCase();
-      if (lbl.includes("HUMAN")) spawnerKey = "HUMAN";
-      else if (lbl.includes("ELF")) spawnerKey = "ELF";
-      else if (lbl.includes("DWARF")) spawnerKey = "DWARF";
-      else if (lbl.includes("ORC")) spawnerKey = "ORC";
-      else if (lbl.includes("GOBLIN")) spawnerKey = "GOBLIN";
-      else if (lbl.includes("BOAR")) spawnerKey = "BOAR";
-      else if (lbl.includes("DEER")) spawnerKey = "DEER";
-      else if (lbl.includes("SPIDER")) spawnerKey = "SPIDER";
-      else if (lbl.includes("WOLF")) spawnerKey = "WOLF";
-      else if (lbl.includes("BEAR")) spawnerKey = "BEAR";
-      else if (lbl.includes("CAT")) spawnerKey = "CAT";
-      else if (lbl.includes("GOAT")) spawnerKey = "GOAT";
-      else if (lbl.includes("BAT")) spawnerKey = "BAT";
-      else if (lbl.includes("SCORPION")) spawnerKey = "SCORPION";
-      else if (lbl.includes("LIZARD")) spawnerKey = "LIZARD";
-      else if (lbl.includes("DRAGON")) spawnerKey = "DRAGON";
-      else if (lbl.includes("SERPENT")) spawnerKey = "SERPENT";
-      else if (lbl.includes("TREE") || lbl.includes("OAK")) spawnerKey = "OAK_TREE";
-      else if (lbl.includes("PINE")) spawnerKey = "PINE_TREE";
-      else if (lbl.includes("WILLOW")) spawnerKey = "WILLOW_TREE";
-      else if (lbl.includes("CACTUS")) spawnerKey = "CACTUS";
-      else if (lbl.includes("SHRUB")) spawnerKey = "SHRUB";
-      else if (lbl.includes("LILY")) spawnerKey = "LILY";
-      else if (lbl.includes("SEAWEED")) spawnerKey = "SEAWEED";
-      else if (lbl.includes("WOOD")) spawnerKey = "LOG";
-      else if (lbl.includes("STONE WALL")) spawnerKey = "WALL";
-      else if (lbl.includes("STONE")) spawnerKey = "STONE";
-      else if (lbl.includes("WELL")) spawnerKey = "WELL";
-      else if (lbl.includes("SEED")) spawnerKey = "SEED";
-      else if (lbl.includes("FRUIT")) spawnerKey = "FRUIT";
-      else spawnerKey = "HUMAN";
-    }
-
-    if (editorTool === "EYEDROPPER") {
-      const sampled = world.getTile(tileX, tileY);
-      editorSelectedTile = sampled;
-      editorTool = "PAINT";
-      return;
-    }
-
     simWorker.postMessage({
       type: "APPLY_EDITOR_ACTION",
       tool: editorTool,
@@ -1230,7 +1189,8 @@ function applyEditorActionAt(tileX, tileY) {
       tileY,
       selectedTile: editorSelectedTile,
       brushSize: editorBrushSize,
-      spawnerLabel: spawnerKey
+      spawnerId: editorActiveSpawner?.id || null,
+      spawnerLabel: editorActiveSpawner?.label || null
     });
   }
 }
@@ -1586,67 +1546,6 @@ function resetWorld(presetId = 0) {
     rctRenderer.setCamera(startX, startY, zoomFactor);
   }
   currentMode = "MAP";
-}
-
-function saveWorldState() {
-  if (!world || !renderer) return;
-  const cx = renderer.getCameraX();
-  const cy = renderer.getCameraY();
-  const zoom = renderer.getCameraZoom();
-  const camera = { x: cx, y: cy, zoom };
-
-  if (simWorker) {
-    simWorker.postMessage({ type: "SAVE_WORLD", camera });
-  } else {
-    const customWorld = {
-      width: genWidth,
-      height: genHeight,
-      zoneSize: getZoneSize(),
-      map: world.map,
-      clock: world.clock
-    };
-    const filename = downloadWorldSaveJSON(customWorld, entities, currentTick, entityRegistry, world.groups || [], camera, genSeed, currentPreset);
-    try {
-      const saveObj = exportWorldSaveJSON(customWorld, entities, currentTick, entityRegistry, world.groups || [], camera, genSeed, currentPreset);
-      localStorage.setItem("brutopolis_quicksave", JSON.stringify(saveObj));
-    } catch (e) {
-      console.warn("Could not save to localStorage:", e);
-    }
-  }
-}
-
-function loadWorldState(saveData) {
-  if (!saveData) {
-    alert("Invalid save file!");
-    return;
-  }
-  if (simWorker) {
-    simWorker.postMessage({ type: "LOAD_WORLD", saveData });
-  }
-}
-
-function openSaveFilePicker() {
-  const input = document.createElement("input");
-  input.type = "file";
-  input.accept = ".json,application/json";
-  input.style.display = "none";
-  input.onchange = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const parsed = JSON.parse(event.target.result);
-        loadWorldState(parsed);
-      } catch (err) {
-        alert("Failed to parse JSON file: " + err.message);
-      }
-    };
-    reader.readAsText(file);
-  };
-  document.body.appendChild(input);
-  input.click();
-  document.body.removeChild(input);
 }
 
 function spawnEntityAtCamera(spawnerLabel) {
@@ -2104,36 +2003,28 @@ function renderTopHudBar() {
       modalScroll = 0;
     });
 
-    // LOAD Button
-    drawNESButton(CANVAS_WIDTH - 222, 5, 52, 24, "LOAD", false, false);
-    registerClickableRegion(CANVAS_WIDTH - 222, 5, 52, 24, openSaveFilePicker);
-
-    // SAVE Button
-    drawNESButton(CANVAS_WIDTH - 280, 5, 52, 24, "SAVE", false, false);
-    registerClickableRegion(CANVAS_WIDTH - 280, 5, 52, 24, saveWorldState);
-
     if (is3DMode && rctRenderer) {
       const fullWorldActive = rctRenderer.isFullWorldMode ? rctRenderer.isFullWorldMode() : false;
       const fullTxt = fullWorldActive ? "FULL 3D" : "CHUNK 3D";
-      drawNESButton(CANVAS_WIDTH - 592, 5, 78, 24, fullTxt, fullWorldActive, false);
-      registerClickableRegion(CANVAS_WIDTH - 592, 5, 78, 24, () => rctRenderer.toggleFullWorld());
+      drawNESButton(CANVAS_WIDTH - 476, 5, 78, 24, fullTxt, fullWorldActive, false);
+      registerClickableRegion(CANVAS_WIDTH - 476, 5, 78, 24, () => rctRenderer.toggleFullWorld());
 
       const shdMode = rctRenderer.getShadowsModeName ? rctRenderer.getShadowsModeName() : (rctRenderer.shadowsEnabled ? "ON" : "OFF");
       const shdTxt = "SHD:" + shdMode;
       const isShdActive = shdMode === "ON";
-      drawNESButton(CANVAS_WIDTH - 508, 5, 68, 24, shdTxt, isShdActive, false);
-      registerClickableRegion(CANVAS_WIDTH - 508, 5, 68, 24, () => rctRenderer.toggleShadows());
+      drawNESButton(CANVAS_WIDTH - 392, 5, 68, 24, shdTxt, isShdActive, false);
+      registerClickableRegion(CANVAS_WIDTH - 392, 5, 68, 24, () => rctRenderer.toggleShadows());
 
       const resMode = rctRenderer.getResolutionName ? rctRenderer.getResolutionName() : "100%";
       const resTxt = "RES:" + resMode;
-      drawNESButton(CANVAS_WIDTH - 436, 5, 72, 24, resTxt, resMode !== "100%", false);
-      registerClickableRegion(CANVAS_WIDTH - 436, 5, 72, 24, () => rctRenderer.toggleResolution());
+      drawNESButton(CANVAS_WIDTH - 320, 5, 72, 24, resTxt, resMode !== "100%", false);
+      registerClickableRegion(CANVAS_WIDTH - 320, 5, 72, 24, () => rctRenderer.toggleResolution());
 
       const wireMode = rctRenderer.getWireframeModeName ? rctRenderer.getWireframeModeName() : (rctRenderer.isWireframe ? "ON" : "OFF");
       const wireTxt = "WIRE:" + wireMode;
       const isWireActive = wireMode !== "OFF";
-      drawNESButton(CANVAS_WIDTH - 358, 5, 72, 24, wireTxt, isWireActive, false);
-      registerClickableRegion(CANVAS_WIDTH - 358, 5, 72, 24, () => rctRenderer.toggleWireframe());
+      drawNESButton(CANVAS_WIDTH - 242, 5, 72, 24, wireTxt, isWireActive, false);
+      registerClickableRegion(CANVAS_WIDTH - 242, 5, 72, 24, () => rctRenderer.toggleWireframe());
     }
   } else {
     // Mobile responsive top bar
@@ -2162,10 +2053,6 @@ function renderTopHudBar() {
       currentMode = currentMode === "GENERATOR" ? "MAP" : "GENERATOR";
       modalScroll = 0;
     });
-    topBtnX -= 46;
-
-    drawNESButton(topBtnX, 5, 42, 24, "SAVE", false, false);
-    registerClickableRegion(topBtnX, 5, 42, 24, saveWorldState);
     topBtnX -= 46;
 
     if (is3DMode && rctRenderer) {
@@ -3738,8 +3625,8 @@ function renderCompactEditorPanel() {
   if (!isEditorOpen || currentMode !== "MAP") return;
 
   const isMobile = CANVAS_WIDTH <= 680;
-  const pw = isMobile ? CANVAS_WIDTH - 16 : 232;
-  const ph = isMobile ? 260 : 362;
+  const pw = isMobile ? CANVAS_WIDTH - 16 : 288;
+  const ph = isMobile ? 320 : 428;
   const px = isMobile ? 8 : CANVAS_WIDTH - pw - 10;
   const py = isMobile ? CANVAS_HEIGHT - ph - 48 : 38;
 
@@ -3756,15 +3643,17 @@ function renderCompactEditorPanel() {
     isPainting = false;
   });
 
-  // 3. Category Tabs: [TILE] [MOB] [ITEM] [TOOL]
+  // 3. Category Tabs: [TILE] [FLORA] [BUILD] [MOBS] [ITEM] [TOOL]
   const tabs = [
     { id: "TILES", label: "TILE" },
-    { id: "CREATURES", label: "MOB" },
+    { id: "NATURE", label: "FLORA" },
+    { id: "BUILD", label: "BUILD" },
+    { id: "CREATURES", label: "MOBS" },
     { id: "ITEMS", label: "ITEM" },
     { id: "TOOLS", label: "TOOL" }
   ];
 
-  const tabW = Math.floor((pw - 28) / 4);
+  const tabW = Math.floor((pw - 24) / tabs.length);
   let tabX = px + 8;
   for (const t of tabs) {
     const isAct = editorTab === t.id;
@@ -3774,7 +3663,7 @@ function renderCompactEditorPanel() {
       editorTab = tabId;
       editorPage = 0;
     });
-    tabX += tabW + 4;
+    tabX += tabW + 2;
   }
 
   const contentY = py + 52;
@@ -3783,11 +3672,11 @@ function renderCompactEditorPanel() {
   // Inner NES Content Frame
   drawNESBox(px + 8, contentY, pw - 16, contentH);
 
-  // TAB 1: TILES
+  // TAB 1: TILES (Terrains & Roads)
   if (editorTab === "TILES") {
-    drawText8x8("TERRAIN TILES:", px + 14, contentY + 8, "#3cbcfc", 1);
+    drawText8x8("TERRAINS & ROADS:", px + 14, contentY + 8, "#3cbcfc", 1);
 
-    const cols = 2;
+    const cols = 3;
     const colW = Math.floor((pw - 36) / cols);
     const itemH = 22;
 
@@ -3795,18 +3684,18 @@ function renderCompactEditorPanel() {
       const tile = EDITOR_TILES[i];
       const col = i % cols;
       const row = Math.floor(i / cols);
-      const bx = px + 14 + col * (colW + 6);
+      const bx = px + 14 + col * (colW + 4);
       const by = contentY + 22 + row * (itemH + 4);
       const isSel = editorTool === "PAINT" && editorSelectedTile === tile.id;
 
-      drawNESButton(bx, by, colW, itemH, ` ${tile.label.slice(0, 7)}`, isSel, false);
+      drawNESButton(bx, by, colW, itemH, ` ${tile.label.slice(0, 6)}`, isSel, false);
 
       // Mini Color Swatch
       ctx.fillStyle = tile.color;
-      ctx.fillRect(bx + 4, by + 5, 10, 10);
+      ctx.fillRect(bx + 3, by + 5, 8, 8);
       ctx.strokeStyle = "#ffffff";
       ctx.lineWidth = 1;
-      ctx.strokeRect(bx + 4, by + 5, 10, 10);
+      ctx.strokeRect(bx + 3, by + 5, 8, 8);
 
       const tileId = tile.id;
       registerClickableRegion(bx, by, colW, itemH, () => {
@@ -3816,8 +3705,8 @@ function renderCompactEditorPanel() {
       });
     }
 
-    // Brush Sizes
-    const brushY = contentY + 118;
+    // Brush Radius Selection
+    const brushY = contentY + 114;
     drawText8x8("BRUSH RADIUS:", px + 14, brushY, "#f8b800", 1);
     const sizes = [1, 3, 5, 9];
     let bsizeX = px + 14;
@@ -3834,71 +3723,28 @@ function renderCompactEditorPanel() {
     }
   }
 
-  // TAB 2: CREATURES (Paginated: 8 per page)
-  else if (editorTab === "CREATURES") {
-    const itemsPerPage = 8;
-    const maxPages = Math.ceil(EDITOR_CREATURES.length / itemsPerPage);
-    drawText8x8(`SPAWN MOB (P.${editorPage + 1}/${maxPages}):`, px + 14, contentY + 8, "#3cbcfc", 1);
+  // Helper renderer for paginated item lists (FLORA, BUILD, MOBS, ITEMS)
+  function renderPaginatedList(title, items, color) {
+    const itemsPerPage = 10;
+    const maxPages = Math.max(1, Math.ceil(items.length / itemsPerPage));
+    drawText8x8(`${title} (P.${editorPage + 1}/${maxPages}):`, px + 14, contentY + 8, color, 1);
 
     const cols = 2;
     const colW = Math.floor((pw - 36) / cols);
-    const itemH = 22;
+    const itemH = 20;
 
     const startIdx = editorPage * itemsPerPage;
-    const pageItems = EDITOR_CREATURES.slice(startIdx, startIdx + itemsPerPage);
-
-    for (let i = 0; i < pageItems.length; i++) {
-      const c = pageItems[i];
-      const col = i % cols;
-      const row = Math.floor(i / cols);
-      const bx = px + 14 + col * (colW + 6);
-      const by = contentY + 22 + row * (itemH + 4);
-      const isSel = editorTool === "SPAWN" && editorActiveSpawner?.label === c.label;
-
-      drawNESButton(bx, by, colW, itemH, `+${c.label.slice(0, 8)}`, isSel, false);
-
-      const spawnerObj = c;
-      registerClickableRegion(bx, by, colW, itemH, () => {
-        editorActiveSpawner = spawnerObj;
-        editorTool = "SPAWN";
-      });
-    }
-
-    // Pagination buttons
-    const pageY = contentY + 146;
-    drawNESButton(px + 14, pageY, 96, 22, "◀ PREV", false, false);
-    registerClickableRegion(px + 14, pageY, 96, 22, () => {
-      editorPage = (editorPage - 1 + maxPages) % maxPages;
-    });
-
-    drawNESButton(px + pw - 110, pageY, 96, 22, "NEXT ▶", false, false);
-    registerClickableRegion(px + pw - 110, pageY, 96, 22, () => {
-      editorPage = (editorPage + 1) % maxPages;
-    });
-  }
-
-  // TAB 3: NATURE & ITEMS (Paginated)
-  else if (editorTab === "ITEMS") {
-    const itemsPerPage = 8;
-    const maxPages = Math.ceil(EDITOR_ITEMS.length / itemsPerPage);
-    drawText8x8(`ITEMS/NATURE (P.${editorPage + 1}/${maxPages}):`, px + 14, contentY + 8, "#3cbcfc", 1);
-
-    const cols = 2;
-    const colW = Math.floor((pw - 36) / cols);
-    const itemH = 22;
-
-    const startIdx = editorPage * itemsPerPage;
-    const pageItems = EDITOR_ITEMS.slice(startIdx, startIdx + itemsPerPage);
+    const pageItems = items.slice(startIdx, startIdx + itemsPerPage);
 
     for (let i = 0; i < pageItems.length; i++) {
       const it = pageItems[i];
       const col = i % cols;
       const row = Math.floor(i / cols);
       const bx = px + 14 + col * (colW + 6);
-      const by = contentY + 22 + row * (itemH + 4);
-      const isSel = editorTool === "SPAWN" && editorActiveSpawner?.label === it.label;
+      const by = contentY + 22 + row * (itemH + 3);
+      const isSel = editorTool === "SPAWN" && (editorActiveSpawner?.id === it.id || editorActiveSpawner?.label === it.label);
 
-      drawNESButton(bx, by, colW, itemH, `+${it.label.slice(0, 8)}`, isSel, false);
+      drawNESButton(bx, by, colW, itemH, `+${it.label.slice(0, 11)}`, isSel, false);
 
       const spawnerObj = it;
       registerClickableRegion(bx, by, colW, itemH, () => {
@@ -3909,25 +3755,46 @@ function renderCompactEditorPanel() {
 
     // Pagination buttons
     const pageY = contentY + 146;
-    drawNESButton(px + 14, pageY, 96, 22, "◀ PREV", false, false);
-    registerClickableRegion(px + 14, pageY, 96, 22, () => {
+    const halfBtnW = Math.floor((pw - 36) / 2);
+    drawNESButton(px + 14, pageY, halfBtnW, 22, "◀ PREV", false, false);
+    registerClickableRegion(px + 14, pageY, halfBtnW, 22, () => {
       editorPage = (editorPage - 1 + maxPages) % maxPages;
     });
 
-    drawNESButton(px + pw - 110, pageY, 96, 22, "NEXT ▶", false, false);
-    registerClickableRegion(px + pw - 110, pageY, 96, 22, () => {
+    drawNESButton(px + 14 + halfBtnW + 6, pageY, halfBtnW, 22, "NEXT ▶", false, false);
+    registerClickableRegion(px + 14 + halfBtnW + 6, pageY, halfBtnW, 22, () => {
       editorPage = (editorPage + 1) % maxPages;
     });
   }
 
-  // TAB 4: TOOLS
+  // TAB 2: NATURE & FLORA
+  if (editorTab === "NATURE") {
+    renderPaginatedList("FLORA & RESOURCES", EDITOR_NATURE, "#58d854");
+  }
+
+  // TAB 3: BUILDINGS & STRUCTURES
+  else if (editorTab === "BUILD") {
+    renderPaginatedList("STRUCTURES & WALLS", EDITOR_BUILDINGS, "#f8b800");
+  }
+
+  // TAB 4: CREATURES / MOBS
+  else if (editorTab === "CREATURES") {
+    renderPaginatedList("SPAWN MOBS", EDITOR_CREATURES, "#3cbcfc");
+  }
+
+  // TAB 5: ITEMS & DISHES
+  else if (editorTab === "ITEMS") {
+    renderPaginatedList("ITEMS & FOODS", EDITOR_ITEMS, "#f87858");
+  }
+
+  // TAB 6: TOOLS
   else if (editorTab === "TOOLS") {
     drawText8x8("MAP TOOLS:", px + 14, contentY + 8, "#3cbcfc", 1);
 
     const tools = [
       { id: "PAINT", label: "TERRAIN BRUSH" },
-      { id: "EYEDROPPER", label: "EYEDROPPER" },
-      { id: "BULLDOZER", label: "BULLDOZER (DEL)" }
+      { id: "EYEDROPPER", label: "EYEDROPPER (SAMPLE)" },
+      { id: "BULLDOZER", label: "BULLDOZER (DEMOLISH)" }
     ];
 
     let toolY = contentY + 22;
@@ -3950,14 +3817,20 @@ function renderCompactEditorPanel() {
   drawNESBox(px + 8, footerY, pw - 16, 46);
 
   let activeStr = "NONE";
-  if (editorTool === "PAINT") activeStr = `TILE: ${EDITOR_TILES[editorSelectedTile]?.label.slice(0, 8)}`;
-  else if (editorTool === "SPAWN") activeStr = `MOB: ${editorActiveSpawner?.label.slice(0, 9)}`;
-  else if (editorTool === "BULLDOZER") activeStr = "BULLDOZER";
-  else if (editorTool === "EYEDROPPER") activeStr = "EYEDROPPER";
+  if (editorTool === "PAINT") {
+    const tileObj = EDITOR_TILES.find(t => t.id === editorSelectedTile);
+    activeStr = `TILE: ${tileObj?.label || "TILE"} (${editorBrushSize}x${editorBrushSize})`;
+  } else if (editorTool === "SPAWN") {
+    activeStr = `SPAWN: ${editorActiveSpawner?.label || "MOB"}`;
+  } else if (editorTool === "BULLDOZER") {
+    activeStr = "BULLDOZER (DEMOLISH)";
+  } else if (editorTool === "EYEDROPPER") {
+    activeStr = "EYEDROPPER (SAMPLE)";
+  }
 
-  drawText8x8(`ACTIVE: ${activeStr}`, px + 14, footerY + 7, "#f8b800", 1);
-  drawText8x8("L-CLICK MAP: APPLY", px + 14, footerY + 20, "#58d854", 1);
-  drawText8x8("R-CLICK: PAN | ESC: EXIT", px + 14, footerY + 32, "#bcbcbc", 1);
+  drawText8x8(`ACTIVE: ${activeStr.slice(0, 24)}`, px + 14, footerY + 7, "#f8b800", 1);
+  drawText8x8("L-CLICK: APPLY / DRAG: PAINT", px + 14, footerY + 20, "#58d854", 1);
+  drawText8x8("R-CLICK: PAN | ESC: CLOSE", px + 14, footerY + 32, "#bcbcbc", 1);
 }
 
 function renderMapEditorOverlay() {
@@ -3967,23 +3840,29 @@ function renderMapEditorOverlay() {
   const hoverTileX = hoverTile.x;
   const hoverTileY = hoverTile.y;
 
-  const panelX = CANVAS_WIDTH - 226;
-  const isOverPanel = mouseX >= panelX && mouseY >= 36 && mouseY <= 420;
+  const isMobile = CANVAS_WIDTH <= 680;
+  const pw = isMobile ? CANVAS_WIDTH - 16 : 288;
+  const ph = isMobile ? 320 : 428;
+  const px = isMobile ? 8 : CANVAS_WIDTH - pw - 10;
+  const py = isMobile ? CANVAS_HEIGHT - ph - 48 : 38;
+  const isOverPanel = mouseX >= px && mouseX <= px + pw && mouseY >= py && mouseY <= py + ph;
 
   // If hovering over active map area and not over the docked corner panel
   if (!isOverPanel && mouseY > 32 && mouseY < CANVAS_HEIGHT - 36 && mouseX >= 0 && mouseX <= CANVAS_WIDTH) {
     ctx.save();
-    const infoX = Math.min(CANVAS_WIDTH - 230, mouseX + 16);
+    const infoX = Math.min(CANVAS_WIDTH - 240, mouseX + 16);
     const infoY = Math.max(52, mouseY - 14);
 
+    const tileObj = EDITOR_TILES.find(t => t.id === editorSelectedTile);
+
     if (editorTool === "PAINT") {
-      const tileName = EDITOR_TILES[editorSelectedTile]?.label || "TILE";
+      const tileName = tileObj?.label || "TILE";
       const badge = `PAINT [${hoverTileX},${hoverTileY}] (${editorBrushSize}x${editorBrushSize}): ${tileName}`;
-      drawText8x8(badge, infoX, infoY, EDITOR_TILES[editorSelectedTile]?.color || "#f8b800", 1);
+      drawText8x8(badge, infoX, infoY, tileObj?.color || "#f8b800", 1);
     } else if (editorTool === "SPAWN" && editorActiveSpawner) {
       drawText8x8(`SPAWN [${hoverTileX},${hoverTileY}]: ${editorActiveSpawner.label}`, infoX, infoY, "#58d854", 1);
     } else if (editorTool === "BULLDOZER") {
-      drawText8x8(`ERASE [${hoverTileX},${hoverTileY}]`, infoX, infoY, "#e40058", 1);
+      drawText8x8(`DEMOLISH [${hoverTileX},${hoverTileY}]`, infoX, infoY, "#e40058", 1);
     } else if (editorTool === "EYEDROPPER") {
       drawText8x8(`SAMPLE [${hoverTileX},${hoverTileY}]`, infoX, infoY, "#3cbcfc", 1);
     }
@@ -4002,11 +3881,11 @@ function renderMapEditorOverlay() {
         const startY = centerScreenY + (hoverTileY - half - cy) * tileSize;
         const boxSize = editorBrushSize * tileSize;
 
-        ctx.strokeStyle = EDITOR_TILES[editorSelectedTile]?.color || "#f8b800";
+        ctx.strokeStyle = tileObj?.color || "#f8b800";
         ctx.lineWidth = 2;
         ctx.strokeRect(startX, startY, boxSize, boxSize);
 
-        ctx.fillStyle = (EDITOR_TILES[editorSelectedTile]?.color || "#f8b800") + "44";
+        ctx.fillStyle = (tileObj?.color || "#f8b800") + "44";
         ctx.fillRect(startX, startY, boxSize, boxSize);
       } else {
         const startX = centerScreenX + (hoverTileX - cx) * tileSize;
@@ -4562,31 +4441,7 @@ function renderTitleScreen() {
   });
   menuY += 34;
 
-  // Button 3: CONTINUE (Quicksave)
-  const hasSave = !!localStorage.getItem("brutopolis_quicksave");
-  const saveLabel = hasSave ? "CONTINUE SAVED GAME" : "CONTINUE (NO SAVE FOUND)";
-  drawNESButton(menuBoxX, menuY, menuBoxW, 28, saveLabel, hasSave, false);
-  if (hasSave) {
-    registerClickableRegion(menuBoxX, menuY, menuBoxW, 28, () => {
-      try {
-        const raw = localStorage.getItem("brutopolis_quicksave");
-        if (raw) {
-          const saveObj = JSON.parse(raw);
-          loadWorldState(saveObj);
-        }
-      } catch (err) {
-        console.error("Error loading quicksave:", err);
-      }
-    });
-  }
-  menuY += 34;
-
-  // Button 4: LOAD JSON FILE
-  drawNESButton(menuBoxX, menuY, menuBoxW, 28, "LOAD .JSON SAVE FILE", false, false);
-  registerClickableRegion(menuBoxX, menuY, menuBoxW, 28, openSaveFilePicker);
-  menuY += 34;
-
-  // Button 5: Quick Settings Row (2D/3D & Audio)
+  // Button 3: Quick Settings Row (2D/3D & Audio)
   const halfW = Math.floor((menuBoxW - 8) / 2);
   const view3DLabel = is3DMode ? "VIEW: 3D ISO" : "VIEW: 2D MAP";
   drawNESButton(menuBoxX, menuY, halfW, 28, view3DLabel, is3DMode, false);
@@ -4700,8 +4555,9 @@ function frame(time) {
         if (editorTool === "SPAWN") toolColorHex = 0x58d854;
         else if (editorTool === "BULLDOZER") toolColorHex = 0xe40058;
         else if (editorTool === "EYEDROPPER") toolColorHex = 0x3cbcfc;
-        else if (editorTool === "PAINT" && EDITOR_TILES[editorSelectedTile]?.color) {
-          toolColorHex = parseInt(EDITOR_TILES[editorSelectedTile].color.replace("#", "0x"), 16);
+        else if (editorTool === "PAINT") {
+          const tileObj = EDITOR_TILES.find(t => t.id === editorSelectedTile);
+          if (tileObj?.color) toolColorHex = parseInt(tileObj.color.replace("#", "0x"), 16);
         }
         rctRenderer.setEditorCursor(world, hoverTile.x, hoverTile.y, editorTool === "PAINT" ? editorBrushSize : 1, toolColorHex);
       } else {

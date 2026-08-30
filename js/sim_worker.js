@@ -24,7 +24,6 @@ import {
   getEventsForGroup,
   getRecentWorldEvents,
   getEventById,
-  exportWorldSaveJSON,
   restoreWorldEvents,
   recordWorldEvent,
   OP_RELATION,
@@ -74,6 +73,7 @@ import {
   createSeedEntity,
   createHouseEntity,
   createWallEntity,
+  createDoorEntity,
   createTorchEntity,
   createCampfireEntity,
   createStoneWallEntity,
@@ -116,7 +116,14 @@ let groupsDirty = false;
 let isTitleWorld = false;
 
 const SPAWNERS = {
+  // Humanoids & Settlers
   HUMAN: (x, y) => createHuman(x, y),
+  BUILDER: (x, y) => createCreatureFromArchetype("human", x, y, { role: "Builder" }),
+  MINER: (x, y) => createCreatureFromArchetype("human", x, y, { role: "Miner" }),
+  FARMER: (x, y) => createCreatureFromArchetype("human", x, y, { role: "Farmer" }),
+  HUNTER: (x, y) => createCreatureFromArchetype("human", x, y, { role: "Hunter" }),
+  BUTCHER: (x, y) => createCreatureFromArchetype("human", x, y, { role: "Butcher" }),
+  COOK: (x, y) => createCreatureFromArchetype("human", x, y, { role: "Cook" }),
   HAULER: (x, y) => {
     const c = createCreatureFromArchetype("human", x, y, { role: "Hauler" });
     c.properties.backpack = { type: "backpack", size: "large", capacity: 20, items: [] };
@@ -130,26 +137,23 @@ const SPAWNERS = {
     };
     return c;
   },
-  BUTCHER: (x, y) => createCreatureFromArchetype("human", x, y, { role: "Butcher" }),
-  COOK: (x, y) => createCreatureFromArchetype("human", x, y, { role: "Cook" }),
   ELF: (x, y) => createElf(x, y),
   DWARF: (x, y) => createDwarf(x, y),
   ORC: (x, y) => createOrc(x, y),
-  BOAR: (x, y) => createBoar(x, y),
-  DEER: (x, y) => createDeer(x, y),
-  SPIDER: (x, y) => createSpider(x, y),
+  GOBLIN: (x, y) => createGoblin(x, y),
+  KOBOLD: (x, y) => createKobold(x, y),
+  LIZARDFOLK: (x, y) => createLizardfolk(x, y),
+  CATFOLK: (x, y) => createCatfolk(x, y),
+  CENTAUR: (x, y) => createCentaur(x, y),
   KNIGHT: (x, y) => createKnight(x, y),
   ARCHER: (x, y) => createArcher(x, y),
-  CAT: (x, y) => createCat(x, y),
-  BAT: (x, y) => createBat(x, y),
-  DRAGON: (x, y) => createDragon(x, y),
+
+  // Animals & Wildlife
+  BOAR: (x, y) => createBoar(x, y),
+  DEER: (x, y) => createDeer(x, y),
   WOLF: (x, y) => createWolf(x, y),
   BEAR: (x, y) => createBear(x, y),
-  GOBLIN: (x, y) => createGoblin(x, y),
-  SERPENT: (x, y) => createSeaSerpent(x, y),
-  SCORPION: (x, y) => createScorpion(x, y),
-  LIZARD: (x, y) => createLizard(x, y),
-  SHRUB: (x, y) => createAlpineShrub(x, y),
+  CAT: (x, y) => createCat(x, y),
   GOAT: (x, y) => createMountainGoat(x, y),
   CAPYBARA: (x, y) => createCapybara(x, y),
   COW: (x, y) => createCow(x, y),
@@ -157,28 +161,51 @@ const SPAWNERS = {
   DUCK: (x, y) => createDuck(x, y),
   FROG: (x, y) => createFrog(x, y),
   RABBIT: (x, y) => createRabbit(x, y),
-  KOBOLD: (x, y) => createKobold(x, y),
-  LIZARDFOLK: (x, y) => createLizardfolk(x, y),
-  CATFOLK: (x, y) => createCatfolk(x, y),
-  CENTAUR: (x, y) => createCentaur(x, y),
-  LOG: (x, y) => createWoodItem(x, y),
-  STONE: (x, y) => createStoneItem(x, y),
-  WALL: (x, y) => createStoneWallEntity(x, y),
-  WELL: (x, y) => createWaterWellEntity(x, y),
+  BAT: (x, y) => createBat(x, y),
+  SPIDER: (x, y) => createSpider(x, y),
+  SCORPION: (x, y) => createScorpion(x, y),
+  LIZARD: (x, y) => createLizard(x, y),
+  DRAGON: (x, y) => createDragon(x, y),
+  SERPENT: (x, y) => createSeaSerpent(x, y),
+
+  // Trees, Flora & Resources
+  OAK_TREE: (x, y) => createOakTree(x, y),
+  PINE_TREE: (x, y) => createPineTree(x, y),
+  WILLOW_TREE: (x, y) => createWillowTree(x, y),
+  CACTUS: (x, y) => createCactus(x, y),
+  SHRUB: (x, y) => createAlpineShrub(x, y),
+  WATER_LILY: (x, y) => createWaterLily(x, y),
+  SEAWEED: (x, y) => createSeaweed(x, y),
+  WOOD_LOG: (x, y) => createWoodItem(x, y),
+  STONE_BLOCK: (x, y) => createStoneItem(x, y),
+  OAK_SEED: (x, y) => createSeedEntity(x, y, "large", "oak"),
+  PINE_SEED: (x, y) => createSeedEntity(x, y, "large", "pine"),
+  WILLOW_SEED: (x, y) => createSeedEntity(x, y, "large", "willow"),
+  CACTUS_SEED: (x, y) => createSeedEntity(x, y, "large", "cactus"),
+  FRUIT: (x, y) => createFruit(x, y, "large", "oak"),
+
+  // Buildings & Structures
+  STONE_WALL: (x, y) => createStoneWallEntity(x, y),
+  WOOD_WALL: (x, y) => createWallEntity(x, y),
+  DOOR: (x, y) => createDoorEntity(x, y),
+  CAMPFIRE: (x, y) => createCampfireEntity(x, y),
+  TORCH: (x, y) => createTorchEntity(x, y),
+  WATER_WELL: (x, y) => createWaterWellEntity(x, y),
   WAREHOUSE: (x, y) => createWarehouseEntity(x, y),
   SLAUGHTERHOUSE: (x, y) => createSlaughterhouseEntity(x, y),
   KITCHEN: (x, y) => createKitchenEntity(x, y),
-  "BASKET (MED)": (x, y) => createBasketItem(x, y, "medium"),
-  "BASKET (LRG)": (x, y) => createBasketItem(x, y, "large"),
+  HOUSE: (x, y) => createHouseEntity(x, y),
+
+  // Equipment & Prepared Dishes
+  BASKET_MED: (x, y) => createBasketItem(x, y, "medium"),
+  BASKET_LRG: (x, y) => createBasketItem(x, y, "large"),
   BACKPACK: (x, y) => createBackpackItem(x, y, "medium"),
-  "EXPEDITION PACK": (x, y) => createBackpackItem(x, y, "large"),
-  "MEAT BENTO": (x, y) => createMeatBento(x, y),
-  "VEGAN BENTO": (x, y) => createVeganBento(x, y),
-  "GOURMET BENTO": (x, y) => createGourmetBento(x, y),
-  "ROASTED MEAT": (x, y) => createRoastedMeat(x, y),
-  "GRILLED VEGGIES": (x, y) => createGrilledVeggies(x, y),
-  "DIRT ROAD": (x, y) => createRoadEntity(x, y, null, false),
-  "ROAD SNAP POINT": (x, y) => createRoadEntity(x, y, null, true)
+  EXPEDITION_PACK: (x, y) => createBackpackItem(x, y, "large"),
+  ROASTED_MEAT: (x, y) => createRoastedMeat(x, y),
+  GRILLED_VEGGIES: (x, y) => createGrilledVeggies(x, y),
+  MEAT_BENTO: (x, y) => createMeatBento(x, y),
+  VEGAN_BENTO: (x, y) => createVeganBento(x, y),
+  GOURMET_BENTO: (x, y) => createGourmetBento(x, y)
 };
 
 let cachedGroupsList = null;
@@ -890,13 +917,14 @@ function applyTileBrush(cx, cy, tileType, brushSize) {
 }
 
 function applyEditorAction(data) {
-  const { tool, tileX, tileY, selectedTile, brushSize, spawnerLabel } = data;
+  const { tool, tileX, tileY, selectedTile, brushSize, spawnerId, spawnerLabel } = data;
   if (!world || tileX < 0 || tileX >= (world.width || 512) || tileY < 0 || tileY >= (world.height || 512)) return;
 
   if (tool === "PAINT") {
     applyTileBrush(tileX, tileY, selectedTile, brushSize || 1);
-  } else if (tool === "SPAWN" && spawnerLabel) {
-    const fn = SPAWNERS[spawnerLabel];
+  } else if (tool === "SPAWN") {
+    const spKey = spawnerId || spawnerLabel;
+    const fn = SPAWNERS[spKey];
     if (fn) {
       const ent = fn(tileX, tileY);
       if (ent) {
@@ -943,6 +971,7 @@ function applyEditorAction(data) {
         entities.push(ent);
         rebuildSpatialGrid(entities, getZoneSize());
         groupsDirty = true;
+        postSimSync(true);
       }
     }
   } else if (tool === "BULLDOZER") {
@@ -952,115 +981,7 @@ function applyEditorAction(data) {
       destroyEntity(t, entities);
     }
     rebuildSpatialGrid(entities, getZoneSize());
-  }
-  postSimSync(true);
-}
-
-function loadWorldSave(saveData) {
-  if (!saveData) return;
-  try {
-    entities = [];
-    entityRegistry.clear();
-
-    if (saveData.world?.terrain && world) {
-      const binaryStr = atob(saveData.world.terrain);
-      const mapW = world.width || 1024;
-      for (let i = 0; i < binaryStr.length; i++) {
-        const tileVal = binaryStr.charCodeAt(i);
-        const x = i % mapW;
-        const y = Math.floor(i / mapW);
-        world.setTile(x, y, tileVal);
-      }
-    }
-
-    if (saveData.world?.zoneSize) {
-      setZoneSize(saveData.world.zoneSize);
-      genZoneSize = getZoneSize();
-    }
-    if (saveData.world?.width && saveData.world?.height && world) {
-      genWidth = saveData.world.width;
-      genHeight = saveData.world.height;
-      world.width = genWidth;
-      world.height = genHeight;
-    }
-
-    if (saveData.world?.clock && world) {
-      world.clock.day = saveData.world.clock.day || 0;
-      world.clock.hour = saveData.world.clock.hour || 0;
-      world.clock.minute = saveData.world.clock.minute || 0;
-      world.clock.globalLight = saveData.world.clock.globalLight !== undefined ? saveData.world.clock.globalLight : 1.0;
-      world.clock.totalSeconds = saveData.world.clock.totalSeconds || 0;
-    }
-
-    if (saveData.world?.tick !== undefined) {
-      resetEngineTicks();
-      for (let i = 0; i < saveData.world.tick; i++) {
-        incrementEngineTick();
-      }
-    }
-
-    if (world) world.groups = saveData.groups || [];
-
-    if (Array.isArray(saveData.entities)) {
-      for (const entData of saveData.entities) {
-        if (!entData) continue;
-        const ent = {
-          id: entData.id,
-          x: entData.x,
-          y: entData.y,
-          birthTick: entData.birthTick,
-          deathTick: entData.deathTick,
-          destroyed: entData.destroyed,
-          renderable: entData.renderable,
-          properties: entData.properties || {}
-        };
-        
-        // Reconnect real group reference
-        if (ent.properties.group && ent.properties.group.id && world && world.groups) {
-          const realGroup = world.groups.find(g => g.id === ent.properties.group.id);
-          if (realGroup) {
-            ent.properties.group = realGroup;
-          }
-        }
-        
-        rebindEntityMethods(ent);
-        entities.push(ent);
-        entityRegistry.set(ent.id, ent);
-      }
-    }
-
-    if (Array.isArray(saveData.registry)) {
-      for (const regData of saveData.registry) {
-        if (!regData || entityRegistry.has(regData.id)) continue;
-        const ent = {
-          id: regData.id,
-          x: regData.x,
-          y: regData.y,
-          birthTick: regData.birthTick,
-          deathTick: regData.deathTick,
-          destroyed: true,
-          renderable: regData.renderable,
-          properties: regData.properties || {}
-        };
-        entityRegistry.set(ent.id, ent);
-      }
-    }
-
-    if (Array.isArray(saveData.events)) {
-      restoreWorldEvents(saveData.events);
-    }
-
-    currentPreset = saveData.world?.preset || 0;
-    genSeed = saveData.world?.seed || 12345;
-    rebuildSpatialGrid(entities, getZoneSize());
-    lastSyncedEventTick = currentTick;
-    groupsDirty = true;
-
-    const camX = saveData.camera?.x || 256;
-    const camY = saveData.camera?.y || 256;
-    postFullWorldState(camX, camY, -1);
-  } catch (err) {
-    console.error("Worker failed to load save:", err);
+    postSimSync(true);
   }
 }
 
@@ -1164,31 +1085,5 @@ self.onmessage = (e) => {
       }
       break;
     }
-
-    case "SAVE_WORLD": {
-      const customWorld = {
-        width: genWidth,
-        height: genHeight,
-        zoneSize: getZoneSize(),
-        map: world.map,
-        clock: world.clock
-      };
-      const saveData = exportWorldSaveJSON(
-        customWorld,
-        entities,
-        currentTick,
-        entityRegistry,
-        getAllGroups(),
-        data.camera,
-        genSeed,
-        currentPreset
-      );
-      self.postMessage({ type: "SAVE_DATA_READY", saveData });
-      break;
-    }
-
-    case "LOAD_WORLD":
-      loadWorldSave(data.saveData);
-      break;
   }
 };
