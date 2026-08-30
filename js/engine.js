@@ -892,7 +892,9 @@ export function compileEntityEffects(entity) {
   
   let lodInterval = 1;
   if (!entity.properties.brain && !entity.properties.motor) {
-    if (entity.properties.photosynthesis || entity.properties.tree || entity.properties.deep_root || entity.properties.species === "pine" || entity.properties.species === "oak" || entity.properties.species === "willow") {
+    if (entity.properties.lifespan) {
+      lodInterval = 1; // Decaying entities tick every frame without delay
+    } else if (entity.properties.photosynthesis || entity.properties.tree || entity.properties.deep_root || entity.properties.species === "pine" || entity.properties.species === "oak" || entity.properties.species === "willow") {
       lodInterval = 120; // Flora
     } else if (entity.properties.species === "item" || entity.properties.species === "corpse") {
       lodInterval = 60; // Dropped items decay/tick very slowly

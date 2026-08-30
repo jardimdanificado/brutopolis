@@ -48,8 +48,10 @@ export function getSimWorld() {
 export function isLandTile(x, y) {
   const curW = getSimWorld();
   if (!curW) return false;
-  if (x < 0 || x >= MAP_WIDTH || y < 0 || y >= MAP_HEIGHT) return false;
-  const t = curW.getTile ? curW.getTile(x, y) : (curW.map ? curW.map[y * MAP_WIDTH + x] : 0);
+  const w = curW.width || MAP_WIDTH;
+  const h = curW.height || MAP_HEIGHT;
+  if (x < 0 || x >= w || y < 0 || y >= h) return false;
+  const t = curW.getTile ? curW.getTile(x, y) : (curW.map ? curW.map[y * w + x] : 0);
   return t === 0 || t === 3 || t === 4 || (t >= TILE_ROAD_GRASS && t <= TILE_ROAD_STONE); // Fertile Floor, Sand, Stone, and all Road tiles
 }
 
@@ -980,7 +982,7 @@ export function createRoastedMeat(x, y, sourceName = "Game") {
         moodBonus: 25,
         sourceName
       },
-      lifespan: createLifespanProp(400.0)
+      lifespan: createLifespanProp(90.0)
     },
     x,
     y
@@ -999,7 +1001,7 @@ export function createGrilledVeggies(x, y) {
         digestDuration: 35,
         moodBonus: 20
       },
-      lifespan: createLifespanProp(400.0)
+      lifespan: createLifespanProp(90.0)
     },
     x,
     y
@@ -1019,7 +1021,7 @@ export function createMeatBento(x, y, sourceName = "Game") {
         moodBonus: 40,
         sourceName
       },
-      lifespan: createLifespanProp(600.0)
+      lifespan: createLifespanProp(120.0)
     },
     x,
     y
@@ -1038,7 +1040,7 @@ export function createVeganBento(x, y) {
         digestDuration: 45,
         moodBonus: 35
       },
-      lifespan: createLifespanProp(600.0)
+      lifespan: createLifespanProp(120.0)
     },
     x,
     y
@@ -1058,7 +1060,7 @@ export function createGourmetBento(x, y, sourceName = "Game") {
         moodBonus: 60,
         sourceName
       },
-      lifespan: createLifespanProp(800.0)
+      lifespan: createLifespanProp(150.0)
     },
     x,
     y
@@ -1155,8 +1157,22 @@ export function isRoadFrontierTile(x, y, group = null) {
     { dx: 0, dy: -1 }
   ];
 
+  // 1. Directly adjacent to an already constructed road tile
   for (const d of cardDirs) {
     if (isRoadTile(x + d.dx, y + d.dy)) return true;
+  }
+
+  // 2. If no road has been built yet in an isolated village, allow building from the village center / plaza
+  if (group && group._plannedRoads && group._plannedRoads.length > 0) {
+    const isFirstTile = group._plannedRoads[0].x === x && group._plannedRoads[0].y === y;
+    if (isFirstTile) return true;
+
+    if (group._plaza) {
+      for (const bKey of ["warehouse", "campfire", "well", "kitchen", "slaughterhouse"]) {
+        const b = group._plaza[bKey];
+        if (b && Math.abs(x - b.x) + Math.abs(y - b.y) <= 1) return true;
+      }
+    }
   }
 
   return false;
@@ -3260,6 +3276,52 @@ export function initClanRoadNetwork(group) {
     }
   }
 
+  // 3. Connect Isolated Village to Continental Road Network (if a nearby road exists and is reachable)
+  if (!foundAnchor) {
+    const curW = getSimWorld();
+    if (curW) {
+      let nearestRoadTile = null;
+      let minRoadDist = Infinity;
+      const searchR = 60;
+      for (let dy = -searchR; dy <= searchR; dy += 2) {
+        for (let dx = -searchR; dx <= searchR; dx += 2) {
+          const rx = baseX + dx;
+          const ry = baseY + dy;
+          if (rx >= 0 && rx < (curW.width || 1024) && ry >= 0 && ry < (curW.height || 1024)) {
+            if (isRoadTile(rx, ry)) {
+              const d = Math.abs(dx) + Math.abs(dy);
+              if (d < minRoadDist) {
+                minRoadDist = d;
+                nearestRoadTile = { x: rx, y: ry };
+              }
+            }
+          }
+        }
+      }
+
+      if (nearestRoadTile && minRoadDist <= 55) {
+        const connectorPath = findOrganicLandPath(
+          baseX,
+          baseY,
+          nearestRoadTile.x,
+          nearestRoadTile.y,
+          curW,
+          0,
+          curW.width || 1024,
+          0,
+          curW.height || 1024,
+          600
+        );
+        if (connectorPath && connectorPath.length > 0) {
+          for (const pt of connectorPath) {
+            setTile(pt.x, pt.y);
+            maybeClaimZone(pt.x, pt.y);
+          }
+        }
+      }
+    }
+  }
+
   group._plannedRoads = planned;
   return planned;
 }
@@ -5214,7 +5276,7 @@ export function dropHeldItem(ent, entities, world) {
             resourceType: "meat",
             render: { skin: "Item_Steak.png", color: 0xffdc5050, backcolor: 0x00000000 },
             edible: { nutrition: 2000, foodType: "meat", digestDuration: 60 },
-            lifespan: createLifespanProp(1800.0)
+            lifespan: createLifespanProp(45.0)
           },
           ent.x,
           ent.y
@@ -7062,7 +7124,7 @@ export function createWoodItem(x, y) {
       name: "Wood Log",
       resourceType: "wood",
       render: { skin: "Item_Wood.png", color: 0xffa06e32, backcolor: 0x00000000 },
-      lifespan: createLifespanProp(180.0) // Decomposes after 3 minutes if ignored in the wild
+      lifespan: createLifespanProp(90.0) // Decomposes after 1.5 minutes if ignored in the wild
     },
     x,
     y
@@ -7078,7 +7140,7 @@ export function createStoneItem(x, y) {
       name: "Stone Block",
       resourceType: "stone",
       render: { skin: "Feature_Boulders.png", color: 0xffc8c8c8, backcolor: 0x00000000 },
-      lifespan: createLifespanProp(240.0) // Sinks into earth after 4 minutes if ignored in the wild
+      lifespan: createLifespanProp(90.0) // Sinks into earth after 1.5 minutes if ignored in the wild
     },
     x,
     y
@@ -7096,7 +7158,7 @@ export function createToothItem(x, y, ownerName = "Creature") {
       ownerName: ownerName,
       render: { skin: "Item_Bone.png", color: 0xfff5f5f0, backcolor: 0x00000000 },
       edible: { nutrition: 150, foodType: "bone", digestDuration: 15, sourceName: ownerName },
-      lifespan: createLifespanProp(90.0)
+      lifespan: createLifespanProp(60.0)
     },
     x,
     y
@@ -7114,7 +7176,7 @@ export function createBoneItem(x, y, ownerName = "Creature") {
       ownerName: ownerName,
       render: { skin: "Item_Bone.png", color: 0xfff4f1e8, backcolor: 0x00000000 },
       edible: { nutrition: 120, foodType: "bone", digestDuration: 20, sourceName: ownerName },
-      lifespan: createLifespanProp(120.0)
+      lifespan: createLifespanProp(60.0)
     },
     x,
     y
@@ -7352,7 +7414,7 @@ export function createCombatProp(attackInterval = 1.2, aggroRange = 3) {
                 species: "item",
                 render: { skin: limbSkin, color: 0xffdc5050, backcolor: 0x00000000 },
                 edible: { nutrition: 1200, foodType: "meat", digestDuration: 25, partKey: randLimbKey },
-                lifespan: createLifespanProp(1800.0)
+                lifespan: createLifespanProp(45.0)
               },
               target.x + (Math.floor(Math.random() * 3) - 1),
               target.y + (Math.floor(Math.random() * 3) - 1)
@@ -11195,7 +11257,7 @@ export function createFruit(x, y, seedType = "large", species = "oak") {
         sourceSpecies: species,
         seed: { type: seedType, species }
       },
-      lifespan: createLifespanProp(120.0) // Natural decomposition after 2 minutes if left in wild
+      lifespan: createLifespanProp(60.0) // Natural decomposition after 1 minute if left in wild
     },
     x,
     y
@@ -11235,7 +11297,7 @@ export function createSeedEntity(x, y, seedType = "large", species = "oak") {
       render: { skin: seedSkin, color: seedColor, backcolor: 0x00000000 },
       germination: createSeedGerminationProp(species, 5.0, 0.40),
       edible: { nutrition: 600, foodType: "plant", digestDuration: 20 },
-      lifespan: createLifespanProp(90.0) // Sprouts or decomposes after 1.5 minutes if uncollected
+      lifespan: createLifespanProp(60.0) // Sprouts or decomposes after 1 minute if uncollected
     },
     x,
     y
@@ -11250,7 +11312,7 @@ export function createPoopEntity(x, y, seed = null) {
       render: { skin: "Item_Nugget.png", color: 0xff643c14, backcolor: 0x00000000 },
       fertilizer: { quality: 1.0 },
       edible: { nutrition: 900, foodType: "feces", digestDuration: 40 },
-      lifespan: createLifespanProp(seed ? 20.0 : 8.0) // Quickly decays (8s normal, 20s with seed)
+      lifespan: createLifespanProp(seed ? 15.0 : 6.0) // Quickly decays (6s normal, 15s with seed)
     },
     x,
     y
@@ -11535,8 +11597,8 @@ export function rebindEntityMethods(ent) {
   }
   if (p.lifespan) {
     if (p.resourceType === "feces" || p.edible?.foodType === "feces") {
-      if (!p.lifespan.maxAge || p.lifespan.maxAge > 20.0) {
-        p.lifespan.maxAge = p.germination ? 20.0 : 8.0;
+      if (!p.lifespan.maxAge || p.lifespan.maxAge > 15.0) {
+        p.lifespan.maxAge = p.germination ? 15.0 : 6.0;
       }
     }
     const dummy = createLifespanProp(p.lifespan.maxAge || 120.0);

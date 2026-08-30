@@ -808,7 +808,7 @@ function postSimSync(force = false) {
     const e = entities[i];
     if (!e || e.destroyed) continue;
     
-    const needsPropSync = syncProps || !e._hasSyncedProps;
+    const needsPropSync = syncProps || !e._hasSyncedProps || (e.properties && e.properties.lifespan && (currentTick % 15 === 0));
     if (needsPropSync) {
       e._hasSyncedProps = true;
     }
