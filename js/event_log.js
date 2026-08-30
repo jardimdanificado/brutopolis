@@ -838,7 +838,23 @@ export function appendWorldEvents(eventsList = []) {
 
     if (allEvents.length > 5000) {
       const removed = allEvents.shift();
-      if (removed) eventsById.delete(removed.id);
+      if (removed) {
+        eventsById.delete(removed.id);
+        
+        const pArr = eventsByEntity.get(removed.primaryEntityId);
+        if (pArr && pArr[0] === removed.id) pArr.shift();
+        
+        const sArr = eventsByEntity.get(removed.secondaryEntityId);
+        if (sArr && sArr[0] === removed.id) sArr.shift();
+        
+        const tArr = eventsByType.get(removed.type);
+        if (tArr && tArr[0] === removed.id) tArr.shift();
+        
+        if (removed.metadata?.citedEventId) {
+          const cArr = eventsByCitedEvent.get(removed.metadata.citedEventId);
+          if (cArr && cArr[0] === removed.id) cArr.shift();
+        }
+      }
     }
 
     if (ev.primaryEntityId !== null && ev.primaryEntityId !== undefined) {

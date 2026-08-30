@@ -111,7 +111,7 @@ let genSeed = 1337;
 let genWidth = 256;
 let genHeight = 256;
 let genZoneSize = 8;
-let lastEventCountPosted = 0;
+let lastSyncedEventTick = 0;
 let groupsDirty = false;
 let isTitleWorld = false;
 
@@ -440,7 +440,7 @@ function generateConfiguredWorld(config) {
   }
 
   rebuildSpatialGrid(entities, getZoneSize());
-  lastEventCountPosted = allEvents.length;
+  lastSyncedEventTick = currentTick;
   groupsDirty = true;
 
   postFullWorldState(startX, startY, firstLeaderId, isTitleScreen);
@@ -835,8 +835,8 @@ function postSimSync(force = false) {
   const entsToSync = activeEnts.slice(0, entCount);
 
   let newEvents = null;
-  if (allEvents.length > lastEventCountPosted) {
-    const unposted = allEvents.slice(lastEventCountPosted);
+  const unposted = allEvents.filter(ev => ev.tick >= lastSyncedEventTick);
+  if (unposted.length > 0) {
     newEvents = unposted.map(ev => ({
       id: ev.id,
       opcode: ev.opcode,
@@ -850,7 +850,7 @@ function postSimSync(force = false) {
       description: ev.description,
       metadata: sanitizeForTransfer(ev.metadata)
     }));
-    lastEventCountPosted = allEvents.length;
+    lastSyncedEventTick = currentTick;
   }
 
   self.postMessage({
@@ -1044,7 +1044,7 @@ function loadWorldSave(saveData) {
     currentPreset = saveData.world?.preset || 0;
     genSeed = saveData.world?.seed || 12345;
     rebuildSpatialGrid(entities, getZoneSize());
-    lastEventCountPosted = allEvents.length;
+    lastSyncedEventTick = currentTick;
     groupsDirty = true;
 
     const camX = saveData.camera?.x || 256;

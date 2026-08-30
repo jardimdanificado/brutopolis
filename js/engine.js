@@ -888,17 +888,6 @@ export function compileEntityEffects(entity) {
         isSlow = false;
       }
     }
-    if (
-      typeof prop.condition === "number" &&
-      typeof prop.maxCondition === "number" &&
-      !key.startsWith("amputated_") &&
-      key !== "brain" &&
-      !key.includes("brain") &&
-      !prop.cannotAmputate &&
-      !prop.isBrain
-    ) {
-      degradable.push({ key, prop });
-    }
   }
   
   let lodInterval = 1;
@@ -924,7 +913,6 @@ export function compileEntityEffects(entity) {
   }
 
   entity._activeEffects = effects;
-  entity._degradableLimbs = degradable;
   entity._lodInterval = lodInterval;
   entity._effectsVersion = entity._propsVersion || 0;
 }
@@ -975,19 +963,6 @@ export function tickEntities(entities, dt, world) {
           }
         } else {
           prop.effect(entity, entityDt, world, entities, prop);
-        }
-      }
-    }
-
-    // 2. Check for limb condition degradation & automatic amputation
-    const degradable = entity._degradableLimbs;
-    if (degradable && degradable.length > 0) {
-      for (let j = 0; j < degradable.length; j++) {
-        const item = degradable[j];
-        if (item.prop.condition <= 0) {
-          amputateLimb(entity, item.key, item.prop, entities, world);
-          compileEntityEffects(entity);
-          break;
         }
       }
     }
