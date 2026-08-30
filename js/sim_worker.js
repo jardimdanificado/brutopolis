@@ -801,7 +801,9 @@ function postSimSync(force = false) {
     pendingModifiedTiles = [];
   }
 
-  const activeEnts = [];
+  const activeEnts = globalThis.cachedActiveEnts = globalThis.cachedActiveEnts || [];
+  let entCount = 0;
+  
   for (let i = 0; i < entities.length; i++) {
     const e = entities[i];
     if (!e || e.destroyed) continue;
@@ -811,20 +813,26 @@ function postSimSync(force = false) {
       e._hasSyncedProps = true;
     }
 
-    activeEnts.push({
-      id: e.id,
-      x: e.x,
-      y: e.y,
-      birthTick: e.birthTick,
-      destroyed: false,
-      emote: e.emote,
-      motor: e.motor,
-      combatFlash: e.combatFlash,
-      isConstructed: e.isConstructed,
-      wallStyle: e.wallStyle,
-      properties: needsPropSync ? getSanitizedProperties(e) : undefined
-    });
+    if (entCount >= activeEnts.length) {
+      activeEnts.push({});
+    }
+    const out = activeEnts[entCount++];
+    out.id = e.id;
+    out.x = e.x;
+    out.y = e.y;
+    out.birthTick = e.birthTick;
+    out.destroyed = false;
+    out.emote = e.emote;
+    out.motor = e.motor;
+    out.combatFlash = e.combatFlash;
+    out.isConstructed = e.isConstructed;
+    out.wallStyle = e.wallStyle;
+    out.properties = needsPropSync ? getSanitizedProperties(e) : undefined;
   }
+  
+  // We cannot pass a sliced view directly if we want to avoid allocating a new array, 
+  // but slice() creates a shallow array copy which is extremely fast compared to 5000 new objects.
+  const entsToSync = activeEnts.slice(0, entCount);
 
   let newEvents = null;
   if (allEvents.length > lastEventCountPosted) {
@@ -855,7 +863,7 @@ function postSimSync(force = false) {
       totalSeconds: world.clock.totalSeconds
     },
     tick: currentTick,
-    entities: activeEnts,
+    entities: entsToSync,
     groups: serializeGroups(),
     events: newEvents
   });

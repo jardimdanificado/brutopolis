@@ -5719,8 +5719,7 @@ export function createGroupMemberProp() {
           }
         }
         if (!bp) {
-          // Direct fallback: check any unfinished building entity adjacent within 1 tile
-          const nearbyUnfinished = getEntitiesInRadius(ent.x, ent.y, 2).find(e =>
+          const nearbyUnfinished = findEntityInRadius(ent.x, ent.y, 2, e =>
             !e.destroyed &&
             ((e.properties.warehouse && !e.properties.warehouse.isCompleted) ||
              (e.properties.campfire && e.isConstructed === false) ||
@@ -5892,7 +5891,9 @@ export function createGroupMemberProp() {
                 });
               }
 
-              // 7. Withdraw needed resource to build houses
+              // 7. Withdraw needed resource to build structures
+              const needsWood = blueprint.some(b => (!getEntityAtTileByProp(b.x, b.y, "house") || !getEntityAtTileByProp(b.x, b.y, "house")?.properties.house?.isCompleted) || (!getEntityAtTileByProp(b.x, b.y, "wall") && b.type === "wall"));
+              const needsStone = blueprint.some(b => (!getEntityAtTileByProp(b.x, b.y, "well") || !getEntityAtTileByProp(b.x, b.y, "well")?.properties.well?.isCompleted) || b.type === "campfire" || (b.type === "wall" && !getEntityAtTileByProp(b.x, b.y, "wall")));
 let freeArm = null; for (const k in ent.properties) { const p = ent.properties[k]; if (k.startsWith("arm") && p && !p.heldItem) { freeArm = [k, p]; break; } }
               if (freeArm && whItems.length > 0) {
                 const itemIdx = whItems.findIndex(i => (needsWood && (i.resourceType === "wood" || i.name?.includes("Wood"))) || (needsStone && (i.resourceType === "stone" || i.resourceType === "bone" || i.name?.includes("Stone"))));
@@ -6743,7 +6744,7 @@ let freeArm = null; for (const k in ent.properties) { const p = ent.properties[k
 
         // B. Just-In-Time Resource Pickup (ONLY if unbuilt structure exists)
         if (hasUnbuiltStruct) {
-          const nearbyRes = getEntitiesInRadius(ent.x, ent.y, 16).find(e => !e.destroyed && ((e.properties.resourceType === "wood" && needsWood) || (e.properties.resourceType === "stone" && needsStone)));
+          const nearbyRes = findEntityInRadius(ent.x, ent.y, 16, e => !e.destroyed && ((e.properties.resourceType === "wood" && needsWood) || (e.properties.resourceType === "stone" && needsStone)));
           if (nearbyRes) {
             const dist = Math.max(Math.abs(nearbyRes.x - ent.x), Math.abs(nearbyRes.y - ent.y));
             if (dist <= 1) {
@@ -6817,7 +6818,7 @@ let freeArm = null; for (const k in ent.properties) { const p = ent.properties[k
 
         // E. Territory Ground Cleaning & Hauling to Warehouse/Pantry with Basket Support
         if (inClaimedZone) {
-          const nearbyGroundItem = getEntitiesInRadius(ent.x, ent.y, 2).find(e =>
+          const nearbyGroundItem = findEntityInRadius(ent.x, ent.y, 2, e =>
             !e.destroyed &&
             !e.properties.photosynthesis &&
             !e.properties.deep_root &&
@@ -7131,7 +7132,8 @@ export function createCombatProp(attackInterval = 1.2, aggroRange = 3) {
       if (target.properties.structure) {
         let siegePower = 35;
         if (ent.properties.violent) siegePower *= 1.35;
-        for (const [k, prop] of Object.entries(ent.properties)) {
+        for (const k in ent.properties) {
+          const prop = ent.properties[k];
           if (k.startsWith("arm") && prop && prop.heldItem?.damage) {
             siegePower += prop.heldItem.damage * 0.8;
             break;
@@ -7162,7 +7164,8 @@ export function createCombatProp(attackInterval = 1.2, aggroRange = 3) {
       }
 
       // Free hands: if holding a non-weapon resource/food, drop to ground and remember location
-      for (const [k, prop] of Object.entries(ent.properties)) {
+      for (const k in ent.properties) {
+        const prop = ent.properties[k];
         if (k.startsWith("arm") && prop && prop.heldItem && !prop.heldItem.damage && Math.random() < 0.75) {
           dropHeldItem(ent, entities, world);
         }
@@ -7432,8 +7435,22 @@ export function findPathAStarLocal(startX, startY, targetX, targetY, world, ent,
   function toKey(x, y) { return (x << 16) | (y & 0xffff); }
 
   const startKey = toKey(startX, startY);
-  const openMap = new Map();
-  const openArray = [];
+  
+  if (!globalThis.astarOpenMap) {
+    globalThis.astarOpenMap = new Map();
+    globalThis.astarClosedSet = new Set();
+    globalThis.astarGScores = new Map();
+    globalThis.astarOpenArray = [];
+  }
+  const openMap = globalThis.astarOpenMap;
+  const closedSet = globalThis.astarClosedSet;
+  const gScores = globalThis.astarGScores;
+  const openArray = globalThis.astarOpenArray;
+  
+  openMap.clear();
+  closedSet.clear();
+  gScores.clear();
+  openArray.length = 0;
 
   function pushHeap(node) {
     openArray.push(node);
@@ -7477,8 +7494,6 @@ export function findPathAStarLocal(startX, startY, targetX, targetY, world, ent,
   pushHeap(startNode);
   openMap.set(startKey, startNode);
 
-  const closedSet = new Set();
-  const gScores = new Map();
   gScores.set(startKey, 0);
 
   let iterations = 0;
@@ -7783,7 +7798,8 @@ export function createLocomotionProp() {
 
       let totalLegPower = 0;
       let legCount = 0;
-      for (const [key, prop] of Object.entries(ent.properties)) {
+      for (const key in ent.properties) {
+        const prop = ent.properties[key];
         if ((key.startsWith("leg") || key.startsWith("paw")) && prop && prop.condition !== undefined) {
           totalLegPower += (prop.quality * (prop.condition / prop.maxCondition));
           legCount++;

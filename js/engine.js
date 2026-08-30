@@ -901,13 +901,31 @@ export function compileEntityEffects(entity) {
     }
   }
   
-  if (degradable.length > 0 || entity.properties.brain || entity.properties.motor) {
-    isSlow = false; // Creatures with limbs/brains/motors are never slow
+  let lodInterval = 1;
+  if (!entity.properties.brain && !entity.properties.motor) {
+    if (entity.properties.photosynthesis || entity.properties.tree || entity.properties.deep_root || entity.properties.species === "pine" || entity.properties.species === "oak" || entity.properties.species === "willow") {
+      lodInterval = 120; // Flora
+    } else if (entity.properties.species === "item" || entity.properties.species === "corpse") {
+      lodInterval = 60; // Dropped items decay/tick very slowly
+    } else {
+      lodInterval = 30; // Other static entities
+    }
+  } else if (entity.properties.brain && entity.properties.motor) {
+    if (!entity.properties.group && entity.properties.species !== "human") {
+      lodInterval = 12; // Wild animals tick every 12 frames (smoothly interpolated by UI)
+    } else {
+      lodInterval = 1; // Colonists tick every frame for responsive AI
+    }
+  }
+  
+  // High-priority combat override
+  if (entity.combatFlash > 0 || entity.emote === 8 || entity.properties.health?.current < entity.properties.health?.max) {
+    lodInterval = 1; 
   }
 
   entity._activeEffects = effects;
   entity._degradableLimbs = degradable;
-  entity._isSlowTicking = isSlow;
+  entity._lodInterval = lodInterval;
   entity._effectsVersion = entity._propsVersion || 0;
 }
 
@@ -918,7 +936,6 @@ export function tickEntities(entities, dt, world) {
   if (world) currentWorld = world;
   const initialLen = entities.length;
   let hasDead = false;
-  const slowTickInterval = 120;
 
   for (let i = 0; i < initialLen; i++) {
     const entity = entities[i];
@@ -935,9 +952,10 @@ export function tickEntities(entities, dt, world) {
     }
 
     let entityDt = dt;
-    if (entity._isSlowTicking) {
-      if ((currentTick + entity.id) % slowTickInterval !== 0) continue;
-      entityDt = dt * slowTickInterval;
+    const lod = entity._lodInterval || 1;
+    if (lod > 1) {
+      if ((currentTick + entity.id) % lod !== 0) continue;
+      entityDt = dt * lod;
     }
 
     if (effects && effects.length > 0) {
