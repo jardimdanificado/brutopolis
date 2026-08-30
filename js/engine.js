@@ -873,15 +873,20 @@ export function explodeEntityOnDeath(entity, entitiesArray, world) {
 }
 
 export function compileEntityEffects(entity) {
-  if (!entity || !entity.properties) return;
+  const props = entity.properties || {};
   const effects = [];
   const degradable = [];
-  const props = entity.properties;
+  let isSlow = true;
+
   for (const key in props) {
     const prop = props[key];
     if (!prop) continue;
     if (typeof prop.effect === "function") {
       effects.push(prop);
+      // If ANY effect runs faster than 0.5s or has no rate, it's NOT slow
+      if (prop.rate === undefined || prop.rate < 0.5) {
+        isSlow = false;
+      }
     }
     if (
       typeof prop.condition === "number" &&
@@ -895,8 +900,14 @@ export function compileEntityEffects(entity) {
       degradable.push({ key, prop });
     }
   }
+  
+  if (degradable.length > 0 || entity.properties.brain || entity.properties.motor) {
+    isSlow = false; // Creatures with limbs/brains/motors are never slow
+  }
+
   entity._activeEffects = effects;
   entity._degradableLimbs = degradable;
+  entity._isSlowTicking = isSlow;
   entity._effectsVersion = entity._propsVersion || 0;
 }
 
@@ -907,6 +918,7 @@ export function tickEntities(entities, dt, world) {
   if (world) currentWorld = world;
   const initialLen = entities.length;
   let hasDead = false;
+  const slowTickInterval = 120;
 
   for (let i = 0; i < initialLen; i++) {
     const entity = entities[i];
@@ -922,11 +934,17 @@ export function tickEntities(entities, dt, world) {
       effects = entity._activeEffects;
     }
 
+    let entityDt = dt;
+    if (entity._isSlowTicking) {
+      if ((currentTick + entity.id) % slowTickInterval !== 0) continue;
+      entityDt = dt * slowTickInterval;
+    }
+
     if (effects && effects.length > 0) {
       for (let j = 0; j < effects.length; j++) {
         const prop = effects[j];
         if (prop.rate !== undefined && prop.rate > 0) {
-          prop._timer = (prop._timer || 0) + dt;
+          prop._timer = (prop._timer || 0) + entityDt;
           if (prop._timer >= prop.rate) {
             // Analytical Macro Step: if speed is high, run at most 2 aggregated passes instead of dozens of micro-ticks
             const triggers = Math.floor(prop._timer / prop.rate);
@@ -938,7 +956,7 @@ export function tickEntities(entities, dt, world) {
             }
           }
         } else {
-          prop.effect(entity, dt, world, entities, prop);
+          prop.effect(entity, entityDt, world, entities, prop);
         }
       }
     }

@@ -301,7 +301,9 @@ function updateLocalEntities(entitiesData, registryData) {
       ent.combatFlash = regData.combatFlash;
       ent.isConstructed = regData.isConstructed;
       ent.wallStyle = regData.wallStyle;
-      ent.properties = regData.properties || {};
+      if (regData.properties !== undefined) {
+        ent.properties = regData.properties;
+      }
     }
   }
 
@@ -332,7 +334,9 @@ function updateLocalEntities(entitiesData, registryData) {
       ent.combatFlash = entData.combatFlash;
       ent.isConstructed = entData.isConstructed;
       ent.wallStyle = entData.wallStyle;
-      ent.properties = entData.properties || {};
+      if (entData.properties !== undefined) {
+        ent.properties = entData.properties;
+      }
 
       if (isNew) {
         registerEntitySpatial(ent, zSize);

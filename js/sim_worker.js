@@ -781,10 +781,16 @@ function postFullWorldState(startX = 256, startY = 256, firstLeaderId = -1, isTi
 let pendingModifiedTiles = [];
 let lastSyncTime = 0;
 
+let lastPropsSyncTime = 0;
 function postSimSync(force = false) {
   const now = performance.now();
   if (!force && now - lastSyncTime < 40) return; // Throttle UI sync messages to max 25 FPS to keep main thread light
   lastSyncTime = now;
+
+  const syncProps = force || (now - lastPropsSyncTime > 1000);
+  if (syncProps) {
+    lastPropsSyncTime = now;
+  }
 
   // Real-time incremental tile updates (e.g. roads built by creatures or terraforming)
   if (pendingModifiedTiles.length > 0) {
@@ -799,6 +805,12 @@ function postSimSync(force = false) {
   for (let i = 0; i < entities.length; i++) {
     const e = entities[i];
     if (!e || e.destroyed) continue;
+    
+    const needsPropSync = syncProps || !e._hasSyncedProps;
+    if (needsPropSync) {
+      e._hasSyncedProps = true;
+    }
+
     activeEnts.push({
       id: e.id,
       x: e.x,
@@ -810,7 +822,7 @@ function postSimSync(force = false) {
       combatFlash: e.combatFlash,
       isConstructed: e.isConstructed,
       wallStyle: e.wallStyle,
-      properties: getSanitizedProperties(e)
+      properties: needsPropSync ? getSanitizedProperties(e) : undefined
     });
   }
 

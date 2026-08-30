@@ -55,7 +55,7 @@ export class WorldClock {
   tick(dt) {
     this.minuteTimer += dt;
     // 1 real second = 1 game minute
-    if (this.minuteTimer >= 1.0) {
+    while (this.minuteTimer >= 1.0) {
       this.minuteTimer -= 1.0;
       this.minute++;
       if (this.minute >= 60) {

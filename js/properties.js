@@ -1149,6 +1149,11 @@ export function isNearNormalRoad(x, y, group = null, maxDist = 2) {
         const nx = x + dx;
         const ny = y + dy;
         if (isRoadTile(nx, ny)) return true;
+        if (group && group._plannedRoads) {
+           for (const pr of group._plannedRoads) {
+              if (pr.x === nx && pr.y === ny) return true;
+           }
+        }
       }
     }
   }
@@ -1475,8 +1480,8 @@ export function createBrainProp(maxPath = 16, personality = { bravery: 0.7, curi
             this.rememberObject(other);
           }
 
-          // Process Living Creatures: Species & Color Affinity
-          if (other.properties.life) {
+          // Process Living Creatures (Brain required): Species & Color Affinity
+          if (other.properties.life && other.properties.brain) {
             const otherSpecies = other.properties.species || "creature";
             const isSameSpecies = otherSpecies === mySpecies;
             const otherColor = other.properties.render?.color;
@@ -3703,7 +3708,20 @@ export function getClanBlueprintTiles(group) {
   const isLuxuryKingdom = group.claimedZones && group.claimedZones.length >= 16;
 
   if (allMembersHoused && isLuxuryKingdom) {
-    for (const zk of group.claimedZones) {
+    // 6.1 Find which zones actually contain buildings
+    const builtZonesSet = new Set();
+    for (const t of tiles) {
+      if (t.type === "house" || t.type === "warehouse" || t.type === "kitchen" || t.type === "slaughterhouse" || t.type === "well") {
+        const zx = Math.floor(t.x / sz);
+        const zy = Math.floor(t.y / sz);
+        builtZonesSet.add(`${zx}_${zy}`);
+      }
+    }
+    
+    // Only wall the zones that are claimed AND near buildings
+    const walledZones = group.claimedZones.filter(zk => builtZonesSet.has(zk));
+
+    for (const zk of walledZones) {
       const zp = zk.includes("_") ? zk.split("_") : zk.split(",");
       const zx = parseInt(zp[0], 10);
       const zy = parseInt(zp[1], 10);
@@ -3712,7 +3730,7 @@ export function getClanBlueprintTiles(group) {
         for (let oy = 0; oy < sz; oy++) {
           const px = zx * sz + ox;
           const py = zy * sz + oy;
-          const isPerim = isPerimeterEdge(zx, zy, ox, oy, group.claimedZones);
+          const isPerim = isPerimeterEdge(zx, zy, ox, oy, walledZones);
 
           if (isPerim && isLandTile(px, py) && !isRoadTile(px, py) && !plannedRoadSet.has(`${px}_${py}`)) {
             const isGateway = (oy === 0 && (ox === 3 || ox === 4)) ||
@@ -3725,6 +3743,18 @@ export function getClanBlueprintTiles(group) {
               tiles.push({ x: px, y: py, type: "wall" });
             }
           }
+        }
+      }
+    }
+  }
+
+  // Cleanup orphaned walls from old blueprints (fixes old saves where walls were generated far out)
+  const validWallCoords = new Set(tiles.filter(t => t.type === "wall" || t.type === "gate").map(t => `${t.x}_${t.y}`));
+  for (const ent of entityRegistry.values()) {
+    if (!ent.destroyed && ent.properties.structure && (ent.properties.wallStyle || ent.properties.name?.includes("Muralha") || ent.properties.name?.includes("Wall"))) {
+      if (ent.properties.name && group.name && ent.properties.name.includes(group.name)) {
+        if (!validWallCoords.has(`${ent.x}_${ent.y}`)) {
+          ent.destroyed = true; // Destroy the orphaned wall so builders stop targeting it
         }
       }
     }
@@ -4795,7 +4825,7 @@ export function createAndTransmitLie(speaker, listener, world, entities) {
     const candidateLivingKnown = [];
     for (const id of knownIds) {
       const e = getEntityById(id);
-      if (e && !e.destroyed && e.properties?.life && e.properties?.species !== "item" && e.properties?.name) {
+      if (e && !e.destroyed && e.properties?.life && e.properties?.brain && e.properties?.species !== "item" && e.properties?.name) {
         candidateLivingKnown.push(e);
       }
     }
@@ -5082,18 +5112,29 @@ export function transmitTruthfulGossip(speaker, listener, world, entities) {
 
   const citedEventId = mem.eventId || mem.lieEventId || null;
 
+  const dialogueTemplates = [
+    `${speaker.properties.name} spoke with ${listener.properties.name}: "Did you hear that ${gossipDesc}?"`,
+    `${speaker.properties.name} whispered to ${listener.properties.name}: "I couldn't believe it, but ${gossipDesc}!"`,
+    `${speaker.properties.name} recounted to ${listener.properties.name}: "It's the talk of the town that ${gossipDesc}."`,
+    `${speaker.properties.name} shared a rumor with ${listener.properties.name}: "Don't tell anyone, but ${gossipDesc}..."`,
+    `${speaker.properties.name} discussed with ${listener.properties.name}: "What do you think about the fact that ${gossipDesc}?"`,
+    `${speaker.properties.name} excitedly told ${listener.properties.name}: "You won't believe this... ${gossipDesc}!"`
+  ];
+  
+  const chosenDialogue = dialogueTemplates[Math.floor(Math.random() * dialogueTemplates.length)];
+
   recordWorldEvent({
     opcode: OP_DIALOGUE,
     primaryEntityId: speaker.id,
     secondaryEntityId: listener.id,
     location: { x: speaker.x, y: speaker.y },
-    description: `${speaker.properties.name} spoke with ${listener.properties.name}: "Did you hear that ${gossipDesc}?"`,
+    description: chosenDialogue,
     tick: currentTick,
     timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
     metadata: {
       primaryName: speaker.properties.name,
       secondaryName: listener.properties.name,
-      text: `${speaker.properties.name} spoke with ${listener.properties.name}: "Did you hear that ${gossipDesc}?"`,
+      text: chosenDialogue,
       gossipedEventId: citedEventId,
       referencedEventId: citedEventId,
       citedEventId: citedEventId
@@ -6702,13 +6743,18 @@ let freeArm = null; for (const k in ent.properties) { const p = ent.properties[k
 
         // B. Just-In-Time Resource Pickup (ONLY if unbuilt structure exists)
         if (hasUnbuiltStruct) {
-          const nearbyRes = getEntitiesInRadius(ent.x, ent.y, 2).find(e => !e.destroyed && Math.max(Math.abs(e.x - ent.x), Math.abs(e.y - ent.y)) <= 1 && ((e.properties.resourceType === "wood" && needsWood) || (e.properties.resourceType === "stone" && needsStone)));
+          const nearbyRes = getEntitiesInRadius(ent.x, ent.y, 16).find(e => !e.destroyed && ((e.properties.resourceType === "wood" && needsWood) || (e.properties.resourceType === "stone" && needsStone)));
           if (nearbyRes) {
-            const isStone = nearbyRes.properties.resourceType === "stone";
-            const resName = isStone ? "Stone Block" : "Wood Log";
-            nearbyRes.destroyed = true;
-            freeArm.heldItem = { name: resName, resourceType: isStone ? "stone" : "wood", weight: 1 };
-            return;
+            const dist = Math.max(Math.abs(nearbyRes.x - ent.x), Math.abs(nearbyRes.y - ent.y));
+            if (dist <= 1) {
+              const isStone = nearbyRes.properties.resourceType === "stone";
+              const resName = isStone ? "Stone Block" : "Wood Log";
+              nearbyRes.destroyed = true;
+              freeArm.heldItem = { name: resName, resourceType: isStone ? "stone" : "wood", weight: 1 };
+              return;
+            } else {
+              ent._buildTarget = nearbyRes;
+            }
           }
 
           // C. Just-In-Time Tree Chopping (Strict quota: halts once needed wood is available)
@@ -7118,231 +7164,105 @@ export function createCombatProp(attackInterval = 1.2, aggroRange = 3) {
       // Free hands: if holding a non-weapon resource/food, drop to ground and remember location
       for (const [k, prop] of Object.entries(ent.properties)) {
         if (k.startsWith("arm") && prop && prop.heldItem && !prop.heldItem.damage && Math.random() < 0.75) {
-          const droppedItem = prop.heldItem.entity || createWoodItem(ent.x, ent.y);
-          if (entities) entities.push(droppedItem);
-          if (ent.properties.brain?.rememberObject) ent.properties.brain.rememberObject(droppedItem);
-          prop.heldItem = null;
+          dropHeldItem(ent, entities, world);
         }
       }
 
       // 1. Determine Weapon / Limb Used for Attack
-      let attackPower = 0;
-      let usedLimbName = "body strike";
-      let usedLimb = null;
+      let attackPower = 25; // Base punch/strike
+      let usedLimbName = "strike";
+      
+      const wArmL = ent.properties.arm_left;
+      const wArmR = ent.properties.arm_right;
+      const wPaw = ent.properties.paw_front_left || ent.properties.paw_front_right;
+      const wMouth = ent.properties.mouth;
 
-      // 1.1 Check arms first (bipeds with weapons/fists)
-      for (const [key, prop] of Object.entries(ent.properties)) {
-        if (key.startsWith("arm") && prop && prop.condition > 10) {
-          const limbFactor = (prop.condition / prop.maxCondition) * prop.quality;
-          if (prop.heldItem && prop.heldItem.damage) {
-            attackPower = (prop.heldItem.damage * 0.9) * limbFactor;
-            usedLimbName = prop.heldItem.name || key;
-          } else {
-            attackPower = 28 * limbFactor;
-            usedLimbName = `punch (${key})`;
-          }
-          usedLimb = prop;
-          break;
-        }
-      }
-
-      // 1.2 Check paws with claws (beasts & quadrupeds)
-      if (!usedLimb) {
-        for (const [key, prop] of Object.entries(ent.properties)) {
-          if (key.startsWith("paw") && prop && prop.condition > 10) {
-            const limbFactor = (prop.condition / prop.maxCondition) * prop.quality;
-            if (prop.clawsCount > 0) {
-              attackPower = (prop.clawDamage * prop.clawsCount * 0.6 + 15) * limbFactor;
-              usedLimbName = `claw swipe (${key}, ${prop.clawsCount} claws)`;
-            } else {
-              attackPower = 8 * limbFactor;
-              usedLimbName = `paw swipe (${key})`;
-            }
-            usedLimb = prop;
-            break;
-          }
-        }
+      if (wArmR?.heldItem?.damage) {
+        attackPower = wArmR.heldItem.damage;
+        usedLimbName = wArmR.heldItem.name;
+      } else if (wArmL?.heldItem?.damage) {
+        attackPower = wArmL.heldItem.damage;
+        usedLimbName = wArmL.heldItem.name;
+      } else if (wPaw && wPaw.clawsCount > 0) {
+        attackPower = 35;
+        usedLimbName = "claw swipe";
+      } else if (wMouth && wMouth.teethCount > 0) {
+        attackPower = wMouth.biteDamage || 32;
+        usedLimbName = "bite";
+      } else if (ent.properties.horns || ent.properties.tusks) {
+        attackPower = 38;
+        usedLimbName = "horns/tusks";
+      } else if (ent.properties.stinger || ent.properties.pincher) {
+        attackPower = 42;
+        usedLimbName = "stinger/pincher";
       }
 
-      // 1.3 If no working arm/paw, try mouth bite!
-      if (!usedLimb && ent.properties.mouth && ent.properties.mouth.teethCount > 0) {
-        const teethRatio = ent.properties.mouth.teethCount / ent.properties.mouth.maxTeeth;
-        attackPower = (ent.properties.mouth.biteDamage || 32) * teethRatio;
-        usedLimbName = `bite (${ent.properties.mouth.teethCount} teeth)`;
-        usedLimb = ent.properties.mouth;
-      }
-
-      // 1.4 If still no weapon, try kicking with legs!
-      if (!usedLimb) {
-        for (const [key, prop] of Object.entries(ent.properties)) {
-          if (key.startsWith("leg") && prop && prop.condition > 15) {
-            const limbFactor = (prop.condition / prop.maxCondition) * prop.quality;
-            attackPower = 32 * limbFactor;
-            usedLimbName = `kick (${key})`;
-            usedLimb = prop;
-            break;
-          }
-        }
-      }
-
-      // Trait Modifiers on Attack Power
-      if (ent.properties.violent) {
-        attackPower *= (ent.properties.violent.damageMultiplier || 1.25);
-      }
-      if (ent.properties.pacifist) {
-        attackPower *= (ent.properties.pacifist.damageMultiplier || 0.70);
-      }
+      // Trait Modifiers
+      if (ent.properties.violent) attackPower *= (ent.properties.violent.damageMultiplier || 1.25);
+      if (ent.properties.pacifist) attackPower *= (ent.properties.pacifist.damageMultiplier || 0.70);
 
       if (attackPower <= 0) return;
 
-      // 2. Target Defense Calculation (Impact absorbed by shield, arms, paws or legs)
-      let absorbedDamage = 0;
-      let defendingLimb = null;
-
-      for (const [key, prop] of Object.entries(target.properties)) {
-        if ((key.startsWith("arm") || key.startsWith("paw") || key.startsWith("leg")) && prop && prop.condition > 10) {
-          const limbFactor = (prop.condition / prop.maxCondition) * prop.quality;
-
-          if (prop.heldItem && prop.heldItem.defense) {
-            absorbedDamage = prop.heldItem.defense * 1.5 * limbFactor;
-            prop.heldItem.defense = Math.max(0, prop.heldItem.defense - 1);
-            defendingLimb = prop;
-            break;
-          } else if (!defendingLimb) {
-            absorbedDamage = 10 * limbFactor;
-            defendingLimb = prop;
-          }
-        }
+      // 2. Target Defense Calculation
+      let absorbedDamage = 10; // Base defense
+      if (target.properties.arm_left?.heldItem?.defense) {
+        absorbedDamage += target.properties.arm_left.heldItem.defense * 1.5;
+        target.properties.arm_left.heldItem.defense = Math.max(0, target.properties.arm_left.heldItem.defense - 1);
+      }
+      if (target.properties.arm_right?.heldItem?.defense) {
+        absorbedDamage += target.properties.arm_right.heldItem.defense * 1.5;
+        target.properties.arm_right.heldItem.defense = Math.max(0, target.properties.arm_right.heldItem.defense - 1);
       }
 
-      if (defendingLimb && !defendingLimb.heldItem?.defense) {
-        const defDmg = Math.round(absorbedDamage * 0.6);
-        defendingLimb.condition = Math.max(0, defendingLimb.condition - defDmg);
-        if (target.properties.brain) {
-          target.properties.brain.condition = Math.max(0, target.properties.brain.condition - Math.max(1, Math.round(defDmg * 0.25)));
-        }
-      }
-
-      // 3. Apply Damage to Target's Physical Body Parts
       const netDamage = Math.max(8, attackPower - absorbedDamage);
       target.combatFlash = 6;
-
-      // Every damage received affects the brain condition as well
-      if (target.properties.brain) {
-        const brainDirectDmg = Math.max(2, Math.round(netDamage * 0.35));
-        target.properties.brain.condition = Math.max(0, target.properties.brain.condition - brainDirectDmg);
-      }
-
-      const physicalParts = [];
-      for (const [pk, p] of Object.entries(target.properties)) {
-        if (p && typeof p.condition === "number" && typeof p.maxCondition === "number" && p.condition > 0 && !pk.startsWith("amputated_")) {
-          physicalParts.push({ key: pk, prop: p });
-        }
-      }
-
       let hitPartName = "body";
+
+      // 3. Apply Direct Damage to HP / Brain
+      if (target.properties.brain) {
+        target.properties.brain.condition = Math.max(0, target.properties.brain.condition - Math.round(netDamage * 0.45));
+      }
+      if (target.properties.health) {
+        target.properties.health.current -= netDamage;
+      }
+
+      // Fast, simplified amputation (only check 4 main limbs to avoid object iterations)
+      const vulnerableLimbs = ["arm_left", "arm_right", "leg_left", "leg_right", "paw_front_left", "paw_front_right"];
       let severedLimbEntity = null;
 
-      if (physicalParts.length > 0) {
-        // HUNGER HUNT VS HATRED KILL TARGETING:
-        let primaryTarget = null;
+      if (Math.random() < 0.25) { // 25% chance to hit a specific limb
+        const randLimbKey = vulnerableLimbs[Math.floor(Math.random() * vulnerableLimbs.length)];
+        const targetLimb = target.properties[randLimbKey];
 
-        if (targetIsHunger) {
-          // Predation focus: specifically target edible external limbs to amputate and eat!
-          const edibleParts = physicalParts.filter(pt =>
-            pt.key.startsWith("arm") || pt.key.startsWith("leg") || pt.key.startsWith("paw") ||
-            pt.key.startsWith("wing") || pt.key.startsWith("tail") || pt.key.includes("flesh")
-          );
-          if (edibleParts.length > 0) {
-            primaryTarget = edibleParts[Math.floor(Math.random() * edibleParts.length)];
-          } else {
-            primaryTarget = physicalParts[Math.floor(Math.random() * physicalParts.length)];
-          }
-        } else if (targetIsHate) {
-          // Hatred / War focus: target vital areas (head, torso, brain, vital core) to kill!
-          const vitalParts = physicalParts.filter(pt =>
-            pt.key.includes("torso") || pt.key.includes("head") || pt.key.includes("brain") ||
-            pt.key.includes("mouth") || pt.key.includes("eye") || pt.key.includes("heart")
-          );
-          if (vitalParts.length > 0 && Math.random() < 0.70) {
-            primaryTarget = vitalParts[Math.floor(Math.random() * vitalParts.length)];
-          } else {
-            primaryTarget = physicalParts[Math.floor(Math.random() * physicalParts.length)];
-          }
-        } else {
-          primaryTarget = physicalParts[Math.floor(Math.random() * physicalParts.length)];
-        }
+        if (targetLimb && !targetLimb.cannotAmputate) {
+          const mainDamage = Math.round(netDamage * 0.8);
+          targetLimb.condition = Math.max(0, targetLimb.condition - mainDamage);
+          hitPartName = `${randLimbKey} (-${mainDamage} cond)`;
 
-        const mainDamage = Math.round(netDamage * (targetIsHunger ? 0.95 : 0.75));
-        primaryTarget.prop.condition = Math.max(0, primaryTarget.prop.condition - mainDamage);
-        hitPartName = `${primaryTarget.key} (-${mainDamage} cond)`;
-
-        // Tooth Loss: If mouth is hit, knock out tooth!
-        if (primaryTarget.key === "mouth" && target.properties.mouth?.loseTooth) {
-          target.properties.mouth.loseTooth(target, world, entities);
-        }
-
-        // Claw Break: If paw with claws suffers heavy hit, snap off a claw!
-        if (primaryTarget.key.startsWith("paw") && primaryTarget.prop.clawsCount > 0 && Math.random() < 0.45) {
-          primaryTarget.prop.clawsCount--;
-        }
-
-        // Secondary splash trauma to other body parts
-        for (const pt of physicalParts) {
-          if (pt !== primaryTarget && Math.random() < 0.45) {
-            const splash = Math.round(Math.max(2, netDamage * 0.18));
-            pt.prop.condition = Math.max(0, pt.prop.condition - splash);
-          }
-        }
-
-        // Traumas: Bruises, Concussions and Scars
-        if (Math.random() < 0.4) {
-          target.properties.bruise = createBruiseProp(30.0, 1);
-        }
-        if (primaryTarget.key.includes("brain") || primaryTarget.key.includes("eye") || primaryTarget.key.includes("mouth")) {
-          if (Math.random() < 0.5) target.properties.concussion = createConcussionProp(40.0);
-        }
-        if (mainDamage >= 35 && !target.properties.scar) {
-          target.properties.scar = createScarProp(primaryTarget.key, `Scar on ${primaryTarget.key}`);
-        }
-
-        // Limb Amputation if Condition drops <= 0 (Brains CANNOT be amputated!)
-        if (
-          primaryTarget.prop.condition <= 0 &&
-          primaryTarget.key !== "brain" &&
-          !primaryTarget.key.includes("brain") &&
-          !primaryTarget.prop.cannotAmputate &&
-          !primaryTarget.prop.isBrain
-        ) {
-          let limbSkin = "Item_Steak.png";
-          let limbColor = 0xffdc5050;
-          if (primaryTarget.key.startsWith("wing")) {
-            limbSkin = "Item_Cloak.png";
-            limbColor = 0xffe6e6f0;
-          } else if (primaryTarget.key.startsWith("arm") || primaryTarget.key.startsWith("paw")) {
-            limbSkin = "Item_Steak.png";
-            limbColor = 0xffdc5050;
-          } else if (primaryTarget.key.startsWith("leg")) {
-            limbSkin = "Item_Drumstick.png";
-            limbColor = 0xffdc5050;
+          // Traumas
+          if (Math.random() < 0.4 && !target.properties.bruise) {
+            target.properties.bruise = createBruiseProp(30.0, 1);
           }
 
-          severedLimbEntity = createEntity(
-            {
-              name: `Limb (${primaryTarget.key}) of ${target.properties.name}`,
-              species: "item",
-              render: { skin: limbSkin, color: limbColor, backcolor: 0x00000000 },
-              edible: { nutrition: 1200, foodType: "meat", digestDuration: 25, partKey: primaryTarget.key },
-              lifespan: createLifespanProp(1800.0)
-            },
-            target.x + (Math.floor(Math.random() * 3) - 1),
-            target.y + (Math.floor(Math.random() * 3) - 1)
-          );
+          // Amputation
+          if (targetLimb.condition <= 0) {
+            const limbSkin = randLimbKey.startsWith("leg") ? "Item_Drumstick.png" : "Item_Steak.png";
+            severedLimbEntity = createEntity(
+              {
+                name: `Limb (${randLimbKey}) of ${target.properties.name}`,
+                species: "item",
+                render: { skin: limbSkin, color: 0xffdc5050, backcolor: 0x00000000 },
+                edible: { nutrition: 1200, foodType: "meat", digestDuration: 25, partKey: randLimbKey },
+                lifespan: createLifespanProp(1800.0)
+              },
+              target.x + (Math.floor(Math.random() * 3) - 1),
+              target.y + (Math.floor(Math.random() * 3) - 1)
+            );
           if (entities) entities.push(severedLimbEntity);
 
-          delete target.properties[primaryTarget.key];
-          target.properties[`amputated_${primaryTarget.key}`] = {
-            part: primaryTarget.key,
+          delete target.properties[randLimbKey];
+          target.properties[`amputated_${randLimbKey}`] = {
+            part: randLimbKey,
             bleedRate: 4.0,
             effect(e, dt) {
               if (e.properties.life) {
@@ -7359,7 +7279,7 @@ export function createCombatProp(attackInterval = 1.2, aggroRange = 3) {
             primaryEntityId: target.id,
             secondaryEntityId: ent.id,
             location: { x: target.x, y: target.y },
-            description: `${target.properties.name} had limb '${primaryTarget.key}' severed by the attack of ${ent.properties.name}!`,
+            description: `${target.properties.name} had limb '${randLimbKey}' severed by the attack of ${ent.properties.name}!`,
             tick: currentTick,
             timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
           });
@@ -7372,6 +7292,7 @@ export function createCombatProp(attackInterval = 1.2, aggroRange = 3) {
           }
         }
       }
+    }
 
       // Direct shock to vital energy: Hatred/War delivers lethal shock, Hunger focuses on taking limb
       if (target.properties.life) {
