@@ -1014,6 +1014,15 @@ function loadWorldSave(saveData) {
           renderable: entData.renderable,
           properties: entData.properties || {}
         };
+        
+        // Reconnect real group reference
+        if (ent.properties.group && ent.properties.group.id && world && world.groups) {
+          const realGroup = world.groups.find(g => g.id === ent.properties.group.id);
+          if (realGroup) {
+            ent.properties.group = realGroup;
+          }
+        }
+        
         rebindEntityMethods(ent);
         entities.push(ent);
         entityRegistry.set(ent.id, ent);

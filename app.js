@@ -231,6 +231,7 @@ function initSimWorker() {
       }
 
       case "SIM_UPDATE": {
+        tpsCounter++;
         if (data.tick !== undefined) {
           setEngineTick(data.tick);
           if (rctRenderer) rctRenderer.simTick = data.tick;
@@ -964,6 +965,8 @@ let lastSelectedId = -1;
 let lastTime = 0;
 let fpsFrames = 0;
 let currentFps = 60;
+let currentTps = 0;
+let tpsFrames = 0;
 let lastFpsUpdate = performance.now();
 let tpsCounter = 0;
 let measuredTps = 60;
@@ -2087,7 +2090,7 @@ function renderTopHudBar() {
     drawText8x8(timeStr, 188, 13, "#ffffff", 1);
     drawText8x8(`SUN:${Math.round(clock.globalLight * 100)}%`, 276, 13, "#3cbcfc", 1);
 
-    drawText8x8(`${currentFps}FPS`, 360, 13, "#bcbcbc", 1);
+    drawText8x8(`${currentFps}FPS ${measuredTps}TPS`, 330, 13, "#bcbcbc", 1);
 
     // MENU / TITLE Button
     drawNESButton(CANVAS_WIDTH - 64, 5, 56, 24, "MENU", false, false);
@@ -2141,7 +2144,7 @@ function renderTopHudBar() {
       ? Math.max(0.0, Math.min(1.0, (rawZMob - 0.08) / (5.0 - 0.08)))
       : Math.max(0.0, Math.min(1.0, (rawZMob - 0.3) / (2.5 - 0.3)));
     drawText8x8(`Z:${curNormZoomMob.toFixed(2)}`, 74, 13, "#a0e040", 1);
-    drawText8x8(`${currentFps}F`, 126, 13, "#888888", 1);
+    drawText8x8(`${currentFps}F ${measuredTps}T`, 100, 13, "#888888", 1);
 
     let topBtnX = CANVAS_WIDTH - 44;
     drawNESButton(topBtnX, 5, 38, 24, "MENU", false, false);
@@ -4672,8 +4675,6 @@ function frame(time) {
         updateEntitySpatial(e, zSize);
       }
     }
-
-    tpsCounter++;
 
     if (time - lastTpsUpdate >= 1000) {
       measuredTps = Math.round(tpsCounter * (1000 / Math.max(1, time - lastTpsUpdate)));

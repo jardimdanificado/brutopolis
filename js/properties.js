@@ -827,6 +827,32 @@ export function createWarehouseEntity(x, y, group = null, variant = 0) {
 }
 
 /**
+ * Artisan Hut (Cabana do Artesão)
+ */
+export function createArtisanHutEntity(x, y, group = null) {
+  const gName = group?.name || "Clan";
+  return createEntity(
+    {
+      name: `Cabana do Artesão de ${gName}`,
+      species: "structure",
+      artisan_hut: {
+        groupId: group?.id || null,
+        woodCost: 6,
+        stoneCost: 4,
+        woodCurrent: 0,
+        stoneCurrent: 0,
+        isCompleted: false
+      },
+      structure: { condition: 12000, maxCondition: 12000, defense: 90 },
+      render: { skin: "Feature_Cauldron.png", color: 0xffd4a373, backcolor: 0xff5c4033 },
+      blocking: true
+    },
+    x,
+    y
+  );
+}
+
+/**
  * Slaughterhouse Structure (Village Abattoir)
  * 2 Variations: Timber Slaughterhouse vs Stone Abattoir
  */
@@ -1121,7 +1147,6 @@ export function isRoadTile(x, y) {
  */
 export function isRoadFrontierTile(x, y, group = null) {
   if (isRoadTile(x, y)) return false;
-  if (group && group.claimedZones && isTileInClaimedZones(x, y, group.claimedZones)) return true;
 
   const cardDirs = [
     { dx: 1, dy: 0 },
@@ -2205,6 +2230,15 @@ export function createGenitaliaProp(type = "penis", isPregnant = false) {
           let canMate = false;
           let causesPregnancy = false;
 
+          // Enforce: Couples with a house MUST mate inside their house!
+          if (isMonogamous && partnerId === mate.id) {
+            const ownHouse = getOwnHouse(ent.id, entities);
+            if (ownHouse) {
+              const inHouse = Math.abs(ent.x - ownHouse.x) <= 2 && Math.abs(ent.y - ownHouse.y) <= 2;
+              if (!inHouse) continue;
+            }
+          }
+
           if (isMonogamous) {
             // Monogamous creatures mate with their bonded partner
             if (partnerId === mate.id && aff >= 25 && mateAff >= 25) {
@@ -2285,11 +2319,7 @@ export function createGenitaliaProp(type = "penis", isPregnant = false) {
               mate.properties.brain.affinities[ent.id] = Math.min(100, mateAff + 10);
             }
 
-            // 4. Emotes (Love Heart)
-            ent.emote = 12;
-            mate.emote = 12;
-
-            // 5. Cherished Memories
+            // 4. Cherished Memories
             ent.properties.brain?.addShortTerm({
               type: "MATING",
               desc: `Shared intimate passion and mating joy with ${mate.properties.name}`,
@@ -3302,6 +3332,9 @@ export function initClanPlaza(group) {
     if (!group._plaza.kitchen) {
       group._plaza.kitchen = { x: group._plaza.warehouse.x + 3, y: group._plaza.warehouse.y + 2 };
     }
+    if (!group._plaza.artisan_hut) {
+      group._plaza.artisan_hut = { x: group._plaza.warehouse.x - 2, y: group._plaza.warehouse.y + 3 };
+    }
     return group._plaza;
   }
 
@@ -3443,6 +3476,7 @@ export function getClanBlueprintTiles(group) {
   let wellEnt = null;
   let slaughterhouseEnt = null;
   let kitchenEnt = null;
+  let artisanHutEnt = null;
   const existingWarehouses = [];
 
   for (const e of entityRegistry.values()) {
@@ -3455,6 +3489,7 @@ export function getClanBlueprintTiles(group) {
       if (e.properties?.well && !wellEnt) wellEnt = e;
       if (e.properties?.slaughterhouse && !slaughterhouseEnt) slaughterhouseEnt = e;
       if (e.properties?.kitchen && !kitchenEnt) kitchenEnt = e;
+      if (e.properties?.artisan_hut && !artisanHutEnt) artisanHutEnt = e;
     }
   }
 
@@ -3482,6 +3517,11 @@ export function getClanBlueprintTiles(group) {
   const kitY = kitchenEnt ? kitchenEnt.y : (plaza?.kitchen?.y ?? (whY + 2));
   tiles.push({ x: kitX, y: kitY, type: "kitchen" });
   occupiedTiles.add(`${kitX}_${kitY}`);
+
+  const artX = artisanHutEnt ? artisanHutEnt.x : (plaza?.artisan_hut?.x ?? (whX - 2));
+  const artY = artisanHutEnt ? artisanHutEnt.y : (plaza?.artisan_hut?.y ?? (whY + 3));
+  tiles.push({ x: artX, y: artY, type: "artisan_hut" });
+  occupiedTiles.add(`${artX}_${artY}`);
 
   for (const ent of entityRegistry.values()) {
     if (!ent.destroyed && ent.properties.house && isTileInClaimedZones(ent.x, ent.y, group.claimedZones)) {
@@ -3711,7 +3751,7 @@ export function getClanBlueprintTiles(group) {
     // 6.1 Find which zones actually contain buildings
     const builtZonesSet = new Set();
     for (const t of tiles) {
-      if (t.type === "house" || t.type === "warehouse" || t.type === "kitchen" || t.type === "slaughterhouse" || t.type === "well") {
+      if (t.type === "house" || t.type === "warehouse" || t.type === "kitchen" || t.type === "slaughterhouse" || t.type === "well" || t.type === "artisan_hut") {
         const zx = Math.floor(t.x / sz);
         const zy = Math.floor(t.y / sz);
         builtZonesSet.add(`${zx}_${zy}`);
@@ -4282,7 +4322,7 @@ export function gossipBetweenCreatures(speaker, listener, world, entities) {
         lisBrain.mood = Math.min(100, lisBrain.mood + 50);
 
         speaker.emote = 1; // Excited
-        listener.emote = 12; // Heart
+        listener.emote = 2; // Happy
 
         spkBrain.addLongTerm({ type: "BOND", desc: `Formed a romantic couple bond with ${listener.properties.name}` });
         lisBrain.addLongTerm({ type: "BOND", desc: `Formed a romantic couple bond with ${speaker.properties.name}` });
@@ -4373,8 +4413,8 @@ export function gossipBetweenCreatures(speaker, listener, world, entities) {
         lisBrain.affinities[speaker.id] = Math.min(100, lisAffToSpk + 3);
         spkBrain.mood = Math.min(100, spkBrain.mood + 12);
         lisBrain.mood = Math.min(100, lisBrain.mood + 12);
-        speaker.emote = 12; // Heart
-        listener.emote = 12; // Heart
+        speaker.emote = 2; // Happy
+        listener.emote = 2; // Happy
 
         // Infidelity reaction
         if (isCheating && entities) {
@@ -5473,8 +5513,8 @@ export function createGroupMemberProp() {
 
       const firstZone = group.claimedZones?.[0] || "32_32";
       const parts = firstZone.includes("_") ? firstZone.split("_") : firstZone.split(",");
-      const baseZx = parseInt(parts[0], 10) || 32;
-      const baseZy = parseInt(parts[1], 10) || 32;
+      const baseZx = isNaN(parseInt(parts[0], 10)) ? 32 : parseInt(parts[0], 10);
+      const baseZy = isNaN(parseInt(parts[1], 10)) ? 32 : parseInt(parts[1], 10);
       const homeBaseX = baseZx * currentZoneSize + Math.floor(currentZoneSize / 2);
       const homeBaseY = baseZy * currentZoneSize + Math.floor(currentZoneSize / 2);
       const distToBase = Math.abs(ent.x - homeBaseX) + Math.abs(ent.y - homeBaseY);
@@ -6144,6 +6184,61 @@ let freeArm = null; for (const k in ent.properties) { const p = ent.properties[k
                 return;
               }
             }
+          } else if (bp.type === "artisan_hut") {
+            const artEntity = getEntityAtTileByProp(bp.x, bp.y, "artisan_hut");
+            if (!artEntity && dist <= 1 && this.actionTimer >= 0.20) {
+              let resType = null;
+              for (const k in ent.properties) { const p = ent.properties[k];
+                if ((k.startsWith("arm") || k.startsWith("paw") || k.startsWith("fangs")) && p && (p.heldItem?.resourceType === "stone" || p.heldItem?.resourceType === "wood" || p.heldItem?.resourceType === "bone")) {
+                  resType = p.heldItem.resourceType;
+                  p.heldItem = null;
+                  break;
+                }
+              }
+              this.actionTimer = 0;
+              const art = createArtisanHutEntity(bp.x, bp.y, group);
+              art.properties.artisan_hut.woodCurrent = resType === "wood" ? 1 : 0;
+              art.properties.artisan_hut.stoneCurrent = (resType === "stone" || resType === "bone") ? 1 : 0;
+              art.properties.artisan_hut.isCompleted = (art.properties.artisan_hut.woodCurrent >= art.properties.artisan_hut.woodCost && art.properties.artisan_hut.stoneCurrent >= art.properties.artisan_hut.stoneCost);
+              entities.push(art);
+              registerEntitySpatial(art);
+              return;
+            } else if (artEntity && !artEntity.properties.artisan_hut?.isCompleted && dist <= 1 && this.actionTimer >= 0.20) {
+              const art = artEntity.properties.artisan_hut;
+              let contributed = false;
+              for (const k in ent.properties) { const p = ent.properties[k];
+                if ((k.startsWith("arm") || k.startsWith("paw") || k.startsWith("fangs")) && p && p.heldItem) {
+                  if (p.heldItem.resourceType === "wood" && art.woodCurrent < art.woodCost) {
+                    art.woodCurrent++;
+                    p.heldItem = null;
+                    contributed = true;
+                    break;
+                  } else if ((p.heldItem.resourceType === "stone" || p.heldItem.resourceType === "bone") && art.stoneCurrent < art.stoneCost) {
+                    art.stoneCurrent++;
+                    p.heldItem = null;
+                    contributed = true;
+                    break;
+                  }
+                }
+              }
+              if (contributed) {
+                this.actionTimer = 0;
+                if (art.woodCurrent >= art.woodCost && art.stoneCurrent >= art.stoneCost) {
+                  art.isCompleted = true;
+                  recordWorldEvent({
+                    opcode: OP_BUILD,
+                    type: "BUILD",
+                    primaryEntityId: ent.id,
+                    location: { x: bp.x, y: bp.y },
+                    description: `${ent.properties.name} completed ${artEntity.properties.name || "Artisan Hut"} for '${group.name}'!`,
+                    tick: currentTick,
+                    timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
+                    metadata: { structureName: artEntity.properties.name, clan: group.name }
+                  });
+                }
+                return;
+              }
+            }
           } else if (bp.type === "gate" || bp.type === "door") {
             const gateEntity = getEntityAtTileByProp(bp.x, bp.y, "door");
             if (!gateEntity && dist <= 1 && this.actionTimer >= 0.20) {
@@ -6429,11 +6524,13 @@ let freeArm = null; for (const k in ent.properties) { const p = ent.properties[k
         }
       }
 
-      if (carryingBone && inClaimedZone && this.actionTimer >= 1.0) {
-        this.actionTimer = 0;
-        const ownerName = carryingBone.ownerName || carryingBone.sourceName || "Herói Ancestral";
-        const isWeapon = Math.random() < 0.55;
-        let craftedItem = null;
+      if (carryingBone && inClaimedZone) {
+        const artisanHut = findEntityInRadius(ent.x, ent.y, 2, e => !e.destroyed && e.properties.artisan_hut?.isCompleted);
+        if (artisanHut && this.actionTimer >= 1.0) {
+          this.actionTimer = 0;
+          const ownerName = carryingBone.ownerName || carryingBone.sourceName || "Herói Ancestral";
+          const isWeapon = Math.random() < 0.55;
+          let craftedItem = null;
 
         if (isWeapon) {
           const weaponTypes = [
@@ -6483,6 +6580,7 @@ let freeArm = null; for (const k in ent.properties) { const p = ent.properties[k
           metadata: { craftedName: craftedItem.name, ownerName: ownerName }
         });
         return;
+      }
       }
 
       // C. Home Food Pantry / Storing & Eating at Home
@@ -7682,8 +7780,8 @@ export function evaluateAndAssignClanRoles(group, entities, world) {
   let threatLevel = (group.wars && group.wars.length > 0) ? 2 : 0;
   const firstZone = group.claimedZones?.[0] || "32_32";
   const parts = firstZone.includes("_") ? firstZone.split("_") : firstZone.split(",");
-  const baseZx = parseInt(parts[0], 10) || 32;
-  const baseZy = parseInt(parts[1], 10) || 32;
+  const baseZx = isNaN(parseInt(parts[0], 10)) ? 32 : parseInt(parts[0], 10);
+  const baseZy = isNaN(parseInt(parts[1], 10)) ? 32 : parseInt(parts[1], 10);
   const homeBaseX = baseZx * 8 + 4;
   const homeBaseY = baseZy * 8 + 4;
 
@@ -7707,6 +7805,9 @@ export function evaluateAndAssignClanRoles(group, entities, world) {
   // Larger groups (4+ members) -> Dynamic role distribution with fallbacks
   let cooksNeeded = totalPop >= 4 ? 1 : 0;
   let butchersNeeded = totalPop >= 5 ? 1 : 0;
+  let craftersNeeded = totalPop >= 6 ? 1 : 0;
+  let diplomatsNeeded = totalPop >= 12 ? 1 : 0;
+  let explorersNeeded = totalPop >= 10 ? 1 : 0;
   let haulersNeeded = totalPop >= 4 ? Math.max(1, Math.ceil(totalPop * 0.20)) : 0;
   let buildersNeeded = unbuiltCount > 0 ? Math.max(1, Math.ceil(totalPop * 0.25)) : 1;
   let farmersNeeded = foodCount < totalPop * 2 ? Math.max(1, Math.ceil(totalPop * 0.20)) : 1;
@@ -7731,6 +7832,15 @@ export function evaluateAndAssignClanRoles(group, entities, world) {
     } else if (butchersNeeded > 0) {
       m.properties.role = "Butcher";
       butchersNeeded--;
+    } else if (diplomatsNeeded > 0) {
+      m.properties.role = "Diplomat";
+      diplomatsNeeded--;
+    } else if (explorersNeeded > 0) {
+      m.properties.role = "Explorer";
+      explorersNeeded--;
+    } else if (craftersNeeded > 0) {
+      m.properties.role = "Crafter";
+      craftersNeeded--;
     } else if (haulersNeeded > 0) {
       m.properties.role = "Hauler";
       haulersNeeded--;
@@ -7757,7 +7867,7 @@ export function evaluateAndAssignClanRoles(group, entities, world) {
       m.properties.role = "Forager";
       foragersNeeded--;
     } else {
-      m.properties.role = "Crafter";
+      m.properties.role = "Pioneer"; // Fallback role for extra pops
     }
 
     // Ensure all citizens have backpacks for personal storage
@@ -7989,8 +8099,8 @@ export function createLocomotionProp() {
         } else {
           const firstZone = group.claimedZones?.[0] || "32_32";
           const parts = firstZone.includes("_") ? firstZone.split("_") : firstZone.split(",");
-          const baseZx = parseInt(parts[0], 10) || 32;
-          const baseZy = parseInt(parts[1], 10) || 32;
+          const baseZx = isNaN(parseInt(parts[0], 10)) ? 32 : parseInt(parts[0], 10);
+          const baseZy = isNaN(parseInt(parts[1], 10)) ? 32 : parseInt(parts[1], 10);
           const homeBaseX = baseZx * 8 + 4;
           const homeBaseY = baseZy * 8 + 4;
           chosenDx = Math.sign(homeBaseX - ent.x);
@@ -8099,8 +8209,8 @@ export function createLocomotionProp() {
         } else if (hasGroupFood) {
           const firstZone = ent.properties.group.claimedZones?.[0] || "32_32";
           const parts = firstZone.includes("_") ? firstZone.split("_") : firstZone.split(",");
-          const baseZx = parseInt(parts[0], 10) || 32;
-          const baseZy = parseInt(parts[1], 10) || 32;
+          const baseZx = isNaN(parseInt(parts[0], 10)) ? 32 : parseInt(parts[0], 10);
+          const baseZy = isNaN(parseInt(parts[1], 10)) ? 32 : parseInt(parts[1], 10);
           const homeBaseX = baseZx * 8 + 4;
           const homeBaseY = baseZy * 8 + 4;
           chosenDx = Math.sign(homeBaseX - ent.x);
@@ -8210,11 +8320,19 @@ export function createLocomotionProp() {
         const group = ent.properties.group;
         const firstZone = group.claimedZones?.[0] || "32_32";
         const parts = firstZone.includes("_") ? firstZone.split("_") : firstZone.split(",");
-        const baseZx = parseInt(parts[0], 10) || 32;
-        const baseZy = parseInt(parts[1], 10) || 32;
+        const baseZx = isNaN(parseInt(parts[0], 10)) ? 32 : parseInt(parts[0], 10);
+        const baseZy = isNaN(parseInt(parts[1], 10)) ? 32 : parseInt(parts[1], 10);
         const homeBaseX = baseZx * 8 + 4;
         const homeBaseY = baseZy * 8 + 4;
 
+        let heldResType = null;
+        for (const k in ent.properties) { const p = ent.properties[k];
+          if ((k.startsWith("arm") || k.startsWith("paw") || k.startsWith("fangs")) && p && (p.heldItem?.resourceType === "stone" || p.heldItem?.resourceType === "wood" || p.heldItem?.resourceType === "bone")) {
+            heldResType = p.heldItem.resourceType;
+            break;
+          }
+        }
+        
         const isCarryingMat = isCarryingItem(ent, "stone") || isCarryingItem(ent, "wood");
         const isCarryingSeed = isCarryingItem(ent, "seed");
         const isCarryingMeat = isCarryingItem(ent, "meat");
@@ -8278,13 +8396,6 @@ export function createLocomotionProp() {
           let targetBuild = null;
           let minBuildDist = 9999;
 
-          let heldResType = null;
-          for (const k in ent.properties) { const p = ent.properties[k];
-            if ((k.startsWith("arm") || k.startsWith("paw") || k.startsWith("fangs")) && p && (p.heldItem?.resourceType === "stone" || p.heldItem?.resourceType === "wood" || p.heldItem?.resourceType === "bone")) {
-              heldResType = p.heldItem.resourceType;
-              break;
-            }
-          }
 
           const livingClanMembers = (group.members || []).filter(mid => {
             const m = getEntityById(mid);
@@ -8423,6 +8534,27 @@ export function createLocomotionProp() {
                   targetBuild = { x: bp.x, y: bp.y, type: "kitchen" };
                 }
               }
+            } else if (bp.type === "artisan_hut") {
+              const art = getEntityAtTileByProp(bp.x, bp.y, "artisan_hut");
+              let needsThisMat = false;
+              if (!art) {
+                needsThisMat = true;
+              } else if (!art.properties.artisan_hut?.isCompleted) {
+                const a = art.properties.artisan_hut;
+                const wCost = a.woodCost ?? 6;
+                const sCost = a.stoneCost ?? 4;
+                if (heldResType === "wood" && (a.woodCurrent || 0) < wCost) needsThisMat = true;
+                if ((heldResType === "stone" || heldResType === "bone") && (a.stoneCurrent || 0) < sCost) needsThisMat = true;
+              }
+
+              if (needsThisMat) {
+                const dist = Math.abs(bp.x - ent.x) + Math.abs(bp.y - ent.y);
+                const weightDist = dist * 0.70;
+                if (weightDist < minBuildDist) {
+                  minBuildDist = weightDist;
+                  targetBuild = { x: bp.x, y: bp.y, type: "artisan_hut" };
+                }
+              }
             }
           }
 
@@ -8512,6 +8644,16 @@ export function createLocomotionProp() {
           }
         }
 
+        // 2.5 If carrying bone: Crafter should move to Artisan Hut
+        else if (!hasIntention && heldResType === "bone") {
+          const artisanHut = findEntityInRadius(homeBaseX, homeBaseY, 30, e => !e.destroyed && e.properties.artisan_hut?.isCompleted && e.properties.artisan_hut.groupId === group.id);
+          if (artisanHut) {
+            chosenDx = Math.sign(artisanHut.x - ent.x);
+            chosenDy = Math.sign(artisanHut.y - ent.y);
+            hasIntention = true;
+          }
+        }
+
         // 3. If carrying meat or food: deliver to own house pantry (up to 2 reserves) or clan stockpile
         else if (!hasIntention && isCarryingMeat) {
           const ownHouse = getOwnHouse(ent.id, entities);
@@ -8549,6 +8691,7 @@ export function createLocomotionProp() {
           const isForager = myRole === "Forager" || myRole === "Miner" || isPioneer || isLeader;
           const isExplorer = myRole === "Explorer" || isPioneer || isLeader;
           const isCrafter = myRole === "Crafter" || isBuilder || isPioneer || isLeader;
+          const isDiplomat = myRole === "Diplomat";
           const isGuard = myRole === "Guard";
 
           // Calculate exact resource needs for Houses -> Walls -> Gates
@@ -8668,7 +8811,7 @@ export function createLocomotionProp() {
 
                 if (!targetStone) {
                   let minDist = 9999;
-                  const maxRad = (world && world.clock && world.clock.minute < 5 && (isPioneer || isBuilder)) ? 150 : 20;
+                  const maxRad = isExplorer ? 250 : ((world && world.clock && world.clock.minute < 5 && (isPioneer || isBuilder)) ? 150 : 20);
                   for (let r = 1; r <= maxRad; r++) {
                     for (let dy = -r; dy <= r; dy++) {
                       for (let dx = -r; dx <= r; dx++) {
@@ -9018,16 +9161,17 @@ export function createLocomotionProp() {
                   }
                 }
 
-                // 4. Idle Social Visits to Friendly Neighboring Villages
-                if (!hasIntention && (world?.clock?.globalLight ?? 1) >= 0.50 && energyRatio > 0.60 && waterRatio > 0.50) {
+                // 4. Idle Social Visits to Friendly Neighboring Villages & Diplomatic Missions
+                if (!hasIntention && (isDiplomat || ((world?.clock?.globalLight ?? 1) >= 0.50 && energyRatio > 0.60 && waterRatio > 0.50))) {
                   for (const otherGroup of (world?.groups || [])) {
-                    if (otherGroup.id !== group.id && canBuildInterVillageRoad(group, otherGroup)) {
+                    if (otherGroup.id !== group.id && (isDiplomat || canBuildInterVillageRoad(group, otherGroup))) {
                       const otherWh = entities.find(e =>
                         !e.destroyed && e.properties.warehouse?.isCompleted && isTileInClaimedZones(e.x, e.y, otherGroup.claimedZones)
                       );
                       if (otherWh) {
                         const distToOtherWh = Math.abs(otherWh.x - ent.x) + Math.abs(otherWh.y - ent.y);
-                        if (distToOtherWh > 3 && distToOtherWh <= 50) {
+                        // Diplomats will travel infinitely far, others only 50 tiles
+                        if (distToOtherWh > 3 && (isDiplomat || distToOtherWh <= 50)) {
                           const roadPath = getPrefabricatedRoadPath(ent.x, ent.y, otherWh.x, otherWh.y, group);
                           if (roadPath && roadPath.length > 0) {
                             chosenDx = Math.sign(roadPath[0].x - ent.x);
@@ -9039,11 +9183,11 @@ export function createLocomotionProp() {
                           hasIntention = true;
                           break;
                         } else if (distToOtherWh <= 3) {
-                          const foreignFriend = findEntityInRadius(ent.x, ent.y, 4, o => 
+                          const foreignFriend = findEntityInRadius(ent.x, ent.y, 6, o => 
                             o !== ent && !o.destroyed && o.properties?.group?.id === otherGroup.id
                           );
                           if (foreignFriend) {
-                            const deltaAff = (Math.random() < 0.85) ? 2 : -1;
+                            const deltaAff = isDiplomat ? 4 : ((Math.random() < 0.85) ? 2 : -1);
                             if (ent.properties?.brain?.affinities) {
                               ent.properties.brain.affinities[foreignFriend.id] = (ent.properties.brain.affinities[foreignFriend.id] || 0) + deltaAff;
                             }
@@ -9052,6 +9196,7 @@ export function createLocomotionProp() {
                             }
                             ent.emote = deltaAff > 0 ? 2 : 3;
                             foreignFriend.emote = deltaAff > 0 ? 2 : 3;
+                            hasIntention = true;
                           }
                         }
                       }
@@ -9069,8 +9214,8 @@ export function createLocomotionProp() {
         const group = ent.properties.group;
         const firstZone = group.claimedZones?.[0] || "32_32";
         const parts = firstZone.includes("_") ? firstZone.split("_") : firstZone.split(",");
-        const baseZx = parseInt(parts[0], 10) || 32;
-        const baseZy = parseInt(parts[1], 10) || 32;
+        const baseZx = isNaN(parseInt(parts[0], 10)) ? 32 : parseInt(parts[0], 10);
+        const baseZy = isNaN(parseInt(parts[1], 10)) ? 32 : parseInt(parts[1], 10);
         const homeBaseX = baseZx * 8 + 4;
         const homeBaseY = baseZy * 8 + 4;
         const distToBase = Math.abs(ent.x - homeBaseX) + Math.abs(ent.y - homeBaseY);
@@ -10724,7 +10869,7 @@ export function createCentaur(x, y, opts = {}) {
 /**
  * Seed Germination (Slow natural germination with spatial spacing constraints)
  */
-export function createSeedGerminationProp(species = "oak", checkInterval = 4.0, sproutChance = 0.35) {
+export function createSeedGerminationProp(species = "oak", checkInterval = 2.0, sproutChance = 0.55) {
   return {
     timer: 0,
     species,
@@ -11105,7 +11250,7 @@ export function createPoopEntity(x, y, seed = null) {
       render: { skin: "Item_Nugget.png", color: 0xff643c14, backcolor: 0x00000000 },
       fertilizer: { quality: 1.0 },
       edible: { nutrition: 900, foodType: "feces", digestDuration: 40 },
-      lifespan: createLifespanProp(90.0) // Reduced lifespan for excrement (1.5 game hours)
+      lifespan: createLifespanProp(seed ? 20.0 : 8.0) // Quickly decays (8s normal, 20s with seed)
     },
     x,
     y
@@ -11388,6 +11533,17 @@ export function rebindEntityMethods(ent) {
       if (typeof fn === "function") p.life[k] = fn;
     }
   }
+  if (p.lifespan) {
+    if (p.resourceType === "feces" || p.edible?.foodType === "feces") {
+      if (!p.lifespan.maxAge || p.lifespan.maxAge > 20.0) {
+        p.lifespan.maxAge = p.germination ? 20.0 : 8.0;
+      }
+    }
+    const dummy = createLifespanProp(p.lifespan.maxAge || 120.0);
+    for (const [k, fn] of Object.entries(dummy)) {
+      if (typeof fn === "function") p.lifespan[k] = fn;
+    }
+  }
   if (p.stomach) {
     const dummy = createStomachProp(p.stomach.capacity || 4, p.stomach.preferences || {});
     for (const [k, fn] of Object.entries(dummy)) {
@@ -11448,55 +11604,15 @@ export function rebindEntityMethods(ent) {
       if (typeof fn === "function") p.door[k] = fn;
     }
   }
-  if (p.house) {
-    const dummy = createHouseEntity(0, 0, null).properties.house;
-    for (const [k, fn] of Object.entries(dummy)) {
-      if (typeof fn === "function") p.house[k] = fn;
-    }
-  }
-  if (p.warehouse) {
-    const dummy = createWarehouseEntity(0, 0, null).properties.warehouse;
-    for (const [k, fn] of Object.entries(dummy)) {
-      if (typeof fn === "function") p.warehouse[k] = fn;
-    }
-  }
-  if (p.well) {
-    const dummy = createWellEntity(0, 0, null).properties.well;
-    for (const [k, fn] of Object.entries(dummy)) {
-      if (typeof fn === "function") p.well[k] = fn;
-    }
-  }
-  if (p.campfire) {
-    const dummy = createCampfireEntity(0, 0, null).properties.campfire;
-    for (const [k, fn] of Object.entries(dummy)) {
-      if (typeof fn === "function") p.campfire[k] = fn;
-    }
-  }
-  if (p.slaughterhouse) {
-    const dummy = createSlaughterhouseEntity(0, 0, null).properties.slaughterhouse;
-    for (const [k, fn] of Object.entries(dummy)) {
-      if (typeof fn === "function") p.slaughterhouse[k] = fn;
-    }
-  }
-  if (p.kitchen) {
-    const dummy = createKitchenEntity(0, 0, null).properties.kitchen;
-    for (const [k, fn] of Object.entries(dummy)) {
-      if (typeof fn === "function") p.kitchen[k] = fn;
-    }
-  }
-  if (p.wall) {
-    const dummy = createWallEntity(0, 0, null).properties.wall;
-    if (dummy) {
-      for (const [k, fn] of Object.entries(dummy)) {
-        if (typeof fn === "function") p.wall[k] = fn;
-      }
-    }
-  }
-  if (p.gate) {
-    const dummy = createGateEntity(0, 0, null).properties.gate;
-    for (const [k, fn] of Object.entries(dummy)) {
-      if (typeof fn === "function") p.gate[k] = fn;
-    }
+  if (p.door) {
+    p.door.open = function() {
+      this.isOpen = true;
+      this.autoCloseTimer = 10.0;
+    };
+    p.door.close = function() {
+      this.isOpen = false;
+      this.autoCloseTimer = 0;
+    };
   }
 
   // Rebind amputated limb stump bleed effects

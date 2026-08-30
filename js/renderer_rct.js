@@ -2496,7 +2496,7 @@ export class RCT3DRenderer {
 
     for (let i = 0; i < entities.length; i++) {
       const e = entities[i];
-      if (!e || e.destroyed || !e.properties?.render) continue;
+      if (!e || e.destroyed || !e.properties || !e.properties.render || e.properties.species === "effect") continue;
 
       const r = e.properties.render;
       const isRoad = !e.properties.brain && (!!e.properties.road || e.properties.name?.includes("Estrada") || e.properties.name?.includes("Rua") || e.properties.name?.includes("Encaixe"));

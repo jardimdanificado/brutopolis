@@ -440,7 +440,7 @@ export function getEntityAtTile(x, y) {
   const bucket = tileEntityMap.get(tk);
   if (!bucket || bucket.size === 0) return null;
   for (const ent of bucket) {
-    if (!ent.destroyed) return ent;
+    if (!ent.destroyed && !(ent.properties && ent.properties.species === "effect")) return ent;
   }
   return null;
 }
@@ -970,6 +970,20 @@ export function tickEntities(entities, dt, world) {
     // Synchronize spatial hash grid if entity coordinates changed
     updateEntitySpatial(entity);
 
+    // 2.5 Auto-clear emotes after 3 seconds (unless constantly refreshed)
+    if (entity.emote !== entity._lastEmote) {
+      entity._lastEmote = entity.emote;
+      entity.emoteTimer = 0;
+    }
+    if (entity.emote !== undefined) {
+      entity.emoteTimer = (entity.emoteTimer || 0) + entityDt;
+      if (entity.emoteTimer > 3.0) {
+        entity.emote = undefined;
+        entity._lastEmote = undefined;
+        entity.emoteTimer = 0;
+      }
+    }
+
     // 3. Check Vital HP (Death Condition: Brain condition <= 0, or plant life with no roots/energy)
     const props = entity.properties;
     let isDead = false;
@@ -984,9 +998,9 @@ export function tickEntities(entities, dt, world) {
       isDead = true;
     }
 
-    if (isDead) {
+    if (isDead || entity.destroyed) {
       entity.destroyed = true;
-      entity.deathTick = currentTick;
+      if (!entity.deathTick) entity.deathTick = currentTick;
       hasDead = true;
       if (explosionReason === "BRAIN_COLLAPSE") {
         recordWorldEvent({
@@ -998,7 +1012,9 @@ export function tickEntities(entities, dt, world) {
           timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null
         });
       }
-      explodeEntityOnDeath(entity, entities, world);
+      if (isDead) {
+        explodeEntityOnDeath(entity, entities, world);
+      }
       unregisterEntitySpatial(entity);
     }
   }
