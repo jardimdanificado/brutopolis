@@ -1785,7 +1785,7 @@ export class RCT3DRenderer {
     this.tpDistance = 4.5; // Third-person orbital distance
     this.tpMinDistance = 1.2;
     this.tpMaxDistance = 24.0;
-    this.fpAutoCam = true; // Auto-cam for 1P mode (automatically aligns yaw to creature walking direction)
+    this.fpAutoCam = false; // Auto-cam for 1P mode (optional, user-toggled)
     this.lastTargetPosX = null;
     this.lastTargetPosZ = null;
 
@@ -1816,6 +1816,69 @@ export class RCT3DRenderer {
     this.renderer.shadowMap.enabled = this.shadowsEnabled;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap; // High quality smooth shadows
     this.renderer.setClearColor(0xdde8f5, 1.0);
+
+    // 3.1 Post-Processing Pipeline (Depth of Field, Chromatic Aberration & Atmospheric Lens)
+    this.postEffectsEnabled = true;
+    this.renderTarget = new THREE.WebGLRenderTarget(Math.max(160, Math.floor(this.width * this.scaleFactor)), Math.max(120, Math.floor(this.height * this.scaleFactor)), {
+      minFilter: THREE.LinearFilter,
+      magFilter: THREE.LinearFilter,
+      format: THREE.RGBAFormat
+    });
+    this.postScene = new THREE.Scene();
+    this.postCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    this.postMaterial = new THREE.ShaderMaterial({
+      uniforms: {
+        tDiffuse: { value: this.renderTarget.texture },
+        uChroma: { value: 1.0 },
+        uDofStrength: { value: 1.0 }
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = vec4(position.xy, 0.0, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform sampler2D tDiffuse;
+        uniform float uChroma;
+        uniform float uDofStrength;
+        varying vec2 vUv;
+
+        void main() {
+          vec2 uv = vUv;
+          vec2 center = uv - 0.5;
+          float dist = dot(center, center);
+
+          float chromaOffset = dist * (uChroma * 0.012);
+          float r = texture2D(tDiffuse, uv + center * chromaOffset).r;
+          float g = texture2D(tDiffuse, uv).g;
+          float b = texture2D(tDiffuse, uv - center * chromaOffset).b;
+          float a = texture2D(tDiffuse, uv).a;
+
+          if (uDofStrength > 0.001) {
+            float blur = dist * uDofStrength * 0.0035;
+            vec4 blurCol = vec4(0.0);
+            blurCol += texture2D(tDiffuse, uv + vec2(-blur, -blur));
+            blurCol += texture2D(tDiffuse, uv + vec2( blur, -blur));
+            blurCol += texture2D(tDiffuse, uv + vec2(-blur,  blur));
+            blurCol += texture2D(tDiffuse, uv + vec2( blur,  blur));
+            blurCol *= 0.25;
+
+            float blend = smoothstep(0.06, 0.42, dist);
+            vec3 finalCol = mix(vec3(r, g, b), blurCol.rgb, blend * 0.42);
+            gl_FragColor = vec4(finalCol, a);
+          } else {
+            gl_FragColor = vec4(r, g, b, a);
+          }
+        }
+      `,
+      depthTest: false,
+      depthWrite: false
+    });
+    const postQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.postMaterial);
+    this.postScene.add(postQuad);
+
     this.updateRendererResolution();
 
     const canvasDom = this.renderer.domElement;
@@ -2897,11 +2960,27 @@ export class RCT3DRenderer {
     const internalH = Math.max(120, Math.floor(this.height * this.scaleFactor));
     this.renderer.setSize(internalW, internalH, false);
     this.renderer.setPixelRatio(1.0);
+    if (this.renderTarget) {
+      this.renderTarget.setSize(internalW, internalH);
+    }
 
     const canvasDom = this.renderer.domElement;
     if (canvasDom) {
       canvasDom.style.imageRendering = this.scaleFactor < 1.0 ? "pixelated" : "auto";
     }
+  }
+
+  setResolutionScale(factor) {
+    this.scaleFactor = Math.max(0.25, Math.min(2.0, Number(factor) || 1.0));
+    this.updateRendererResolution();
+  }
+
+  get resolutionScale() {
+    return this.scaleFactor;
+  }
+
+  set resolutionScale(val) {
+    this.setResolutionScale(val);
   }
 
   toggleResolution() {
@@ -3075,11 +3154,15 @@ export class RCT3DRenderer {
   }
 
   rotatePerspectiveCamera(dYaw, dPitch) {
-    this.fpYaw = (this.fpYaw + dYaw) % (Math.PI * 2);
-    if (this.fpYaw < 0) this.fpYaw += Math.PI * 2;
     if (this.isThirdPersonActive()) {
-      this.fpPitch = Math.max(-Math.PI * 0.15, Math.min(Math.PI * 0.45, this.fpPitch + dPitch));
+      // 3P Orbital Camera: Dragging right orbits camera right, dragging up tilts up
+      this.fpYaw = (this.fpYaw - dYaw) % (Math.PI * 2);
+      if (this.fpYaw < 0) this.fpYaw += Math.PI * 2;
+      this.fpPitch = Math.max(-Math.PI * 0.15, Math.min(Math.PI * 0.45, this.fpPitch - dPitch));
     } else {
+      // 1P First Person Camera: Dragging right turns right, dragging up looks up
+      this.fpYaw = (this.fpYaw + dYaw) % (Math.PI * 2);
+      if (this.fpYaw < 0) this.fpYaw += Math.PI * 2;
       this.fpPitch = Math.max(-Math.PI * 0.35, Math.min(Math.PI * 0.35, this.fpPitch + dPitch));
     }
   }
@@ -3629,10 +3712,12 @@ export class RCT3DRenderer {
     if (!this.scene.background) this.scene.background = new THREE.Color();
     this.scene.background.copy(this.tempColor1);
     this.renderer.setClearColor(this.tempColor1, 1.0);
+    const targetFogDensity = this.isPerspectiveActive() ? 0.016 : 0.0012;
     if (!this.scene.fog) {
-      this.scene.fog = new THREE.FogExp2(this.tempColor1.getHex(), 0.0012);
+      this.scene.fog = new THREE.FogExp2(this.tempColor1.getHex(), targetFogDensity);
     } else {
       this.scene.fog.color.copy(this.tempColor1);
+      this.scene.fog.density = targetFogDensity;
     }
 
     const sunIntensity = k1.sunI + (k2.sunI - k1.sunI) * sAlpha;
@@ -5375,9 +5460,18 @@ export class RCT3DRenderer {
       }
     }
 
-    // Draw WebGL Frame
+    // Draw WebGL Frame with Depth of Field & Chromatic Aberration in Perspective Modes
     const activeCam = this.isPerspectiveActive() ? this.fpCamera : this.camera;
-    this.renderer.render(this.scene, activeCam);
+    if (this.isPerspectiveActive() && this.postEffectsEnabled && this.renderTarget) {
+      this.renderer.setRenderTarget(this.renderTarget);
+      this.renderer.render(this.scene, activeCam);
+      this.renderer.setRenderTarget(null);
+      this.postMaterial.uniforms.tDiffuse.value = this.renderTarget.texture;
+      this.renderer.render(this.postScene, this.postCamera);
+    } else {
+      this.renderer.setRenderTarget(null);
+      this.renderer.render(this.scene, activeCam);
+    }
   }
 
   projectWorldToScreen(worldX, worldY, elevation = 0) {

@@ -2,7 +2,7 @@
 // Brutopolis
 // =============================================================================
 
-const BrutopolisVersion = "0.120.6";
+const BrutopolisVersion = "0.120.7";
 const BrutopolisVersionName = "Rejoice with those who rejoice; mourn with those who mourn.";
 
 // WASM replaced by Pure JS Renderer
@@ -6443,10 +6443,15 @@ function renderGeneratorModal() {
 
   drawNESBox(mx, my, mw, mh);
 
-  // Back to Title Menu
-  drawNESButton(mx + mw - 145, my + 6, 138, 24, "BACK TO MENU", false, true);
-  registerClickableRegion(mx + mw - 145, my + 6, 138, 24, () => {
-    currentMode = hasActiveGame ? "MAP" : "TITLE";
+  // Single Back / Return Button
+  const backLabel = hasActiveGame ? "RETURN TO MAP" : "TITLE MENU";
+  drawNESButton(mx + mw - 150, my + 6, 140, 24, backLabel, false, true);
+  registerClickableRegion(mx + mw - 150, my + 6, 140, 24, () => {
+    if (hasActiveGame) {
+      currentMode = "MAP";
+    } else {
+      returnToTitleScreen();
+    }
   });
 
   drawText8x8("WORLD GENERATOR & CUSTOM CONFIGURATOR", mx + 16, my + 12, "#f8b800", 1);
@@ -6633,17 +6638,14 @@ function renderGeneratorModal() {
     ebx += bw + 4;
   }
 
-  // Return to Title Button
-  drawNESButton(mx + mw - 180, my + 6, 140, 24, "TITLE MENU", false, false);
-  registerClickableRegion(mx + mw - 180, my + 6, 140, 24, returnToTitleScreen);
-
-  // Action Button at Bottom: [GENERATE WORLD]
-  const genBtnW = 380;
-  const genBtnX = mx + (mw - genBtnW) / 2;
-  const genBtnY = my + mh - 36;
+  // Action Button immediately after options: [GENERATE WORLD]
+  curY += 42;
+  const genBtnW = Math.min(520, mw - 32);
+  const genBtnX = mx + Math.floor((mw - genBtnW) / 2);
+  const genBtnY = curY;
   const genBtnLabel = `GENERATE WORLD (${genWidth}x${genHeight} | ZONE ${genZoneSize}x${genZoneSize})`;
-  drawNESButton(genBtnX, genBtnY, genBtnW, 28, genBtnLabel, true, false);
-  registerClickableRegion(genBtnX, genBtnY, genBtnW, 28, () => {
+  drawNESButton(genBtnX, genBtnY, genBtnW, 30, genBtnLabel, true, false);
+  registerClickableRegion(genBtnX, genBtnY, genBtnW, 30, () => {
     generateConfiguredWorld();
   });
 
