@@ -2041,23 +2041,31 @@ function createDitheredCelestialTexture(type) {
       const idx = (y * size + x) * 4;
 
       if (type === "sun") {
-        if (dist <= 6.5) {
+        if (dist <= 4.2) {
+          // Semi-translucent dithered sun core
           data[idx + 0] = 255;
           data[idx + 1] = 255;
-          data[idx + 2] = 210;
-          data[idx + 3] = 255;
-        } else if (dist <= 8.5) {
-          data[idx + 0] = 255;
-          data[idx + 1] = 190;
-          data[idx + 2] = 30;
-          data[idx + 3] = 255;
-        } else if (dist <= 15.5) {
-          const alpha = Math.max(0.0, 1.0 - (dist - 8.5) / 7.0);
+          data[idx + 2] = 215;
+          data[idx + 3] = (bayerVal < 0.82) ? 225 : 0;
+        } else if (dist <= 7.0) {
+          // Dithered golden rim
+          const alpha = 0.85 * (1.0 - (dist - 4.2) / 2.8);
           if (alpha > bayerVal) {
             data[idx + 0] = 255;
-            data[idx + 1] = Math.floor(100 + alpha * 120);
+            data[idx + 1] = 195;
+            data[idx + 2] = 35;
+            data[idx + 3] = 190;
+          } else {
+            data[idx + 3] = 0;
+          }
+        } else if (dist <= 15.5) {
+          // Broad heavy dithered corona
+          const alpha = 0.65 * (1.0 - (dist - 7.0) / 8.5);
+          if (alpha > bayerVal) {
+            data[idx + 0] = 255;
+            data[idx + 1] = Math.floor(100 + alpha * 110);
             data[idx + 2] = 0;
-            data[idx + 3] = 255;
+            data[idx + 3] = 140;
           } else {
             data[idx + 3] = 0;
           }
@@ -2065,36 +2073,188 @@ function createDitheredCelestialTexture(type) {
           data[idx + 3] = 0;
         }
       } else if (type === "moon") {
-        if (dist <= 6.5) {
-          const isCrater = ((x === 14 && y === 14) || (x === 15 && y === 14) || (x === 17 && y === 17) || (x === 18 && y === 16) || (x === 13 && y === 17));
+        if (dist <= 4.0) {
+          const isCrater = ((x === 14 && y === 14) || (x === 16 && y === 16) || (x === 15 && y === 17));
           if (isCrater) {
-            data[idx + 0] = 150;
-            data[idx + 1] = 175;
-            data[idx + 2] = 210;
-            data[idx + 3] = 255;
+            data[idx + 0] = 140;
+            data[idx + 1] = 165;
+            data[idx + 2] = 205;
+            data[idx + 3] = (bayerVal < 0.70) ? 190 : 0;
           } else {
-            data[idx + 0] = 235;
-            data[idx + 1] = 245;
+            data[idx + 0] = 225;
+            data[idx + 1] = 238;
             data[idx + 2] = 255;
-            data[idx + 3] = 255;
+            data[idx + 3] = (bayerVal < 0.82) ? 210 : 0;
           }
-        } else if (dist <= 8.5) {
-          data[idx + 0] = 160;
-          data[idx + 1] = 195;
-          data[idx + 2] = 245;
-          data[idx + 3] = 255;
-        } else if (dist <= 15.5) {
-          const alpha = Math.max(0.0, 1.0 - (dist - 8.5) / 7.0);
+        } else if (dist <= 6.8) {
+          const alpha = 0.80 * (1.0 - (dist - 4.0) / 2.8);
+          if (alpha > bayerVal) {
+            data[idx + 0] = 150;
+            data[idx + 1] = 185;
+            data[idx + 2] = 240;
+            data[idx + 3] = 175;
+          } else {
+            data[idx + 3] = 0;
+          }
+        } else if (dist <= 15.0) {
+          const alpha = 0.55 * (1.0 - (dist - 6.8) / 8.2);
           if (alpha > bayerVal) {
             data[idx + 0] = 90;
-            data[idx + 1] = 150;
-            data[idx + 2] = 240;
-            data[idx + 3] = 255;
+            data[idx + 1] = 145;
+            data[idx + 2] = 235;
+            data[idx + 3] = 120;
           } else {
             data[idx + 3] = 0;
           }
         } else {
           data[idx + 3] = 0;
+        }
+      }
+    }
+  }
+
+  ctx.putImageData(imgData, 0, 0);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.NearestFilter;
+  tex.generateMipmaps = false;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+// ---------------------------------------------------------------------------
+// Heavy-Dithered Pixel Art God Rays / Crepuscular Streaks Generator
+// ---------------------------------------------------------------------------
+function createDitheredGodRaysTexture(type = "sun") {
+  const size = 64;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  const imgData = ctx.createImageData(size, size);
+  const data = imgData.data;
+
+  const bayer4x4 = [
+     0/16,  8/16,  2/16, 10/16,
+    12/16,  4/16, 14/16,  6/16,
+     3/16, 11/16,  1/16,  9/16,
+    15/16,  7/16, 13/16,  5/16
+  ];
+
+  const cx = 31.5;
+  const cy = 31.5;
+
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const dx = x - cx;
+      const dy = y - cy;
+      const dist = Math.hypot(dx, dy);
+      const angle = Math.atan2(dy, dx);
+      const bayerVal = bayer4x4[(y % 4) * 4 + (x % 4)];
+      const idx = (y * size + x) * 4;
+
+      if (dist > 2.0 && dist <= 31.5) {
+        // 8 radiating crepuscular light streaks with organic harmonic modulations
+        const beamPattern = Math.pow(Math.max(0.0, Math.cos(angle * 4.0 + 0.2)), 2.5) * 0.65 +
+                            Math.pow(Math.max(0.0, Math.sin(angle * 6.0 - 0.4)), 3.0) * 0.45;
+        const radialFalloff = Math.max(0.0, 1.0 - (dist - 2.0) / 29.5);
+        const alpha = beamPattern * radialFalloff * 0.85;
+
+        if (alpha > bayerVal) {
+          if (type === "sun") {
+            data[idx + 0] = 255;
+            data[idx + 1] = Math.floor(180 + alpha * 70);
+            data[idx + 2] = 40;
+            data[idx + 3] = Math.floor(alpha * 190);
+          } else {
+            data[idx + 0] = 120;
+            data[idx + 1] = 175;
+            data[idx + 2] = 255;
+            data[idx + 3] = Math.floor(alpha * 160);
+          }
+        } else {
+          data[idx + 3] = 0;
+        }
+      } else {
+        data[idx + 3] = 0;
+      }
+    }
+  }
+
+  ctx.putImageData(imgData, 0, 0);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.NearestFilter;
+  tex.generateMipmaps = false;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+// ---------------------------------------------------------------------------
+// Heavy-Dithered Pixel Art Lens Flare Optical Element Generator
+// ---------------------------------------------------------------------------
+function createDitheredLensFlareTexture(variant = 0) {
+  const size = 32;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  const imgData = ctx.createImageData(size, size);
+  const data = imgData.data;
+
+  const bayer4x4 = [
+     0/16,  8/16,  2/16, 10/16,
+    12/16,  4/16, 14/16,  6/16,
+     3/16, 11/16,  1/16,  9/16,
+    15/16,  7/16, 13/16,  5/16
+  ];
+
+  const cx = 15.5;
+  const cy = 15.5;
+
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const dx = x - cx;
+      const dy = y - cy;
+      const dist = Math.hypot(dx, dy);
+      const bayerVal = bayer4x4[(y % 4) * 4 + (x % 4)];
+      const idx = (y * size + x) * 4;
+
+      if (variant === 0) {
+        // Hexagonal Aperture Flare Disk
+        const angle = Math.atan2(dy, dx);
+        const hexR = dist * (Math.cos((((angle % (Math.PI / 3)) + (Math.PI / 3)) % (Math.PI / 3)) - Math.PI / 6));
+        if (hexR <= 11.5) {
+          const alpha = 0.70 * (1.0 - hexR / 11.5);
+          if (alpha > bayerVal) {
+            data[idx + 0] = 255;
+            data[idx + 1] = 170;
+            data[idx + 2] = 50;
+            data[idx + 3] = 160;
+          }
+        }
+      } else if (variant === 1) {
+        // Pixel Ring Halo
+        if (dist >= 6.5 && dist <= 12.5) {
+          const ringDist = Math.abs(dist - 9.5);
+          const alpha = 0.75 * (1.0 - ringDist / 3.0);
+          if (alpha > bayerVal) {
+            data[idx + 0] = 100;
+            data[idx + 1] = 200;
+            data[idx + 2] = 255;
+            data[idx + 3] = 170;
+          }
+        }
+      } else {
+        // Anamorphic Burst Star
+        if (dist <= 14.0) {
+          const alpha = 0.60 * (1.0 - dist / 14.0);
+          if (alpha > bayerVal) {
+            data[idx + 0] = 255;
+            data[idx + 1] = 230;
+            data[idx + 2] = 120;
+            data[idx + 3] = 150;
+          }
         }
       }
     }
@@ -2412,7 +2572,9 @@ export class RCT3DRenderer {
       dofStrength: "HIGH",
       chroma: true,
       waterReflections: true,
-      fog: "LIGHT"
+      fog: "LIGHT",
+      godRays: true,
+      lensFlare: true
     };
     this._lastPerspState = null;
 
@@ -3227,17 +3389,17 @@ export class RCT3DRenderer {
     this.cloudMesh.frustumCulled = false;
     this.scene.add(this.cloudMesh);
 
-    // 3D Celestial Orbit Group (Sun & Moon in Perspective Mode)
+    // 3D Celestial Orbit Group (Sun, Moon & God Rays in Perspective Mode)
     this.celestialGroup = new THREE.Group();
     this.scene.add(this.celestialGroup);
 
-    // 1. Pixelated & Heavy-Dithered Sun Billboard
+    // 1. Pixelated & Heavy-Dithered Sun Billboard + God Rays
     const sunTex = createDitheredCelestialTexture("sun");
-    const sunGeo = new THREE.PlaneGeometry(36, 36);
+    const sunGeo = new THREE.PlaneGeometry(18, 18);
     const sunMat = new THREE.MeshBasicMaterial({
       map: sunTex,
       transparent: true,
-      alphaTest: 0.05,
+      alphaTest: 0.02,
       depthWrite: false,
       depthTest: true,
       fog: false,
@@ -3245,15 +3407,30 @@ export class RCT3DRenderer {
     });
     this.sunMesh = new THREE.Mesh(sunGeo, sunMat);
     this.sunMesh.renderOrder = 400;
+
+    const sunGodRaysTex = createDitheredGodRaysTexture("sun");
+    const sunGodRaysGeo = new THREE.PlaneGeometry(42, 42);
+    const sunGodRaysMat = new THREE.MeshBasicMaterial({
+      map: sunGodRaysTex,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      depthTest: true,
+      fog: false,
+      side: THREE.DoubleSide
+    });
+    this.sunGodRaysMesh = new THREE.Mesh(sunGodRaysGeo, sunGodRaysMat);
+    this.sunGodRaysMesh.renderOrder = 405;
+    this.sunMesh.add(this.sunGodRaysMesh);
     this.celestialGroup.add(this.sunMesh);
 
-    // 2. Pixelated & Heavy-Dithered Moon Billboard
+    // 2. Pixelated & Heavy-Dithered Moon Billboard + God Rays
     const moonTex = createDitheredCelestialTexture("moon");
-    const moonGeo = new THREE.PlaneGeometry(32, 32);
+    const moonGeo = new THREE.PlaneGeometry(15, 15);
     const moonMat = new THREE.MeshBasicMaterial({
       map: moonTex,
       transparent: true,
-      alphaTest: 0.05,
+      alphaTest: 0.02,
       depthWrite: false,
       depthTest: true,
       fog: false,
@@ -3261,8 +3438,55 @@ export class RCT3DRenderer {
     });
     this.moonMesh = new THREE.Mesh(moonGeo, moonMat);
     this.moonMesh.renderOrder = 400;
+
+    const moonGodRaysTex = createDitheredGodRaysTexture("moon");
+    const moonGodRaysGeo = new THREE.PlaneGeometry(36, 36);
+    const moonGodRaysMat = new THREE.MeshBasicMaterial({
+      map: moonGodRaysTex,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      depthTest: true,
+      fog: false,
+      side: THREE.DoubleSide
+    });
+    this.moonGodRaysMesh = new THREE.Mesh(moonGodRaysGeo, moonGodRaysMat);
+    this.moonGodRaysMesh.renderOrder = 405;
+    this.moonMesh.add(this.moonGodRaysMesh);
     this.celestialGroup.add(this.moonMesh);
     this.celestialGroup.visible = false;
+
+    // 3. Pixel-Dithered Optical Lens Flare System (1P/3P)
+    this.lensFlareGroup = new THREE.Group();
+    this.scene.add(this.lensFlareGroup);
+    this.lensFlareElements = [];
+
+    const flareConfigs = [
+      { variant: 0, scale: 0.22, factor: 0.35, color: 0xffaa44 },
+      { variant: 1, scale: 0.38, factor: 0.70, color: 0x64b4ff },
+      { variant: 0, scale: 0.15, factor: 1.10, color: 0xffdd66 },
+      { variant: 2, scale: 0.30, factor: -0.30, color: 0xff9933 }
+    ];
+
+    for (const cfg of flareConfigs) {
+      const fTex = createDitheredLensFlareTexture(cfg.variant);
+      const fGeo = new THREE.PlaneGeometry(1.0, 1.0);
+      const fMat = new THREE.MeshBasicMaterial({
+        map: fTex,
+        color: cfg.color,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        depthTest: false,
+        fog: false,
+        side: THREE.DoubleSide
+      });
+      const fMesh = new THREE.Mesh(fGeo, fMat);
+      fMesh.renderOrder = 999;
+      this.lensFlareGroup.add(fMesh);
+      this.lensFlareElements.push({ mesh: fMesh, cfg: cfg });
+    }
+    this.lensFlareGroup.visible = false;
   }
 
   // ---------------------------------------------------------------------------
@@ -4156,12 +4380,17 @@ export class RCT3DRenderer {
       if (this.isPerspectiveActive()) {
         this.celestialGroup.visible = true;
         const activeCam = this.fpCamera;
+        const enableGodRays = this.graphicOptions.godRays !== false;
 
         if (isDaytime) {
           this.sunMesh.visible = true;
           this.sunMesh.position.set(this.camX + lightOrbitX * 1.4, lightOrbitY * 1.4, this.camY + lightOrbitZ * 1.4);
           if (activeCam) {
             this.sunMesh.lookAt(activeCam.position);
+          }
+          if (this.sunGodRaysMesh) {
+            this.sunGodRaysMesh.visible = enableGodRays;
+            this.sunGodRaysMesh.rotation.z += 0.001;
           }
           this.moonMesh.visible = false;
         } else {
@@ -4170,10 +4399,49 @@ export class RCT3DRenderer {
           if (activeCam) {
             this.moonMesh.lookAt(activeCam.position);
           }
+          if (this.moonGodRaysMesh) {
+            this.moonGodRaysMesh.visible = enableGodRays;
+            this.moonGodRaysMesh.rotation.z += 0.0008;
+          }
           this.sunMesh.visible = false;
+        }
+
+        // 3D Optical Lens Flare Projection along Screen Light Vector
+        if (this.lensFlareGroup && activeCam) {
+          const enableFlare = this.graphicOptions.lensFlare !== false;
+          const activeCelestial = isDaytime ? this.sunMesh : this.moonMesh;
+          const scr = this._tempVec.copy(activeCelestial.position).project(activeCam);
+          const onScreen = enableFlare && scr.z < 1.0 && Math.abs(scr.x) < 1.30 && Math.abs(scr.y) < 1.30;
+
+          if (onScreen) {
+            this.lensFlareGroup.visible = true;
+            const rayX = -scr.x;
+            const rayY = -scr.y;
+            const fovRad = (activeCam.fov * Math.PI) / 180.0;
+            const planeDist = 1.8;
+            const halfH = Math.tan(fovRad / 2.0) * planeDist;
+            const halfW = halfH * activeCam.aspect;
+
+            for (const elem of this.lensFlareElements) {
+              const factor = elem.cfg.factor;
+              const lx = (scr.x + rayX * factor) * halfW;
+              const ly = (scr.y + rayY * factor) * halfH;
+              const lz = -planeDist;
+
+              elem.mesh.position.set(lx, ly, lz);
+              const sz = elem.cfg.scale * halfH;
+              elem.mesh.scale.set(sz, sz, 1.0);
+              elem.mesh.rotation.z = (scr.x + scr.y) * 1.6;
+            }
+            this.lensFlareGroup.position.copy(activeCam.position);
+            this.lensFlareGroup.quaternion.copy(activeCam.quaternion);
+          } else {
+            this.lensFlareGroup.visible = false;
+          }
         }
       } else {
         this.celestialGroup.visible = false;
+        if (this.lensFlareGroup) this.lensFlareGroup.visible = false;
       }
     }
 
