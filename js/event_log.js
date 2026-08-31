@@ -431,201 +431,315 @@ export function getRecentWorldEvents(limit = 25) {
 }
 
 /**
- * Compiles and exports the complete world chronicle archive into a structured JSON object
+ * Retrieves the full chronological events list involving an entity without truncation
  */
-export function exportWorldChronicleJSON(world, entities, currentTick = 0, entityRegistry = null) {
-  // 1. Gather all groups/factions
-  const groupMap = new Map();
-  const allEnts = new Map();
+export function getFullHistoryForEntity(entityId) {
+  const ids = eventsByEntity.get(entityId);
+  if (!ids || ids.length === 0) return [];
+  return ids.map(id => eventsById.get(id)).filter(Boolean).reverse();
+}
 
-  // Populate from active entities array
-  if (entities && Array.isArray(entities)) {
-    for (const e of entities) {
-      if (!e) continue;
-      allEnts.set(e.id, e);
-      if (e.properties?.group) {
-        groupMap.set(e.properties.group.id, e.properties.group);
-      }
+/**
+ * Retrieves the full chronological events list involving a group without truncation
+ */
+export function getFullHistoryForGroup(group) {
+  if (!group) return [];
+  const memberSet = new Set(group.members || []);
+  const groupId = group.id;
+  const eventIdSet = new Set();
+
+  if (groupId !== undefined && groupId !== null) {
+    const gEvents = eventsByEntity.get(groupId);
+    if (gEvents) {
+      for (const id of gEvents) eventIdSet.add(id);
     }
   }
 
-  // Populate from entity registry (includes deceased/historical creatures)
-  if (entityRegistry && typeof entityRegistry.values === "function") {
-    for (const e of entityRegistry.values()) {
-      if (!e) continue;
-      if (!allEnts.has(e.id)) allEnts.set(e.id, e);
-      if (e.properties?.group) {
-        groupMap.set(e.properties.group.id, e.properties.group);
-      }
+  for (const mid of memberSet) {
+    const mEvents = eventsByEntity.get(mid);
+    if (mEvents) {
+      for (const id of mEvents) eventIdSet.add(id);
     }
   }
 
-  // 2. Format groups cleanly
-  const groupsList = Array.from(groupMap.values()).map(g => ({
-    id: g.id,
-    name: g.name,
-    leaderId: g.members && g.members.length > 0 ? g.members[0] : null,
-    members: g.members || [],
-    claimedZones: g.claimedZones || [],
-    stockpile: g.stockpile || {}
-  }));
+  return Array.from(eventIdSet)
+    .map(id => eventsById.get(id))
+    .filter(Boolean)
+    .sort((a, b) => b.id - a.id);
+}
 
-  // 3. Serialize all entities with intact relationships and body parts
-  const BODY_PART_KEYS = [
-    "arm_left", "arm_right", "leg_left", "leg_right",
-    "eye_left", "eye_right", "mouth", "ear_left", "ear_right",
-    "hand_left", "hand_right", "wing_left", "wing_right",
-    "tail", "head", "torso", "abdomen"
-  ];
+/**
+ * Clusters combat events into cohesive battles/skirmishes with complete forensics:
+ * - Initiator / instigator
+ * - Cause / provocation
+ * - Full combatants list and clan involvement
+ * - Detailed strikes, hit body parts, amputations
+ * - Direct & delayed fatal casualties (died in battle or later from wounds)
+ */
+export function getClusteredBattles({ entityId = null, groupId = null, limit = 50 } = {}) {
+  const combatEvents = allEvents.filter(ev => {
+    return ev.type === "ATTACK" || ev.type === "AMPUTATION" || (ev.type === "DEATH" && (ev.metadata?.attackerId || ev.metadata?.fatalAttackerId || ev.metadata?.causedByBattleId));
+  }).sort((a, b) => a.tick - b.tick);
 
-  const entitiesList = Array.from(allEnts.values()).map(ent => {
-    const props = ent.properties || {};
-    const hasLife = !!props.life;
-    const isAlive = !ent.destroyed && hasLife && props.life.energy > 0;
+  if (combatEvents.length === 0) return [];
 
-    const gender = props.gender || (props.vagina ? "female" : props.penis ? "male" : null);
-    const orientation = props.homosexual ? "homosexual" : props.bisexual ? "bisexual" : "heterosexual";
-    const perks = [];
-    if (props.skeptic) perks.push("skeptic");
-    if (props.gullible) perks.push("gullible");
-    if (props.traira) perks.push("traitor");
-    if (props.estressado) perks.push("stressed");
-    if (props.calmo) perks.push("calm");
-    if (props.liar) perks.push(props.liar.type || "liar");
+  const clusters = [];
+  let curCluster = null;
 
-    const fatherId = props.fatherId !== undefined ? props.fatherId : props.life?.fatherId ?? null;
-    const motherId = props.motherId !== undefined ? props.motherId : props.life?.motherId ?? null;
-    const partnerId = props.monogamy?.partnerId ?? null;
-    const childrenIds = props.life?.childrenIds || [];
+  for (const ev of combatEvents) {
+    if (!curCluster) {
+      curCluster = [ev];
+      continue;
+    }
 
-    const affinities = props.brain?.affinities
-      ? Object.fromEntries(Object.entries(props.brain.affinities).map(([k, v]) => [k, Math.round(v)]))
-      : {};
+    const prev = curCluster[curCluster.length - 1];
+    const timeDelta = Math.abs(ev.tick - prev.tick);
+    const distDelta = Math.hypot(ev.location.x - prev.location.x, ev.location.y - prev.location.y);
 
-    // Serialize body parts
-    const bodyParts = {};
-    for (const key of BODY_PART_KEYS) {
-      if (!props[key]) continue;
-      const part = props[key];
-      const serialized = {};
-      for (const [pk, pv] of Object.entries(part)) {
-        if (typeof pv === "function") continue;
-        if (pk === "heldItem" && pv && typeof pv === "object") {
-          serialized.heldItem = {
-            name: pv.name || null,
-            resourceType: pv.resourceType || null,
-            species: pv.species || null
-          };
-        } else if (typeof pv !== "object" || pv === null) {
-          serialized[pk] = pv;
+    // Group events within 360 ticks (~6 seconds of combat) and within 20 tiles distance
+    if (timeDelta <= 360 && distDelta <= 20) {
+      curCluster.push(ev);
+    } else {
+      clusters.push(curCluster);
+      curCluster = [ev];
+    }
+  }
+  if (curCluster && curCluster.length > 0) {
+    clusters.push(curCluster);
+  }
+
+  // Transform raw event clusters into rich Battle Records
+  const battles = [];
+  let battleIdx = 1;
+
+  for (const cluster of clusters) {
+    const firstEv = cluster[0];
+    const lastEv = cluster[cluster.length - 1];
+
+    const combatantsMap = new Map();
+    const clansSet = new Set();
+    let totalDamage = 0;
+    const amputations = [];
+    const fatalities = [];
+
+    const getOrAddCombatant = (id, name, clan) => {
+      if (!id) return null;
+      if (!combatantsMap.has(id)) {
+        combatantsMap.set(id, {
+          id,
+          name: name || `Entity #${id}`,
+          clan: clan || "Solitary",
+          hitsDealt: 0,
+          hitsTaken: 0,
+          damageDealt: 0,
+          damageTaken: 0,
+          amputationsDealt: 0,
+          amputationsSuffered: 0,
+          isDead: false
+        });
+      }
+      return combatantsMap.get(id);
+    };
+
+    for (const ev of cluster) {
+      const pId = ev.primaryEntityId;
+      const sId = ev.secondaryEntityId;
+      const pName = ev.metadata?.primaryName || ev.metadata?.attackerName;
+      const sName = ev.metadata?.secondaryName || ev.metadata?.targetName;
+      const pClan = ev.metadata?.attackerClan || ev.metadata?.primaryClan;
+      const sClan = ev.metadata?.targetClan || ev.metadata?.secondaryClan;
+
+      const pCombatant = getOrAddCombatant(pId, pName, pClan);
+      const sCombatant = getOrAddCombatant(sId, sName, sClan);
+
+      if (pClan) clansSet.add(pClan);
+      if (sClan) clansSet.add(sClan);
+
+      if (ev.type === "ATTACK") {
+        const dmg = ev.metadata?.totalDamage || ev.metadata?.netDamage || 10;
+        totalDamage += dmg;
+        if (pCombatant) {
+          pCombatant.hitsDealt += (ev.count || 1);
+          pCombatant.damageDealt += dmg;
         }
-      }
-      bodyParts[key] = serialized;
-    }
-
-    // Serialize geo memory (known zones)
-    const geoMemory = props.brain?.geoMemory ? Object.keys(props.brain.geoMemory) : [];
-
-    // Serialize recent memories (last 10)
-    const memories = [];
-    if (props.brain?.memories && Array.isArray(props.brain.memories)) {
-      const memSlice = props.brain.memories.slice(-10);
-      for (const m of memSlice) {
-        if (!m) continue;
-        memories.push({
-          eventId: m.eventId || null,
-          type: m.type || null,
-          tick: m.tick || null,
-          isLie: m.isLie || false,
-          actorId: m.actorId || null,
-          targetId: m.targetId || null,
-          description: m.description || null
+        if (sCombatant) {
+          sCombatant.hitsTaken += (ev.count || 1);
+          sCombatant.damageTaken += dmg;
+        }
+      } else if (ev.type === "AMPUTATION") {
+        if (pCombatant) pCombatant.amputationsDealt++;
+        if (sCombatant) pCombatant.amputationsSuffered++;
+        amputations.push({
+          attackerId: pId,
+          attackerName: pName,
+          victimId: sId,
+          victimName: sName,
+          partName: ev.metadata?.partName || "limb",
+          tick: ev.tick
+        });
+      } else if (ev.type === "DEATH") {
+        const victimId = pId || sId;
+        const victim = combatantsMap.get(victimId);
+        if (victim) victim.isDead = true;
+        fatalities.push({
+          victimId: victimId,
+          victimName: pName || sName,
+          killerId: ev.metadata?.attackerId || ev.metadata?.fatalAttackerId || pId,
+          killerName: ev.metadata?.attackerName,
+          tick: ev.tick
         });
       }
     }
 
-    return {
-      id: ent.id,
-      name: props.name || `Entity #${ent.id}`,
-      species: props.species || "creature",
-      role: props.role || null,
-      x: ent.x,
-      y: ent.y,
-      isAlive,
-      hasLife,
-      gender,
-      orientation,
-      perks,
-      fatherId,
-      motherId,
-      partnerId,
-      childrenIds,
-      groupId: props.group?.id ?? null,
-      groupName: props.group?.name ?? null,
-      affinities,
-      geoMemory,
-      memories,
-      bodyParts,
-      fatUnits: props.stomach?.fatUnits || 0,
-      energy: props.life ? Math.round(props.life.energy) : null,
-      maxEnergy: props.life?.max || null,
-      mood: props.brain && typeof props.brain.mood === "number" ? Math.round(props.brain.mood) : null,
-      viewRange: props.eye_left?.viewRange || props.eye_right?.viewRange || null,
-      heldItem: props.arm_right?.heldItem?.resourceType || props.arm_left?.heldItem?.resourceType || null
-    };
-  });
+    const initiatorId = firstEv.primaryEntityId;
+    const initiatorName = firstEv.metadata?.primaryName || firstEv.metadata?.attackerName || `Entity #${initiatorId}`;
+    const initiatorClan = firstEv.metadata?.primaryClan || firstEv.metadata?.attackerClan || "Solitary";
+    const defenderId = firstEv.secondaryEntityId;
+    const defenderName = firstEv.metadata?.secondaryName || firstEv.metadata?.targetName || `Entity #${defenderId}`;
+    const defenderClan = firstEv.metadata?.secondaryClan || firstEv.metadata?.targetClan || "Solitary";
 
-  // 4. Serialize all events
-  const eventsList = allEvents.map(ev => ({
-    id: ev.id,
-    opcode: ev.opcode,
-    type: ev.type,
-    count: ev.count || 1,
-    tick: ev.tick,
-    timestamp: ev.timestamp || { day: 0, hour: 0, minute: 0 },
-    primaryEntityId: ev.primaryEntityId,
-    secondaryEntityId: ev.secondaryEntityId,
-    location: ev.location ? { x: ev.location.x, y: ev.location.y } : null,
-    description: ev.description,
-    metadata: ev.metadata || {}
-  }));
+    // Deduce Provocation / Estopim from previous events before battle start
+    let triggerCause = "Territorial tension / Hostile encounter";
+    const preBattleEvents = allEvents.filter(ev => {
+      return ev.tick < firstEv.tick && ev.tick >= firstEv.tick - 1800 && (
+        (ev.primaryEntityId === initiatorId && ev.secondaryEntityId === defenderId) ||
+        (ev.primaryEntityId === defenderId && ev.secondaryEntityId === initiatorId)
+      );
+    });
 
-  // 5. Serialize terrain tile map as Base64
-  let terrainBase64 = null;
-  if (world && world.map && world.map instanceof Uint8Array) {
-    const bytes = world.map.slice(0, world.width * world.height);
-    let binary = "";
-    for (let i = 0; i < bytes.length; i++) {
-      binary += String.fromCharCode(bytes[i]);
+    for (const pEv of preBattleEvents.reverse()) {
+      if (pEv.opcode === OP_INSULT || pEv.opcode === OP_HUMILIATE || pEv.opcode === OP_SPIT || pEv.opcode === OP_SHOVE) {
+        triggerCause = `Provoked by prior hostile confrontation (${pEv.description})`;
+        break;
+      } else if (pEv.opcode === OP_LIE) {
+        triggerCause = `Sparked by fabricated lie/accusation (${pEv.metadata?.narrative || pEv.description})`;
+        break;
+      } else if (pEv.opcode === OP_PROPOSAL_REJECTED) {
+        triggerCause = `Emotional fallout following courtship rejection`;
+        break;
+      }
     }
-    terrainBase64 = btoa(binary);
+
+    const battleName = clansSet.size >= 2
+      ? `CLASH OF ${Array.from(clansSet).join(" vs ").toUpperCase()}`
+      : `SKIRMISH AT [X:${firstEv.location.x}, Y:${firstEv.location.y}]`;
+
+    const battleRecord = {
+      id: battleIdx++,
+      name: battleName,
+      startTick: firstEv.tick,
+      endTick: lastEv.tick,
+      timestamp: firstEv.timestamp,
+      location: firstEv.location,
+      initiator: { id: initiatorId, name: initiatorName, clan: initiatorClan },
+      defender: { id: defenderId, name: defenderName, clan: defenderClan },
+      triggerCause,
+      combatants: Array.from(combatantsMap.values()),
+      clansInvolved: Array.from(clansSet),
+      totalDamage,
+      attacksCount: cluster.filter(e => e.type === "ATTACK").reduce((sum, e) => sum + (e.count || 1), 0),
+      amputations,
+      fatalities,
+      events: cluster
+    };
+
+    battles.push(battleRecord);
+  }
+
+  let filtered = battles;
+  if (entityId !== null && entityId !== undefined) {
+    filtered = filtered.filter(b => b.combatants.some(c => c.id === entityId));
+  }
+  if (groupId !== null && groupId !== undefined) {
+    filtered = filtered.filter(b => b.combatants.some(c => c.clan === groupId || c.clan?.toLowerCase() === String(groupId).toLowerCase()));
+  }
+
+  return filtered.slice(Math.max(0, filtered.length - limit)).reverse();
+}
+
+/**
+ * Retrieves a battle record by its cluster ID
+ */
+export function getBattleById(battleId) {
+  const battles = getClusteredBattles({ limit: 500 });
+  return battles.find(b => b.id === battleId) || null;
+}
+
+/**
+ * Generates an in-depth relationship summary between two entities
+ */
+export function getRelationshipSummary(entA_Id, entB_Id, entityRegistry = null) {
+  if (!entA_Id || !entB_Id) return null;
+
+  const getEnt = (id) => entityRegistry?.get(id) || null;
+  const entA = getEnt(entA_Id);
+  const entB = getEnt(entB_Id);
+  const nameA = entA?.properties?.name || `Entity #${entA_Id}`;
+  const nameB = entB?.properties?.name || `Entity #${entB_Id}`;
+
+  const mutualEvents = allEvents.filter(ev => {
+    return (ev.primaryEntityId === entA_Id && ev.secondaryEntityId === entB_Id) ||
+           (ev.primaryEntityId === entB_Id && ev.secondaryEntityId === entA_Id);
+  }).sort((a, b) => a.tick - b.tick);
+
+  let positiveCount = 0;
+  let hostileCount = 0;
+  let kisses = 0;
+  let hugs = 0;
+  let praises = 0;
+  let insults = 0;
+  let attacks = 0;
+  let lies = 0;
+  let bondedProposal = false;
+  let rejectedProposal = false;
+
+  for (const ev of mutualEvents) {
+    if (ev.opcode === OP_KISS) { kisses++; if (!ev.metadata?.rejected) positiveCount += 2; else hostileCount++; }
+    else if (ev.opcode === OP_HUG) { hugs++; if (!ev.metadata?.rejected) positiveCount++; else hostileCount++; }
+    else if (ev.opcode === OP_PRAISE) { praises++; if (!ev.metadata?.rejected) positiveCount++; }
+    else if (ev.opcode === OP_INSULT || ev.opcode === OP_HUMILIATE || ev.opcode === OP_SPIT || ev.opcode === OP_SHOVE) { insults++; hostileCount += 2; }
+    else if (ev.opcode === OP_ATTACK || ev.opcode === OP_AMPUTATION) { attacks += (ev.count || 1); hostileCount += 3; }
+    else if (ev.opcode === OP_LIE) { lies++; hostileCount += 2; }
+    else if (ev.opcode === OP_PROPOSAL_ACCEPTED) { bondedProposal = true; positiveCount += 5; }
+    else if (ev.opcode === OP_PROPOSAL_REJECTED) { rejectedProposal = true; hostileCount += 2; }
+  }
+
+  const affinityAtoB = entA?.properties?.brain?.affinities?.[entB_Id];
+  const score = typeof affinityAtoB === "object" ? (affinityAtoB.score || 0) : (typeof affinityAtoB === "number" ? affinityAtoB : 0);
+
+  let statusLabel = "STRANGERS / ACQUAINTANCES";
+  let statusColor = "#bcbcbc";
+
+  if (bondedProposal || (entA?.properties?.monogamy?.partnerId === entB_Id)) {
+    statusLabel = "BONDED COUPLE ❤️";
+    statusColor = "#ff60a0";
+  } else if (score >= 60 || positiveCount >= 6) {
+    statusLabel = "CHERISHED ALLIES / CLOSE FRIENDS";
+    statusColor = "#58d854";
+  } else if (score <= -40 || hostileCount >= 6) {
+    statusLabel = "BITTER BLOOD RIVALS ⚔️";
+    statusColor = "#f83800";
+  } else if (rejectedProposal) {
+    statusLabel = "UNREQUITED / ESTRANGED";
+    statusColor = "#d3869b";
   }
 
   return {
-    version: "2.0",
-    format: "brutopolis_chronicle",
-    generatedAt: new Date().toISOString(),
-    world: {
-      width: world?.width || 512,
-      height: world?.height || 512,
-      clock: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute, totalSeconds: world.clock.totalSeconds } : null,
-      tick: currentTick,
-      terrain: terrainBase64
-    },
-    stats: {
-      totalTicks: currentTick,
-      totalEvents: eventsList.length,
-      totalEntities: entitiesList.length,
-      totalGroups: groupsList.length
-    },
-    groups: groupsList,
-    entities: entitiesList,
-    events: eventsList
+    entA: { id: entA_Id, name: nameA },
+    entB: { id: entB_Id, name: nameB },
+    statusLabel,
+    statusColor,
+    affinityScore: score,
+    totalEvents: mutualEvents.length,
+    positiveCount,
+    hostileCount,
+    breakdown: { kisses, hugs, praises, insults, attacks, lies, bondedProposal, rejectedProposal },
+    events: mutualEvents
   };
 }
 
 /**
- * Restores world events from a chronicle
+ * Restores world events stream received from worker during full world init
  */
 export function restoreWorldEvents(eventsList = []) {
   resetWorldEvents();
@@ -689,7 +803,6 @@ export function appendWorldEvents(eventsList = []) {
   for (const raw of eventsList) {
     if (!raw) continue;
 
-    // If event already exists (e.g. updated attack count/damage), update it in place
     if (eventsById.has(raw.id)) {
       const existing = eventsById.get(raw.id);
       existing.count = raw.count || existing.count;
@@ -728,16 +841,12 @@ export function appendWorldEvents(eventsList = []) {
       const removed = allEvents.shift();
       if (removed) {
         eventsById.delete(removed.id);
-        
         const pArr = eventsByEntity.get(removed.primaryEntityId);
         if (pArr && pArr[0] === removed.id) pArr.shift();
-        
         const sArr = eventsByEntity.get(removed.secondaryEntityId);
         if (sArr && sArr[0] === removed.id) sArr.shift();
-        
         const tArr = eventsByType.get(removed.type);
         if (tArr && tArr[0] === removed.id) tArr.shift();
-        
         if (removed.metadata?.citedEventId) {
           const cArr = eventsByCitedEvent.get(removed.metadata.citedEventId);
           if (cArr && cArr[0] === removed.id) cArr.shift();
@@ -769,26 +878,3 @@ export function appendWorldEvents(eventsList = []) {
     if (ev.id >= nextEventId) nextEventId = ev.id + 1;
   }
 }
-
-/**
- * Triggers browser download of the chronicle JSON file
- */
-export function downloadChronicleJSON(world, entities, currentTick = 0, entityRegistry = null) {
-  const chronicle = exportWorldChronicleJSON(world, entities, currentTick, entityRegistry);
-  const jsonStr = JSON.stringify(chronicle, null, 2);
-  const blob = new Blob([jsonStr], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const day = world?.clock?.day || 0;
-  const hour = world?.clock?.hour || 0;
-  const filename = `brutopolis_chronicle_day${day}_hour${hour}_tick${currentTick}.json`;
-
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-  return filename;
-}
-

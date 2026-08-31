@@ -34,8 +34,11 @@ import {
   getRecentWorldEvents,
   getEventById,
   getCitationsForEvent,
-  exportWorldChronicleJSON,
-  downloadChronicleJSON,
+  getClusteredBattles,
+  getBattleById,
+  getRelationshipSummary,
+  getFullHistoryForEntity,
+  getFullHistoryForGroup,
   restoreWorldEvents,
   appendWorldEvents,
   recordWorldEvent,
@@ -961,6 +964,8 @@ let lastTpsUpdate = performance.now();
 let currentMode = "TITLE";
 let modalScroll = 0;
 let inspectingLogEvent = null;
+let inspectingBattle = null; // Currently inspected battle dossier
+let inspectingRelationship = null; // Currently inspected two-character relationship summary
 let inspectingGroup = null; // Currently inspected clan for full dossier/stockpile view
 let groupDetailTab = "ZONES"; // Active tab in clan dossier: "ZONES", "STOCKPILE", "MEMBERS", "HISTORY"
 let dossierTab = "OVERVIEW"; // Active tab in creature dossier: "OVERVIEW", "AFFINITIES", "OFFSPRING", "CHRONICLE"
@@ -1878,6 +1883,10 @@ window.addEventListener("keydown", (e) => {
       editorTool = null;
       editorActiveSpawner = null;
       isPainting = false;
+    } else if (inspectingBattle) {
+      inspectingBattle = null;
+    } else if (inspectingRelationship) {
+      inspectingRelationship = null;
     } else if (inspectingLogEvent) {
       inspectingLogEvent = null;
     } else if (inspectingGroup) {
@@ -2465,7 +2474,7 @@ function renderFamilyTreeTab(mx, my, mw, mh, target) {
       }
 
       const cursorPrefix = isSelected || isHover ? "▶" : "•";
-      const nameCol = isSelected ? "#ffd700" : (isAlive ? "#ffffff" : "#bcbcbc");
+      const nameCol = isSelected ? "#ffd700" : (isAlive ? "#ffffff" : "#9c5050");
 
       const lineStr = `${cursorPrefix} ${roleBadge} ${entName} • CLAN: [${clanName}] • ${statusBadge}`;
       const actionWidth = isAlive ? 165 : 85;
@@ -2571,7 +2580,7 @@ function renderDossierModal() {
 
   // Calculate Tab Counts
   const knownAffinities = Object.entries(props.brain?.affinities || {});
-  const creatureEvents = getEventsForEntity(target.id, 60);
+  const creatureEvents = getFullHistoryForEntity(target.id);
   const isCreature = !!props.life || !!props.brain;
 
   // Modal Tabs Bar
@@ -2980,6 +2989,17 @@ function renderDossierModal() {
         if (isHover) {
           ctx.fillStyle = "#181828";
           ctx.fillRect(mx + 12, curY, mw - 24, rowH);
+
+          const tipLines = [
+            `Type: [${ev.type}]`,
+            `Time: Day ${ev.timestamp?.day || 0} at ${String(ev.timestamp?.hour || 0).padStart(2, "0")}:${String(ev.timestamp?.minute || 0).padStart(2, "0")} (Tick ${ev.tick})`,
+            ev.location ? `Coordinates: [X: ${ev.location.x}, Y: ${ev.location.y}]` : "Coordinates: Global / Ambient",
+            ev.metadata?.attackerName ? `Attacker: ${ev.metadata.attackerName}` : null,
+            ev.metadata?.targetName ? `Target: ${ev.metadata.targetName}` : null,
+            ev.metadata?.hitPartName ? `Hit: ${ev.metadata.hitPartName} (${Math.round(ev.metadata.totalDamage || ev.metadata.netDamage || 0)} DMG)` : null,
+            ev.metadata?.causedByBattleId ? `Succumbed to Battle #${ev.metadata.causedByBattleId} Wounds` : null
+          ].filter(Boolean);
+          setHoverTooltip(`Creature Event #${ev.id}`, tipLines);
         }
 
         const ts = ev.timestamp ? `D${ev.timestamp.day} ${String(ev.timestamp.hour).padStart(2, "0")}:${String(ev.timestamp.minute).padStart(2, "0")}` : `T${ev.tick}`;
@@ -3409,7 +3429,7 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
   const lEnt = getEntityById(leaderIdToFind);
   const leaderEnt = (lEnt && !lEnt.destroyed) ? lEnt : null;
   const stockpile = getGroupStockpile(g, entities);
-  const groupEvents = getEventsForGroup(g, 100);
+  const groupEvents = getFullHistoryForGroup(g);
 
   const flagTex = g.flagSkin ? findTexture(g.flagSkin) : null;
   const gFgColor = g.color ? `#${(g.color & 0xffffff).toString(16).padStart(6, "0")}` : "#f8b800";
@@ -3687,6 +3707,17 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
         if (isHover) {
           ctx.fillStyle = "#181828";
           ctx.fillRect(mx + 16, logY - 2, mw - 186, 24);
+
+          const tipLines = [
+            `Type: [${ev.type}]`,
+            `Time: Day ${ev.timestamp?.day || 0} at ${String(ev.timestamp?.hour || 0).padStart(2, "0")}:${String(ev.timestamp?.minute || 0).padStart(2, "0")} (Tick ${ev.tick})`,
+            ev.location ? `Coordinates: [X: ${ev.location.x}, Y: ${ev.location.y}]` : "Coordinates: Global / Ambient",
+            ev.metadata?.attackerName ? `Attacker: ${ev.metadata.attackerName}` : null,
+            ev.metadata?.targetName ? `Target: ${ev.metadata.targetName}` : null,
+            ev.metadata?.hitPartName ? `Hit: ${ev.metadata.hitPartName} (${Math.round(ev.metadata.totalDamage || ev.metadata.netDamage || 0)} DMG)` : null,
+            ev.metadata?.causedByBattleId ? `Succumbed to Battle #${ev.metadata.causedByBattleId} Wounds` : null
+          ].filter(Boolean);
+          setHoverTooltip(`Clan Event #${ev.id}`, tipLines);
         }
 
         const typeCol = ev.type === "DEATH" ? "#f83800" : ev.type === "ATTACK" ? "#f8b800" : ev.type === "AMPUTATION" ? "#d3869b" : ev.type === "BIRTH" ? "#58d854" : ev.type === "RELATION" ? "#f878f8" : "#3cbcfc";
@@ -3806,7 +3837,59 @@ function renderTerritoryOverlay() {
 // 5. In-Engine Modal 4: World Event Log Explorer Screen ([L])
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// 5. In-Engine Modal 4: World Event Log Explorer Screen ([L]) & Battle Forensics
+// ---------------------------------------------------------------------------
+
+let activeHoverTooltip = null;
+
+function setHoverTooltip(title, lines) {
+  activeHoverTooltip = {
+    title,
+    lines: Array.isArray(lines) ? lines : [lines],
+    x: mouseX,
+    y: mouseY
+  };
+}
+
+function renderActiveHoverTooltip() {
+  if (!activeHoverTooltip) return;
+
+  const { title, lines, x, y } = activeHoverTooltip;
+  const lineH = 14;
+  const padding = 8;
+  const maxLineLen = Math.max(title.length, ...lines.map(l => (l || "").length));
+  const tipW = Math.min(380, Math.max(160, maxLineLen * 8 + padding * 2 + 10));
+  const tipH = (lines.length + 1) * lineH + padding * 2 + 6;
+
+  // Position tooltip smartly to stay on screen
+  let tx = x + 14;
+  let ty = y + 14;
+  if (tx + tipW > CANVAS_WIDTH - 8) tx = x - tipW - 10;
+  if (ty + tipH > CANVAS_HEIGHT - 8) ty = y - tipH - 10;
+
+  ctx.save();
+  ctx.fillStyle = "rgba(10, 10, 20, 0.95)";
+  ctx.fillRect(tx, ty, tipW, tipH);
+  ctx.strokeStyle = "#ffd700";
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(tx, ty, tipW, tipH);
+
+  drawText8x8(title.toUpperCase(), tx + padding, ty + padding + 2, "#ffd700", 1);
+  let curY = ty + padding + lineH + 4;
+  for (const line of lines) {
+    drawText8x8((line || "").slice(0, Math.floor((tipW - padding * 2) / 8)), tx + padding, curY, "#ffffff", 1);
+    curY += lineH;
+  }
+  ctx.restore();
+
+  activeHoverTooltip = null;
+}
+
 function getFilteredLogs() {
+  if (logFilter === "BATTLES") {
+    return getClusteredBattles({ limit: 100 });
+  }
   const events = allEvents.slice().reverse();
   if (logFilter === "ALL") return events;
   return events.filter(e => e.type === logFilter);
@@ -3830,11 +3913,25 @@ function renderLogsModal() {
   registerClickableRegion(mx + mw - 32, my + 6, 26, 24, () => {
     currentMode = "MAP";
     inspectingLogEvent = null;
+    inspectingBattle = null;
+    inspectingRelationship = null;
     inspectingGroup = null;
     inspectingFromCreature = false;
   });
 
-  // If viewing a specific event detail:
+  // Modal Sub-Views
+  if (inspectingBattle) {
+    renderBattleDetailView(mx, my, mw, mh, inspectingBattle);
+    ctx.restore();
+    return;
+  }
+
+  if (inspectingRelationship) {
+    renderRelationshipModal(mx, my, mw, mh, inspectingRelationship);
+    ctx.restore();
+    return;
+  }
+
   if (inspectingLogEvent) {
     renderLogDetailView(mx, my, mw, mh, inspectingLogEvent);
     ctx.restore();
@@ -3842,17 +3939,19 @@ function renderLogsModal() {
   }
 
   const list = getFilteredLogs();
-  const titleStr = isMobile ? `WORLD LOG (${list.length})` : `WORLD LOG (${list.length}) - CLICK EVENT TO INSPECT`;
+  const titleStr = logFilter === "BATTLES"
+    ? `BATTLES & WAR FORENSICS (${list.length} BATTLES DETECTED)`
+    : `WORLD CHRONICLE LOG (${list.length} EVENTS)`;
   drawText8x8(titleStr, mx + 16, my + 14, "#f8b800", 1);
 
   // Filter Buttons
-  const filters = ["ALL", "KILL", "ATTACK", "RELATION", "DIALOGUE", "AMPUTATION", "BIRTH", "DEATH", "SPROUT", "MINE", "BUILD"];
+  const filters = ["ALL", "BATTLES", "KILL", "ATTACK", "RELATION", "DIALOGUE", "AMPUTATION", "BIRTH", "DEATH", "BUILD"];
   let fx = mx + 16;
   for (const f of filters) {
-    if (fx + 40 > mx + mw - 16) break; // Don't overflow filters off screen
+    if (fx + 45 > mx + mw - 16) break;
     const isAct = logFilter === f;
     const flabel = isMobile ? f.slice(0, 4) : f;
-    const fw = flabel.length * 8 + 12;
+    const fw = flabel.length * 8 + 14;
     drawNESButton(fx, my + 36, fw, 22, flabel, isAct, false);
     const filterKey = f;
     registerClickableRegion(fx, my + 36, fw, 22, () => {
@@ -3862,54 +3961,300 @@ function renderLogsModal() {
     fx += fw + 4;
   }
 
-  // Event List Box
+  // Event / Battle List Container
   const tableY = my + 64;
   const tableH = mh - 74;
   drawNESBox(mx + 10, tableY, mw - 20, tableH);
 
-  const rowH = 22;
-  const visibleRows = Math.floor((tableH - 16) / rowH);
-  const maxScroll = Math.max(0, list.length - visibleRows);
-  modalScroll = Math.max(0, Math.min(maxScroll, modalScroll));
-
-  let rowY = tableY + 16;
-  for (let i = modalScroll; i < Math.min(list.length, modalScroll + visibleRows); i++) {
-    const ev = list[i];
-    const isHover = mouseX >= mx + 12 && mouseX <= mx + mw - 12 && mouseY >= rowY - 4 && mouseY <= rowY + 16;
-
-    if (isHover) {
-      ctx.fillStyle = "#181828";
-      ctx.fillRect(mx + 12, rowY - 4, mw - 24, rowH);
-    }
-
-    const ts = ev.timestamp ? `D${ev.timestamp.day} ${String(ev.timestamp.hour).padStart(2, "0")}:${String(ev.timestamp.minute).padStart(2, "0")}` : `T${ev.tick}`;
-    drawText8x8(ts, mx + 18, rowY + 3, "#bcbcbc", 1);
-
-    const typeColor = ev.type === "KILL" ? "#ff2040" : ev.type === "DEATH" ? "#9c5050" : ev.type === "ATTACK" ? "#f8b800" : ev.type === "AMPUTATION" ? "#e40058" : ev.type === "RELATION" ? "#d3869b" : ev.type === "DIALOGUE" ? "#3cbcfc" : ev.type === "BIRTH" ? "#f8b800" : ev.type === "SPROUT" ? "#58d854" : "#ffffff";
-
-    if (!isMobile) {
-      drawText8x8(`[${ev.type}]`, mx + 115, rowY + 3, typeColor, 1);
-      const locStr = ev.location ? `[${Math.floor(ev.location.x)},${Math.floor(ev.location.y)}] ` : "";
-      const maxDescChars = Math.floor((mw - 260) / 8);
-      const shortDesc = `${locStr}${ev.description}`.slice(0, maxDescChars).toUpperCase();
-      drawText8x8(shortDesc, mx + 235, rowY + 3, "#ffffff", 1);
+  if (logFilter === "BATTLES") {
+    // -------------------------------------------------------------------------
+    // BATTLES & WARS LIST
+    // -------------------------------------------------------------------------
+    if (list.length === 0) {
+      drawText8x8("NO COMBAT BATTLES OR SKIRMISHES RECORDED YET.", mx + 24, tableY + 24, "#bcbcbc", 1);
     } else {
-      drawText8x8(`[${ev.type.slice(0, 4)}]`, mx + 86, rowY + 3, typeColor, 1);
-      const maxDescChars = Math.max(8, Math.floor((mw - 156) / 8));
-      const shortDesc = (ev.description || "").slice(0, maxDescChars).toUpperCase();
-      drawText8x8(shortDesc, mx + 140, rowY + 3, "#ffffff", 1);
-    }
+      const rowH = 34;
+      const visibleRows = Math.floor((tableH - 20) / rowH);
+      const maxScroll = Math.max(0, list.length - visibleRows);
+      modalScroll = Math.max(0, Math.min(maxScroll, modalScroll));
 
-    // Detail click
+      let rowY = tableY + 12;
+      for (let i = modalScroll; i < Math.min(list.length, modalScroll + visibleRows); i++) {
+        const battle = list[i];
+        const isHover = mouseX >= mx + 12 && mouseX <= mx + mw - 12 && mouseY >= rowY && mouseY <= rowY + rowH;
+
+        if (isHover) {
+          ctx.fillStyle = "#1e1828";
+          ctx.fillRect(mx + 12, rowY, mw - 24, rowH - 2);
+
+          const tipLines = [
+            `Location: [X:${battle.location.x}, Y:${battle.location.y}]`,
+            `Initiator: ${battle.initiator.name} (${battle.initiator.clan})`,
+            `Defender: ${battle.defender.name} (${battle.defender.clan})`,
+            `Trigger: ${battle.triggerCause}`,
+            `Strikes: ${battle.attacksCount}x | Damage: ${Math.round(battle.totalDamage)} HP`,
+            `Casualties: ${battle.amputations.length} amputations, ${battle.fatalities.length} fatalities`
+          ];
+          setHoverTooltip(`⚔️ Battle #${battle.id}: ${battle.name}`, tipLines);
+        }
+
+        const ts = battle.timestamp ? `D${battle.timestamp.day} ${String(battle.timestamp.hour).padStart(2, "0")}:${String(battle.timestamp.minute).padStart(2, "0")}` : `T${battle.startTick}`;
+        drawText8x8(ts, mx + 18, rowY + 5, "#bcbcbc", 1);
+        drawText8x8(`[⚔️ BATTLE #${battle.id}]`, mx + 110, rowY + 5, "#f83800", 1);
+
+        const battleHeader = `${battle.name} • [${battle.combatants.length} FIGHTERS • ${Math.round(battle.totalDamage)} DMG]`;
+        drawText8x8(battleHeader.slice(0, Math.floor((mw - 380) / 8)), mx + 245, rowY + 5, "#ffd700", 1);
+
+        const causeShort = `TRIGGER: ${battle.triggerCause}`.slice(0, Math.floor((mw - 380) / 8));
+        drawText8x8(causeShort, mx + 245, rowY + 18, "#bcbcbc", 1);
+
+        const curBattle = battle;
+        // Inspect Button
+        drawNESButton(mx + mw - 170, rowY + 4, 80, 24, "INSPECT", false, false);
+        registerClickableRegion(mx + mw - 170, rowY + 4, 80, 24, () => {
+          inspectingBattle = curBattle;
+        });
+
+        // Map Button
+        drawNESButton(mx + mw - 85, rowY + 4, 70, 24, "MAP", false, false);
+        registerClickableRegion(mx + mw - 85, rowY + 4, 70, 24, () => {
+          focusLocation(curBattle.location.x, curBattle.location.y, 2.0);
+        });
+
+        // Row Click to Inspect
+        registerClickableRegion(mx + 12, rowY, mw - 180, rowH - 2, () => {
+          inspectingBattle = curBattle;
+        });
+
+        rowY += rowH;
+      }
+    }
+  } else {
+    // -------------------------------------------------------------------------
+    // STANDARD CHRONOLOGICAL LOGS
+    // -------------------------------------------------------------------------
+    const rowH = 24;
+    const visibleRows = Math.floor((tableH - 16) / rowH);
+    const maxScroll = Math.max(0, list.length - visibleRows);
+    modalScroll = Math.max(0, Math.min(maxScroll, modalScroll));
+
+    let rowY = tableY + 12;
+    for (let i = modalScroll; i < Math.min(list.length, modalScroll + visibleRows); i++) {
+      const ev = list[i];
+      const isHover = mouseX >= mx + 12 && mouseX <= mx + mw - 12 && mouseY >= rowY - 2 && mouseY <= rowY + rowH - 2;
+
+      if (isHover) {
+        ctx.fillStyle = "#181828";
+        ctx.fillRect(mx + 12, rowY - 2, mw - 24, rowH);
+
+        const tipLines = [
+          `Type: [${ev.type}]`,
+          `Time: Day ${ev.timestamp?.day || 0} at ${String(ev.timestamp?.hour || 0).padStart(2, "0")}:${String(ev.timestamp?.minute || 0).padStart(2, "0")} (Tick ${ev.tick})`,
+          ev.location ? `Coordinates: [X: ${ev.location.x}, Y: ${ev.location.y}]` : "Coordinates: Global / Ambient",
+          ev.metadata?.attackerName ? `Attacker: ${ev.metadata.attackerName} (${ev.metadata.attackerClan || "Solitary"})` : null,
+          ev.metadata?.targetName ? `Target: ${ev.metadata.targetName} (${ev.metadata.targetClan || "Solitary"})` : null,
+          ev.metadata?.hitPartName ? `Hit: ${ev.metadata.hitPartName} (${Math.round(ev.metadata.totalDamage || ev.metadata.netDamage || 0)} DMG)` : null,
+          ev.metadata?.causedByBattleId ? `Succumbed to Battle #${ev.metadata.causedByBattleId} Wounds` : null
+        ].filter(Boolean);
+        setHoverTooltip(`Event #${ev.id}`, tipLines);
+      }
+
+      const ts = ev.timestamp ? `D${ev.timestamp.day} ${String(ev.timestamp.hour).padStart(2, "0")}:${String(ev.timestamp.minute).padStart(2, "0")}` : `T${ev.tick}`;
+      drawText8x8(ts, mx + 18, rowY + 5, "#bcbcbc", 1);
+
+      const typeColor = ev.type === "KILL" ? "#ff2040" : ev.type === "DEATH" ? "#9c5050" : ev.type === "ATTACK" ? "#f8b800" : ev.type === "AMPUTATION" ? "#e40058" : ev.type === "RELATION" ? "#d3869b" : ev.type === "DIALOGUE" ? "#3cbcfc" : ev.type === "BIRTH" ? "#58d854" : ev.type === "SPROUT" ? "#58d854" : "#ffffff";
+
+      if (!isMobile) {
+        drawText8x8(`[${ev.type}]`, mx + 115, rowY + 5, typeColor, 1);
+        const locStr = ev.location ? `[${Math.floor(ev.location.x)},${Math.floor(ev.location.y)}] ` : "";
+        const maxDescChars = Math.floor((mw - 260) / 8);
+        const shortDesc = `${locStr}${ev.description}`.slice(0, maxDescChars).toUpperCase();
+        drawText8x8(shortDesc, mx + 235, rowY + 5, "#ffffff", 1);
+      } else {
+        drawText8x8(`[${ev.type.slice(0, 4)}]`, mx + 86, rowY + 5, typeColor, 1);
+        const maxDescChars = Math.max(8, Math.floor((mw - 156) / 8));
+        const shortDesc = (ev.description || "").slice(0, maxDescChars).toUpperCase();
+        drawText8x8(shortDesc, mx + 140, rowY + 5, "#ffffff", 1);
+      }
+
+      const curEv = ev;
+      registerClickableRegion(mx + 12, rowY - 2, mw - 24, rowH, () => {
+        inspectingLogEvent = curEv;
+      });
+
+      rowY += rowH;
+    }
+  }
+
+  renderActiveHoverTooltip();
+  ctx.restore();
+}
+
+function renderBattleDetailView(mx, my, mw, mh, battle) {
+  drawText8x8(`⚔️ BATTLE RECORD (#${battle.id}): ${battle.name}`, mx + 16, my + 14, "#f83800", 1);
+
+  // Close / Back button
+  drawNESButton(mx + mw - 32, my + 6, 26, 24, "X", false, true);
+  registerClickableRegion(mx + mw - 32, my + 6, 26, 24, () => {
+    inspectingBattle = null;
+  });
+
+  // Top Summary Box
+  drawNESBox(mx + 14, my + 38, mw - 28, 92);
+
+  const timeStr = `TIME: DAY ${battle.timestamp?.day || 0} (TICKS ${battle.startTick}..${battle.endTick})`;
+  drawText8x8(timeStr, mx + 26, my + 48, "#ffffff", 1);
+  drawText8x8(`LOCATION: [X: ${battle.location.x}, Y: ${battle.location.y}]`, mx + 340, my + 48, "#3cbcfc", 1);
+
+  // Initiator link
+  const initLabel = `INITIATOR: [${battle.initiator.name.toUpperCase()} (${battle.initiator.clan.toUpperCase()})]`;
+  const isInitHover = mouseX >= mx + 26 && mouseX <= mx + 26 + initLabel.length * 8 && mouseY >= my + 64 && mouseY <= my + 78;
+  drawText8x8(initLabel, mx + 26, my + 66, isInitHover ? "#ffd700" : "#58d854", 1);
+  if (battle.initiator.id) {
+    const initId = battle.initiator.id;
+    registerClickableRegion(mx + 26, my + 64, initLabel.length * 8, 14, () => {
+      lastSelectedId = initId;
+      currentMode = "INSPECT";
+      inspectingBattle = null;
+    });
+  }
+
+  // Defender link
+  const defLabel = `DEFENDER: [${battle.defender.name.toUpperCase()} (${battle.defender.clan.toUpperCase()})]`;
+  const isDefHover = mouseX >= mx + 380 && mouseX <= mx + 380 + defLabel.length * 8 && mouseY >= my + 64 && mouseY <= my + 78;
+  drawText8x8(defLabel, mx + 380, my + 66, isDefHover ? "#ffd700" : "#3cbcfc", 1);
+  if (battle.defender.id) {
+    const defId = battle.defender.id;
+    registerClickableRegion(mx + 380, my + 64, defLabel.length * 8, 14, () => {
+      lastSelectedId = defId;
+      currentMode = "INSPECT";
+      inspectingBattle = null;
+    });
+  }
+
+  // Provocation / Estopim
+  drawText8x8(`CAUSE / TRIGGER: ${battle.triggerCause}`, mx + 26, my + 84, "#ffd700", 1);
+  drawText8x8(`TOTAL CASUALTIES: ${battle.amputations.length} AMPUTATIONS, ${battle.fatalities.length} FATALITIES • ${Math.round(battle.totalDamage)} TOTAL DAMAGE DEALT`, mx + 26, my + 102, "#f87858", 1);
+
+  // Combatants Roster & Strikes Timeline Split
+  const splitY = my + 136;
+  const splitH = mh - 190;
+  const halfW = Math.floor((mw - 34) / 2);
+
+  // Left Box: Combatants Roster
+  drawNESBox(mx + 14, splitY, halfW, splitH);
+  drawText8x8(`COMBATANTS PARTICIPATION (${battle.combatants.length}):`, mx + 24, splitY + 10, "#ffd700", 1);
+
+  let cY = splitY + 28;
+  for (const c of battle.combatants) {
+    if (cY > splitY + splitH - 24) break;
+    const isAlive = !c.isDead;
+    const statusBadge = isAlive ? "[ALIVE]" : "[DEAD]";
+    const statusCol = isAlive ? "#58d854" : "#f83800";
+
+    drawText8x8(statusBadge, mx + 24, cY + 4, statusCol, 1);
+    drawText8x8(`${c.name.slice(0, 16)} (${c.clan.slice(0, 10)})`, mx + 85, cY + 4, "#ffffff", 1);
+    drawText8x8(`${c.hitsDealt} HITS (${Math.round(c.damageDealt)} DMG)`, mx + halfW - 130, cY + 4, "#bcbcbc", 1);
+
+    const curC = c;
+    drawNESButton(mx + halfW - 45, cY + 1, 40, 18, "VIEW", false, false);
+    registerClickableRegion(mx + halfW - 45, cY + 1, 40, 18, () => {
+      lastSelectedId = curC.id;
+      currentMode = "INSPECT";
+      inspectingBattle = null;
+    });
+
+    cY += 22;
+  }
+
+  // Right Box: Timeline of Battle Events
+  drawNESBox(mx + 14 + halfW + 6, splitY, halfW, splitH);
+  drawText8x8(`BATTLE TIMELINE (${battle.events.length} STRIKES/ACTIONS):`, mx + 24 + halfW + 6, splitY + 10, "#ffd700", 1);
+
+  let eY = splitY + 28;
+  for (const ev of battle.events) {
+    if (eY > splitY + splitH - 24) break;
+    const typeCol = ev.type === "DEATH" ? "#f83800" : ev.type === "AMPUTATION" ? "#e40058" : "#f8b800";
+    drawText8x8(`[${ev.type}]`, mx + 24 + halfW + 6, eY + 4, typeCol, 1);
+
+    const desc = (ev.description || "Strike").slice(0, Math.floor((halfW - 80) / 8));
+    drawText8x8(desc, mx + 115 + halfW + 6, eY + 4, "#ffffff", 1);
+
     const curEv = ev;
-    registerClickableRegion(mx + 12, rowY - 4, mw - 24, rowH, () => {
+    drawNESButton(mx + mw - 55, eY + 1, 36, 18, "LOG", false, false);
+    registerClickableRegion(mx + mw - 55, eY + 1, 36, 18, () => {
       inspectingLogEvent = curEv;
     });
 
-    rowY += rowH;
+    eY += 22;
   }
 
-  ctx.restore();
+  // Bottom Action Bar
+  drawNESButton(mx + 20, my + mh - 44, 180, 28, "JUMP TO BATTLE MAP", false, false);
+  registerClickableRegion(mx + 20, my + mh - 44, 180, 28, () => {
+    focusLocation(battle.location.x, battle.location.y, 2.0);
+  });
+
+  drawNESButton(mx + mw - 150, my + mh - 44, 130, 28, "BACK TO LOGS", false, false);
+  registerClickableRegion(mx + mw - 150, my + mh - 44, 130, 28, () => {
+    inspectingBattle = null;
+  });
+}
+
+function renderRelationshipModal(mx, my, mw, mh, rel) {
+  drawText8x8(`RELATIONSHIP DOSSIER: ${rel.entA.name.toUpperCase()} & ${rel.entB.name.toUpperCase()}`, mx + 16, my + 14, "#f8b800", 1);
+
+  // Close X Button
+  drawNESButton(mx + mw - 32, my + 6, 26, 24, "X", false, true);
+  registerClickableRegion(mx + mw - 32, my + 6, 26, 24, () => {
+    inspectingRelationship = null;
+  });
+
+  // Top Status Box
+  drawNESBox(mx + 14, my + 38, mw - 28, 80);
+
+  drawText8x8(`SENTIMENT STATUS: ${rel.statusLabel}`, mx + 26, my + 50, rel.statusColor, 1);
+  drawText8x8(`MUTUAL AFFINITY SCORE: ${rel.affinityScore > 0 ? "+" : ""}${rel.affinityScore}`, mx + 380, my + 50, "#ffd700", 1);
+
+  const b = rel.breakdown;
+  const breakStr = `KISSES: ${b.kisses} | HUGS: ${b.hugs} | PRAISES: ${b.praises} | INSULTS: ${b.insults} | ATTACKS: ${b.attacks} | FABRICATED LIES: ${b.lies}`;
+  drawText8x8(breakStr, mx + 26, my + 72, "#3cbcfc", 1);
+
+  // Chronological Mutual History Box
+  const listY = my + 124;
+  const listH = mh - 176;
+  drawNESBox(mx + 14, listY, mw - 28, listH);
+  drawText8x8(`SHARED INTERACTION CHRONICLE (${rel.events.length} TOTAL INTERACTIONS):`, mx + 24, listY + 10, "#ffd700", 1);
+
+  if (rel.events.length === 0) {
+    drawText8x8("NO DIRECT SOCIAL INTERACTIONS RECORDED BETWEEN THESE TWO CREATURES.", mx + 24, listY + 34, "#bcbcbc", 1);
+  } else {
+    let curY = listY + 30;
+    for (let i = 0; i < rel.events.length; i++) {
+      if (curY > listY + listH - 24) break;
+      const ev = rel.events[i];
+      const typeCol = ev.type === "KILL" ? "#ff2040" : ev.type === "DEATH" ? "#9c5050" : ev.type === "ATTACK" ? "#f8b800" : ev.type === "AMPUTATION" ? "#e40058" : ev.type === "RELATION" ? "#d3869b" : ev.type === "DIALOGUE" ? "#3cbcfc" : "#ffffff";
+      const ts = ev.timestamp ? `D${ev.timestamp.day} ${String(ev.timestamp.hour).padStart(2, "0")}:${String(ev.timestamp.minute).padStart(2, "0")}` : `T${ev.tick}`;
+
+      drawText8x8(ts, mx + 24, curY + 4, "#bcbcbc", 1);
+      drawText8x8(`[${ev.type}]`, mx + 110, curY + 4, typeCol, 1);
+      drawText8x8((ev.description || "").slice(0, Math.floor((mw - 220) / 8)), mx + 220, curY + 4, "#ffffff", 1);
+
+      const curEv = ev;
+      drawNESButton(mx + mw - 70, curY + 1, 48, 18, "INSPECT", false, false);
+      registerClickableRegion(mx + mw - 70, curY + 1, 48, 18, () => {
+        inspectingLogEvent = curEv;
+      });
+
+      curY += 22;
+    }
+  }
+
+  // Bottom Back Button
+  drawNESButton(mx + mw - 180, my + mh - 44, 160, 28, "BACK TO EVENT", false, false);
+  registerClickableRegion(mx + mw - 180, my + mh - 44, 160, 28, () => {
+    inspectingRelationship = null;
+  });
 }
 
 function renderLogDetailView(mx, my, mw, mh, ev) {
@@ -3922,6 +4267,8 @@ function renderLogDetailView(mx, my, mw, mh, ev) {
   registerClickableRegion(mx + mw - 32, my + 6, 26, 24, () => {
     currentMode = "MAP";
     inspectingLogEvent = null;
+    inspectingBattle = null;
+    inspectingRelationship = null;
     inspectingGroup = null;
     inspectingFromCreature = false;
   });
@@ -3947,34 +4294,48 @@ function renderLogDetailView(mx, my, mw, mh, ev) {
   if (ev.primaryEntityId !== null && ev.primaryEntityId !== undefined) {
     const pEnt = entityRegistry.get(ev.primaryEntityId);
     const pName = (pEnt?.properties?.name || `Entity #${ev.primaryEntityId}`).slice(0, 16);
-    drawNESButton(entButtonX, my + 114, 200, 22, `ACTOR: ${pName.toUpperCase()}`, false, false);
-    registerClickableRegion(entButtonX, my + 114, 200, 22, () => {
+    drawNESButton(entButtonX, my + 114, 180, 22, `ACTOR: ${pName.toUpperCase()}`, false, false);
+    registerClickableRegion(entButtonX, my + 114, 180, 22, () => {
       lastSelectedId = ev.primaryEntityId;
       currentMode = "INSPECT";
       inspectingLogEvent = null;
     });
-    entButtonX += 210;
+    entButtonX += 190;
   }
 
   if (ev.secondaryEntityId !== null && ev.secondaryEntityId !== undefined) {
     const sEnt = entityRegistry.get(ev.secondaryEntityId);
     const sName = (sEnt?.properties?.name || `Entity #${ev.secondaryEntityId}`).slice(0, 16);
-    drawNESButton(entButtonX, my + 114, 200, 22, `TARGET: ${sName.toUpperCase()}`, false, false);
-    registerClickableRegion(entButtonX, my + 114, 200, 22, () => {
+    drawNESButton(entButtonX, my + 114, 180, 22, `TARGET: ${sName.toUpperCase()}`, false, false);
+    registerClickableRegion(entButtonX, my + 114, 180, 22, () => {
       lastSelectedId = ev.secondaryEntityId;
       currentMode = "INSPECT";
       inspectingLogEvent = null;
     });
-    entButtonX += 210;
+    entButtonX += 190;
   }
 
-  // Linked / Cited Event Button
+  // View Relationship Summary Button (if two entities are involved)
+  if (ev.primaryEntityId && ev.secondaryEntityId && ev.primaryEntityId !== ev.secondaryEntityId) {
+    const pId = ev.primaryEntityId;
+    const sId = ev.secondaryEntityId;
+    drawNESButton(entButtonX, my + 114, 180, 22, "RELATIONSHIP DOSSIER", false, false);
+    registerClickableRegion(entButtonX, my + 114, 180, 22, () => {
+      const rel = getRelationshipSummary(pId, sId, entityRegistry);
+      if (rel) {
+        inspectingRelationship = rel;
+      }
+    });
+    entButtonX += 190;
+  }
+
+  // Linked / Cited Event Button or Linked Battle Record
   const citedId = ev.metadata?.referencedEventId || ev.metadata?.gossipedEventId || ev.metadata?.realEventId || ev.metadata?.citedEventId;
   if (citedId) {
     const citedEv = getEventById(citedId);
     const citedLabel = isLie ? `ORIGINAL TRUTH #${citedId}` : `GOSSIP TOPIC #${citedId}`;
-    drawNESButton(entButtonX, my + 114, 210, 22, citedLabel, false, false);
-    registerClickableRegion(entButtonX, my + 114, 210, 22, () => {
+    drawNESButton(entButtonX, my + 114, 180, 22, citedLabel, false, false);
+    registerClickableRegion(entButtonX, my + 114, 180, 22, () => {
       if (citedEv) {
         inspectingLogEvent = citedEv;
       }
@@ -4873,7 +5234,7 @@ function renderTitleScreen() {
   // Button 1: NEW WORLD (Highlighted if no active game)
   drawNESButton(menuBoxX, menuY, menuBoxW, hasActiveGame ? 28 : 32, "NEW WORLD", !hasActiveGame, false);
   registerClickableRegion(menuBoxX, menuY, menuBoxW, hasActiveGame ? 28 : 32, () => {
-    startNewGame(curScen.preset, curScen.seed);
+    startNewGame(curScen.preset, null);
   });
   menuY += hasActiveGame ? 34 : 40;
 
@@ -5024,7 +5385,19 @@ function frame(time) {
     } else {
       if (currentMode !== "MAP") {
         // Full-screen modal rendering
-        if (inspectingLogEvent) {
+        if (inspectingBattle) {
+          const mx = 30;
+          const my = 36;
+          const mw = CANVAS_WIDTH - 60;
+          const mh = CANVAS_HEIGHT - 72;
+          renderBattleDetailView(mx, my, mw, mh, inspectingBattle);
+        } else if (inspectingRelationship) {
+          const mx = 30;
+          const my = 36;
+          const mw = CANVAS_WIDTH - 60;
+          const mh = CANVAS_HEIGHT - 72;
+          renderRelationshipModal(mx, my, mw, mh, inspectingRelationship);
+        } else if (inspectingLogEvent) {
           const mx = 30;
           const my = 36;
           const mw = CANVAS_WIDTH - 60;
@@ -5044,7 +5417,19 @@ function frame(time) {
         renderMapEditorOverlay();
         renderCompactEditorPanel();
 
-        if (inspectingLogEvent) {
+        if (inspectingBattle) {
+          const mx = 30;
+          const my = 36;
+          const mw = CANVAS_WIDTH - 60;
+          const mh = CANVAS_HEIGHT - 72;
+          renderBattleDetailView(mx, my, mw, mh, inspectingBattle);
+        } else if (inspectingRelationship) {
+          const mx = 30;
+          const my = 36;
+          const mw = CANVAS_WIDTH - 60;
+          const mh = CANVAS_HEIGHT - 72;
+          renderRelationshipModal(mx, my, mw, mh, inspectingRelationship);
+        } else if (inspectingLogEvent) {
           const mx = 30;
           const my = 36;
           const mw = CANVAS_WIDTH - 60;
@@ -5056,6 +5441,7 @@ function frame(time) {
       // Always render Top HUD bar and Bottom Navigation/Speed Toolbar on all in-game views
       renderTopHudBar();
       renderBottomToolbar();
+      renderActiveHoverTooltip();
     }
   }
 
@@ -5117,8 +5503,10 @@ function frame(time) {
         audio.setInstanceVolume("vento", altitudeWindVol);
 
         // --- GROUND NATURE LOGIC ---
-        // 3. Passaros: Long-range reach, starts resonating from high distance (0.45 vol at high altitude) and reaches 1.0 on ground
-        const groundNatureVol = 0.45 + 0.55 * Math.pow(normZoom, 0.6);
+        // 3. Passaros (Birds during day / Crickets at night):
+        // Only audible when camera is close to the ground (normZoom > 0.20), fades out smoothly with height, capped at moderate volume (0.28).
+        const groundNatureFactor = Math.max(0.0, (normZoom - 0.20) / 0.80);
+        const groundNatureVol = 0.28 * Math.pow(groundNatureFactor, 1.4);
         audio.setInstanceVolume("passaros", groundNatureVol);
       }
 
@@ -5138,11 +5526,11 @@ function frame(time) {
       // 5. 3D Procedural Town & Entity Activity Audio (Footsteps, Construction & Human Chatter):
       if (!window._lastActivitySoundTimer) window._lastActivitySoundTimer = 0;
       const now = performance.now();
-      if (now - window._lastActivitySoundTimer > 150 && entities && entities.length > 0 && normZoom > 0.25) {
+      if (now - window._lastActivitySoundTimer > 150 && entities && entities.length > 0 && normZoom > 0.35) {
         window._lastActivitySoundTimer = now;
 
-        // Find entities close to camera view (within ~40 tiles radius)
-        const visibleAudibleEntities = entities.filter(e => e && !e.destroyed && Math.hypot(e.x - camX, e.y - camY) < 38);
+        // Find entities close to camera view (within ~32 tiles radius)
+        const visibleAudibleEntities = entities.filter(e => e && !e.destroyed && Math.hypot(e.x - camX, e.y - camY) < 32);
         if (visibleAudibleEntities.length > 0) {
           const pickedEntity = visibleAudibleEntities[Math.floor(Math.random() * visibleAudibleEntities.length)];
           const isWalking = pickedEntity.vx !== 0 || pickedEntity.vy !== 0 || pickedEntity.state === "WALK" || pickedEntity.isMoving;
@@ -5152,33 +5540,48 @@ function frame(time) {
           const roll = Math.random();
           if (isUnderConstruction || (isCitizen && pickedEntity.properties?.job === "BUILD")) {
             // 3D Construction & Building hammer/tool sounds
-            if (roll < 0.60) {
+            if (roll < 0.50) {
               audio.playOneShot("event:/SFX/Activity_Town", null, { x: pickedEntity.x, y: pickedEntity.y, z: 0 });
             }
           } else if (isWalking) {
             // 3D Spatial Footsteps on Grass
-            if (roll < 0.55) {
+            if (roll < 0.45) {
               audio.playOneShot("event:/SFX/Footstep_Grass", null, { x: pickedEntity.x, y: pickedEntity.y, z: 0 });
             }
           } else if (isCitizen) {
             // 3D Human Mumbling / Grunting / Village Chatter
-            if (roll < 0.35) {
+            if (roll < 0.25) {
               audio.playOneShot("event:/SFX/Mumble_Human", null, { x: pickedEntity.x, y: pickedEntity.y, z: 0 });
-            } else if (roll < 0.60) {
+            } else if (roll < 0.45) {
               audio.playOneShot("event:/SFX/Activity_Town", null, { x: pickedEntity.x, y: pickedEntity.y, z: 0 });
             }
           }
         }
       }
 
-      // Sync time of day ('tempo dos dias' parameter: 0 to 24h) for birds/insects/cicadas
+      // Sync time of day ('tempo dos dias', 'Hora', 'DayNight', 'GlobalLight') for birds vs crickets
       if (world && world.clock) {
         const timeOfDay = world.clock.hour + (world.clock.minute / 60.0);
-        if (Math.abs((window._lastAudioTod || -1) - timeOfDay) > 0.05) {
+        if (Math.abs((window._lastAudioTod || -1) - timeOfDay) > 0.02) {
           window._lastAudioTod = timeOfDay;
+          const isDay = timeOfDay >= 5.5 && timeOfDay <= 18.5;
+          const light = world.clock.globalLight !== undefined ? world.clock.globalLight : (isDay ? 0.85 : 0.18);
+
+          // Pass comprehensive TOD parameters so FMOD Studio routes diurnal birds vs nocturnal crickets correctly
           audio.setInstanceParameter("passaros", "tempo dos dias", timeOfDay);
+          audio.setInstanceParameter("passaros", "Hora", timeOfDay);
+          audio.setInstanceParameter("passaros", "Hour", timeOfDay);
+          audio.setInstanceParameter("passaros", "GlobalLight", light);
+          audio.setInstanceParameter("passaros", "DayNight", isDay ? 1.0 : 0.0);
+          audio.setInstanceParameter("passaros", "Noite", isDay ? 0.0 : 1.0);
+          audio.setInstanceParameter("passaros", "Night", isDay ? 0.0 : 1.0);
+
           audio.setInstanceParameter("choir", "tempo dos dias", timeOfDay);
           audio.setGlobalParameter("tempo dos dias", timeOfDay);
+          audio.setGlobalParameter("Hora", timeOfDay);
+          audio.setGlobalParameter("Hour", timeOfDay);
+          audio.setGlobalParameter("GlobalLight", light);
+          audio.setGlobalParameter("DayNight", isDay ? 1.0 : 0.0);
         }
       }
     } else {
