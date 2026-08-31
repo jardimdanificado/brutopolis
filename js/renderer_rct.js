@@ -108,7 +108,10 @@ function getEntityBounds(e) {
   if (isTree) return { radius: 1.1, h: 2.6, yBottom: 0.0 };
   if (isHouse) {
     const floors = e.properties?.house?.maxFloors || e.properties?.house?.floors?.length || 2;
-    return { radius: 1.8 + floors * 0.3, h: 1.6 + floors * 1.25, yBottom: 0.0 };
+    const fpW = e.properties?.house?.footprintW || 1;
+    const fpH = e.properties?.house?.footprintH || 1;
+    const fpMax = Math.max(fpW, fpH);
+    return { radius: Math.max(1.2, fpMax * 0.7 + floors * 0.2), h: 1.6 + floors * 1.25, yBottom: 0.0 };
   }
   if (isCactus) return { radius: 0.9, h: 2.0, yBottom: 0.0 };
   if (isWall) return { radius: 0.75, h: 1.5, yBottom: 0.0 };
@@ -872,6 +875,104 @@ function createPlasterSteepleRoofGeo() {
   return spire;
 }
 
+// 14. Single-Story Rustic Timber Ranch (1-Story, 2x1x1 Footprint: X [0.05..1.95], Z [0.05..0.95])
+function createSingleCabinWallGeo() {
+  const parts = []; const cx = 1.0, cz = 0.5;
+  const porch = new THREE.BoxGeometry(1.90, 0.12, 0.90); porch.translate(cx, 0.06, cz); parts.push(porch);
+  const cabin = new THREE.BoxGeometry(1.80, 0.85, 0.80); cabin.translate(cx, 0.545, cz); parts.push(cabin);
+  const p1 = new THREE.BoxGeometry(0.10, 0.85, 0.10); p1.translate(cx - 0.85, 0.545, cz + 0.35); parts.push(p1);
+  const p2 = new THREE.BoxGeometry(0.10, 0.85, 0.10); p2.translate(cx + 0.85, 0.545, cz + 0.35); parts.push(p2);
+  return mergeBufferGeometries(parts);
+}
+function createSingleCabinRoofGeo() {
+  const cx = 1.0, cz = 0.5;
+  const roof = createCleanPitchedRoof(1.92, 0.92, 0.48);
+  roof.translate(cx, 0.97, cz);
+  return roof;
+}
+
+// 15. Single-Story Stone Cottage (1-Story, 2x2x1 Footprint: X [0.05..1.95], Z [0.05..1.95])
+function createSingleStoneCottageWallGeo() {
+  const parts = []; const cx = 1.0, cz = 1.0;
+  const plinth = new THREE.BoxGeometry(1.90, 0.15, 1.90); plinth.translate(cx, 0.075, cz); parts.push(plinth);
+  const body = new THREE.BoxGeometry(1.82, 0.82, 1.82); body.translate(cx, 0.56, cz); parts.push(body);
+  const chimney = new THREE.BoxGeometry(0.35, 1.35, 0.35); chimney.translate(cx + 0.65, 0.675, cz - 0.65); parts.push(chimney);
+  return mergeBufferGeometries(parts);
+}
+function createSingleStoneCottageRoofGeo() {
+  const cx = 1.0, cz = 1.0;
+  const roof = createCleanPitchedRoof(1.92, 1.92, 0.55, false);
+  roof.translate(cx, 0.97, cz);
+  return roof;
+}
+
+// 16. Fenced Ranch Compound (1-Story, 3x3x1 Footprint: X [0.05..2.95], Z [0.05..2.95])
+function createFencedRanchWallGeo() {
+  const parts = []; const cx = 1.5, cz = 1.5;
+  const wingBack = new THREE.BoxGeometry(2.80, 0.88, 1.25); wingBack.translate(cx, 0.44, 0.70); parts.push(wingBack);
+  const wingSide = new THREE.BoxGeometry(1.20, 0.85, 1.45); wingSide.translate(0.65, 0.425, 2.05); parts.push(wingSide);
+  const fPost1 = new THREE.BoxGeometry(0.08, 0.45, 0.08); fPost1.translate(0.10, 0.225, 2.90); parts.push(fPost1);
+  const fPost2 = new THREE.BoxGeometry(0.08, 0.45, 0.08); fPost2.translate(2.90, 0.225, 2.90); parts.push(fPost2);
+  const fPost3 = new THREE.BoxGeometry(0.08, 0.45, 0.08); fPost3.translate(2.90, 0.225, 1.40); parts.push(fPost3);
+  const railFront = new THREE.BoxGeometry(2.80, 0.08, 0.06); railFront.translate(1.50, 0.35, 2.90); parts.push(railFront);
+  const railSide = new THREE.BoxGeometry(0.06, 0.08, 1.50); railSide.translate(2.90, 0.35, 2.15); parts.push(railSide);
+  return mergeBufferGeometries(parts);
+}
+function createFencedRanchRoofGeo() {
+  const parts = [];
+  const rBack = createCleanPitchedRoof(2.85, 1.30, 0.55); rBack.translate(1.5, 0.88, 0.70); parts.push(rBack);
+  const rSide = createCleanPitchedRoof(1.25, 1.50, 0.52); rSide.translate(0.65, 0.85, 2.05); parts.push(rSide);
+  return mergeBufferGeometries(parts);
+}
+
+// 17. Courtyard Hacienda Estate (1-Story Condominium Compound, 4x4x1 Footprint: X [0.05..3.95], Z [0.05..3.95])
+function createCourtyardHaciendaWallGeo() {
+  const parts = []; const cx = 2.0, cz = 2.0;
+  const wingN = new THREE.BoxGeometry(3.85, 0.90, 1.05); wingN.translate(cx, 0.45, 0.60); parts.push(wingN);
+  const wingS = new THREE.BoxGeometry(3.85, 0.90, 1.05); wingS.translate(cx, 0.45, 3.40); parts.push(wingS);
+  const wingE = new THREE.BoxGeometry(1.05, 0.90, 1.75); wingE.translate(3.40, 0.45, cz); parts.push(wingE);
+  const wingW = new THREE.BoxGeometry(1.05, 0.90, 1.75); wingW.translate(0.60, 0.45, cz); parts.push(wingW);
+  const patio = new THREE.BoxGeometry(1.80, 0.08, 1.80); patio.translate(cx, 0.04, cz); parts.push(patio);
+  const fountain = new THREE.CylinderGeometry(0.35, 0.40, 0.35, 8); fountain.translate(cx, 0.20, cz); parts.push(fountain);
+  return mergeBufferGeometries(parts);
+}
+function createCourtyardHaciendaRoofGeo() {
+  const parts = []; const cx = 2.0, cz = 2.0;
+  const rN = createCleanPitchedRoof(3.90, 1.10, 0.48); rN.translate(cx, 0.90, 0.60); parts.push(rN);
+  const rS = createCleanPitchedRoof(3.90, 1.10, 0.48); rS.translate(cx, 0.90, 3.40); parts.push(rS);
+  const rE = createCleanPitchedRoof(1.10, 1.80, 0.48); rE.translate(3.40, 0.90, cz); parts.push(rE);
+  const rW = createCleanPitchedRoof(1.10, 1.80, 0.48); rW.translate(0.60, 0.90, cz); parts.push(rW);
+  return mergeBufferGeometries(parts);
+}
+
+// 18. Single-Story Adobe Rancho (1-Story, 2x2x1 Footprint: X [0.05..1.95], Z [0.05..1.95])
+function createAdobeRanchoWallGeo() {
+  const parts = []; const cx = 1.0, cz = 1.0;
+  const body = new THREE.BoxGeometry(1.85, 0.85, 1.85); body.translate(cx, 0.425, cz); parts.push(body);
+  const parapet = new THREE.BoxGeometry(1.90, 0.15, 1.90); parapet.translate(cx, 0.925, cz); parts.push(parapet);
+  const oven = new THREE.CylinderGeometry(0.35, 0.42, 0.45, 8); oven.translate(cx + 0.65, 0.225, cz + 0.65); parts.push(oven);
+  return mergeBufferGeometries(parts);
+}
+function createAdobeRanchoRoofGeo() {
+  const cx = 1.0, cz = 1.0;
+  const coping = new THREE.BoxGeometry(1.75, 0.08, 1.75);
+  coping.translate(cx, 0.95, cz);
+  return coping;
+}
+
+// 19. Ground Thatched Croft (1-Story, 1x1x1 Footprint: X [0.05..0.95], Z [0.05..0.95])
+function createGroundCroftWallGeo() {
+  const parts = []; const cx = 0.5, cz = 0.5;
+  const body = new THREE.BoxGeometry(0.85, 0.80, 0.85); body.translate(cx, 0.40, cz); parts.push(body);
+  return mergeBufferGeometries(parts);
+}
+function createGroundCroftRoofGeo() {
+  const cx = 0.5, cz = 0.5;
+  const roof = createCleanPitchedRoof(0.92, 0.92, 0.55);
+  roof.translate(cx, 0.80, cz);
+  return roof;
+}
+
 // -----------------------------------------------------------------------------
 // Leader House / Chieftain Palace 7 Variations (3x3 Footprint, 7 Stories Tall)
 // -----------------------------------------------------------------------------
@@ -1026,10 +1127,9 @@ function createLeaderImperialRoofGeo() {
 // -----------------------------------------------------------------------------
 
 // Timber Barn Warehouse (Var 0)
-function createWarehouseGeometry() {
+function createWarehouseWallGeo0() {
   const parts = [];
   const body = new THREE.BoxGeometry(1.82, 1.30, 1.82); body.translate(0, 0.65, 0); parts.push(body);
-  const roof = createPitchedRoofGeometry(2.04, 2.04, 0.88); roof.translate(0, 1.30, 0); parts.push(roof);
   const awning = new THREE.BoxGeometry(1.90, 0.12, 0.40); awning.translate(0, 1.30, 1.00); parts.push(awning);
   const post1 = new THREE.CylinderGeometry(0.08, 0.08, 1.30, 6); post1.translate(-0.85, 0.65, 1.05); parts.push(post1);
   const post2 = new THREE.CylinderGeometry(0.08, 0.08, 1.30, 6); post2.translate( 0.85, 0.65, 1.05); parts.push(post2);
@@ -1038,53 +1138,78 @@ function createWarehouseGeometry() {
   const mast = new THREE.CylinderGeometry(0.05, 0.05, 0.85, 5); mast.translate(0, 1.30 + 0.88 + 0.40, 0); parts.push(mast);
   return mergeBufferGeometries(parts);
 }
+function createWarehouseRoofGeo0() {
+  const roof = createPitchedRoofGeometry(2.04, 2.04, 0.88);
+  roof.translate(0, 1.30, 0);
+  return roof;
+}
 
 // Stone Depot Vault Warehouse (Var 1)
-function createStoneDepotWarehouseGeometry() {
+function createWarehouseWallGeo1() {
   const parts = [];
   const body = new THREE.BoxGeometry(1.85, 1.35, 1.85); body.translate(0, 0.675, 0); parts.push(body);
-  const roof = createPitchedRoofGeometry(2.05, 2.05, 0.95); roof.translate(0, 1.35, 0); parts.push(roof);
   const vaultArch = new THREE.BoxGeometry(0.20, 1.10, 0.90); vaultArch.translate(0.95, 0.55, 0); parts.push(vaultArch);
   return mergeBufferGeometries(parts);
 }
+function createWarehouseRoofGeo1() {
+  const roof = createPitchedRoofGeometry(2.05, 2.05, 0.95);
+  roof.translate(0, 1.35, 0);
+  return roof;
+}
 
 // Slaughterhouse Var 0: Timber Abatedouro
-function createTimberAbatedouroGeometry() {
+function createTimberAbatedouroWallGeo() {
   const parts = [];
   const body = new THREE.BoxGeometry(1.65, 1.15, 1.55); body.translate(0, 0.575, 0); parts.push(body);
-  const roof = createPitchedRoofGeometry(1.85, 1.75, 0.75); roof.translate(0, 1.15, 0); parts.push(roof);
   const slab = new THREE.BoxGeometry(0.60, 0.40, 0.45); slab.translate(-0.90, 0.20, 0.25); parts.push(slab);
   const rack = new THREE.BoxGeometry(0.10, 0.95, 0.75); rack.translate(0.90, 0.475, 0.25); parts.push(rack);
   return mergeBufferGeometries(parts);
 }
+function createTimberAbatedouroRoofGeo() {
+  const roof = createPitchedRoofGeometry(1.85, 1.75, 0.75);
+  roof.translate(0, 1.15, 0);
+  return roof;
+}
 
 // Slaughterhouse Var 1: Stone Abattoir
-function createStoneAbatedouroGeometry() {
+function createStoneAbatedouroWallGeo() {
   const parts = [];
   const body = new THREE.BoxGeometry(1.70, 1.25, 1.60); body.translate(0, 0.625, 0); parts.push(body);
   const chimney = new THREE.BoxGeometry(0.40, 1.95, 0.40); chimney.translate(0.85, 0.975, -0.35); parts.push(chimney);
-  const roof = createPitchedRoofGeometry(1.90, 1.80, 0.85); roof.translate(0, 1.25, 0); parts.push(roof);
   return mergeBufferGeometries(parts);
+}
+function createStoneAbatedouroRoofGeo() {
+  const roof = createPitchedRoofGeometry(1.90, 1.80, 0.85);
+  roof.translate(0, 1.25, 0);
+  return roof;
 }
 
 // Kitchen Var 0: Brick Oven Bakery & Kitchen
-function createBrickOvenKitchenGeometry() {
+function createBrickOvenKitchenWallGeo() {
   const parts = [];
   const body = new THREE.BoxGeometry(1.60, 1.15, 1.60); body.translate(0, 0.575, 0); parts.push(body);
   const oven = new THREE.CylinderGeometry(0.48, 0.55, 0.65, 8); oven.translate(-0.92, 0.325, 0.25); parts.push(oven);
   const chimney = new THREE.BoxGeometry(0.38, 2.05, 0.38); chimney.translate(-0.92, 1.025, 0.25); parts.push(chimney);
-  const roof = createPitchedRoofGeometry(1.82, 1.82, 0.80); roof.translate(0, 1.15, 0); parts.push(roof);
   return mergeBufferGeometries(parts);
+}
+function createBrickOvenKitchenRoofGeo() {
+  const roof = createPitchedRoofGeometry(1.82, 1.82, 0.80);
+  roof.translate(0, 1.15, 0);
+  return roof;
 }
 
 // Kitchen Var 1: Timber Smokery Kitchen
-function createTimberSmokeryKitchenGeometry() {
+function createTimberSmokeryKitchenWallGeo() {
   const parts = [];
   const body = new THREE.BoxGeometry(1.55, 1.10, 1.55); body.translate(0, 0.55, 0); parts.push(body);
   const smokeStack = new THREE.BoxGeometry(0.45, 1.80, 0.45); smokeStack.translate(0.75, 0.90, -0.30); parts.push(smokeStack);
   const prepTable = new THREE.BoxGeometry(0.55, 0.42, 0.75); prepTable.translate(-0.88, 0.21, 0.20); parts.push(prepTable);
-  const roof = createPitchedRoofGeometry(1.75, 1.75, 0.78); roof.translate(0, 1.10, 0); parts.push(roof);
   return mergeBufferGeometries(parts);
+}
+function createTimberSmokeryKitchenRoofGeo() {
+  const roof = createPitchedRoofGeometry(1.75, 1.75, 0.78);
+  roof.translate(0, 1.10, 0);
+  return roof;
 }
 
 // 3D Ancient Water Well with Stone Basin, Wooden Posts, and Tiled Roof Canopy
@@ -1876,6 +2001,30 @@ export class RCT3DRenderer {
         // 12: MAT_BASALT_BONE
         new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Stone_C.png", 0x383842, 0x141418, 1.0), dithering: true, side: THREE.DoubleSide })
       ],
+      warehouseWalls: [
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xd4a373, 0x4a3525, 1.0), dithering: true, side: THREE.DoubleSide }),
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide })
+      ],
+      warehouseRoofs: [
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide })
+      ],
+      slaughterhouseWalls: [
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xc89858, 0x482c18, 1.0), dithering: true, side: THREE.DoubleSide }),
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide })
+      ],
+      slaughterhouseRoofs: [
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide })
+      ],
+      kitchenWalls: [
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_B.png", 0xfffaea, 0x8a6242, 1.0), dithering: true, side: THREE.DoubleSide }),
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xd4a373, 0x4a3525, 1.0), dithering: true, side: THREE.DoubleSide })
+      ],
+      kitchenRoofs: [
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide })
+      ],
       houseWallVariants: [
         // 0: Wood Cabin Wall (Standard Wood)
         new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xd4a373, 0x4a3525, 1.0), dithering: true, side: THREE.DoubleSide }),
@@ -1904,10 +2053,22 @@ export class RCT3DRenderer {
         // 12: Stilt Watch-Shack Wall
         new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xa67c52, 0x3b271a, 1.0), dithering: true, side: THREE.DoubleSide }),
         // 13: Plaster Steeple Townhouse Wall
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_B.png", 0xfffaea, 0x8a6242, 1.0), dithering: true, side: THREE.DoubleSide })
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_B.png", 0xfffaea, 0x8a6242, 1.0), dithering: true, side: THREE.DoubleSide }),
+        // 14: Single-Story Timber Ranch Wall
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xd4a373, 0x4a3525, 1.0), dithering: true, side: THREE.DoubleSide }),
+        // 15: Single-Story Stone Cottage Wall
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }),
+        // 16: Fenced Ranch Compound Wall
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xba8048, 0x3d2412, 1.0), dithering: true, side: THREE.DoubleSide }),
+        // 17: Courtyard Hacienda Wall
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_B.png", 0xfffaea, 0x8a6242, 1.0), dithering: true, side: THREE.DoubleSide }),
+        // 18: Single-Story Adobe Rancho Wall
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_B.png", 0xdfd0b0, 0x3d3024, 1.0), dithering: true, side: THREE.DoubleSide }),
+        // 19: Ground Thatched Croft Wall
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xba8048, 0x3d2412, 1.0), dithering: true, side: THREE.DoubleSide })
       ],
       houseRoofVariants: [
-        // Clan-tintable roofs with high dynamic range base texture
+        // 0..19: Clan-tintable roofs with high dynamic range base texture
         new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
         new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
         new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
@@ -1921,7 +2082,13 @@ export class RCT3DRenderer {
         new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
         new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_A.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
         new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide })
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_B.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide })
       ],
       leaderWallVariants: [
         // 0: Citadel (Stone)
@@ -1987,7 +2154,7 @@ export class RCT3DRenderer {
         side: THREE.DoubleSide
       }),
       waterWellRoof: new THREE.MeshLambertMaterial({
-        map: createTintedTexture("Feature_Brick_C.png", 0xff6238, 0x941e0a, 1.0),
+        map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0),
         dithering: true,
         side: THREE.DoubleSide
       }),
@@ -2100,7 +2267,7 @@ export class RCT3DRenderer {
     this.instGatesStage1.castShadow = true;
     this.instGatesStage1.receiveShadow = true;
 
-    // 14 Distinct House Variations InstancedMeshes (Separate Walls & Roofs)
+    // 20 Distinct House Variations InstancedMeshes (Separate Walls & Roofs)
     const houseWallGeos = [
       createWoodCabinWallGeo(),
       createStoneCottageWallGeo(),
@@ -2115,7 +2282,13 @@ export class RCT3DRenderer {
       createTimberTowerWallGeo(),
       createStoneTownhouseWallGeo(),
       createStiltWatchShackWallGeo(),
-      createPlasterSteepleWallGeo()
+      createPlasterSteepleWallGeo(),
+      createSingleCabinWallGeo(),
+      createSingleStoneCottageWallGeo(),
+      createFencedRanchWallGeo(),
+      createCourtyardHaciendaWallGeo(),
+      createAdobeRanchoWallGeo(),
+      createGroundCroftWallGeo()
     ];
     const houseRoofGeos = [
       createWoodCabinRoofGeo(),
@@ -2131,7 +2304,13 @@ export class RCT3DRenderer {
       createTimberTowerRoofGeo(),
       createStoneTownhouseRoofGeo(),
       createStiltWatchShackRoofGeo(),
-      createPlasterSteepleRoofGeo()
+      createPlasterSteepleRoofGeo(),
+      createSingleCabinRoofGeo(),
+      createSingleStoneCottageRoofGeo(),
+      createFencedRanchRoofGeo(),
+      createCourtyardHaciendaRoofGeo(),
+      createAdobeRanchoRoofGeo(),
+      createGroundCroftRoofGeo()
     ];
 
     this.instHouseWallVariants = houseWallGeos.map((geo, idx) => {
@@ -2204,31 +2383,49 @@ export class RCT3DRenderer {
     this.instBoneWalls.receiveShadow = true;
 
     // 2 Variations of Clan Stockpile Warehouses (Timber Barn vs Stone Depot)
-    const whGeo0 = createWarehouseGeometry();
-    const whGeo1 = createStoneDepotWarehouseGeometry();
-    this.instWarehouses = [
-      new THREE.InstancedMesh(whGeo0, this.materials.warehouse, 100),
-      new THREE.InstancedMesh(whGeo1, this.materials.stoneWarehouse, 100)
-    ];
-    for (const w of this.instWarehouses) { w.castShadow = true; w.receiveShadow = true; w.frustumCulled = false; }
+    const whWallGeos = [createWarehouseWallGeo0(), createWarehouseWallGeo1()];
+    const whRoofGeos = [createWarehouseRoofGeo0(), createWarehouseRoofGeo1()];
+    this.instWarehouseWalls = whWallGeos.map((geo, idx) => {
+      const mesh = new THREE.InstancedMesh(geo, this.materials.warehouseWalls[idx], 100);
+      mesh.castShadow = true; mesh.receiveShadow = true; mesh.frustumCulled = false;
+      return mesh;
+    });
+    this.instWarehouseRoofs = whRoofGeos.map((geo, idx) => {
+      const mesh = new THREE.InstancedMesh(geo, this.materials.warehouseRoofs[idx], 100);
+      mesh.castShadow = true; mesh.receiveShadow = true; mesh.frustumCulled = false;
+      return mesh;
+    });
+    this.instWarehouses = this.instWarehouseWalls; // Backward compatibility
 
     // 2 Variations of Slaughterhouses (Timber vs Stone)
-    const shGeo0 = createTimberAbatedouroGeometry();
-    const shGeo1 = createStoneAbatedouroGeometry();
-    this.instSlaughterhouses = [
-      new THREE.InstancedMesh(shGeo0, this.materials.slaughterhouseTimber, 100),
-      new THREE.InstancedMesh(shGeo1, this.materials.slaughterhouseStone, 100)
-    ];
-    for (const s of this.instSlaughterhouses) { s.castShadow = true; s.receiveShadow = true; s.frustumCulled = false; }
+    const shWallGeos = [createTimberAbatedouroWallGeo(), createStoneAbatedouroWallGeo()];
+    const shRoofGeos = [createTimberAbatedouroRoofGeo(), createStoneAbatedouroRoofGeo()];
+    this.instSlaughterhouseWalls = shWallGeos.map((geo, idx) => {
+      const mesh = new THREE.InstancedMesh(geo, this.materials.slaughterhouseWalls[idx], 100);
+      mesh.castShadow = true; mesh.receiveShadow = true; mesh.frustumCulled = false;
+      return mesh;
+    });
+    this.instSlaughterhouseRoofs = shRoofGeos.map((geo, idx) => {
+      const mesh = new THREE.InstancedMesh(geo, this.materials.slaughterhouseRoofs[idx], 100);
+      mesh.castShadow = true; mesh.receiveShadow = true; mesh.frustumCulled = false;
+      return mesh;
+    });
+    this.instSlaughterhouses = this.instSlaughterhouseWalls; // Backward compatibility
 
     // 2 Variations of Kitchens (Brick Oven vs Timber Smokery)
-    const kitGeo0 = createBrickOvenKitchenGeometry();
-    const kitGeo1 = createTimberSmokeryKitchenGeometry();
-    this.instKitchens = [
-      new THREE.InstancedMesh(kitGeo0, this.materials.kitchenBrick, 100),
-      new THREE.InstancedMesh(kitGeo1, this.materials.kitchenTimber, 100)
-    ];
-    for (const k of this.instKitchens) { k.castShadow = true; k.receiveShadow = true; k.frustumCulled = false; }
+    const kitWallGeos = [createBrickOvenKitchenWallGeo(), createTimberSmokeryKitchenWallGeo()];
+    const kitRoofGeos = [createBrickOvenKitchenRoofGeo(), createTimberSmokeryKitchenRoofGeo()];
+    this.instKitchenWalls = kitWallGeos.map((geo, idx) => {
+      const mesh = new THREE.InstancedMesh(geo, this.materials.kitchenWalls[idx], 100);
+      mesh.castShadow = true; mesh.receiveShadow = true; mesh.frustumCulled = false;
+      return mesh;
+    });
+    this.instKitchenRoofs = kitRoofGeos.map((geo, idx) => {
+      const mesh = new THREE.InstancedMesh(geo, this.materials.kitchenRoofs[idx], 100);
+      mesh.castShadow = true; mesh.receiveShadow = true; mesh.frustumCulled = false;
+      return mesh;
+    });
+    this.instKitchens = this.instKitchenWalls; // Backward compatibility
 
     // 3D Ancient Stone Water Well with Timber Frame & Terracotta Roof Canopy
     const wellBaseGeo = createWaterWellBaseGeometry();
@@ -2344,9 +2541,12 @@ export class RCT3DRenderer {
     this.instGatesClosed.frustumCulled = false;
     this.instGatesOpen.frustumCulled = false;
     this.instGatesStage1.frustumCulled = false;
-    for (const w of this.instWarehouses) w.frustumCulled = false;
-    for (const s of this.instSlaughterhouses) s.frustumCulled = false;
-    for (const k of this.instKitchens) k.frustumCulled = false;
+    for (const w of this.instWarehouseWalls) w.frustumCulled = false;
+    for (const w of this.instWarehouseRoofs) w.frustumCulled = false;
+    for (const s of this.instSlaughterhouseWalls) s.frustumCulled = false;
+    for (const s of this.instSlaughterhouseRoofs) s.frustumCulled = false;
+    for (const k of this.instKitchenWalls) k.frustumCulled = false;
+    for (const k of this.instKitchenRoofs) k.frustumCulled = false;
     this.instWaterWellBase.frustumCulled = false;
     this.instWaterWellWood.frustumCulled = false;
     this.instWaterWellRoof.frustumCulled = false;
@@ -2379,9 +2579,9 @@ export class RCT3DRenderer {
       this.instPineTrunks, this.instPineLeaves,
       this.instCacti, this.instWalls, this.instWoodWalls, this.instMixedWalls, this.instBoneWalls, this.instWallsStage1,
       this.instGatesClosed, this.instGatesOpen, this.instGatesStage1,
-      this.instWarehouses[0], this.instWarehouses[1],
-      this.instSlaughterhouses[0], this.instSlaughterhouses[1],
-      this.instKitchens[0], this.instKitchens[1],
+      ...this.instWarehouseWalls, ...this.instWarehouseRoofs,
+      ...this.instSlaughterhouseWalls, ...this.instSlaughterhouseRoofs,
+      ...this.instKitchenWalls, ...this.instKitchenRoofs,
       this.instWaterWellBase, this.instWaterWellWood, this.instWaterWellRoof,
       ...this.instHouseWallVariants,
       ...this.instHouseRoofVariants,
@@ -2435,22 +2635,26 @@ export class RCT3DRenderer {
     this.scene.add(this.territoryGroup);
     this.lastVisualizedGroupId = null;
 
-    // Selection Reticle (Ground Decal beneath units)
-    const reticleGeo = new THREE.RingGeometry(0.45, 0.65, 4);
-    reticleGeo.rotateX(-Math.PI / 2);
-    reticleGeo.rotateY(Math.PI / 4);
-    const reticleMat = new THREE.MeshBasicMaterial({
+    // Selection Reticle (Ground Box Decal beneath units & multi-tile structures)
+    const reticleGeo = new THREE.BufferGeometry();
+    // Unit square from -0.5 to +0.5 with border outline lines
+    const reticleVerts = new Float32Array([
+      // Outer border strip
+      -0.5, 0, -0.5,   0.5, 0, -0.5,
+       0.5, 0, -0.5,   0.5, 0,  0.5,
+       0.5, 0,  0.5,  -0.5, 0,  0.5,
+      -0.5, 0,  0.5,  -0.5, 0, -0.5
+    ]);
+    reticleGeo.setAttribute('position', new THREE.BufferAttribute(reticleVerts, 3));
+    const reticleMat = new THREE.LineBasicMaterial({
       color: 0xffdd33,
-      side: THREE.DoubleSide,
+      linewidth: 3,
       transparent: true,
-      opacity: 0.85,
+      opacity: 0.95,
       depthTest: true,
-      depthWrite: false,
-      polygonOffset: true,
-      polygonOffsetFactor: -2.0,
-      polygonOffsetUnits: -2.0
+      depthWrite: false
     });
-    this.reticleMesh = new THREE.Mesh(reticleGeo, reticleMat);
+    this.reticleMesh = new THREE.LineSegments(reticleGeo, reticleMat);
     this.reticleMesh.renderOrder = 0;
     this.reticleMesh.visible = false;
     this.scene.add(this.reticleMesh);
@@ -2505,24 +2709,21 @@ export class RCT3DRenderer {
     this._platMat = new THREE.Matrix4();
     this.tempColor1 = new THREE.Color();
 
-    // 3D Dithered Outer Stratosphere Cloud Canopy (Visible strictly outside map boundaries)
-    const cloudGeo = new THREE.PlaneGeometry(2400, 2400, 32, 32);
+    // 3D Procedural Sky Clouds (High altitude layer)
+    const cloudGeo = new THREE.PlaneGeometry(1600, 1600, 16, 16);
     cloudGeo.rotateX(-Math.PI / 2);
     this.cloudMat = new THREE.ShaderMaterial({
       uniforms: {
         uTime: { value: 0.0 },
         uFade: { value: 0.0 },
         uSunColor: { value: new THREE.Color(1.0, 1.0, 1.0) },
-        uAmbColor: { value: new THREE.Color(0.6, 0.7, 0.8) },
-        uMapBounds: { value: new THREE.Vector4(0.0, 0.0, 1024.0, 1024.0) }
+        uAmbColor: { value: new THREE.Color(0.6, 0.7, 0.8) }
       },
       vertexShader: `
         varying vec2 vUv;
-        varying vec3 vWorldPos;
         void main() {
           vUv = uv;
           vec4 wp = modelMatrix * vec4(position, 1.0);
-          vWorldPos = wp.xyz;
           gl_Position = projectionMatrix * viewMatrix * wp;
         }
       `,
@@ -2531,9 +2732,7 @@ export class RCT3DRenderer {
         uniform float uFade;
         uniform vec3 uSunColor;
         uniform vec3 uAmbColor;
-        uniform vec4 uMapBounds;
         varying vec2 vUv;
-        varying vec3 vWorldPos;
 
         float hash(vec2 p) {
           return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
@@ -2564,23 +2763,11 @@ export class RCT3DRenderer {
         );
 
         void main() {
-          if (uFade <= 0.001) discard;
+          if (uFade <= 0.01) discard;
 
-          // Compute distance outside map boundaries [minX, minY, maxX, maxY]
-          float distOutX = max(0.0, max(uMapBounds.x - vWorldPos.x, vWorldPos.x - uMapBounds.z));
-          float distOutZ = max(0.0, max(uMapBounds.y - vWorldPos.z, vWorldPos.z - uMapBounds.w));
-          float distOutside = max(distOutX, distOutZ);
-
-          // Zero clouds over land/inside the map!
-          if (distOutside <= 0.0) discard;
-
-          // Smooth boundary fog edge + dense cloud bank outside
-          float edgeDensity = smoothstep(0.0, 10.0, distOutside);
-
-          vec2 cloudUv = (vWorldPos.xz * 0.005) + vec2(uTime * 0.002, uTime * 0.0012);
-          float n = fbm(cloudUv * 3.5);
-          float n2 = fbm((cloudUv + vec2(5.2, 1.3)) * 6.0);
-          float density = smoothstep(0.25, 0.70, n * 0.7 + n2 * 0.3) * edgeDensity;
+          vec2 uv = vUv * 6.0 + vec2(uTime * 0.002, uTime * 0.001);
+          float n = fbm(uv);
+          float density = smoothstep(0.48, 0.75, n);
 
           ivec2 pixelCoord = ivec2(mod(gl_FragCoord.xy, 4.0));
           float ditherThreshold = bayerMatrix[pixelCoord.x][pixelCoord.y];
@@ -2590,9 +2777,7 @@ export class RCT3DRenderer {
             discard;
           }
 
-          vec3 baseFog = uAmbColor * 0.85;
-          vec3 sunCloud = uSunColor * 1.20;
-          vec3 cloudCol = mix(baseFog, sunCloud, density * 0.75);
+          vec3 cloudCol = mix(uAmbColor, uSunColor, density);
           gl_FragColor = vec4(cloudCol, 1.0);
         }
       `,
@@ -2601,7 +2786,7 @@ export class RCT3DRenderer {
       side: THREE.DoubleSide
     });
     this.cloudMesh = new THREE.Mesh(cloudGeo, this.cloudMat);
-    this.cloudMesh.position.set(512, 14.0, 512);
+    this.cloudMesh.position.set(512, 18.0, 512);
     this.cloudMesh.renderOrder = 500;
     this.cloudMesh.frustumCulled = false;
     this.scene.add(this.cloudMesh);
@@ -2907,8 +3092,19 @@ export class RCT3DRenderer {
 
       const isItem = !e.properties.brain && !isBuilding && !isTree && !isCactus && !isWoodLog && !isStoneItem && !isTorch && !isCampfire && !isRoad;
 
-      const posX = (isBuilding || isPlantOrItem) ? e.x + 0.5 : e.x;
-      const posY = (isBuilding || isPlantOrItem) ? e.y + 0.5 : e.y;
+      // Multi-tile footprint for buildings
+      let fpW = 1, fpH = 1;
+      if (isHouse && e.properties.house) {
+        fpW = e.properties.house.footprintW || (e.properties.house.footprint ? Number(e.properties.house.footprint.split("x")[0]) : 1) || 1;
+        fpH = e.properties.house.footprintH || (e.properties.house.footprint ? Number(e.properties.house.footprint.split("x")[1]) : 1) || 1;
+      } else if (e.properties.leaderHouse) {
+        fpW = 3; fpH = 3;
+      } else if (isWarehouse || isSlaughterhouse || isKitchen || isArtisanHut) {
+        fpW = 2; fpH = 2;
+      }
+
+      const posX = (isBuilding || isPlantOrItem) ? e.x + fpW * 0.5 : e.x;
+      const posY = (isBuilding || isPlantOrItem) ? e.y + fpH * 0.5 : e.y;
 
       const bounds = getEntityBounds(e);
       const surfaceH = map
@@ -2957,8 +3153,25 @@ export class RCT3DRenderer {
       let closestId = -1;
       let minD = 1.3;
       for (const e of entities) {
-        if (e.destroyed) continue;
-        const d = Math.hypot(e.x - tx, e.y - ty);
+        if (e.destroyed || !e.properties) continue;
+        // Multi-tile footprint check
+        let eFpW = 1, eFpH = 1;
+        if (e.properties.house) {
+          eFpW = e.properties.house.footprintW || 1;
+          eFpH = e.properties.house.footprintH || 1;
+        } else if (e.properties.leaderHouse) {
+          eFpW = 3; eFpH = 3;
+        } else if (e.properties.warehouse || e.properties.slaughterhouse || e.properties.kitchen || e.properties.artisan_hut) {
+          eFpW = 2; eFpH = 2;
+        }
+        // Direct tile hit within footprint
+        if (tx >= e.x && tx < e.x + eFpW && ty >= e.y && ty < e.y + eFpH) {
+          closestId = e.id;
+          break;
+        }
+        const cx = e.x + eFpW * 0.5;
+        const cy = e.y + eFpH * 0.5;
+        const d = Math.hypot(cx - tx, cy - ty);
         if (d < minD) {
           minD = d;
           closestId = e.id;
@@ -3700,16 +3913,17 @@ export class RCT3DRenderer {
     const nightGlow = this.updateDayNightLighting(world);
 
     let minTx, maxTx, minTy, maxTy;
-    if (this.renderFullWorld) {
+    const maxDist = (this.max3DRenderDistance !== undefined) ? this.max3DRenderDistance : 64;
+    if (this.renderFullWorld || maxDist === 0) {
       minTx = 0;
       maxTx = MAP_WIDTH - 1;
       minTy = 0;
       maxTy = MAP_HEIGHT - 1;
     } else {
       const aspect = this.width / this.height;
-      const viewSize = Math.min(65, 28 / this.zoom);
+      const viewSize = Math.min(maxDist, 28 / this.zoom);
       const diagonal = Math.hypot(viewSize * aspect, viewSize);
-      const radius = Math.min(65, Math.ceil(diagonal * 1.25) + 3);
+      const radius = Math.min(maxDist, Math.ceil(diagonal * 1.25) + 3);
 
       minTx = Math.max(0, Math.floor(this.camX - radius));
       maxTx = Math.min(MAP_WIDTH - 1, Math.ceil(this.camX + radius));
@@ -3770,7 +3984,7 @@ export class RCT3DRenderer {
     const warehouseCounts = [0, 0];
     const slaughterhouseCounts = [0, 0];
     const kitchenCounts = [0, 0];
-    const houseVariantCounts = new Array(14).fill(0);
+    const houseVariantCounts = new Array(20).fill(0);
     const leaderVariantCounts = new Array(7).fill(0);
     let warehouseCount = 0;
     let waterWellCount = 0;
@@ -3842,7 +4056,8 @@ export class RCT3DRenderer {
 
       const isWoodLog = !e.properties.brain && !isDoor && !isWarehouse && !isSlaughterhouse && !isKitchen && !isArtisanHut && !isTorch && !isCampfire && !isRoad && (e.properties.resourceType === "wood" || e.properties.name?.includes("Wood Log") || e.properties.name?.includes("Madeira") || r.skin === "Item_Wood.png");
       const isStoneItem = !e.properties.brain && !isDoor && !isWarehouse && !isSlaughterhouse && !isKitchen && !isArtisanHut && !isTorch && !isCampfire && !isRoad && (e.properties.resourceType === "stone" || e.properties.name?.includes("Stone Block") || e.properties.name?.includes("Pedra"));
-      const isHouse = !e.properties.brain && !isWoodLog && !isStoneItem && !isTree && !isCactus && !isWarehouse && !isSlaughterhouse && !isKitchen && !isWell && !isArtisanHut && !isTorch && !isCampfire && !isRoad && (!!e.properties.house || (e.properties.species === "structure" && (r.skin === "Overworld_House.png" || e.properties.name?.includes("Casa") || e.properties.name?.includes("Ossuário") || e.properties.name?.includes("Castelo"))));
+      const isHouse = !e.properties.brain && !isWoodLog && !isStoneItem && !isTree && !isCactus && !isWarehouse && !isSlaughterhouse && !isKitchen && !isWell && !isArtisanHut && !isTorch && !isCampfire && !isRoad && (!!e.properties.house || !!e.properties.leaderHouse || (e.properties.species === "structure" && (r.skin === "Overworld_House.png" || e.properties.name?.includes("Casa") || e.properties.name?.includes("Palácio") || e.properties.name?.includes("Ossuário") || e.properties.name?.includes("Castelo"))));
+      const isLeaderHouse = isHouse && (!!e.properties.leaderHouse || !!e.properties.house?.isLeaderHouse || e.properties.name?.includes("Palácio") || e.properties.name?.includes("Citadel"));
       const isWall = !e.properties.brain && !isDoor && !isHouse && !isWarehouse && !isSlaughterhouse && !isKitchen && !isWell && !isArtisanHut && !isTorch && !isCampfire && !isRoad && !isWoodLog && !isStoneItem && !isTree && !isCactus && (r.skin?.startsWith("Wall_") || e.properties.name?.includes("Muralha") || e.properties.name?.includes("Paliçada") || e.properties.name?.includes("Muro") || (e.properties.structure && !e.properties.edible && !e.properties.resourceType));
 
       const isBuilding = isHouse || isWall || isDoor || isWarehouse || isSlaughterhouse || isKitchen || isWell || isArtisanHut;
@@ -3988,7 +4203,13 @@ export class RCT3DRenderer {
         mMatrix.setPosition(e.x + 0.5, surfaceH, e.y + 0.5);
 
         if (isCompleted && warehouseCounts[whVar] < 100) {
-          this.instWarehouses[whVar].setMatrixAt(warehouseCounts[whVar]++, mMatrix);
+          let bClan = e.properties?.group;
+          if (!bClan && e.properties?.groupId) bClan = clanGroups.get(e.properties.groupId);
+          const clanColor = (bClan && bClan.color !== undefined ? bClan.color : (e.properties?.render?.color || 0xd95738)) & 0xffffff;
+          this.instWarehouseWalls[whVar].setMatrixAt(warehouseCounts[whVar], mMatrix);
+          this.instWarehouseRoofs[whVar].setMatrixAt(warehouseCounts[whVar], mMatrix);
+          this.instWarehouseRoofs[whVar].setColorAt(warehouseCounts[whVar], this.tempColor1.setHex(clanColor));
+          warehouseCounts[whVar]++;
         } else if (!isCompleted && stage2Count < 400) {
           this.instHouseStage2.setMatrixAt(stage2Count++, mMatrix);
         }
@@ -4003,7 +4224,13 @@ export class RCT3DRenderer {
         mMatrix.setPosition(e.x + 0.5, surfaceH, e.y + 0.5);
 
         if (isCompleted && slaughterhouseCounts[shVar] < 100) {
-          this.instSlaughterhouses[shVar].setMatrixAt(slaughterhouseCounts[shVar]++, mMatrix);
+          let bClan = e.properties?.group;
+          if (!bClan && e.properties?.groupId) bClan = clanGroups.get(e.properties.groupId);
+          const clanColor = (bClan && bClan.color !== undefined ? bClan.color : (e.properties?.render?.color || 0x8a3324)) & 0xffffff;
+          this.instSlaughterhouseWalls[shVar].setMatrixAt(slaughterhouseCounts[shVar], mMatrix);
+          this.instSlaughterhouseRoofs[shVar].setMatrixAt(slaughterhouseCounts[shVar], mMatrix);
+          this.instSlaughterhouseRoofs[shVar].setColorAt(slaughterhouseCounts[shVar], this.tempColor1.setHex(clanColor));
+          slaughterhouseCounts[shVar]++;
         } else if (!isCompleted && stage2Count < 400) {
           this.instHouseStage2.setMatrixAt(stage2Count++, mMatrix);
         }
@@ -4018,7 +4245,13 @@ export class RCT3DRenderer {
         mMatrix.setPosition(e.x + 0.5, surfaceH, e.y + 0.5);
 
         if (isCompleted && kitchenCounts[kitVar] < 100) {
-          this.instKitchens[kitVar].setMatrixAt(kitchenCounts[kitVar]++, mMatrix);
+          let bClan = e.properties?.group;
+          if (!bClan && e.properties?.groupId) bClan = clanGroups.get(e.properties.groupId);
+          const clanColor = (bClan && bClan.color !== undefined ? bClan.color : (e.properties?.render?.color || 0xc45e28)) & 0xffffff;
+          this.instKitchenWalls[kitVar].setMatrixAt(kitchenCounts[kitVar], mMatrix);
+          this.instKitchenRoofs[kitVar].setMatrixAt(kitchenCounts[kitVar], mMatrix);
+          this.instKitchenRoofs[kitVar].setColorAt(kitchenCounts[kitVar], this.tempColor1.setHex(clanColor));
+          kitchenCounts[kitVar]++;
         } else if (!isCompleted && stage2Count < 400) {
           this.instHouseStage2.setMatrixAt(stage2Count++, mMatrix);
         }
@@ -4031,9 +4264,13 @@ export class RCT3DRenderer {
         mMatrix.setPosition(e.x + 0.5, surfaceH, e.y + 0.5);
 
         if (isCompleted && waterWellCount < 200) {
+          let bClan = e.properties?.group;
+          if (!bClan && e.properties?.groupId) bClan = clanGroups.get(e.properties.groupId);
+          const clanColor = (bClan && bClan.color !== undefined ? bClan.color : (e.properties?.render?.color || 0x2e86ab)) & 0xffffff;
           this.instWaterWellBase.setMatrixAt(waterWellCount, mMatrix);
           this.instWaterWellWood.setMatrixAt(waterWellCount, mMatrix);
           this.instWaterWellRoof.setMatrixAt(waterWellCount, mMatrix);
+          this.instWaterWellRoof.setColorAt(waterWellCount, this.tempColor1.setHex(clanColor));
           waterWellCount++;
         } else if (!isCompleted && stage1Count < 400) {
           this.instHouseStage1.setMatrixAt(stage1Count++, mMatrix);
@@ -4047,7 +4284,13 @@ export class RCT3DRenderer {
         mMatrix.setPosition(e.x + 0.5, surfaceH, e.y + 0.5);
 
         if (isCompleted && warehouseCounts[0] < 100) {
-          this.instWarehouses[0].setMatrixAt(warehouseCounts[0]++, mMatrix);
+          let bClan = e.properties?.group;
+          if (!bClan && e.properties?.groupId) bClan = clanGroups.get(e.properties.groupId);
+          const clanColor = (bClan && bClan.color !== undefined ? bClan.color : (e.properties?.render?.color || 0xd95738)) & 0xffffff;
+          this.instWarehouseWalls[0].setMatrixAt(warehouseCounts[0], mMatrix);
+          this.instWarehouseRoofs[0].setMatrixAt(warehouseCounts[0], mMatrix);
+          this.instWarehouseRoofs[0].setColorAt(warehouseCounts[0], this.tempColor1.setHex(clanColor));
+          warehouseCounts[0]++;
         } else if (!isCompleted && stage2Count < 400) {
           this.instHouseStage2.setMatrixAt(stage2Count++, mMatrix);
         }
@@ -4111,9 +4354,9 @@ export class RCT3DRenderer {
         } else {
           mMatrix.makeRotationY(rotAngle);
           let offX = 0, offZ = 0;
-          if (rot === 1) { offX = fpW; offZ = 0; }
+          if (rot === 1) { offX = 0; offZ = fpH; }
           else if (rot === 2) { offX = fpW; offZ = fpH; }
-          else if (rot === 3) { offX = 0; offZ = fpH; }
+          else if (rot === 3) { offX = fpW; offZ = 0; }
           const posMat = new THREE.Matrix4().setPosition(e.x + offX, surfaceH, e.y + offZ);
           mMatrix.premultiply(posMat);
         }
@@ -4160,9 +4403,9 @@ export class RCT3DRenderer {
           } else {
             let hVar = 0;
             if (h && h.houseVariant !== undefined) {
-              hVar = Math.abs(h.houseVariant) % 14;
+              hVar = Math.abs(h.houseVariant) % 20;
             } else {
-              hVar = (Math.abs(htx * 7 + hty * 13)) % 14;
+              hVar = (Math.abs(htx * 7 + hty * 13)) % 20;
             }
 
             const wallMesh = this.instHouseWallVariants[hVar] || this.instHouseWallVariants[0];
@@ -4495,11 +4738,25 @@ export class RCT3DRenderer {
       }
 
       if (e.id === this.selectedEntityId) {
-        const isTileAligned = isTree || isHouse || isWall || isCactus;
+        // Compute footprint for reticle scaling
+        let selFpW = 1, selFpH = 1;
+        if (isHouse && e.properties.house) {
+          selFpW = e.properties.house.footprintW || 1;
+          selFpH = e.properties.house.footprintH || 1;
+        } else if (isLeaderHouse || e.properties.leaderHouse) {
+          selFpW = 3; selFpH = 3;
+        } else if (isWarehouse || isSlaughterhouse || isKitchen || isArtisanHut) {
+          selFpW = 2; selFpH = 2;
+        }
+
+        const isTileAligned = isTree || isHouse || isLeaderHouse || isWall || isCactus || isWarehouse || isSlaughterhouse || isKitchen || isArtisanHut || isWell || isCampfire || isRoad;
+
         selectedPos = {
-          x: isTileAligned ? e.x + 0.5 : e.x,
-          y: surfaceH + 0.015,
-          z: isTileAligned ? e.y + 0.5 : e.y
+          x: isTileAligned ? Math.floor(e.x) + selFpW * 0.5 : e.x,
+          y: surfaceH + 0.02,
+          z: isTileAligned ? Math.floor(e.y) + selFpH * 0.5 : e.y,
+          fpW: selFpW,
+          fpH: selFpH
         };
       }
     }
@@ -4689,18 +4946,27 @@ export class RCT3DRenderer {
     this.instGatesOpen.count = gateOpenCount;
     this.instGatesOpen.instanceMatrix.needsUpdate = true;
     for (let w = 0; w < 2; w++) {
-      this.instWarehouses[w].count = warehouseCounts[w];
-      this.instWarehouses[w].instanceMatrix.needsUpdate = true;
+      this.instWarehouseWalls[w].count = warehouseCounts[w];
+      this.instWarehouseWalls[w].instanceMatrix.needsUpdate = true;
+      this.instWarehouseRoofs[w].count = warehouseCounts[w];
+      this.instWarehouseRoofs[w].instanceMatrix.needsUpdate = true;
+      if (this.instWarehouseRoofs[w].instanceColor) this.instWarehouseRoofs[w].instanceColor.needsUpdate = true;
     }
 
     for (let s = 0; s < 2; s++) {
-      this.instSlaughterhouses[s].count = slaughterhouseCounts[s];
-      this.instSlaughterhouses[s].instanceMatrix.needsUpdate = true;
+      this.instSlaughterhouseWalls[s].count = slaughterhouseCounts[s];
+      this.instSlaughterhouseWalls[s].instanceMatrix.needsUpdate = true;
+      this.instSlaughterhouseRoofs[s].count = slaughterhouseCounts[s];
+      this.instSlaughterhouseRoofs[s].instanceMatrix.needsUpdate = true;
+      if (this.instSlaughterhouseRoofs[s].instanceColor) this.instSlaughterhouseRoofs[s].instanceColor.needsUpdate = true;
     }
 
     for (let k = 0; k < 2; k++) {
-      this.instKitchens[k].count = kitchenCounts[k];
-      this.instKitchens[k].instanceMatrix.needsUpdate = true;
+      this.instKitchenWalls[k].count = kitchenCounts[k];
+      this.instKitchenWalls[k].instanceMatrix.needsUpdate = true;
+      this.instKitchenRoofs[k].count = kitchenCounts[k];
+      this.instKitchenRoofs[k].instanceMatrix.needsUpdate = true;
+      if (this.instKitchenRoofs[k].instanceColor) this.instKitchenRoofs[k].instanceColor.needsUpdate = true;
     }
 
     this.instWaterWellBase.count = waterWellCount;
@@ -4709,8 +4975,9 @@ export class RCT3DRenderer {
     this.instWaterWellWood.instanceMatrix.needsUpdate = true;
     this.instWaterWellRoof.count = waterWellCount;
     this.instWaterWellRoof.instanceMatrix.needsUpdate = true;
+    if (this.instWaterWellRoof.instanceColor) this.instWaterWellRoof.instanceColor.needsUpdate = true;
 
-    for (let h = 0; h < 14; h++) {
+    for (let h = 0; h < 20; h++) {
       this.instHouseWallVariants[h].count = houseVariantCounts[h];
       this.instHouseWallVariants[h].instanceMatrix.needsUpdate = true;
       this.instHouseRoofVariants[h].count = houseVariantCounts[h];
@@ -4791,30 +5058,22 @@ export class RCT3DRenderer {
     // Update Selection Reticle
     if (selectedPos) {
       this.reticleMesh.position.set(selectedPos.x, selectedPos.y, selectedPos.z);
+      const scaleX = selectedPos.fpW || 1;
+      const scaleZ = selectedPos.fpH || 1;
+      this.reticleMesh.scale.set(scaleX, 1, scaleZ);
       this.reticleMesh.visible = true;
     } else {
       this.reticleMesh.visible = false;
     }
 
-    // Update 3D Outer Perimeter Clouds (Strictly outside map boundaries [0..MAP_WIDTH, 0..MAP_HEIGHT])
+    // Update 3D Atmosphere Clouds (Procedural High Altitude Clouds)
     if (this.cloudMesh && this.cloudMat) {
-      const aspect = this.width / this.height;
-      const viewSize = 28 / this.zoom;
-      const halfX = viewSize * aspect;
-      const halfZ = viewSize;
-      const minCamX = this.camX - halfX;
-      const maxCamX = this.camX + halfX;
-      const minCamZ = this.camY - halfZ;
-      const maxCamZ = this.camY + halfZ;
-
-      const seesOutside = (minCamX < 0 || maxCamX > MAP_WIDTH || minCamZ < 0 || maxCamZ > MAP_HEIGHT);
-
-      if (seesOutside) {
+      if (this.zoom <= 0.8) {
         this.cloudMesh.visible = true;
-        this.cloudMesh.position.set(512, 14.0, 512);
+        this.cloudMesh.position.set(this.camX, 22.0, this.camY);
         this.cloudMat.uniforms.uTime.value = performance.now() * 0.001;
-        this.cloudMat.uniforms.uFade.value = 1.0;
-        this.cloudMat.uniforms.uMapBounds.value.set(0.0, 0.0, MAP_WIDTH, MAP_HEIGHT);
+        const fade = Math.min(1.0, (0.8 - this.zoom) / 0.35);
+        this.cloudMat.uniforms.uFade.value = fade;
         this.cloudMat.uniforms.uSunColor.value.copy(this.sunLight.color);
         this.cloudMat.uniforms.uAmbColor.value.copy(this.ambientLight.color);
       } else {

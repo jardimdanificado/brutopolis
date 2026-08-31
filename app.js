@@ -1722,6 +1722,7 @@ window.addEventListener("mousemove", (e) => {
     const totalDist = Math.hypot(e.clientX - dragStartClientX, e.clientY - dragStartClientY);
     if (totalDist > 2) {
       isDragging = true;
+      isFollowMode = false;
       if (is3DMode && rctRenderer) {
         // Ultra-smooth 1:1 isometric closed-form pan
         const zoom = rctRenderer.getCameraZoom();
@@ -2871,12 +2872,18 @@ function renderDossierModal() {
   const isCreature = !!props.life || !!props.brain;
   const knownAffinities = Object.entries(props.brain?.affinities || {});
   const creatureEvents = getFullHistoryForEntity(target.id);
+  const creatureBattles = isCreature ? getClusteredBattles({ entityId: target.id, limit: 100 }) : [];
 
   // Modal Tabs Bar
   const tabs = [
     { id: "OVERVIEW", label: "OVERVIEW" },
     ...(isHouse ? [{ id: "PAST_OWNERS", label: `PAST OWNERS (${props.house.pastOwners?.length || 0})` }] : []),
-    ...(isCreature ? [{ id: "FAMILY", label: "FAMILY" }, { id: "TREE", label: "FAMILY TREE" }, { id: "AFFINITIES", label: `AFFINITIES (${knownAffinities.length})` }] : []),
+    ...(isCreature ? [
+      { id: "FAMILY", label: "FAMILY" },
+      { id: "TREE", label: "FAMILY TREE" },
+      { id: "AFFINITIES", label: `AFFINITIES (${knownAffinities.length})` },
+      { id: "BATTLES", label: `BATTLES (${creatureBattles.length})` }
+    ] : []),
     { id: "CHRONICLE", label: `CHRONICLE (${creatureEvents.length})` }
   ];
 
@@ -3058,15 +3065,22 @@ function renderDossierModal() {
       const partnerId = props.monogamy?.partnerId;
       if (partnerId) {
         const partner = entityRegistry.get(partnerId);
-        const pName = (partner?.properties?.name || `Entity #${partnerId}`).toUpperCase().slice(0, 14);
-        drawText8x8("PARTNER:", mx + 440, lineageY + 30, "#bcbcbc", 1);
-        drawNESButton(mx + 510, lineageY + 24, 140, 22, `${pName} [PARTNER]`, false, false);
-        registerClickableRegion(mx + 510, lineageY + 24, 140, 22, () => {
+        const pName = (partner?.properties?.name || `Entity #${partnerId}`).toUpperCase().slice(0, 10);
+        drawText8x8("PARTNER:", mx + 435, lineageY + 30, "#bcbcbc", 1);
+        drawNESButton(mx + 498, lineageY + 24, 90, 22, pName, false, false);
+        registerClickableRegion(mx + 498, lineageY + 24, 90, 22, () => {
           lastSelectedId = partnerId;
           modalScroll = 0;
         });
+        drawNESButton(mx + 592, lineageY + 24, 75, 22, "RELATION", false, false);
+        registerClickableRegion(mx + 592, lineageY + 24, 75, 22, () => {
+          const rel = getRelationshipSummary(target.id, partnerId, entityRegistry);
+          if (rel) {
+            inspectingRelationship = rel;
+          }
+        });
       } else {
-        drawText8x8("PARTNER: Single", mx + 440, lineageY + 30, "#7c7c7c", 1);
+        drawText8x8("PARTNER: Single", mx + 435, lineageY + 30, "#7c7c7c", 1);
       }
     }
 
@@ -3215,19 +3229,78 @@ function renderDossierModal() {
         // Affinity bar
         drawNESProgressBar(mx + 410, curY + 2, 160, 18, affVal + 100, 200, `AFF: ${Math.round(affVal)}`, relCol);
 
-        // Inspect Button
-        drawNESButton(mx + mw - 95, curY + 2, 75, 20, "INSPECT", false, false);
-        registerClickableRegion(mx + mw - 95, curY + 2, 75, 20, () => {
+        // Inspect Creature Button
+        drawNESButton(mx + mw - 175, curY + 2, 70, 20, "INSPECT", false, false);
+        registerClickableRegion(mx + mw - 175, curY + 2, 70, 20, () => {
           lastSelectedId = otherId;
           dossierTab = "OVERVIEW";
           modalScroll = 0;
         });
 
+        // Relationship Dossier Button (Opens in-depth mutual history & interactions between the two)
+        drawNESButton(mx + mw - 100, curY + 2, 85, 20, "RELATION", false, false);
+        registerClickableRegion(mx + mw - 100, curY + 2, 85, 20, () => {
+          const rel = getRelationshipSummary(target.id, otherId, entityRegistry);
+          if (rel) {
+            inspectingRelationship = rel;
+          }
+        });
+
         // Click whole row to inspect target directly
-        registerClickableRegion(mx + 12, curY, mw - 100, rowH, () => {
+        registerClickableRegion(mx + 12, curY, mw - 185, rowH, () => {
           lastSelectedId = otherId;
           dossierTab = "OVERVIEW";
           modalScroll = 0;
+        });
+
+        curY += rowH;
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // TAB: BATTLES (Creature Personal Combat & War Dossier)
+  // ---------------------------------------------------------------------------
+  else if (dossierTab === "BATTLES") {
+    const listY = my + 62;
+    const listH = mh - 72;
+    drawNESBox(mx + 10, listY, mw - 20, listH);
+
+    if (creatureBattles.length === 0) {
+      drawText8x8("NO COMBAT BATTLES OR SKIRMISHES RECORDED FOR THIS CREATURE.", mx + 24, listY + 24, "#bcbcbc", 1);
+    } else {
+      const rowH = 34;
+      const visibleRows = Math.floor((listH - 20) / rowH);
+      const maxScroll = Math.max(0, creatureBattles.length - visibleRows);
+      modalScroll = Math.max(0, Math.min(maxScroll, modalScroll));
+
+      let curY = listY + 12;
+      for (let i = modalScroll; i < Math.min(creatureBattles.length, modalScroll + visibleRows); i++) {
+        const battle = creatureBattles[i];
+        const isHover = mouseX >= mx + 12 && mouseX <= mx + mw - 12 && mouseY >= curY && mouseY <= curY + rowH;
+        if (isHover) {
+          ctx.fillStyle = "#1e1828";
+          ctx.fillRect(mx + 12, curY, mw - 24, rowH - 2);
+        }
+
+        const ts = battle.timestamp ? `D${battle.timestamp.day} ${String(battle.timestamp.hour).padStart(2, "0")}:${String(battle.timestamp.minute).padStart(2, "0")}` : `T${battle.startTick}`;
+        drawText8x8(ts, mx + 18, curY + 5, "#bcbcbc", 1);
+        drawText8x8(`[⚔️ BATTLE #${battle.id}]`, mx + 110, curY + 5, "#f83800", 1);
+
+        const battleHeader = `${battle.name} • [${battle.combatants.length} FIGHTERS • ${Math.round(battle.totalDamage)} DMG]`;
+        drawText8x8(battleHeader.slice(0, Math.floor((mw - 380) / 8)), mx + 245, curY + 5, "#ffd700", 1);
+
+        const causeShort = `TRIGGER: ${battle.triggerCause}`.slice(0, Math.floor((mw - 380) / 8));
+        drawText8x8(causeShort, mx + 245, curY + 18, "#bcbcbc", 1);
+
+        const curBattle = battle;
+        drawNESButton(mx + mw - 95, curY + 4, 75, 22, "DOSSIER", false, false);
+        registerClickableRegion(mx + mw - 95, curY + 4, 75, 22, () => {
+          inspectingBattle = curBattle;
+        });
+
+        registerClickableRegion(mx + 12, curY, mw - 110, rowH - 2, () => {
+          inspectingBattle = curBattle;
         });
 
         curY += rowH;
@@ -5339,7 +5412,7 @@ function renderOptionsModal() {
   const tabs = [
     { id: "OPTIMIZATION", label: "OPTIMIZATION" },
     { id: "GRAPHICS", label: "GRAPHICS & 3D" },
-    { id: "SIMULATION", label: "SIMULATION" }
+    { id: "AUDIO", label: "AUDIO" }
   ];
   for (const t of tabs) {
     const isSel = optionsTab === t.id;
@@ -5424,8 +5497,13 @@ function renderOptionsModal() {
       const v = opt.val;
       registerClickableRegion(bx, curY + 10, bw, 22, () => {
         gameOptions.max3DRenderDistance = v;
-        if (rctRenderer && rctRenderer.setFullWorld) {
-          rctRenderer.setFullWorld(v === 0);
+        if (rctRenderer) {
+          rctRenderer.max3DRenderDistance = v;
+          if (rctRenderer.setFullWorld) {
+            rctRenderer.setFullWorld(v === 0);
+          }
+          rctRenderer.lastBuiltCamTileX = -9999;
+          rctRenderer.lastBuiltCamTileY = -9999;
         }
         saveGameOptions();
       });
@@ -5547,37 +5625,12 @@ function renderOptionsModal() {
       applyGameOptions();
       saveGameOptions();
     });
-  } else if (optionsTab === "SIMULATION") {
-    // 1. Simulation Target TPS
-    const curTps = renderer ? renderer.getTps() : 60;
-    drawText8x8(`SIMULATION SPEED (TPS): [ ${curTps} TPS ]`, mx + 16, curY, "#3cbcfc", 1);
-    const tpsOptions = [
-      { val: 15, label: "15 TPS" },
-      { val: 30, label: "30 TPS" },
-      { val: 60, label: "60 TPS" },
-      { val: 90, label: "90 TPS" },
-      { val: 120, label: "120 TPS" }
-    ];
-    let bx = mx + 16;
-    for (const opt of tpsOptions) {
-      const isSel = curTps === opt.val;
-      const bw = isMobile ? 54 : 70;
-      drawNESButton(bx, curY + 10, bw, 22, opt.label, isSel, false);
-      const v = opt.val;
-      registerClickableRegion(bx, curY + 10, bw, 22, () => {
-        if (renderer) renderer.setTps(v);
-        if (rctRenderer) rctRenderer.setTps(v);
-        if (simWorker) simWorker.postMessage({ type: "SET_TPS", tps: v });
-      });
-      bx += bw + 4;
-    }
-    curY += 40;
-
-    // 2. Audio & Sound FX
+  } else if (optionsTab === "AUDIO") {
+    // 1. Audio & Sound FX
     drawText8x8(`AUDIO & SOUND FX: [ ${isAudioMuted ? "MUTED" : "ENABLED"} ]`, mx + 16, curY, "#3cbcfc", 1);
-    bx = mx + 16;
-    drawNESButton(bx, curY + 10, 120, 22, isAudioMuted ? "UNMUTE" : "MUTE AUDIO", !isAudioMuted, false);
-    registerClickableRegion(bx, curY + 10, 120, 22, toggleAudio);
+    let bx = mx + 16;
+    drawNESButton(bx, curY + 10, 140, 22, isAudioMuted ? "UNMUTE AUDIO" : "MUTE AUDIO", !isAudioMuted, false);
+    registerClickableRegion(bx, curY + 10, 140, 22, toggleAudio);
   }
 
   // Footer: Back / Apply button
@@ -5879,20 +5932,13 @@ function renderTitleScreen() {
     menuY += 38;
   }
 
-  // Button 1: NEW WORLD (Highlighted if no active game)
-  drawNESButton(menuBoxX, menuY, menuBoxW, hasActiveGame ? 28 : 32, "NEW WORLD", !hasActiveGame, false);
-  registerClickableRegion(menuBoxX, menuY, menuBoxW, hasActiveGame ? 28 : 32, () => {
-    startNewGame(curScen.preset, null);
-  });
-  menuY += hasActiveGame ? 34 : 40;
-
-  // Button 2: CUSTOM GENERATOR
-  drawNESButton(menuBoxX, menuY, menuBoxW, 28, "CUSTOM WORLD GENERATOR", false, false);
-  registerClickableRegion(menuBoxX, menuY, menuBoxW, 28, () => {
+  // Button 1: NEW WORLD / CUSTOM WORLD GENERATOR
+  drawNESButton(menuBoxX, menuY, menuBoxW, 34, "NEW WORLD / GENERATOR", !hasActiveGame, false);
+  registerClickableRegion(menuBoxX, menuY, menuBoxW, 34, () => {
     currentMode = "GENERATOR";
     modalScroll = 0;
   });
-  menuY += 34;
+  menuY += 42;
 
   // Button 3: OPTIONS & SETTINGS
   drawNESButton(menuBoxX, menuY, menuBoxW, 28, "OPTIONS & SETTINGS", false, false);
@@ -5921,10 +5967,20 @@ function renderTitleScreen() {
 }
 
 // ---------------------------------------------------------------------------
-// Main Animation Frame Loop
-// ---------------------------------------------------------------------------
+let lastRenderTime = 0;
 
 function frame(time) {
+  // Target FPS Limiter
+  const targetFps = gameOptions?.targetFps || 0;
+  if (targetFps > 0) {
+    const minFrameInterval = 1000 / targetFps;
+    if (time - lastRenderTime < minFrameInterval - 1.0) {
+      requestAnimationFrame(frame);
+      return;
+    }
+  }
+  lastRenderTime = time;
+
   const dt = lastTime > 0 ? (time - lastTime) * 0.001 : 0.016;
   lastTime = time;
 
@@ -6029,6 +6085,9 @@ function frame(time) {
         rctRenderer.hideEditorCursor();
       }
       const visionTarget = (isCreatureVisionMode && lastSelectedId > 0) ? getEntityById(lastSelectedId) : null;
+      if (rctRenderer) {
+        rctRenderer.max3DRenderDistance = gameOptions?.max3DRenderDistance;
+      }
       rctRenderer.render(world, entities, time * 0.001, dt, isPaused ? 0.0 : simSpeed, visionTarget, visualizedGroupId);
       ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     } else {

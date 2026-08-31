@@ -711,40 +711,49 @@ export function createCampfireEntity(x, y, ownerId = null) {
 
 
 export const HOUSE_STYLES = [
-  { id: "timber_cabin", label: "Timber Cabin", skin: "Overworld_House.png", color: 0xffcd853f, woodCost: 4, stoneCost: 1, condition: 10000, floorsCount: 2, footprint: "2x1", yardType: "Vegetable Garden & Tool Shed" },
-  { id: "stone_cottage", label: "Stone Cottage", skin: "Overworld_House.png", color: 0xffc8c8c8, woodCost: 2, stoneCost: 5, condition: 16000, floorsCount: 2, footprint: "2x2", yardType: "Cobblestone Patio & Flowerbeds" },
-  { id: "thatched_hut", label: "Thatched Hut", skin: "Overworld_House.png", color: 0xffe6c86e, woodCost: 3, stoneCost: 1, condition: 7500, floorsCount: 2, footprint: "1x1", yardType: "Rustic Herb Garden & Loft" },
-  { id: "log_lodge", label: "Log Lodge", skin: "Overworld_House.png", color: 0xff8b5a2b, woodCost: 6, stoneCost: 2, condition: 12000, floorsCount: 3, footprint: "2x2", yardType: "Timber Yard & Smoker" },
-  { id: "half_timbered", label: "Half-Timbered House", skin: "Overworld_House.png", color: 0xfff0e6d2, woodCost: 4, stoneCost: 4, condition: 14000, floorsCount: 2, footprint: "2x1", yardType: "Paved Courtyard & Well" },
-  { id: "mud_brick_adobe", label: "Adobe Dwelling", skin: "Overworld_House.png", color: 0xffd2965a, woodCost: 2, stoneCost: 4, condition: 11000, floorsCount: 2, footprint: "2x2", yardType: "Clay Terrace & Grain Store" },
-  { id: "mountain_stilt", label: "Alpine Stilt House", skin: "Overworld_House.png", color: 0xff968278, woodCost: 5, stoneCost: 3, condition: 11500, floorsCount: 3, footprint: "2x2", yardType: "Stilt Deck & Goat Corral" },
-  { id: "longhouse", label: "Nordic Longhouse", skin: "Overworld_House.png", color: 0xffa06432, woodCost: 7, stoneCost: 2, condition: 15000, floorsCount: 3, footprint: "3x2", yardType: "Great Hall Yard & Hearth" },
-  { id: "bone_ossuary", label: "Ancient Ossuary", skin: "Overworld_House.png", color: 0xfff5f5dc, woodCost: 2, stoneCost: 2, boneCost: 4, condition: 13000, floorsCount: 3, footprint: "2x2", yardType: "Sacred Bone Shrine & Garden" },
-  { id: "manor_villa", label: "Manor Villa", skin: "Overworld_House.png", color: 0xffb47850, woodCost: 5, stoneCost: 7, condition: 22000, floorsCount: 4, footprint: "3x3", yardType: "Manor Courtyard & Estate Garden" },
-  // Additional Thin 1x1 Variations
-  { id: "timber_tower_house", label: "Timber Tower House", skin: "Overworld_House.png", color: 0xffcd853f, woodCost: 3, stoneCost: 1, condition: 8500, floorsCount: 3, footprint: "1x1", yardType: "Slender Veranda & Loft" },
-  { id: "stone_townhouse", label: "Stone Townhouse", skin: "Overworld_House.png", color: 0xffc8c8c8, woodCost: 1, stoneCost: 4, condition: 12500, floorsCount: 3, footprint: "1x1", yardType: "Cobblestone Yard & Alcove" },
-  { id: "stilt_watch_shack", label: "Stilt Watch-Shack", skin: "Overworld_House.png", color: 0xff968278, woodCost: 2, stoneCost: 1, condition: 6000, floorsCount: 2, footprint: "1x1", yardType: "Lookout Deck & Ladder" },
-  { id: "plaster_steeple_house", label: "Steeple Townhouse", skin: "Overworld_House.png", color: 0xfff0e6d2, woodCost: 3, stoneCost: 3, condition: 11000, floorsCount: 4, footprint: "1x1", yardType: "High Balcony & Garden" }
+  // Multi-story Styles
+  { id: "timber_cabin", label: "Timber Cabin", skin: "Overworld_House.png", color: 0xffcd853f, woodCost: 2, stoneCost: 1, condition: 10000, floorsCount: 2, footprint: "2x1", yardType: "Vegetable Garden & Tool Shed" },
+  { id: "stone_cottage", label: "Stone Cottage", skin: "Overworld_House.png", color: 0xffc8c8c8, woodCost: 1, stoneCost: 2, condition: 16000, floorsCount: 2, footprint: "2x2", yardType: "Cobblestone Patio & Flowerbeds" },
+  { id: "thatched_hut", label: "Thatched Hut", skin: "Overworld_House.png", color: 0xffe6c86e, woodCost: 2, stoneCost: 1, condition: 7500, floorsCount: 2, footprint: "1x1", yardType: "Rustic Herb Garden & Loft" },
+  { id: "log_lodge", label: "Log Lodge", skin: "Overworld_House.png", color: 0xff8b5a2b, woodCost: 3, stoneCost: 1, condition: 12000, floorsCount: 3, footprint: "2x2", yardType: "Timber Yard & Smoker" },
+  { id: "half_timbered", label: "Half-Timbered House", skin: "Overworld_House.png", color: 0xfff0e6d2, woodCost: 2, stoneCost: 2, condition: 14000, floorsCount: 2, footprint: "2x1", yardType: "Paved Courtyard & Well" },
+  { id: "mud_brick_adobe", label: "Adobe Dwelling", skin: "Overworld_House.png", color: 0xffd2965a, woodCost: 1, stoneCost: 2, condition: 11000, floorsCount: 2, footprint: "2x2", yardType: "Clay Terrace & Grain Store" },
+  { id: "mountain_stilt", label: "Alpine Stilt House", skin: "Overworld_House.png", color: 0xff968278, woodCost: 2, stoneCost: 2, condition: 11500, floorsCount: 3, footprint: "2x2", yardType: "Stilt Deck & Goat Corral" },
+  { id: "longhouse", label: "Nordic Longhouse", skin: "Overworld_House.png", color: 0xffa06432, woodCost: 3, stoneCost: 1, condition: 15000, floorsCount: 3, footprint: "3x2", yardType: "Great Hall Yard & Hearth" },
+  { id: "bone_ossuary", label: "Ancient Ossuary", skin: "Overworld_House.png", color: 0xfff5f5dc, woodCost: 1, stoneCost: 1, boneCost: 2, condition: 13000, floorsCount: 3, footprint: "2x2", yardType: "Sacred Bone Shrine & Garden" },
+  { id: "manor_villa", label: "Manor Villa", skin: "Overworld_House.png", color: 0xffb47850, woodCost: 3, stoneCost: 3, condition: 22000, floorsCount: 4, footprint: "3x3", yardType: "Manor Courtyard & Estate Garden" },
+  // Thin 1x1 Variations
+  { id: "timber_tower_house", label: "Timber Tower House", skin: "Overworld_House.png", color: 0xffcd853f, woodCost: 2, stoneCost: 1, condition: 8500, floorsCount: 3, footprint: "1x1", yardType: "Slender Veranda & Loft" },
+  { id: "stone_townhouse", label: "Stone Townhouse", skin: "Overworld_House.png", color: 0xffc8c8c8, woodCost: 1, stoneCost: 2, condition: 12500, floorsCount: 3, footprint: "1x1", yardType: "Cobblestone Yard & Alcove" },
+  { id: "stilt_watch_shack", label: "Stilt Watch-Shack", skin: "Overworld_House.png", color: 0xff968278, woodCost: 1, stoneCost: 1, condition: 6000, floorsCount: 2, footprint: "1x1", yardType: "Lookout Deck & Ladder" },
+  { id: "plaster_steeple_house", label: "Steeple Townhouse", skin: "Overworld_House.png", color: 0xfff0e6d2, woodCost: 2, stoneCost: 1, condition: 11000, floorsCount: 4, footprint: "1x1", yardType: "High Balcony & Garden" },
+  // Single-Story (Térreas / Sem Segundo Andar) Variations
+  { id: "single_cabin", label: "Rustic Timber Ranch", skin: "Overworld_House.png", color: 0xffcd853f, woodCost: 2, stoneCost: 1, condition: 7000, floorsCount: 1, footprint: "2x1", yardType: "Front Porch & Vegetable Garden" },
+  { id: "single_stone_cottage", label: "Ground Stone Cottage", skin: "Overworld_House.png", color: 0xffc8c8c8, woodCost: 1, stoneCost: 2, condition: 9000, floorsCount: 1, footprint: "2x2", yardType: "Gravel Yard & Herb Garden" },
+  { id: "fenced_ranch_compound", label: "Fenced Ranch Homestead", skin: "Overworld_House.png", color: 0xff8b5a2b, woodCost: 3, stoneCost: 1, condition: 14000, floorsCount: 1, footprint: "3x3", yardType: "Fenced Pasture, Corral & Wellside Land" },
+  { id: "courtyard_hacienda", label: "Courtyard Hacienda Estate", skin: "Overworld_House.png", color: 0xfff0e6d2, woodCost: 3, stoneCost: 3, condition: 20000, floorsCount: 1, footprint: "4x4", yardType: "Quad Condominium Courtyard & Central Fountain" },
+  { id: "adobe_rancho", label: "Single-Story Adobe Rancho", skin: "Overworld_House.png", color: 0xffd2965a, woodCost: 1, stoneCost: 2, condition: 8500, floorsCount: 1, footprint: "2x2", yardType: "Clay Patio, Clay Oven & Storage Plot" },
+  { id: "ground_croft", label: "Ground Thatched Croft", skin: "Overworld_House.png", color: 0xffe6c86e, woodCost: 1, stoneCost: 1, condition: 5500, floorsCount: 1, footprint: "1x1", yardType: "Rustic Thatch Shed & Fence" }
 ];
 
 export const LEADER_HOUSE_STYLES = [
-  { id: "citadel_palace", label: "Citadel Palace", skin: "Overworld_House.png", color: 0xffc8c8c8, woodCost: 12, stoneCost: 22, condition: 55000, floorsCount: 7, footprint: "3x3", yardType: "Palatial Throne Courtyard & Royal Guard Post" },
-  { id: "jarl_high_hall", label: "Jarl High Long-Hall", skin: "Overworld_House.png", color: 0xffa06432, woodCost: 24, stoneCost: 10, condition: 48000, floorsCount: 7, footprint: "3x3", yardType: "Great Clan Hearth & Trophy Grounds" },
-  { id: "ziggurat_palace", label: "Ziggurat Throne Palace", skin: "Overworld_House.png", color: 0xffd2965a, woodCost: 8, stoneCost: 26, condition: 52000, floorsCount: 7, footprint: "3x3", yardType: "Terraced Royal Gardens & Sun Altar" },
-  { id: "chieftain_pagoda", label: "Chieftain Pagoda Spire", skin: "Overworld_House.png", color: 0xff8b5a2b, woodCost: 22, stoneCost: 12, condition: 46000, floorsCount: 7, footprint: "3x3", yardType: "Tiered Pavilion Deck & Clan Banners" },
-  { id: "sanctuary_fortress", label: "Sanctuary Cathedral Keep", skin: "Overworld_House.png", color: 0xfff0e6d2, woodCost: 14, stoneCost: 20, condition: 50000, floorsCount: 7, footprint: "3x3", yardType: "Monumental Cloister & High Spire" },
-  { id: "monolith_castle", label: "Basalt Monolith Castle", skin: "Overworld_House.png", color: 0xff4a4a58, woodCost: 8, stoneCost: 28, condition: 60000, floorsCount: 7, footprint: "3x3", yardType: "Imposing Fortress Ramparts & Armory" },
-  { id: "imperial_palace", label: "Imperial Pavilion Citadel", skin: "Overworld_House.png", color: 0xffb47850, woodCost: 16, stoneCost: 18, condition: 54000, floorsCount: 7, footprint: "3x3", yardType: "Grand Imperial Plaza & Royal Stables" }
+  { id: "citadel_palace", label: "Citadel Palace", skin: "Overworld_House.png", color: 0xffc8c8c8, woodCost: 4, stoneCost: 6, condition: 55000, floorsCount: 7, footprint: "3x3", yardType: "Palatial Throne Courtyard & Royal Guard Post" },
+  { id: "jarl_high_hall", label: "Jarl High Long-Hall", skin: "Overworld_House.png", color: 0xffa06432, woodCost: 6, stoneCost: 4, condition: 48000, floorsCount: 7, footprint: "3x3", yardType: "Great Clan Hearth & Trophy Grounds" },
+  { id: "ziggurat_palace", label: "Ziggurat Throne Palace", skin: "Overworld_House.png", color: 0xffd2965a, woodCost: 3, stoneCost: 7, condition: 52000, floorsCount: 7, footprint: "3x3", yardType: "Terraced Royal Gardens & Sun Altar" },
+  { id: "chieftain_pagoda", label: "Chieftain Pagoda Spire", skin: "Overworld_House.png", color: 0xff8b5a2b, woodCost: 6, stoneCost: 4, condition: 46000, floorsCount: 7, footprint: "3x3", yardType: "Tiered Pavilion Deck & Clan Banners" },
+  { id: "sanctuary_fortress", label: "Sanctuary Cathedral Keep", skin: "Overworld_House.png", color: 0xfff0e6d2, woodCost: 4, stoneCost: 6, condition: 50000, floorsCount: 7, footprint: "3x3", yardType: "Monumental Cloister & High Spire" },
+  { id: "monolith_castle", label: "Basalt Monolith Castle", skin: "Overworld_House.png", color: 0xff4a4a58, woodCost: 3, stoneCost: 7, condition: 60000, floorsCount: 7, footprint: "3x3", yardType: "Imposing Fortress Ramparts & Armory" },
+  { id: "imperial_palace", label: "Imperial Pavilion Citadel", skin: "Overworld_House.png", color: 0xffb47850, woodCost: 5, stoneCost: 5, condition: 54000, floorsCount: 7, footprint: "3x3", yardType: "Grand Imperial Plaza & Royal Stables" }
 ];
 
 export function pickWeightedHouseStyle(seed = Math.random()) {
-  // Weights inversely proportional to footprint area (w * h)
-  // Height does NOT decrease the chance!
+  // Smaller and lower (single-story, small footprint) buildings have much higher chance
   const weights = HOUSE_STYLES.map(s => {
     const [w, h] = (s.footprint || "1x1").split("x").map(Number);
     const area = (w || 1) * (h || 1);
-    return Math.max(1, Math.round(100 / area));
+    const floors = s.floorsCount || 1;
+    const vol = area * Math.pow(floors, 1.25);
+    return Math.max(1, Math.round(1000 / vol));
   });
   const totalWeight = weights.reduce((a, b) => a + b, 0);
   let r = (Math.abs(seed) % 1) * totalWeight;
@@ -893,7 +902,15 @@ export function createLeaderHouseEntity(x, y, group = null, leaderId = null, lea
   const gName = group?.name || "Clan";
   const gColor = group?.color !== undefined ? group.color : 0xffd700;
 
-  let variantIdx = forcedVariant !== null ? (Math.abs(forcedVariant) % LEADER_HOUSE_STYLES.length) : ((Math.abs(group?.id || 0) + Math.abs(x * 5 + y * 11)) % LEADER_HOUSE_STYLES.length);
+  let variantIdx = 0;
+  if (forcedVariant !== null) {
+    variantIdx = Math.abs(forcedVariant) % LEADER_HOUSE_STYLES.length;
+  } else if (group && group.id !== undefined) {
+    const rawGid = typeof group.id === "string" ? group.id.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0) : group.id;
+    variantIdx = Math.abs(rawGid) % LEADER_HOUSE_STYLES.length;
+  } else {
+    variantIdx = Math.abs(x * 5 + y * 11) % LEADER_HOUSE_STYLES.length;
+  }
   const def = LEADER_HOUSE_STYLES[variantIdx] || LEADER_HOUSE_STYLES[0];
 
   const rot = rotation !== null ? (Math.abs(rotation) % 4) : 0;
@@ -975,13 +992,16 @@ export function createLeaderHouseEntity(x, y, group = null, leaderId = null, lea
  */
 export function createWarehouseEntity(x, y, group = null, variant = 0) {
   const gName = group?.name || "Clan";
+  const gId = group?.id || null;
   const label = variant === 1 ? `Masonry Depot of ${gName}` : `Grand Warehouse of ${gName}`;
-  return createEntity(
+  const ent = createEntity(
     {
       name: label,
       species: "structure",
+      group: group,
+      groupId: gId,
       warehouse: {
-        groupId: group?.id || null,
+        groupId: gId,
         groupName: gName,
         variant: variant,
         items: [],
@@ -993,12 +1013,13 @@ export function createWarehouseEntity(x, y, group = null, variant = 0) {
         isCompleted: false
       },
       structure: { condition: 15000, maxCondition: 15000, defense: 110 },
-      render: { skin: "Feature_Wood.png", color: variant === 1 ? 0xffc8c8c8 : 0xffd4a373, backcolor: 0xff3b271a },
+      render: { skin: "Feature_Wood.png", color: group?.color !== undefined ? group.color : (variant === 1 ? 0xffc8c8c8 : 0xffd4a373), backcolor: 0xff3b271a },
       blocking: true
     },
     x,
     y
   );
+  return ent;
 }
 
 /**
@@ -1006,12 +1027,15 @@ export function createWarehouseEntity(x, y, group = null, variant = 0) {
  */
 export function createArtisanHutEntity(x, y, group = null) {
   const gName = group?.name || "Clan";
+  const gId = group?.id || null;
   return createEntity(
     {
       name: `Cabana do Artesão de ${gName}`,
       species: "structure",
+      group: group,
+      groupId: gId,
       artisan_hut: {
-        groupId: group?.id || null,
+        groupId: gId,
         woodCost: 6,
         stoneCost: 4,
         woodCurrent: 0,
@@ -1019,7 +1043,7 @@ export function createArtisanHutEntity(x, y, group = null) {
         isCompleted: false
       },
       structure: { condition: 12000, maxCondition: 12000, defense: 90 },
-      render: { skin: "Feature_Cauldron.png", color: 0xffd4a373, backcolor: 0xff5c4033 },
+      render: { skin: "Feature_Cauldron.png", color: group?.color !== undefined ? group.color : 0xffd4a373, backcolor: 0xff5c4033 },
       blocking: true
     },
     x,
@@ -1033,13 +1057,16 @@ export function createArtisanHutEntity(x, y, group = null) {
  */
 export function createSlaughterhouseEntity(x, y, group = null, variant = 0) {
   const gName = group?.name || "Clan";
+  const gId = group?.id || null;
   const label = variant === 1 ? `Stone Abattoir of ${gName}` : `Timber Slaughterhouse of ${gName}`;
   return createEntity(
     {
       name: label,
       species: "structure",
+      group: group,
+      groupId: gId,
       slaughterhouse: {
-        groupId: group?.id || null,
+        groupId: gId,
         groupName: gName,
         variant: variant,
         woodCost: variant === 1 ? 4 : 6,
@@ -1051,7 +1078,7 @@ export function createSlaughterhouseEntity(x, y, group = null, variant = 0) {
         hangingMeat: []
       },
       structure: { condition: 14000, maxCondition: 14000, defense: 100 },
-      render: { skin: "Feature_Cauldron.png", color: 0xffe65a5a, backcolor: 0xff3b1a1a },
+      render: { skin: "Feature_Cauldron.png", color: group?.color !== undefined ? group.color : 0xffe65a5a, backcolor: 0xff3b1a1a },
       blocking: true
     },
     x,
@@ -1065,13 +1092,16 @@ export function createSlaughterhouseEntity(x, y, group = null, variant = 0) {
  */
 export function createKitchenEntity(x, y, group = null, variant = 0) {
   const gName = group?.name || "Clan";
+  const gId = group?.id || null;
   const label = variant === 1 ? `Smokery & Kitchen of ${gName}` : `Bakery & Kitchen of ${gName}`;
   return createEntity(
     {
       name: label,
       species: "structure",
+      group: group,
+      groupId: gId,
       kitchen: {
-        groupId: group?.id || null,
+        groupId: gId,
         groupName: gName,
         variant: variant,
         woodCost: variant === 1 ? 6 : 4,
@@ -1083,7 +1113,7 @@ export function createKitchenEntity(x, y, group = null, variant = 0) {
         preparedMeals: []
       },
       structure: { condition: 12000, maxCondition: 12000, defense: 90 },
-      render: { skin: "Feature_Cauldron.png", color: 0xfffaa03c, backcolor: 0xff3b271a },
+      render: { skin: "Feature_Cauldron.png", color: group?.color !== undefined ? group.color : 0xfffaa03c, backcolor: 0xff3b271a },
       blocking: true
     },
     x,
@@ -1246,12 +1276,15 @@ export function createGourmetBento(x, y, sourceName = "Game") {
  */
 export function createWaterWellEntity(x, y, group = null) {
   const gName = group?.name || "Clan";
+  const gId = group?.id || null;
   return createEntity(
     {
       name: `Water Well of ${gName}`,
       species: "structure",
+      group: group,
+      groupId: gId,
       well: {
-        groupId: group?.id || null,
+        groupId: gId,
         groupName: gName,
         stoneCost: 4,
         woodCost: 2,
@@ -1261,7 +1294,7 @@ export function createWaterWellEntity(x, y, group = null) {
       },
       isWell: true,
       structure: { condition: 8000, maxCondition: 8000, defense: 80 },
-      render: { skin: "Feature_Cauldron.png", color: 0xff3cbcfc, backcolor: 0xff284064 },
+      render: { skin: "Feature_Cauldron.png", color: group?.color !== undefined ? group.color : 0xff3cbcfc, backcolor: 0xff284064 },
       blocking: true
     },
     x,
@@ -3424,19 +3457,30 @@ export function initClanRoadNetwork(group) {
     }
   }
 
-  // Connect Plaza Buildings if already established
+  // Connect Plaza Buildings if already established (connecting doorway adjacent tile to main thoroughfare)
   const plaza = group._plaza;
   if (plaza) {
-    for (const bKey of ["warehouse", "well", "campfire", "kitchen", "slaughterhouse"]) {
+    for (const bKey of ["warehouse", "well", "campfire", "kitchen", "slaughterhouse", "artisan_hut", "leader_house"]) {
       const b = plaza[bKey];
       if (b && isLandTile(b.x, b.y)) {
-        // Connect building doorstep to nearest main road tile
-        const dx = Math.sign(baseX - b.x);
-        const dy = Math.sign(baseY - b.y);
-        let cx = b.x;
-        let cy = b.y;
+        // Find doorway tile right outside building footprint
+        const fpW = (bKey === "leader_house" ? 3 : (bKey === "warehouse" || bKey === "slaughterhouse" || bKey === "kitchen" || bKey === "artisan_hut" ? 2 : 1));
+        const fpH = fpW;
+        const doorX = b.x + Math.floor(fpW / 2);
+        const doorY = (b.y > baseY) ? (b.y - 1) : (b.y + fpH);
+        
+        const dx = Math.sign(baseX - doorX);
+        const dy = Math.sign(baseY - doorY);
+        let cx = doorX;
+        let cy = doorY;
         for (let step = 0; step < 8; step++) {
           if (roadMap.has(`${cx}_${cy}`)) break;
+          // Ensure connector doesn't cross the building footprint itself
+          if (cx >= b.x && cx < b.x + fpW && cy >= b.y && cy < b.y + fpH) {
+            if (cx !== baseX) cx += dx;
+            else if (cy !== baseY) cy += dy;
+            continue;
+          }
           if (isLandTile(cx, cy)) {
             setTile(cx, cy);
             maybeClaimZone(cx, cy);
@@ -3622,32 +3666,81 @@ export function initClanPlaza(group) {
     }
   }
 
-  const plazaPicks = [];
-  if (existingWh) plazaPicks.push(existingWh);
-  if (existingCf) plazaPicks.push(existingCf);
-  if (existingWell) plazaPicks.push(existingWell);
+  const plazaPicks = {};
+  const occupiedPlazaTiles = new Set();
 
-  for (const t of validTiles) {
-    if (plazaPicks.every(p => Math.max(Math.abs(t.x - p.x), Math.abs(t.y - p.y)) >= 2)) {
-      plazaPicks.push(t);
-      if (plazaPicks.length >= 6) break;
+  function isAreaFree(px, py, pw, ph) {
+    for (let dx = 0; dx < pw; dx++) {
+      for (let dy = 0; dy < ph; dy++) {
+        const x = px + dx;
+        const y = py + dy;
+        const tk = `${x}_${y}`;
+        if (occupiedPlazaTiles.has(tk) || plannedRoadSet.has(tk) || isRoadTile(x, y) || !isLandTile(x, y) || !isTileInClaimedZones(x, y, group.claimedZones)) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  function reserveArea(px, py, pw, ph) {
+    for (let dx = 0; dx < pw; dx++) {
+      for (let dy = 0; dy < ph; dy++) {
+        occupiedPlazaTiles.add(`${px + dx}_${py + dy}`);
+      }
     }
   }
 
-  const whPos = existingWh || plazaPicks[0] || validTiles[0] || { x: baseX + 2, y: baseY + 2 };
-  const cfPos = existingCf || plazaPicks[1] || validTiles[1] || { x: baseX - 2, y: baseY + 2 };
-  const wellPos = existingWell || plazaPicks[2] || validTiles[2] || { x: baseX + 2, y: baseY - 2 };
-  const shPos = plazaPicks[3] || validTiles[3] || { x: baseX - 3, y: baseY - 2 };
-  const kitPos = plazaPicks[4] || validTiles[4] || { x: baseX + 3, y: baseY + 2 };
-  const artPos = plazaPicks[5] || validTiles[5] || { x: baseX - 2, y: baseY + 3 };
+  // Desired building sizes for the plaza
+  const plazaDefs = [
+    { key: "leader_house", w: 3, h: 3, preferredDx: -1, preferredDy: 2 },
+    { key: "warehouse", w: 2, h: 2, preferredDx: -4, preferredDy: -3 },
+    { key: "campfire", w: 1, h: 1, preferredDx: 2, preferredDy: -1 },
+    { key: "well", w: 1, h: 1, preferredDx: 3, preferredDy: 2 },
+    { key: "slaughterhouse", w: 2, h: 2, preferredDx: -4, preferredDy: 2 },
+    { key: "kitchen", w: 2, h: 2, preferredDx: 2, preferredDy: -4 },
+    { key: "artisan_hut", w: 2, h: 2, preferredDx: -1, preferredDy: -4 }
+  ];
+
+  for (const def of plazaDefs) {
+    let placed = false;
+    // 1. Try preferred position
+    const pX = baseX + def.preferredDx;
+    const pY = baseY + def.preferredDy;
+    if (isAreaFree(pX, pY, def.w, def.h)) {
+      plazaPicks[def.key] = { x: pX, y: pY };
+      reserveArea(pX, pY, def.w, def.h);
+      placed = true;
+    } else {
+      // 2. Search outwardly in spiral for a valid clear rectangle
+      for (let r = 1; r <= 15 && !placed; r++) {
+        for (let dy = -r; dy <= r && !placed; dy++) {
+          for (let dx = -r; dx <= r && !placed; dx++) {
+            const candX = baseX + dx;
+            const candY = baseY + dy;
+            if (isAreaFree(candX, candY, def.w, def.h)) {
+              plazaPicks[def.key] = { x: candX, y: candY };
+              reserveArea(candX, candY, def.w, def.h);
+              placed = true;
+            }
+          }
+        }
+      }
+    }
+    if (!placed) {
+      plazaPicks[def.key] = { x: pX, y: pY };
+      reserveArea(pX, pY, def.w, def.h);
+    }
+  }
 
   group._plaza = {
-    warehouse: whPos,
-    campfire: cfPos,
-    well: wellPos,
-    slaughterhouse: shPos,
-    kitchen: kitPos,
-    artisan_hut: artPos
+    warehouse: existingWh || plazaPicks.warehouse,
+    campfire: existingCf || plazaPicks.campfire,
+    well: existingWell || plazaPicks.well,
+    slaughterhouse: plazaPicks.slaughterhouse,
+    kitchen: plazaPicks.kitchen,
+    artisan_hut: plazaPicks.artisan_hut,
+    leader_house: plazaPicks.leader_house
   };
 
   return group._plaza;
@@ -3723,8 +3816,6 @@ export function getClanBlueprintTiles(group) {
 
   const whX = warehouseEnt ? warehouseEnt.x : (plaza?.warehouse?.x ?? 0);
   const whY = warehouseEnt ? warehouseEnt.y : (plaza?.warehouse?.y ?? 0);
-  tiles.push({ x: whX, y: whY, type: "warehouse" });
-  occupiedTiles.add(`${whX}_${whY}`);
 
   const cfX = campfireEnt ? campfireEnt.x : (plaza?.campfire?.x ?? (whX - 2));
   const cfY = campfireEnt ? campfireEnt.y : (plaza?.campfire?.y ?? (whY + 2));
@@ -3760,6 +3851,14 @@ export function getClanBlueprintTiles(group) {
   const artX = artisanHutEnt ? artisanHutEnt.x : (plaza?.artisan_hut?.x ?? (whX - 2));
   const artY = artisanHutEnt ? artisanHutEnt.y : (plaza?.artisan_hut?.y ?? (whY + 3));
   markOccupied(artX, artY, 2, 2, "artisan_hut");
+
+  // Leader Palace in Plaza (3x3 Footprint) - Every village must have one!
+  const leaderIdVal = group.leaderId || (members.length > 0 ? members[0] : null);
+  if (plaza?.leader_house) {
+    const lhX = plaza.leader_house.x;
+    const lhY = plaza.leader_house.y;
+    markOccupied(lhX, lhY, 3, 3, "leader_house", { ownerId: leaderIdVal, isLeaderHouse: true });
+  }
 
   // Register existing entities in claimed zones with full multi-tile footprints
   for (const ent of entityRegistry.values()) {
@@ -3804,12 +3903,6 @@ export function getClanBlueprintTiles(group) {
 
   collectCandidatePlots();
 
-  if (candidatePlots.length < Math.max(6, members.length + 2)) {
-    expandClanRoadNetwork(group, 2);
-    plannedRoadSet = new Set((group._plannedRoads || []).map(r => `${r.x}_${r.y}`));
-    collectCandidatePlots();
-  }
-
   candidatePlots.sort((a, b) => {
     const da = Math.abs(a.x - whX) + Math.abs(a.y - whY);
     const db = Math.abs(b.x - whX) + Math.abs(b.y - whY);
@@ -3846,21 +3939,24 @@ export function getClanBlueprintTiles(group) {
     return true;
   }
 
-  for (let mIdx = 0; mIdx < members.length; mIdx++) {
-    const ownerId = members[mIdx];
-    const hasHouse = tiles.some(t => (t.type === "house" || t.type === "leader_house") && t.ownerId === ownerId);
+  // Prioritize the clan leader so the 3x3 Leader Palace is always planned first
+  const orderedMembers = [...members].sort((a, b) => (a === group.leaderId ? -1 : (b === group.leaderId ? 1 : 0)));
+
+  for (let mIdx = 0; mIdx < orderedMembers.length; mIdx++) {
+    const ownerId = orderedMembers[mIdx];
+    const isLeader = (ownerId === group.leaderId);
+    const hasHouse = tiles.some(t => (isLeader ? t.type === "leader_house" : t.type === "house") && t.ownerId === ownerId);
     if (!hasHouse) {
-      const vacantTile = tiles.find(t => (t.type === "house" || t.type === "leader_house") && (!t.ownerId || !memberSet.has(t.ownerId)));
+      const vacantTile = tiles.find(t => (!t.ownerId || !memberSet.has(t.ownerId)) && (isLeader ? t.type === "leader_house" : t.type === "house"));
       if (vacantTile) {
         vacantTile.ownerId = ownerId;
         continue;
       }
 
-      // Check if this member is the clan leader and leader house does not exist yet
-      const isLeader = (ownerId === group.leaderId) && !tiles.some(t => t.type === "leader_house");
+      const needsLeaderPlot = isLeader && !tiles.some(t => t.type === "leader_house");
       let houseFpW = 1, houseFpH = 1, isLeaderPlot = false;
 
-      if (isLeader) {
+      if (needsLeaderPlot) {
         houseFpW = 3;
         houseFpH = 3;
         isLeaderPlot = true;
@@ -3889,7 +3985,7 @@ export function getClanBlueprintTiles(group) {
           }
           if (!validSaved) break;
         }
-        if (validSaved && isFarEnoughFromBuildings(p.x, p.y, tiles, 1, houseFpW, houseFpH)) {
+        if (validSaved && isFarEnoughFromBuildings(p.x, p.y, tiles, 0, houseFpW, houseFpH)) {
           chosenPlot = p;
         }
       }
@@ -3920,7 +4016,7 @@ export function getClanBlueprintTiles(group) {
             }
 
             if (!allTilesFree) continue;
-            if (!isFarEnoughFromBuildings(cp.x, cp.y, tiles, 1, houseFpW, houseFpH)) continue;
+            if (!isFarEnoughFromBuildings(cp.x, cp.y, tiles, 0, houseFpW, houseFpH)) continue;
 
             // Calculate min distance to any other existing building
             let minBuildingDist = 999;
@@ -3930,7 +4026,7 @@ export function getClanBlueprintTiles(group) {
             }
 
             const distToPlaza = Math.hypot(cp.x - whX, cp.y - whY);
-            const score = (minBuildingDist >= 2.0 ? 20 : 5) + Math.min(10, minBuildingDist) - (distToPlaza * 0.25);
+            const score = (minBuildingDist >= 1.0 ? 15 : 10) + Math.min(5, minBuildingDist) - (distToPlaza * 0.15);
 
             if (score > bestScore) {
               bestScore = score;
@@ -3971,7 +4067,7 @@ export function getClanBlueprintTiles(group) {
                 }
 
                 if (!allFree) continue;
-                if (!isFarEnoughFromBuildings(px, py, tiles, 1, houseFpW, houseFpH)) continue;
+                if (!isFarEnoughFromBuildings(px, py, tiles, 0, houseFpW, houseFpH)) continue;
 
                 bestCandidate = { x: px, y: py };
                 break;
@@ -5992,7 +6088,7 @@ export function createGroupMemberProp() {
             } else if (bp.type === "well") {
               const wl = getEntityAtTileByProp(bp.x, bp.y, "well");
               if (!wl || !wl.properties.well?.isCompleted) { needsWood = true; needsStone = true; }
-            } else if (bp.type === "house") {
+            } else if (bp.type === "house" || bp.type === "leader_house") {
               const h = getEntityAtTileByProp(bp.x, bp.y, "house");
               if (!h || !h.properties.house?.isCompleted) { needsWood = true; needsStone = true; }
             } else if (bp.type === "wall") {
@@ -6032,15 +6128,21 @@ export function createGroupMemberProp() {
         const blueprint = getClanBlueprintTiles(group);
         let bp = null;
         if (ent._buildTarget) {
-          const targetDist = Math.max(Math.abs(ent._buildTarget.x - ent.x), Math.abs(ent._buildTarget.y - ent.y));
-          if (targetDist <= 1) {
+          const tFpW = ent._buildTarget.footprintW || (ent._buildTarget.type === "leader_house" ? 3 : (ent._buildTarget.type === "warehouse" || ent._buildTarget.type === "slaughterhouse" || ent._buildTarget.type === "kitchen" || ent._buildTarget.type === "artisan_hut" ? 2 : 1));
+          const tFpH = ent._buildTarget.footprintH || (ent._buildTarget.type === "leader_house" ? 3 : (ent._buildTarget.type === "warehouse" || ent._buildTarget.type === "slaughterhouse" || ent._buildTarget.type === "kitchen" || ent._buildTarget.type === "artisan_hut" ? 2 : 1));
+          const dx = Math.max(0, Math.max(ent._buildTarget.x - ent.x, ent.x - (ent._buildTarget.x + tFpW - 1)));
+          const dy = Math.max(0, Math.max(ent._buildTarget.y - ent.y, ent.y - (ent._buildTarget.y + tFpH - 1)));
+          if (Math.max(dx, dy) <= 1) {
             bp = ent._buildTarget;
           }
         }
         if (!bp) {
           for (const b of blueprint) {
-            const d = Math.max(Math.abs(b.x - ent.x), Math.abs(b.y - ent.y));
-            if (d <= 1) {
+            const bFpW = b.footprintW || (b.type === "leader_house" ? 3 : (b.type === "warehouse" || b.type === "slaughterhouse" || b.type === "kitchen" || b.type === "artisan_hut" ? 2 : 1));
+            const bFpH = b.footprintH || (b.type === "leader_house" ? 3 : (b.type === "warehouse" || b.type === "slaughterhouse" || b.type === "kitchen" || b.type === "artisan_hut" ? 2 : 1));
+            const dx = Math.max(0, Math.max(b.x - ent.x, ent.x - (b.x + bFpW - 1)));
+            const dy = Math.max(0, Math.max(b.y - ent.y, ent.y - (b.y + bFpH - 1)));
+            if (Math.max(dx, dy) <= 1) {
               bp = b;
               break;
             }
@@ -6068,7 +6170,11 @@ export function createGroupMemberProp() {
         }
 
         if (bp) {
-          const dist = Math.max(Math.abs(bp.x - ent.x), Math.abs(bp.y - ent.y));
+          const bpFpW = bp.footprintW || (bp.type === "leader_house" ? 3 : (bp.type === "warehouse" || bp.type === "slaughterhouse" || bp.type === "kitchen" || bp.type === "artisan_hut" ? 2 : 1));
+          const bpFpH = bp.footprintH || (bp.type === "leader_house" ? 3 : (bp.type === "warehouse" || bp.type === "slaughterhouse" || bp.type === "kitchen" || bp.type === "artisan_hut" ? 2 : 1));
+          const distDx = Math.max(0, Math.max(bp.x - ent.x, ent.x - (bp.x + bpFpW - 1)));
+          const distDy = Math.max(0, Math.max(bp.y - ent.y, ent.y - (bp.y + bpFpH - 1)));
+          const dist = Math.max(distDx, distDy);
 
           if (bp.type === "warehouse") {
             const warehouseEntity = getEntityAtTileByProp(bp.x, bp.y, "warehouse");
@@ -6573,7 +6679,7 @@ let freeArm = null; for (const k in ent.properties) { const p = ent.properties[k
                 return;
               }
             }
-          } else if (bp.type === "house") {
+          } else if (bp.type === "house" || bp.type === "leader_house") {
             const houseEntity = getEntityAtTileByProp(bp.x, bp.y, "house");
             if (!houseEntity && dist <= 1 && this.actionTimer >= 0.20) {
               // Initiate new house construction site
@@ -6692,11 +6798,16 @@ let freeArm = null; for (const k in ent.properties) { const p = ent.properties[k
                   if (!h.ownerId || !getEntityById(h.ownerId) || getEntityById(h.ownerId).destroyed) {
                     const existingHouses = entities.filter(e => !e.destroyed && e.properties.house?.ownerId && e !== houseEntity);
                     const housedIds = new Set(existingHouses.map(e => e.properties.house.ownerId));
-                    const homeless = (group.members || []).map(id => getEntityById(id)).find(m => m && !m.destroyed && m.properties.life && !housedIds.has(m.id));
+                    const isLeaderHouse = !!h.isLeaderHouse;
+                    const homeless = (group.members || []).map(id => getEntityById(id)).find(m => {
+                      if (!m || m.destroyed || !m.properties.life || housedIds.has(m.id)) return false;
+                      if (isLeaderHouse) return m.id === group.leaderId;
+                      return m.id !== group.leaderId;
+                    });
                     if (homeless) {
                       h.ownerId = homeless.id;
                       h.ownerName = homeless.properties.name;
-                      houseEntity.properties.name = `Cottage of ${homeless.properties.name}`;
+                      houseEntity.properties.name = isLeaderHouse ? `Grand Palace of ${homeless.properties.name}` : `Cottage of ${homeless.properties.name}`;
                     }
                   }
                   recordWorldEvent({
@@ -6777,7 +6888,7 @@ let freeArm = null; for (const k in ent.properties) { const p = ent.properties[k
           } else if (bp.type === "gate" || bp.type === "door") {
             const g = getEntityAtTileByProp(bp.x, bp.y, "door");
             return !g || !g.isConstructed;
-          } else if (bp.type === "house") {
+          } else if (bp.type === "house" || bp.type === "leader_house") {
             const h = getEntityAtTileByProp(bp.x, bp.y, "house");
             return !h || !h.properties.house?.isCompleted;
           } else if (bp.type === "wall") {
@@ -6923,7 +7034,7 @@ let freeArm = null; for (const k in ent.properties) { const p = ent.properties[k
             } else if (bp.type === "well") {
               const wl = getEntityAtTileByProp(bp.x, bp.y, "well");
               if (!wl || !wl.properties.well?.isCompleted) { needsWood = true; needsStone = true; }
-            } else if (bp.type === "house") {
+            } else if (bp.type === "house" || bp.type === "leader_house") {
               const hs = getEntityAtTileByProp(bp.x, bp.y, "house");
               if (!hs || !hs.properties.house?.isCompleted) { needsWood = true; needsStone = true; }
             }
@@ -7109,7 +7220,7 @@ let freeArm = null; for (const k in ent.properties) { const p = ent.properties[k
               totalWoodNeeded += Math.max(0, (w.woodCost ?? 2) - (w.woodCurrent || 0));
               totalStoneNeeded += Math.max(0, (w.stoneCost ?? 4) - (w.stoneCurrent || 0));
             }
-          } else if (bp.type === "house") {
+          } else if (bp.type === "house" || bp.type === "leader_house") {
             const h = getEntityAtTileByProp(bp.x, bp.y, "house");
             if (!h) { totalWoodNeeded += 3; totalStoneNeeded += 2; }
             else if (!h.properties.house?.isCompleted) {
@@ -8057,7 +8168,7 @@ export function evaluateAndAssignClanRoles(group, entities, world) {
     } else if (bp.type === "gate" || bp.type === "door") {
       const hasDoor = !!getEntityAtTileByProp(bp.x, bp.y, "door");
       if (!hasDoor) unbuiltCount++;
-    } else if (bp.type === "house") {
+    } else if (bp.type === "house" || bp.type === "leader_house") {
       const h = getEntityAtTileByProp(bp.x, bp.y, "house");
       if (!h || !h.properties.house?.isCompleted) unbuiltCount++;
     } else {
@@ -8697,7 +8808,7 @@ export function createLocomotionProp() {
 
           // Priority 2.0: Own House (Top Personal Priority) -> Other Houses -> Settlement Infrastructure
           for (const bp of blueprint) {
-            if (bp.type === "house") {
+            if (bp.type === "house" || bp.type === "leader_house") {
               const houseEnt = getEntityAtTileByProp(bp.x, bp.y, "house");
               let needsThisMat = false;
               if (!houseEnt) {
@@ -8719,7 +8830,7 @@ export function createLocomotionProp() {
                 const weightDist = isOwnHouse ? dist * 0.05 : dist * 0.25;
                 if (weightDist < minBuildDist) {
                   minBuildDist = weightDist;
-                  targetBuild = { x: bp.x, y: bp.y, type: "house" };
+                  targetBuild = { x: bp.x, y: bp.y, type: bp.type };
                 }
               }
             } else if (bp.type === "warehouse") {
@@ -9012,7 +9123,7 @@ export function createLocomotionProp() {
                 totalWoodNeeded += Math.max(0, (w.woodCost ?? 2) - (w.woodCurrent || 0));
                 totalStoneNeeded += Math.max(0, (w.stoneCost ?? 4) - (w.stoneCurrent || 0));
               }
-            } else if (bp.type === "house") {
+            } else if (bp.type === "house" || bp.type === "leader_house") {
               const h = getEntityAtTileByProp(bp.x, bp.y, "house");
               if (!h) { totalWoodNeeded += 3; totalStoneNeeded += 2; }
               else if (!h.properties.house?.isCompleted) {
@@ -11779,8 +11890,34 @@ export function createEmbarkParty(centerX, centerY, world, entities, customOpts 
     { id: 4, type: "meeting", zx: Math.floor(centerX / currentZoneSize), zy: Math.floor(centerY / currentZoneSize), name: "Sala de Reunião", assignedMembers: [] }
   ];
 
-  // Spawn only essential starting stockpile items (1 wood log, 1 stone block, 1 fruit, 1 seed)
+  // Spawn Clan Plaza Leader Palace & Central Hearth directly on embark for every clan!
   if (entities) {
+    const plaza = clan._plaza || initClanPlaza(clan);
+    if (plaza?.leader_house) {
+      const lhX = plaza.leader_house.x;
+      const lhY = plaza.leader_house.y;
+      const leaderTower = createLeaderHouseEntity(lhX, lhY, clan, founder.id, founder.properties.name);
+      if (leaderTower) {
+        leaderTower.properties.group = clan;
+        leaderTower.properties.groupId = clan.id;
+        leaderTower.properties.house.isCompleted = true;
+        leaderTower.properties.house.woodCurrent = leaderTower.properties.house.woodCost;
+        leaderTower.properties.house.stoneCurrent = leaderTower.properties.house.stoneCost;
+        entities.push(leaderTower);
+        registerEntitySpatial(leaderTower);
+      }
+    }
+
+    if (plaza?.campfire) {
+      const cf = createCampfireEntity(plaza.campfire.x, plaza.campfire.y);
+      if (cf) {
+        cf.isConstructed = true;
+        if (cf.properties?.campfire) cf.properties.campfire.isLit = true;
+        entities.push(cf);
+        registerEntitySpatial(cf);
+      }
+    }
+
     const starterItems = [
       createWoodItem(centerX + 1, centerY - 1),
       createStoneItem(centerX - 1, centerY - 1),

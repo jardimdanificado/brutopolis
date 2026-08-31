@@ -691,8 +691,15 @@ export class Renderer {
           }
         }
         const entTex = findTexture(entSkin);
-        const fpW = isHouse ? (e.properties.house?.footprintW || (e.properties.house?.footprint ? Number(e.properties.house.footprint.split("x")[0]) : 1) || 1) : 1;
-        const fpH = isHouse ? (e.properties.house?.footprintH || (e.properties.house?.footprint ? Number(e.properties.house.footprint.split("x")[1]) : 1) || 1) : 1;
+        let fpW = 1, fpH = 1;
+        if (isHouse) {
+          fpW = e.properties.house?.footprintW || (e.properties.house?.footprint ? Number(e.properties.house.footprint.split("x")[0]) : 1) || 1;
+          fpH = e.properties.house?.footprintH || (e.properties.house?.footprint ? Number(e.properties.house.footprint.split("x")[1]) : 1) || 1;
+        } else if (e.properties.leaderHouse) {
+          fpW = 3; fpH = 3;
+        } else if (isWarehouse || isSlaughterhouse || isKitchen) {
+          fpW = 2; fpH = 2;
+        }
         const renderW = fpW * tileSize;
         const renderH = fpH * tileSize;
 
