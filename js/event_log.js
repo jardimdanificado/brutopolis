@@ -502,9 +502,10 @@ let _lastClusteredEventCount = -1;
 let _cachedGlobalBattles = [];
 
 export function getClusteredBattles({ entityId = null, groupId = null, limit = 50 } = {}) {
-  let allClustered = _cachedGlobalBattles;
+  // Recompute only when new events have been added
   if (_lastClusteredEventCount !== allEvents.length) {
     _lastClusteredEventCount = allEvents.length;
+
     const combatEvents = allEvents.filter(ev => {
       return ev.type === "ATTACK" || ev.type === "AMPUTATION" || (ev.type === "DEATH" && (ev.metadata?.attackerId || ev.metadata?.fatalAttackerId || ev.metadata?.causedByBattleId));
     }).sort((a, b) => a.tick - b.tick);
@@ -512,20 +513,20 @@ export function getClusteredBattles({ entityId = null, groupId = null, limit = 5
     if (combatEvents.length === 0) {
       _cachedGlobalBattles = [];
     } else {
+      // Pre-build entity-pair -> pre-battle events lookup to avoid O(N²) per-battle scans
+      // Build a flat list of non-combat events sorted by tick for binary-search style lookup
+      const preCombatEvents = allEvents.filter(ev =>
+        ev.type !== "ATTACK" && ev.type !== "AMPUTATION"
+      ).sort((a, b) => a.tick - b.tick);
+
+      // Cluster combat events into battles
       const clusters = [];
-      let curCluster = null;
-
-      for (const ev of combatEvents) {
-        if (!curCluster) {
-          curCluster = [ev];
-          continue;
-        }
-
+      let curCluster = [combatEvents[0]];
+      for (let i = 1; i < combatEvents.length; i++) {
+        const ev = combatEvents[i];
         const prev = curCluster[curCluster.length - 1];
         const timeDelta = Math.abs(ev.tick - prev.tick);
         const distDelta = Math.hypot(ev.location.x - prev.location.x, ev.location.y - prev.location.y);
-
-        // Group events within 360 ticks (~6 seconds of combat) and within 20 tiles distance
         if (timeDelta <= 360 && distDelta <= 20) {
           curCluster.push(ev);
         } else {
@@ -533,154 +534,149 @@ export function getClusteredBattles({ entityId = null, groupId = null, limit = 5
           curCluster = [ev];
         }
       }
-      if (curCluster && curCluster.length > 0) {
-        clusters.push(curCluster);
-      }
-      curCluster = [ev];
-    }
-  }
-  if (curCluster && curCluster.length > 0) {
-    clusters.push(curCluster);
-  }
+      clusters.push(curCluster);
 
-  // Transform raw event clusters into rich Battle Records
-  const battles = [];
-  let battleIdx = 1;
+      // Transform clusters into rich Battle Records
+      const battles = [];
+      let battleIdx = 1;
 
-  for (const cluster of clusters) {
-    const firstEv = cluster[0];
-    const lastEv = cluster[cluster.length - 1];
+      for (const cluster of clusters) {
+        const firstEv = cluster[0];
+        const lastEv = cluster[cluster.length - 1];
 
-    const combatantsMap = new Map();
-    const clansSet = new Set();
-    let totalDamage = 0;
-    const amputations = [];
-    const fatalities = [];
+        const combatantsMap = new Map();
+        const clansSet = new Set();
+        let totalDamage = 0;
+        const amputations = [];
+        const fatalities = [];
 
-    const getOrAddCombatant = (id, name, clan) => {
-      if (!id) return null;
-      if (!combatantsMap.has(id)) {
-        combatantsMap.set(id, {
-          id,
-          name: name || `Entity #${id}`,
-          clan: clan || "Solitary",
-          hitsDealt: 0,
-          hitsTaken: 0,
-          damageDealt: 0,
-          damageTaken: 0,
-          amputationsDealt: 0,
-          amputationsSuffered: 0,
-          isDead: false
-        });
-      }
-      return combatantsMap.get(id);
-    };
+        const getOrAddCombatant = (id, name, clan) => {
+          if (!id) return null;
+          if (!combatantsMap.has(id)) {
+            combatantsMap.set(id, {
+              id,
+              name: name || `Entity #${id}`,
+              clan: clan || "Solitary",
+              hitsDealt: 0,
+              hitsTaken: 0,
+              damageDealt: 0,
+              damageTaken: 0,
+              amputationsDealt: 0,
+              amputationsSuffered: 0,
+              isDead: false
+            });
+          }
+          return combatantsMap.get(id);
+        };
 
-    for (const ev of cluster) {
-      const pId = ev.primaryEntityId;
-      const sId = ev.secondaryEntityId;
-      const pName = ev.metadata?.primaryName || ev.metadata?.attackerName;
-      const sName = ev.metadata?.secondaryName || ev.metadata?.targetName;
-      const pClan = ev.metadata?.attackerClan || ev.metadata?.primaryClan;
-      const sClan = ev.metadata?.targetClan || ev.metadata?.secondaryClan;
+        for (const ev of cluster) {
+          const pId = ev.primaryEntityId;
+          const sId = ev.secondaryEntityId;
+          const pName = ev.metadata?.primaryName || ev.metadata?.attackerName;
+          const sName = ev.metadata?.secondaryName || ev.metadata?.targetName;
+          const pClan = ev.metadata?.attackerClan || ev.metadata?.primaryClan;
+          const sClan = ev.metadata?.targetClan || ev.metadata?.secondaryClan;
 
-      const pCombatant = getOrAddCombatant(pId, pName, pClan);
-      const sCombatant = getOrAddCombatant(sId, sName, sClan);
+          const pCombatant = getOrAddCombatant(pId, pName, pClan);
+          const sCombatant = getOrAddCombatant(sId, sName, sClan);
 
-      if (pClan) clansSet.add(pClan);
-      if (sClan) clansSet.add(sClan);
+          if (pClan) clansSet.add(pClan);
+          if (sClan) clansSet.add(sClan);
 
-      if (ev.type === "ATTACK") {
-        const dmg = ev.metadata?.totalDamage || ev.metadata?.netDamage || 10;
-        totalDamage += dmg;
-        if (pCombatant) {
-          pCombatant.hitsDealt += (ev.count || 1);
-          pCombatant.damageDealt += dmg;
+          if (ev.type === "ATTACK") {
+            const dmg = ev.metadata?.totalDamage || ev.metadata?.netDamage || 10;
+            totalDamage += dmg;
+            if (pCombatant) {
+              pCombatant.hitsDealt += (ev.count || 1);
+              pCombatant.damageDealt += dmg;
+            }
+            if (sCombatant) {
+              sCombatant.hitsTaken += (ev.count || 1);
+              sCombatant.damageTaken += dmg;
+            }
+          } else if (ev.type === "AMPUTATION") {
+            if (pCombatant) pCombatant.amputationsDealt++;
+            if (sCombatant) pCombatant.amputationsSuffered++;
+            amputations.push({
+              attackerId: pId,
+              attackerName: pName,
+              victimId: sId,
+              victimName: sName,
+              partName: ev.metadata?.partName || "limb",
+              tick: ev.tick
+            });
+          } else if (ev.type === "DEATH") {
+            const victimId = pId || sId;
+            const victim = combatantsMap.get(victimId);
+            if (victim) victim.isDead = true;
+            fatalities.push({
+              victimId: victimId,
+              victimName: pName || sName,
+              killerId: ev.metadata?.attackerId || ev.metadata?.fatalAttackerId || pId,
+              killerName: ev.metadata?.attackerName,
+              tick: ev.tick
+            });
+          }
         }
-        if (sCombatant) {
-          sCombatant.hitsTaken += (ev.count || 1);
-          sCombatant.damageTaken += dmg;
+
+        const initiatorId = firstEv.primaryEntityId;
+        const initiatorName = firstEv.metadata?.primaryName || firstEv.metadata?.attackerName || `Entity #${initiatorId}`;
+        const initiatorClan = firstEv.metadata?.primaryClan || firstEv.metadata?.attackerClan || "Solitary";
+        const defenderId = firstEv.secondaryEntityId;
+        const defenderName = firstEv.metadata?.secondaryName || firstEv.metadata?.targetName || `Entity #${defenderId}`;
+        const defenderClan = firstEv.metadata?.secondaryClan || firstEv.metadata?.targetClan || "Solitary";
+
+        // Deduce Provocation: scan preCombatEvents in a narrow window (no full array scan per battle)
+        let triggerCause = "Territorial tension / Hostile encounter";
+        const minTick = firstEv.tick - 1800;
+        const maxTick = firstEv.tick;
+        for (let pi = preCombatEvents.length - 1; pi >= 0; pi--) {
+          const pEv = preCombatEvents[pi];
+          if (pEv.tick > maxTick) continue;
+          if (pEv.tick < minTick) break;
+          const involves = (
+            (pEv.primaryEntityId === initiatorId && pEv.secondaryEntityId === defenderId) ||
+            (pEv.primaryEntityId === defenderId && pEv.secondaryEntityId === initiatorId)
+          );
+          if (!involves) continue;
+          if (pEv.opcode === OP_INSULT || pEv.opcode === OP_HUMILIATE || pEv.opcode === OP_SPIT || pEv.opcode === OP_SHOVE) {
+            triggerCause = `Provoked by prior hostile confrontation (${pEv.description})`;
+            break;
+          } else if (pEv.opcode === OP_LIE) {
+            triggerCause = `Sparked by fabricated lie/accusation (${pEv.metadata?.narrative || pEv.description})`;
+            break;
+          } else if (pEv.opcode === OP_PROPOSAL_REJECTED) {
+            triggerCause = `Emotional fallout following courtship rejection`;
+            break;
+          }
         }
-      } else if (ev.type === "AMPUTATION") {
-        if (pCombatant) pCombatant.amputationsDealt++;
-        if (sCombatant) pCombatant.amputationsSuffered++;
-        amputations.push({
-          attackerId: pId,
-          attackerName: pName,
-          victimId: sId,
-          victimName: sName,
-          partName: ev.metadata?.partName || "limb",
-          tick: ev.tick
-        });
-      } else if (ev.type === "DEATH") {
-        const victimId = pId || sId;
-        const victim = combatantsMap.get(victimId);
-        if (victim) victim.isDead = true;
-        fatalities.push({
-          victimId: victimId,
-          victimName: pName || sName,
-          killerId: ev.metadata?.attackerId || ev.metadata?.fatalAttackerId || pId,
-          killerName: ev.metadata?.attackerName,
-          tick: ev.tick
+
+        const battleName = clansSet.size >= 2
+          ? `CLASH OF ${Array.from(clansSet).join(" vs ").toUpperCase()}`
+          : `SKIRMISH AT [X:${firstEv.location.x}, Y:${firstEv.location.y}]`;
+
+        battles.push({
+          id: battleIdx++,
+          name: battleName,
+          startTick: firstEv.tick,
+          endTick: lastEv.tick,
+          timestamp: firstEv.timestamp,
+          location: firstEv.location,
+          initiator: { id: initiatorId, name: initiatorName, clan: initiatorClan },
+          defender: { id: defenderId, name: defenderName, clan: defenderClan },
+          triggerCause,
+          combatants: Array.from(combatantsMap.values()),
+          clansInvolved: Array.from(clansSet),
+          totalDamage,
+          attacksCount: cluster.filter(e => e.type === "ATTACK").reduce((sum, e) => sum + (e.count || 1), 0),
+          amputations,
+          fatalities,
+          events: cluster
         });
       }
+
+      _cachedGlobalBattles = battles;
     }
-
-    const initiatorId = firstEv.primaryEntityId;
-    const initiatorName = firstEv.metadata?.primaryName || firstEv.metadata?.attackerName || `Entity #${initiatorId}`;
-    const initiatorClan = firstEv.metadata?.primaryClan || firstEv.metadata?.attackerClan || "Solitary";
-    const defenderId = firstEv.secondaryEntityId;
-    const defenderName = firstEv.metadata?.secondaryName || firstEv.metadata?.targetName || `Entity #${defenderId}`;
-    const defenderClan = firstEv.metadata?.secondaryClan || firstEv.metadata?.targetClan || "Solitary";
-
-    // Deduce Provocation / Estopim from previous events before battle start
-    let triggerCause = "Territorial tension / Hostile encounter";
-    const preBattleEvents = allEvents.filter(ev => {
-      return ev.tick < firstEv.tick && ev.tick >= firstEv.tick - 1800 && (
-        (ev.primaryEntityId === initiatorId && ev.secondaryEntityId === defenderId) ||
-        (ev.primaryEntityId === defenderId && ev.secondaryEntityId === initiatorId)
-      );
-    });
-
-    for (const pEv of preBattleEvents.reverse()) {
-      if (pEv.opcode === OP_INSULT || pEv.opcode === OP_HUMILIATE || pEv.opcode === OP_SPIT || pEv.opcode === OP_SHOVE) {
-        triggerCause = `Provoked by prior hostile confrontation (${pEv.description})`;
-        break;
-      } else if (pEv.opcode === OP_LIE) {
-        triggerCause = `Sparked by fabricated lie/accusation (${pEv.metadata?.narrative || pEv.description})`;
-        break;
-      } else if (pEv.opcode === OP_PROPOSAL_REJECTED) {
-        triggerCause = `Emotional fallout following courtship rejection`;
-        break;
-      }
-    }
-
-    const battleName = clansSet.size >= 2
-      ? `CLASH OF ${Array.from(clansSet).join(" vs ").toUpperCase()}`
-      : `SKIRMISH AT [X:${firstEv.location.x}, Y:${firstEv.location.y}]`;
-
-    const battleRecord = {
-      id: battleIdx++,
-      name: battleName,
-      startTick: firstEv.tick,
-      endTick: lastEv.tick,
-      timestamp: firstEv.timestamp,
-      location: firstEv.location,
-      initiator: { id: initiatorId, name: initiatorName, clan: initiatorClan },
-      defender: { id: defenderId, name: defenderName, clan: defenderClan },
-      triggerCause,
-      combatants: Array.from(combatantsMap.values()),
-      clansInvolved: Array.from(clansSet),
-      totalDamage,
-      attacksCount: cluster.filter(e => e.type === "ATTACK").reduce((sum, e) => sum + (e.count || 1), 0),
-      amputations,
-      fatalities,
-      events: cluster
-    };
-
-    battles.push(battleRecord);
-  }
-  _cachedGlobalBattles = battles;
   }
 
   let filtered = _cachedGlobalBattles;

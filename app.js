@@ -2,8 +2,8 @@
 // Brutopolis
 // =============================================================================
 
-const BrutopolisVersion = "0.118.1";
-const BrutopolisVersionName = "Heaven Sees You";
+const BrutopolisVersion = "0.118.2";
+const BrutopolisVersionName = "\"Now the whole earth had one language and the same words.\"";
 
 // WASM replaced by Pure JS Renderer
 import { World } from "./js/world.js";
@@ -2481,18 +2481,18 @@ function renderFamilyTab(mx, my, mw, mh, target) {
   for (const child of treeData.children) {
     const fId = child.properties?.life?.fatherId;
     const mId = child.properties?.life?.motherId;
-    
+
     if (currentPartner) {
-       if (fId === currentPartner.id || mId === currentPartner.id) {
-         legitimate.push({ role: "LEGITIMATE CHILD", ent: child });
-       } else {
-         bastards.push({ role: "BASTARD CHILD", ent: child });
-       }
+      if (fId === currentPartner.id || mId === currentPartner.id) {
+        legitimate.push({ role: "LEGITIMATE CHILD", ent: child });
+      } else {
+        bastards.push({ role: "BASTARD CHILD", ent: child });
+      }
     } else {
-       legitimate.push({ role: "CHILD", ent: child });
+      legitimate.push({ role: "CHILD", ent: child });
     }
   }
-  
+
   if (legitimate.length > 0) {
     sections.push({ title: `LEGITIMATE OFFSPRING (${legitimate.length})`, members: legitimate });
   }
@@ -6105,7 +6105,7 @@ function renderTitleScreen() {
   }
 
   // Button 1: NEW WORLD / CUSTOM WORLD GENERATOR
-  drawNESButton(menuBoxX, menuY, menuBoxW, 34, "NEW WORLD / GENERATOR", !hasActiveGame, false);
+  drawNESButton(menuBoxX, menuY, menuBoxW, 34, "NEW WORLD", !hasActiveGame, false);
   registerClickableRegion(menuBoxX, menuY, menuBoxW, 34, () => {
     currentMode = "GENERATOR";
     modalScroll = 0;
@@ -6132,7 +6132,7 @@ function renderTitleScreen() {
 
   // Footer text
   const footY = CANVAS_HEIGHT - 18;
-  const footText = "a game by jardimdanificado and kayoa";
+  const footText = "A Game By Jardimdanificado and Kayoa";
   drawText8x8Centered(footText, footY, "#888888", 1, "#000000", 1);
 
   ctx.restore();
