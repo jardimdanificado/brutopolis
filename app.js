@@ -2972,13 +2972,18 @@ function renderDossierModal() {
     });
   }
 
-  // Invalidate cache if inspected target changed or new events arrived
-  if (_dossierCache.targetId !== target.id || _dossierCache.lastEventCount !== allEvents.length) {
+  // Invalidate cache fully if inspected target changed
+  if (_dossierCache.targetId !== target.id) {
     _dossierCache.targetId = target.id;
     _dossierCache.events = null;
     _dossierCache.battles = null;
     _dossierCache.familyTree = null;
     _dossierCache.house = null;
+    _dossierCache.lastEventCount = allEvents.length;
+  } else if (allEvents.length - _dossierCache.lastEventCount >= 100) {
+    // Throttled refresh: only re-query battles/events every 100+ new world events
+    _dossierCache.events = null;
+    _dossierCache.battles = null;
     _dossierCache.lastEventCount = allEvents.length;
   }
 

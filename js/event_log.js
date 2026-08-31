@@ -500,6 +500,19 @@ export function getFullHistoryForGroup(group) {
  */
 let _lastClusteredEventCount = -1;
 let _cachedGlobalBattles = [];
+let _globalBattlesGen = 0;
+let _entityBattleFilterCache = { entityId: null, groupId: null, gen: 0, limit: 0, result: null };
+
+// Binary search: find rightmost index in sorted-by-tick array where tick <= target
+function _upperBoundTick(arr, tick) {
+  let lo = 0, hi = arr.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (arr[mid].tick <= tick) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo - 1;
+}
 
 export function getClusteredBattles({ entityId = null, groupId = null, limit = 50 } = {}) {
   // Recompute only when new events have been added
@@ -547,6 +560,7 @@ export function getClusteredBattles({ entityId = null, groupId = null, limit = 5
         const combatantsMap = new Map();
         const clansSet = new Set();
         let totalDamage = 0;
+        let attacksCount = 0;
         const amputations = [];
         const fatalities = [];
 
@@ -586,6 +600,7 @@ export function getClusteredBattles({ entityId = null, groupId = null, limit = 5
           if (ev.type === "ATTACK") {
             const dmg = ev.metadata?.totalDamage || ev.metadata?.netDamage || 10;
             totalDamage += dmg;
+            attacksCount += (ev.count || 1);
             if (pCombatant) {
               pCombatant.hitsDealt += (ev.count || 1);
               pCombatant.damageDealt += dmg;
@@ -626,13 +641,13 @@ export function getClusteredBattles({ entityId = null, groupId = null, limit = 5
         const defenderName = firstEv.metadata?.secondaryName || firstEv.metadata?.targetName || `Entity #${defenderId}`;
         const defenderClan = firstEv.metadata?.secondaryClan || firstEv.metadata?.targetClan || "Solitary";
 
-        // Deduce Provocation: scan preCombatEvents in a narrow window (no full array scan per battle)
+        // Deduce Provocation: binary-search into narrow tick window of preCombatEvents
         let triggerCause = "Territorial tension / Hostile encounter";
         const minTick = firstEv.tick - 1800;
         const maxTick = firstEv.tick;
-        for (let pi = preCombatEvents.length - 1; pi >= 0; pi--) {
+        const provStart = _upperBoundTick(preCombatEvents, maxTick);
+        for (let pi = provStart; pi >= 0; pi--) {
           const pEv = preCombatEvents[pi];
-          if (pEv.tick > maxTick) continue;
           if (pEv.tick < minTick) break;
           const involves = (
             (pEv.primaryEntityId === initiatorId && pEv.secondaryEntityId === defenderId) ||
@@ -668,7 +683,7 @@ export function getClusteredBattles({ entityId = null, groupId = null, limit = 5
           combatants: Array.from(combatantsMap.values()),
           clansInvolved: Array.from(clansSet),
           totalDamage,
-          attacksCount: cluster.filter(e => e.type === "ATTACK").reduce((sum, e) => sum + (e.count || 1), 0),
+          attacksCount,
           amputations,
           fatalities,
           events: cluster
@@ -676,7 +691,16 @@ export function getClusteredBattles({ entityId = null, groupId = null, limit = 5
       }
 
       _cachedGlobalBattles = battles;
+      _globalBattlesGen++;
     }
+  }
+
+  // Use entity/group filter cache to avoid re-filtering every call
+  const cacheKey_eId = entityId ?? null;
+  const cacheKey_gId = groupId ?? null;
+  const fc = _entityBattleFilterCache;
+  if (fc.entityId === cacheKey_eId && fc.groupId === cacheKey_gId && fc.gen === _globalBattlesGen && fc.limit === limit) {
+    return fc.result;
   }
 
   let filtered = _cachedGlobalBattles;
@@ -687,7 +711,9 @@ export function getClusteredBattles({ entityId = null, groupId = null, limit = 5
     filtered = filtered.filter(b => b.combatants.some(c => c.clan === groupId || c.clan?.toLowerCase() === String(groupId).toLowerCase()));
   }
 
-  return filtered.slice(Math.max(0, filtered.length - limit)).reverse();
+  const result = filtered.slice(Math.max(0, filtered.length - limit)).reverse();
+  _entityBattleFilterCache = { entityId: cacheKey_eId, groupId: cacheKey_gId, gen: _globalBattlesGen, limit, result };
+  return result;
 }
 
 /**
