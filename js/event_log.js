@@ -33,6 +33,12 @@ export const OP_PLANT = 25;
 export const OP_HARVEST = 26;
 export const OP_FORGET = 27;
 
+// Politics
+export const OP_LEADER_CHANGED = 28;
+export const OP_DIPLOMAT_CHANGED = 29;
+export const OP_WAR_DECLARED = 30;
+export const OP_DIPLOMATIC_MISSION = 31;
+
 export const OPCODE_TO_TYPE = {
   [OP_BIRTH]: "BIRTH",
   [OP_DEATH]: "DEATH",
@@ -60,7 +66,11 @@ export const OPCODE_TO_TYPE = {
   [OP_CRAFT]: "CRAFT",
   [OP_PLANT]: "PLANT",
   [OP_HARVEST]: "HARVEST",
-  [OP_FORGET]: "FORGET"
+  [OP_FORGET]: "FORGET",
+  [OP_LEADER_CHANGED]: "POLITICS",
+  [OP_DIPLOMAT_CHANGED]: "POLITICS",
+  [OP_WAR_DECLARED]: "POLITICS",
+  [OP_DIPLOMATIC_MISSION]: "POLITICS"
 };
 
 export const TYPE_TO_OPCODE = {
@@ -82,7 +92,8 @@ export const TYPE_TO_OPCODE = {
   "CRAFT": OP_CRAFT,
   "PLANT": OP_PLANT,
   "HARVEST": OP_HARVEST,
-  "FORGET": OP_FORGET
+  "FORGET": OP_FORGET,
+  "POLITICS": OP_LEADER_CHANGED
 };
 
 export let eventLogConfig = {

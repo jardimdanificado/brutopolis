@@ -3,16 +3,19 @@
 // =============================================================================
 
 import { recordWorldEvent, OP_DEATH } from "./event_log.js";
+import { updatePolitics } from "./politics.js";
 
 let nextEntityId = 1;
 
 // Global simulation tick counter
 export let currentTick = 0;
 
-// Current active World instance reference for global time queries
 export let currentWorld = null;
 export function setCurrentWorld(w) {
   currentWorld = w;
+}
+export function getCurrentWorld() {
+  return currentWorld;
 }
 
 // Central O(1) registry for all entities in the universe (living and deceased)
@@ -924,6 +927,9 @@ export function compileEntityEffects(entity) {
  */
 export function tickEntities(entities, dt, world) {
   if (world) currentWorld = world;
+  
+  updatePolitics(dt, currentTick);
+  
   const initialLen = entities.length;
   let hasDead = false;
 

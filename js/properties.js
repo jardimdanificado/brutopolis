@@ -916,15 +916,16 @@ export function createLeaderHouseEntity(x, y, group = null, leaderId = null, lea
   const rot = rotation !== null ? (Math.abs(rotation) % 4) : 0;
   const numFloors = 7;
 
-  // Single Family Capacity: only 1 couple / family lives in the 7-story palace
+  // Politics Tower: 6 Diplomats (Floors 1-6) and 1 Leader (Floor 7)
+  const d = group && group.diplomats ? group.diplomats : [null, null, null, null, null, null];
   const floorsList = [
-    { floorNumber: 1, label: "1ST FLOOR (GRAND THRONE HALL)", ownerId: leaderId, ownerName: leaderName, partnerId: null, partnerName: null, childrenIds: [] },
-    { floorNumber: 2, label: "2ND FLOOR (ROYAL AUDIENCE CHAMBER)", ownerId: leaderId, ownerName: leaderName, partnerId: null, partnerName: null, childrenIds: [] },
-    { floorNumber: 3, label: "3RD FLOOR (CLAN BANQUET HALL)", ownerId: leaderId, ownerName: leaderName, partnerId: null, partnerName: null, childrenIds: [] },
-    { floorNumber: 4, label: "4TH FLOOR (CLAN COUNCIL & ARCHIVES)", ownerId: leaderId, ownerName: leaderName, partnerId: null, partnerName: null, childrenIds: [] },
-    { floorNumber: 5, label: "5TH FLOOR (ROYAL PRIVATE SUITE)", ownerId: leaderId, ownerName: leaderName, partnerId: null, partnerName: null, childrenIds: [] },
-    { floorNumber: 6, label: "6TH FLOOR (ROYAL OBSERVATORY & SOLARIUM)", ownerId: leaderId, ownerName: leaderName, partnerId: null, partnerName: null, childrenIds: [] },
-    { floorNumber: 7, label: "7TH FLOOR (HIGH SPIRE SANCTUARY)", ownerId: leaderId, ownerName: leaderName, partnerId: null, partnerName: null, childrenIds: [] }
+    { floorNumber: 1, label: "1ST FLOOR (DIPLOMAT OF TRADE)", ownerId: d[0], ownerName: null, partnerId: null, partnerName: null, childrenIds: [] },
+    { floorNumber: 2, label: "2ND FLOOR (DIPLOMAT OF WAR)", ownerId: d[1], ownerName: null, partnerId: null, partnerName: null, childrenIds: [] },
+    { floorNumber: 3, label: "3RD FLOOR (DIPLOMAT OF ALLIANCES)", ownerId: d[2], ownerName: null, partnerId: null, partnerName: null, childrenIds: [] },
+    { floorNumber: 4, label: "4TH FLOOR (DIPLOMAT OF INTERIOR)", ownerId: d[3], ownerName: null, partnerId: null, partnerName: null, childrenIds: [] },
+    { floorNumber: 5, label: "5TH FLOOR (DIPLOMAT OF EXPANSION)", ownerId: d[4], ownerName: null, partnerId: null, partnerName: null, childrenIds: [] },
+    { floorNumber: 6, label: "6TH FLOOR (CHIEF DIPLOMAT)", ownerId: d[5], ownerName: null, partnerId: null, partnerName: null, childrenIds: [] },
+    { floorNumber: 7, label: "7TH FLOOR (HIGH SPIRE SANCTUARY - LEADER)", ownerId: leaderId, ownerName: leaderName, partnerId: null, partnerName: null, childrenIds: [] }
   ];
 
   const label = leaderName ? `Palácio de ${leaderName} (${gName})` : `${def.label} de ${gName}`;
@@ -947,7 +948,6 @@ export function createLeaderHouseEntity(x, y, group = null, leaderId = null, lea
       partnerId: null,
       partnerName: null,
       maxFloors: numFloors,
-      singleFamilyOnly: true,
       footprint: "3x3",
       baseFootprint: "3x3",
       footprintW: 3,
@@ -2823,10 +2823,19 @@ export function createGroup(name, founder, baseZone = null, claimedZones = null)
     }
   }
 
+  const govTypes = ["DEMOCRACY", "PSEUDOCRACY", "PRESIDENTIALISM", "COMMUNISM", "MONARCHY", "AUTOCRACY"];
+  const govGenders = ["PATRIARCHAL", "MATRIARCHAL", "NEUTRAL"];
   const group = {
     id: nextGroupId++,
     name: name || gerarNomeGrupo(),
     leaderId: founderId !== undefined && founderId !== null ? founderId : null,
+    govType: govTypes[Math.floor(Math.random() * govTypes.length)],
+    govGender: govGenders[Math.floor(Math.random() * govGenders.length)],
+    diplomats: [null, null, null, null, null, null],
+    relations: {}, // Map of groupId -> relation score
+    wars: [],      // Array of enemy group IDs
+    leaderTermTicks: 0,
+    diplomatTermTicks: [0, 0, 0, 0, 0, 0],
     members: founderId !== undefined && founderId !== null ? [founderId] : [],
     claimedZones: claimedZones || defaultZones,
     rooms: [
@@ -7614,10 +7623,11 @@ export function createCombatProp(attackInterval = 1.2, aggroRange = 3) {
           if (dist === 1) {
             const isAtWar = ent.properties.group?.wars && other.properties.group && ent.properties.group.wars.includes(other.properties.group.id);
             const affinity = ent.properties.brain.affinities?.[other.id] !== undefined ? ent.properties.brain.affinities[other.id] : 0;
-            const isHateOrWar = isAtWar || affinity < -20 || (ent.properties.violent && !isDesperateHunger);
+            const isPersonalFeud = affinity < -80 && Math.random() < 0.02; // Very rare to attack just based on hate without war
+            const isHateOrWar = isAtWar || isPersonalFeud || (ent.properties.violent && !isDesperateHunger);
             const isHunger = isDesperateHunger && !isHateOrWar;
 
-            if (isHateOrWar || isHunger || (ent.properties.brain.personality?.aggression || 0) > 0.45) {
+            if (isHateOrWar || isHunger || (ent.properties.brain.personality?.aggression || 0) > 0.8) {
               combatTarget = other;
               targetIsHate = isHateOrWar;
               targetIsHunger = isHunger;
@@ -7636,7 +7646,14 @@ export function createCombatProp(attackInterval = 1.2, aggroRange = 3) {
               const isOwnGroup = ent.properties.group && other.properties.house?.ownerId && ent.properties.group.members?.includes(other.properties.house.ownerId);
               const isOwnGate = ent.properties.door?.owners && ent.properties.door.owners.includes(ent.id);
               if (!isOwnGroup && !isOwnGate) {
-                const isViolentOrWar = ent.properties.violent || (ent.properties.group?.wars && ent.properties.group.wars.length > 0) || (ent.properties.brain.personality?.aggression || 0) > 0.4;
+                let isAtWarWithTarget = false;
+                if (ent.properties.group?.wars && other.properties.groupId) {
+                  isAtWarWithTarget = ent.properties.group.wars.includes(other.properties.groupId);
+                } else if (ent.properties.group?.wars && other.properties.house?.groupId) {
+                  isAtWarWithTarget = ent.properties.group.wars.includes(other.properties.house.groupId);
+                }
+                
+                const isViolentOrWar = ent.properties.violent || isAtWarWithTarget || (ent.properties.brain.personality?.aggression || 0) > 0.8;
                 if (isViolentOrWar) {
                   combatTarget = other;
                   targetIsHate = true;

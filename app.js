@@ -2,8 +2,8 @@
 // Brutopolis
 // =============================================================================
 
-const BrutopolisVersion = "0.118.2";
-const BrutopolisVersionName = "\"Now the whole earth had one language and the same words.\"";
+const BrutopolisVersion = "0.119.2";
+const BrutopolisVersionName = "Honour all men. Love the brotherhood. Fear God. Honour the king.";
 
 // WASM replaced by Pure JS Renderer
 import { World } from "./js/world.js";
@@ -3438,7 +3438,7 @@ function renderDossierModal() {
         registerClickableRegion(mx + 12, curY, mw - 110, rowH, () => {
           inspectingBattle = curBattle;
         });
-        
+
         drawNESButton(mx + mw - 95, curY + 4, 75, 22, "DOSSIER", false, false);
         registerClickableRegion(mx + mw - 95, curY + 4, 75, 22, () => {
           inspectingBattle = curBattle;
@@ -3504,7 +3504,7 @@ function renderDossierModal() {
         const ts = ev.timestamp ? `D${ev.timestamp.day} ${String(ev.timestamp.hour).padStart(2, "0")}:${String(ev.timestamp.minute).padStart(2, "0")}` : `T${ev.tick}`;
         drawText8x8(ts, mx + 18, curY + 6, "#bcbcbc", 1);
 
-        const typeColor = ev.type === "KILL" ? "#ff2040" : ev.type === "DEATH" ? "#9c5050" : ev.type === "ATTACK" ? "#f8b800" : ev.type === "AMPUTATION" ? "#e40058" : ev.type === "RELATION" ? "#d3869b" : ev.type === "DIALOGUE" ? "#3cbcfc" : ev.type === "BIRTH" ? "#f8b800" : ev.type === "SPROUT" ? "#58d854" : "#ffffff";
+        const typeColor = ev.type === "KILL" ? "#ff2040" : ev.type === "DEATH" ? "#9c5050" : ev.type === "ATTACK" ? "#f8b800" : ev.type === "AMPUTATION" ? "#e40058" : ev.type === "RELATION" ? "#d3869b" : ev.type === "DIALOGUE" ? "#3cbcfc" : ev.type === "BIRTH" ? "#f8b800" : ev.type === "SPROUT" ? "#58d854" : ev.type === "POLITICS" ? "#9c5050" : "#ffffff";
         drawText8x8(`[${ev.type}]`, mx + 105, curY + 6, typeColor, 1);
 
         // Full Long Description without truncation
@@ -3776,14 +3776,34 @@ function renderEntitiesModal() {
 
 function getAllGroups() {
   const map = new Map();
+  if (world && Array.isArray(world.groups)) {
+    for (const g of world.groups) {
+      if (g && g.id) map.set(g.id, g);
+    }
+  }
   for (const e of entities) {
     if (e.destroyed) continue;
     if (e.properties && e.properties.group) {
       const g = e.properties.group;
-      if (!map.has(g.id)) map.set(g.id, g);
+      if (!map.has(g.id)) {
+        map.set(g.id, g);
+      } else {
+        const existing = map.get(g.id);
+        // keep best populated fields
+        if (g.govType && !existing.govType) existing.govType = g.govType;
+        if (g.govGender && !existing.govGender) existing.govGender = g.govGender;
+        if (g.diplomats && (!existing.diplomats || existing.diplomats.every(d => !d))) existing.diplomats = g.diplomats;
+        if (g.leaderId && !existing.leaderId) existing.leaderId = g.leaderId;
+        if (g.relations && Object.keys(g.relations).length > 0) existing.relations = g.relations;
+        if (g.wars && g.wars.length > 0) existing.wars = g.wars;
+      }
     }
   }
   return Array.from(map.values());
+}
+
+function getAllWorldGroups() {
+  return getAllGroups();
 }
 
 function renderGroupsModal() {
@@ -3955,7 +3975,10 @@ function renderGroupsModal() {
  * Full-screen Clan Dossier: divided into 3 dedicated tabs (ZONES, STOCKPILE, MEMBERS) + HISTORY.
  */
 function renderGroupDetailView(mx, my, mw, mh, g) {
-  const livingMembers = g.members.filter(mid => {
+  const latestGroup = (world?.groups && world.groups.find(wg => wg.id === g.id)) || getAllGroups().find(wg => wg.id === g.id);
+  if (latestGroup) g = latestGroup;
+
+  const livingMembers = (g.members || []).filter(mid => {
     const m = getEntityById(mid);
     return m && !m.destroyed;
   });
@@ -4026,11 +4049,12 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
     inspectingFromCreature = false;
   });
 
-  // Top Tabs: [ZONES] [STOCKPILE] [MEMBERS] [HISTORY]
+  // Top Tabs: [ZONES] [STOCKPILE] [MEMBERS] [POLITICS] [HISTORY]
   const tabs = [
     { id: "ZONES", label: `ZONES (${g.claimedZones?.length || 0})` },
     { id: "STOCKPILE", label: `STOCKPILE${_clanDossierCache.stockpile ? ` (${_clanDossierCache.stockpile.totalCount})` : ""}` },
     { id: "MEMBERS", label: `MEMBERS (${livingMembers.length}/${g.members.length})` },
+    { id: "POLITICS", label: "POLITICS" },
     { id: "HISTORY", label: `HISTORY${_clanDossierCache.history ? ` (${_clanDossierCache.history.length})` : ""}` }
   ];
 
@@ -4240,7 +4264,57 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
   }
 
   // -------------------------------------------------------------------------
-  // TAB 4: HISTORY (Chronological Clan & Member Event Log)
+  // TAB 4: POLITICS
+  // -------------------------------------------------------------------------
+  else if (groupDetailTab === "POLITICS") {
+    // Retroactive UI-side init removed, worker handles it
+
+    drawNESBox(mx + 12, contentY, mw - 24, contentH);
+    const leaderEnt = g.leaderId ? getEntityById(g.leaderId) : null;
+    const leaderStr = leaderEnt ? (leaderEnt.properties?.life?.isDead ? `(DECEASED) ${leaderEnt.properties.name}` : leaderEnt.properties.name) : "N/A";
+
+    drawText8x8(`GOVERNMENT SYSTEM`, mx + 20, contentY + 12, "#ffd700", 1);
+    drawText8x8(`Type:   ${g.govType || "UNKNOWN"}`, mx + 30, contentY + 28, "#3cbcfc", 1);
+    drawText8x8(`Gender: ${g.govGender || "UNKNOWN"}`, mx + 30, contentY + 42, "#3cbcfc", 1);
+
+    drawText8x8(`POLITICAL LEADERSHIP`, mx + 320, contentY + 12, "#ffd700", 1);
+    drawText8x8(`High Leader: ${leaderStr}`, mx + 330, contentY + 28, "#58d854", 1);
+
+    const dLabels = ["Trade", "War", "Alliances", "Interior", "Expansion", "Chief Diplomat"];
+    let dipY = contentY + 44;
+    for (let i = 0; i < 6; i++) {
+      const dId = g.diplomats && g.diplomats.length > i ? g.diplomats[i] : null;
+      const dEnt = dId ? getEntityById(dId) : null;
+      const dStr = dEnt ? (dEnt.properties?.life?.isDead ? `[X] ${dEnt.properties.name}` : dEnt.properties.name) : "VACANT";
+      const lbl = dLabels[i];
+      drawText8x8(`Diplomat (${lbl}): ${dStr}`, mx + 330, dipY, "#d0d0e0", 1);
+      dipY += 14;
+    }
+
+    drawText8x8(`DIPLOMATIC RELATIONS`, mx + 20, contentY + 70, "#ffd700", 1);
+    let relY = contentY + 86;
+    let foundRels = false;
+
+    if (g.relations) {
+      for (const [otherIdStr, score] of Object.entries(g.relations)) {
+        const otherGrp = getAllWorldGroups().find(og => og.id === Number(otherIdStr));
+        if (otherGrp) {
+          foundRels = true;
+          const isWar = g.wars && g.wars.includes(otherGrp.id);
+          const color = isWar ? "#ff2040" : (score < -50 ? "#e40058" : (score > 50 ? "#58d854" : "#ffffff"));
+          const st = isWar ? "AT WAR" : (score < -50 ? "HOSTILE" : (score > 50 ? "ALLIED" : "NEUTRAL"));
+          drawText8x8(`${otherGrp.name}: ${Math.round(score)} / 100 [${st}]`, mx + 30, relY, color, 1);
+          relY += 14;
+        }
+      }
+    }
+    if (!foundRels) {
+      drawText8x8(`No known relations with other groups.`, mx + 30, relY, "#7b7b7b", 1);
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // TAB 5: HISTORY (Chronological Clan & Member Event Log)
   // -------------------------------------------------------------------------
   else if (groupDetailTab === "HISTORY") {
     drawNESBox(mx + 12, contentY, mw - 24, contentH);
@@ -6119,7 +6193,7 @@ function renderTitleScreen() {
 
   // 3. Subtitle / Tagline
   const subY = chronY + (chronScale * 8) + (isMobile ? 8 : 12);
-  const subText = BrutopolisVersion + ": " + BrutopolisVersionName;
+  const subText = "\"" + BrutopolisVersionName + "\"";
   drawText8x8Centered(subText, subY, "#3cbcfc", 1, "#000000", 1);
 
   const curScen = PREFAB_SCENARIOS[selectedScenarioIdx] || PREFAB_SCENARIOS[0];
@@ -6167,7 +6241,7 @@ function renderTitleScreen() {
 
   // Footer text
   const footY = CANVAS_HEIGHT - 18;
-  const footText = "A Game By Jardimdanificado and Kayoa";
+  const footText = "brutopolis chronicles v" + BrutopolisVersion;
   drawText8x8Centered(footText, footY, "#888888", 1, "#000000", 1);
 
   ctx.restore();

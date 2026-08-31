@@ -654,7 +654,14 @@ function sanitizeForTransfer(obj, depth = 0) {
           flagSkin: val.flagSkin,
           claimedZones: val.claimedZones ? [...val.claimedZones] : [],
           members: val.members ? [...val.members] : [],
-          founderSurname: val.founderSurname || null
+          founderSurname: val.founderSurname || null,
+          leaderId: val.leaderId || null,
+          govType: val.govType || null,
+          govGender: val.govGender || null,
+          diplomats: val.diplomats ? [...val.diplomats] : [null, null, null, null, null, null],
+          relations: val.relations ? { ...val.relations } : {},
+          wars: val.wars ? [...val.wars] : [],
+          rooms: val.rooms ? val.rooms.map(r => ({ ...r })) : []
         };
       } else {
         const sanitized = sanitizeForTransfer(val, depth + 1);
@@ -752,6 +759,11 @@ function serializeGroups() {
     members: g.members ? [...g.members] : [],
     founderSurname: g.founderSurname || null,
     leaderId: g.leaderId || null,
+    govType: g.govType || null,
+    govGender: g.govGender || null,
+    diplomats: g.diplomats ? [...g.diplomats] : [null, null, null, null, null, null],
+    relations: g.relations ? { ...g.relations } : {},
+    wars: g.wars ? [...g.wars] : [],
     _plannedRoads: g._plannedRoads ? g._plannedRoads.map(r => ({ x: r.x, y: r.y, isSnapPoint: !!r.isSnapPoint, roadType: r.roadType || 0 })) : null,
     _plaza: g._plaza ? { warehouse: { ...g._plaza.warehouse }, campfire: { ...g._plaza.campfire }, well: { ...g._plaza.well } } : null,
     _housePlots: g._housePlots ? { ...g._housePlots } : null
