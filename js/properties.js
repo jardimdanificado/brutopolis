@@ -4769,18 +4769,6 @@ export function gossipBetweenCreatures(speaker, listener, world, entities) {
           }
         }
 
-        const spkGroup = speaker.properties.group;
-        if (spkGroup && spkGroup.rooms) {
-          const spkRoom = spkGroup.rooms.find(r => r.assignedMembers?.includes(speaker.id));
-          const lisRoom = spkGroup.rooms.find(r => r.assignedMembers?.includes(listener.id));
-          if (spkRoom && lisRoom && spkRoom !== lisRoom) {
-            lisRoom.assignedMembers = lisRoom.assignedMembers.filter(id => id !== listener.id);
-            if (!spkRoom.assignedMembers.includes(listener.id)) spkRoom.assignedMembers.push(listener.id);
-          } else if (spkRoom && !spkRoom.assignedMembers.includes(listener.id)) {
-            spkRoom.assignedMembers.push(listener.id);
-          }
-        }
-
         recordWorldEvent({
           opcode: OP_PROPOSAL_ACCEPTED,
           primaryEntityId: speaker.id,
@@ -9694,22 +9682,6 @@ export function createLocomotionProp() {
           chosenDx = Math.sign(homeBaseX - ent.x);
           chosenDy = Math.sign(homeBaseY - ent.y);
           hasIntention = true;
-        } else {
-          // Check for Evening Social Meeting in Dining/Meeting Rooms
-          const isEvening = world?.clock ? (world.clock.globalLight < 0.50 || world.clock.hour >= 18 || world.clock.hour <= 5) : false;
-          if (isEvening && energyRatio > 0.40) {
-            const socialRoom = group.rooms?.find(r => r.type === "meeting" || r.type === "dining");
-            if (socialRoom) {
-              const rx = socialRoom.zx * 8 + 4;
-              const ry = socialRoom.zy * 8 + 4;
-              const rdist = Math.abs(rx - ent.x) + Math.abs(ry - ent.y);
-              if (rdist > 3) {
-                chosenDx = Math.sign(rx - ent.x);
-                chosenDy = Math.sign(ry - ent.y);
-                hasIntention = true;
-              }
-            }
-          }
         }
       }
 
@@ -11924,14 +11896,6 @@ export function createEmbarkParty(centerX, centerY, world, entities, customOpts 
       }
     }
   }
-
-  // Set up personal / couple residential storage rooms for settlers
-  clan.rooms = [
-    { id: 1, type: "residential", zx: Math.floor(centerX / currentZoneSize), zy: Math.floor(centerY / currentZoneSize), name: `Quarto do Líder (${founder.properties.name})`, assignedMembers: [founder.id] },
-    { id: 2, type: "storage", zx: Math.floor(centerX / currentZoneSize), zy: Math.floor(centerY / currentZoneSize), name: "Depósito Geral do Clã", assignedMembers: [] },
-    { id: 3, type: "dining", zx: Math.floor(centerX / currentZoneSize), zy: Math.floor(centerY / currentZoneSize), name: "Refeitório do Clã", assignedMembers: [] },
-    { id: 4, type: "meeting", zx: Math.floor(centerX / currentZoneSize), zy: Math.floor(centerY / currentZoneSize), name: "Sala de Reunião", assignedMembers: [] }
-  ];
 
   // Spawn Clan Plaza Leader Palace & Central Hearth directly on embark for every clan!
   if (entities) {

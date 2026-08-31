@@ -2,7 +2,7 @@
 // Brutopolis
 // =============================================================================
 
-const BrutopolisVersion = "0.119.3";
+const BrutopolisVersion = "0.119.5";
 const BrutopolisVersionName = "Honour all men. Love the brotherhood. Fear God. Honour the king.";
 
 // WASM replaced by Pure JS Renderer
@@ -4132,17 +4132,18 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
     drawText8x8(`CLAIMED TERRITORY: ${g.claimedZones?.length || 0} ZONES (${totalTiles} TILES)`, mx + 20, contentY + 12, "#ffd700", 1);
 
     const zones = g.claimedZones || [];
-    const rooms = g.rooms || [];
     const rowH = 26;
-    const totalItems = zones.length + rooms.length;
+    const totalItems = zones.length;
     const visibleCount = Math.floor((contentH - 44) / rowH);
     const maxScroll = Math.max(0, totalItems - visibleCount);
     modalScroll = Math.max(0, Math.min(maxScroll, modalScroll));
 
     let curY = contentY + 34;
 
-    for (let i = modalScroll; i < Math.min(totalItems, modalScroll + visibleCount); i++) {
-      if (i < zones.length) {
+    if (zones.length === 0) {
+      drawText8x8("NO TERRITORY CURRENTLY CLAIMED BY THIS CLAN.", mx + 20, curY + 6, "#bcbcbc", 1);
+    } else {
+      for (let i = modalScroll; i < Math.min(totalItems, modalScroll + visibleCount); i++) {
         // Render Zone Card
         const zk = zones[i];
         const c = parseZoneCoords(zk);
@@ -4157,22 +4158,9 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
             focusLocation(curC.centerX, curC.centerY, 2.0);
           });
         }
-      } else {
-        // Render Room / Blueprint Card
-        const rm = rooms[i - zones.length];
-        const rmName = (rm.name || rm.type || "ROOM").toUpperCase();
-        const rmCoords = `[X:${Math.floor(rm.zx * 8 + 4)}, Y:${Math.floor(rm.zy * 8 + 4)}]`;
-        const membersCount = rm.assignedMembers?.length || 0;
 
-        drawText8x8(`• ROOM: ${rmName} - ${rmCoords} (${membersCount} OCCUPANTS)`, mx + 20, curY + 6, "#3cbcfc", 1);
-
-        drawNESButton(mx + mw - 95, curY + 2, 70, 20, "FOCUS", false, false);
-        registerClickableRegion(mx + mw - 95, curY + 2, 70, 20, () => {
-          focusLocation(rm.zx * 8 + 4, rm.zy * 8 + 4, 2.0);
-        });
+        curY += rowH;
       }
-
-      curY += rowH;
     }
   }
 
@@ -4331,11 +4319,12 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
     const dLabels = ["Trade", "War", "Alliances", "Interior", "Expansion", "Chief Diplomat"];
     let dipY = contentY + 46;
     for (let i = 0; i < 6; i++) {
+      const lbl = dLabels[i];
       const dId = g.diplomats && g.diplomats.length > i ? g.diplomats[i] : null;
       const dEnt = dId ? getEntityById(dId) : null;
-      const dStr = dEnt ? (dEnt.properties?.life?.isDead ? `[X] ${dEnt.properties.name}` : dEnt.properties.name) : "VACANT";
-      const lbl = dLabels[i];
-      drawText8x8(`Diplomat (${lbl}): ${dStr}`, mx + 320, dipY + 4, "#d0d0e0", 1);
+      const dStr = dEnt ? (dEnt.properties?.life?.isDead ? `(DECEASED) ${dEnt.properties.name}` : dEnt.properties.name) : "VACANT";
+      const dCol = dEnt ? "#d0d0e0" : "#7b7b88";
+      drawText8x8(`Diplomat (${lbl}): ${dStr}`, mx + 320, dipY + 4, dCol, 1);
       if (dEnt) {
         drawNESButton(mx + mw - 95, dipY, 65, 18, "INSPECT", false, false);
         const curDId = dId;

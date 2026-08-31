@@ -64,18 +64,27 @@ function isEligibleVoter(group, e) {
   return true;
 }
 
-function getValidCandidates(group) {
-  let candidates = (group.members || []).filter(id => {
+function getValidCandidates(group, excludeIds = []) {
+  const excludeSet = new Set(excludeIds.filter(Boolean));
+  const living = (group.members || []).filter(id => !excludeSet.has(id) && isAlive(id));
+  if (living.length === 0) return [];
+
+  const genderFiltered = living.filter(id => {
     const e = getEntityById(id);
     return isEligibleCandidate(group, e);
   });
 
-  // Soft fallback if strict gender rule left 0 candidates
-  if (candidates.length === 0) {
-    candidates = (group.members || []).filter(id => isAlive(id));
+  // Strict gender regimes (MACHIST, FEMIST): never fall back to opposite gender
+  if (group.govGender === "MACHIST" || group.govGender === "FEMIST") {
+    return genderFiltered;
   }
 
-  return candidates;
+  // Soft gender regimes (PATRIARCHAL, MATRIARCHAL, NEUTRAL):
+  // Prefer matching gender; if all matching are assigned, use remaining living members
+  if (genderFiltered.length > 0) {
+    return genderFiltered;
+  }
+  return living;
 }
 
 function getVoterMood(e) {
@@ -302,10 +311,10 @@ function getBestCandidate(candidates) {
 }
 
 function holdElection(group, type, index = -1, tick) {
-  const candidates = getValidCandidates(group);
-  if (candidates.length === 0) return;
-
   if (type === "LEADER") {
+    const candidates = getValidCandidates(group);
+    if (candidates.length === 0) return;
+
     // Monarchy & Autocracy inherit or take oldest, Democracy/Pseudocracy/Presidentialism hold voting
     if (group.govType === "DEMOCRACY" || group.govType === "PSEUDOCRACY" || group.govType === "PRESIDENTIALISM") {
       const elec = runElectionSimulation(group, "LEADER", -1, candidates, tick);
@@ -361,9 +370,12 @@ function holdElection(group, type, index = -1, tick) {
       }
     }
   } else if (type === "DIPLOMAT") {
+    const otherDips = (group.diplomats || []).filter((d, i) => i !== index && d);
+    const dipCandidates = getValidCandidates(group, [group.leaderId, ...otherDips]);
+    if (dipCandidates.length === 0) return;
+
     if (group.govType === "DEMOCRACY" || group.govType === "PSEUDOCRACY") {
-      const dipCandidates = candidates.filter(c => c !== group.leaderId && !group.diplomats.includes(c));
-      const elec = runElectionSimulation(group, "DIPLOMAT", index, dipCandidates.length > 0 ? dipCandidates : candidates, tick);
+      const elec = runElectionSimulation(group, "DIPLOMAT", index, dipCandidates, tick);
       if (elec && elec.winnerId) {
         group.diplomats[index] = elec.winnerId;
         group.diplomatTermTicks[index] = 0;
@@ -388,14 +400,15 @@ function holdElection(group, type, index = -1, tick) {
         }
         updateTowerOwner(group, index + 1, elec.winnerId);
       }
-    } else if (group.govType === "PRESIDENTIALISM") {
+    } else if (group.govType === "PRESIDENTIALISM" || group.govType === "COMMUNISM" || group.govType === "MONARCHY") {
       fillVacantDiplomat(group, index, tick);
     }
   }
 }
 
 function fillVacantDiplomat(group, index, tick) {
-  const candidates = getValidCandidates(group).filter(c => c !== group.leaderId && !group.diplomats.includes(c));
+  const otherDips = (group.diplomats || []).filter((d, i) => i !== index && d);
+  const candidates = getValidCandidates(group, [group.leaderId, ...otherDips]);
   if (candidates.length === 0) return;
 
   const winner = getBestCandidate(candidates);
@@ -494,7 +507,10 @@ function updateTowerOwner(group, floorNum, newOwnerId) {
 }
 
 function processDiplomaticMissions(group, tick) {
-  let activeDiplomats = group.govType === "AUTOCRACY" ? [group.leaderId] : (group.diplomats || []);
+  let activeDiplomats = (group.diplomats || []).filter(d => d && isAlive(d));
+  if (group.govType === "AUTOCRACY" && group.leaderId && isAlive(group.leaderId) && !activeDiplomats.includes(group.leaderId)) {
+    activeDiplomats = [group.leaderId, ...activeDiplomats];
+  }
   if (!group.relations) group.relations = {};
   
   for (const dipId of activeDiplomats) {
@@ -712,15 +728,15 @@ export function updatePolitics(dt, globalTick) {
       group.diplomatTermTicks[i] += POLITICS_TICK_RATE;
       
       // 7 days = 7 * 2400 ticks = 16800 ticks
-      if (group.govType !== "COMMUNISM" && group.govType !== "MONARCHY" && group.govType !== "AUTOCRACY") {
+      if (group.govType === "DEMOCRACY" || group.govType === "PSEUDOCRACY") {
         if (group.diplomatTermTicks[i] >= 16800) {
           group.diplomatTermTicks[i] = 0;
           holdElection(group, "DIPLOMAT", i, globalTick);
         }
       }
 
-      // Fill empty spots if autocracy doesn't apply
-      if (group.govType !== "AUTOCRACY" && (!group.diplomats[i] || !isAlive(group.diplomats[i]))) {
+      // Fill any empty or deceased spots across all regimes
+      if (!group.diplomats[i] || !isAlive(group.diplomats[i])) {
         fillVacantDiplomat(group, i, globalTick);
       }
     }

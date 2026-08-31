@@ -661,7 +661,6 @@ function sanitizeForTransfer(obj, depth = 0) {
           diplomats: val.diplomats ? [...val.diplomats] : [null, null, null, null, null, null],
           relations: val.relations ? { ...val.relations } : {},
           wars: val.wars ? [...val.wars] : [],
-          rooms: val.rooms ? val.rooms.map(r => ({ ...r })) : [],
           elections: val.elections ? val.elections.slice(0, 30).map(e => ({ ...e, ranking: e.ranking ? [...e.ranking] : [], voterDetails: e.voterDetails ? [...e.voterDetails] : [] })) : [],
           politicalHistory: val.politicalHistory ? val.politicalHistory.slice(0, 50).map(h => ({ ...h })) : []
         };
