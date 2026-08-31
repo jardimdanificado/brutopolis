@@ -2,7 +2,7 @@
 // Brutopolis
 // =============================================================================
 
-const BrutopolisVersion = "0.121.6";
+const BrutopolisVersion = "0.121.9";
 const BrutopolisVersionName = "Charm is deceptive, and beauty is fleeting;";
 
 // WASM replaced by Pure JS Renderer
@@ -6132,7 +6132,8 @@ const gameOptions = {
   perspectiveDofStrength: "HIGH", // "OFF" | "LOW" | "MED" | "HIGH"
   perspectiveChromaticAberration: true,
   perspectiveWaterReflections: true,
-  perspectiveFog: "LIGHT" // "OFF" | "LIGHT" | "DENSE"
+  perspectiveFog: "LIGHT", // "OFF" | "LIGHT" | "DENSE"
+  perspectiveAnisotropy: 4 // 1 (OFF) | 2 (2X) | 4 (4X) | 8 (8X) | 16 (16X)
 };
 
 function loadGameOptions() {
@@ -6166,7 +6167,8 @@ function applyGameOptions() {
         dofStrength: gameOptions.perspectiveDofStrength,
         chroma: gameOptions.perspectiveChromaticAberration,
         waterReflections: gameOptions.perspectiveWaterReflections,
-        fog: gameOptions.perspectiveFog
+        fog: gameOptions.perspectiveFog,
+        anisotropy: gameOptions.perspectiveAnisotropy
       });
     }
   }
@@ -6419,6 +6421,32 @@ function renderOptionsModal() {
       applyGameOptions();
       saveGameOptions();
     });
+    curY += 40;
+
+    // 5. Anisotropic Filtering
+    const anisoValG = gameOptions.perspectiveAnisotropy !== undefined ? gameOptions.perspectiveAnisotropy : 4;
+    const anisoLabelG = anisoValG <= 1 ? "OFF" : `${anisoValG}X`;
+    drawText8x8(`ANISOTROPIC FILTERING: [ ${anisoLabelG} ]`, mx + 16, curY, "#3cbcfc", 1);
+    const anisoOptionsG = [
+      { val: 1, label: "OFF" },
+      { val: 2, label: "2X" },
+      { val: 4, label: "4X" },
+      { val: 8, label: "8X" },
+      { val: 16, label: "16X" }
+    ];
+    bx = mx + 16;
+    for (const opt of anisoOptionsG) {
+      const isSel = anisoValG === opt.val;
+      const bw = isMobile ? 48 : 58;
+      drawNESButton(bx, curY + 10, bw, 22, opt.label, isSel, false);
+      const v = opt.val;
+      registerClickableRegion(bx, curY + 10, bw, 22, () => {
+        gameOptions.perspectiveAnisotropy = v;
+        applyGameOptions();
+        saveGameOptions();
+      });
+      bx += bw + 6;
+    }
   } else if (optionsTab === "PERSPECTIVE") {
     // 1. Surface Normal Maps (Pixel-Derived Relief for Tiles & Buildings)
     const normOn = gameOptions.perspectiveNormalMaps !== false;
@@ -6517,6 +6545,32 @@ function renderOptionsModal() {
       const v = opt.val;
       registerClickableRegion(bx, curY + 10, bw, 22, () => {
         gameOptions.perspectiveFog = v;
+        applyGameOptions();
+        saveGameOptions();
+      });
+      bx += bw + 6;
+    }
+    curY += 40;
+
+    // 6. Anisotropic Texture Filtering & Intensity
+    const anisoVal = gameOptions.perspectiveAnisotropy !== undefined ? gameOptions.perspectiveAnisotropy : 4;
+    const anisoLabel = anisoVal <= 1 ? "OFF" : `${anisoVal}X`;
+    drawText8x8(`ANISOTROPIC FILTERING: [ ${anisoLabel} ]`, mx + 16, curY, "#3cbcfc", 1);
+    const anisoOptions = [
+      { val: 1, label: "OFF" },
+      { val: 2, label: "2X" },
+      { val: 4, label: "4X" },
+      { val: 8, label: "8X" },
+      { val: 16, label: "16X" }
+    ];
+    bx = mx + 16;
+    for (const opt of anisoOptions) {
+      const isSel = anisoVal === opt.val;
+      const bw = isMobile ? 48 : 58;
+      drawNESButton(bx, curY + 10, bw, 22, opt.label, isSel, false);
+      const v = opt.val;
+      registerClickableRegion(bx, curY + 10, bw, 22, () => {
+        gameOptions.perspectiveAnisotropy = v;
         applyGameOptions();
         saveGameOptions();
       });

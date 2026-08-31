@@ -29,19 +29,19 @@ for (const item of ASSET_DATA) {
 // ---------------------------------------------------------------------------
 
 const DAY_NIGHT_KEYFRAMES = [
-  { t: 0.0,  sun: 0x5a7ca8, amb: 0x22324c, bg: 0x22324c, sunI: 0.35, ambI: 0.40 }, // Midnight
-  { t: 4.5,  sun: 0x6a8cb8, amb: 0x283854, bg: 0x283854, sunI: 0.38, ambI: 0.42 }, // Pre-dawn
-  { t: 5.5,  sun: 0xff7b39, amb: 0x8a5870, bg: 0x8a5870, sunI: 0.70, ambI: 0.52 }, // Sunrise start
-  { t: 6.5,  sun: 0xffa048, amb: 0xb88890, bg: 0xb88890, sunI: 0.95, ambI: 0.65 }, // Golden dawn
-  { t: 7.5,  sun: 0xffd285, amb: 0xd0b8ae, bg: 0xd0b8ae, sunI: 1.25, ambI: 0.78 }, // Early morning
-  { t: 9.0,  sun: 0xfffaea, amb: 0xdde8f5, bg: 0xdde8f5, sunI: 1.40, ambI: 0.85 }, // Morning
-  { t: 12.0, sun: 0xffffff, amb: 0xe5f0ff, bg: 0xe5f0ff, sunI: 1.55, ambI: 0.90 }, // Solar Noon
-  { t: 15.5, sun: 0xfffaea, amb: 0xdde8f5, bg: 0xdde8f5, sunI: 1.40, ambI: 0.85 }, // Afternoon
-  { t: 17.0, sun: 0xffab4c, amb: 0xb57870, bg: 0xb57870, sunI: 1.10, ambI: 0.72 }, // Sunset start
-  { t: 18.2, sun: 0xff6a35, amb: 0x8a4565, bg: 0x8a4565, sunI: 0.80, ambI: 0.58 }, // Sunset golden hour
-  { t: 19.5, sun: 0x724888, amb: 0x48345c, bg: 0x48345c, sunI: 0.50, ambI: 0.45 }, // Dusk twilight
-  { t: 21.0, sun: 0x5a7ca8, amb: 0x253550, bg: 0x253550, sunI: 0.38, ambI: 0.40 }, // Nightfall
-  { t: 24.0, sun: 0x5a7ca8, amb: 0x22324c, bg: 0x22324c, sunI: 0.35, ambI: 0.40 }  // Wrap to midnight
+  { t: 0.0,  sun: 0x3d5475, amb: 0x0c1422, bg: 0x0c1422, sunI: 0.20, ambI: 0.18 }, // Midnight
+  { t: 4.5,  sun: 0x486488, amb: 0x101a2c, bg: 0x101a2c, sunI: 0.24, ambI: 0.22 }, // Pre-dawn
+  { t: 5.5,  sun: 0xff7b39, amb: 0x7a4860, bg: 0x7a4860, sunI: 0.70, ambI: 0.45 }, // Sunrise start
+  { t: 6.5,  sun: 0xffa048, amb: 0xb07882, bg: 0xb07882, sunI: 0.95, ambI: 0.60 }, // Golden dawn
+  { t: 7.5,  sun: 0xffd285, amb: 0xd0b8ae, bg: 0xd0b8ae, sunI: 1.25, ambI: 0.75 }, // Early morning
+  { t: 9.0,  sun: 0xfffaea, amb: 0xdde8f5, bg: 0xdde8f5, sunI: 1.40, ambI: 0.82 }, // Morning
+  { t: 12.0, sun: 0xffffff, amb: 0xe5f0ff, bg: 0xe5f0ff, sunI: 1.55, ambI: 0.85 }, // Solar Noon
+  { t: 15.5, sun: 0xfffaea, amb: 0xdde8f5, bg: 0xdde8f5, sunI: 1.40, ambI: 0.82 }, // Afternoon
+  { t: 17.0, sun: 0xffab4c, amb: 0xb57870, bg: 0xb57870, sunI: 1.10, ambI: 0.68 }, // Sunset start
+  { t: 18.2, sun: 0xff6a35, amb: 0x8a4565, bg: 0x8a4565, sunI: 0.80, ambI: 0.52 }, // Sunset golden hour
+  { t: 19.5, sun: 0x623d72, amb: 0x221634, bg: 0x221634, sunI: 0.38, ambI: 0.28 }, // Dusk twilight
+  { t: 21.0, sun: 0x3d5475, amb: 0x0f1828, bg: 0x0f1828, sunI: 0.22, ambI: 0.20 }, // Nightfall
+  { t: 24.0, sun: 0x3d5475, amb: 0x0c1422, bg: 0x0c1422, sunI: 0.20, ambI: 0.18 }  // Wrap to midnight
 ];
 
 const EMOTE_SKINS = [
@@ -117,6 +117,28 @@ function getEntityBounds(e) {
   if (isWall) return { radius: 0.75, h: 1.5, yBottom: 0.0 };
   if (isItem) return { radius: 0.65, h: 0.9, yBottom: 0.0 }; // Generous 3D clickable radius for ground items
   return { radius: 0.55, h: 1.1, yBottom: 0.0 }; // Compact creatures
+}
+
+// ---------------------------------------------------------------------------
+// Texture Registry & Anisotropic Filtering Engine
+// ---------------------------------------------------------------------------
+
+export const REGISTERED_TEXTURES = new Set();
+let currentGlobalAnisotropy = 4;
+
+export function applyTextureAnisotropy(tex, aniso = currentGlobalAnisotropy) {
+  if (!tex || !tex.isTexture) return;
+  REGISTERED_TEXTURES.add(tex);
+  const level = Math.max(1, Math.min(16, typeof aniso === "number" ? aniso : parseInt(aniso, 10) || 1));
+  tex.anisotropy = level;
+  if (level > 1) {
+    tex.generateMipmaps = true;
+    tex.minFilter = THREE.NearestMipmapLinearFilter;
+  } else {
+    tex.generateMipmaps = false;
+    tex.minFilter = THREE.NearestFilter;
+  }
+  tex.needsUpdate = true;
 }
 
 // ---------------------------------------------------------------------------
@@ -219,6 +241,7 @@ export function createTintedTexture(skinName, fgHex = 0xffffff, bgHex = 0x000000
     drawTexture();
   }
 
+  applyTextureAnisotropy(tex);
   textureCache.set(cacheKey, tex);
   return tex;
 }
@@ -438,9 +461,9 @@ function createSaguaroCactusGeometry() {
   return merged;
 }
 
-function createNaturalGrassGeometry(w = 0.44, h = 0.42) {
+function createNaturalGrassGeometry(w = 0.44, h = 0.38) {
   const p1 = new THREE.PlaneGeometry(w, h);
-  p1.translate(0, h / 2, 0);
+  p1.translate(0, h * 0.36, 0);
 
   const p2 = p1.clone();
   p2.rotateY(Math.PI / 3);
@@ -1855,7 +1878,7 @@ export function createNormalMapFromTexture(skinName, intensity = 1.6) {
   tex.magFilter = THREE.NearestFilter;
   tex.minFilter = THREE.NearestFilter;
   tex.generateMipmaps = false;
-  tex.needsUpdate = true;
+  applyTextureAnisotropy(tex);
   normalMapCache.set(cacheKey, tex);
   return tex;
 }
@@ -1928,7 +1951,7 @@ function generateProceduralTerrainNormalMap(type, intensity = 1.35) {
   tex.magFilter = THREE.NearestFilter;
   tex.minFilter = THREE.NearestFilter;
   tex.generateMipmaps = false;
-  tex.needsUpdate = true;
+  applyTextureAnisotropy(tex);
   return tex;
 }
 
@@ -2005,7 +2028,7 @@ function generateProceduralFoliageNormalMap(type, intensity = 1.6) {
   tex.magFilter = THREE.NearestFilter;
   tex.minFilter = THREE.NearestFilter;
   tex.generateMipmaps = false;
-  tex.needsUpdate = true;
+  applyTextureAnisotropy(tex);
   return tex;
 }
 
@@ -2118,7 +2141,7 @@ function createDitheredCelestialTexture(type) {
   tex.magFilter = THREE.NearestFilter;
   tex.minFilter = THREE.NearestFilter;
   tex.generateMipmaps = false;
-  tex.needsUpdate = true;
+  applyTextureAnisotropy(tex);
   return tex;
 }
 
@@ -2186,7 +2209,7 @@ function createDitheredGodRaysTexture(type = "sun") {
   tex.magFilter = THREE.NearestFilter;
   tex.minFilter = THREE.NearestFilter;
   tex.generateMipmaps = false;
-  tex.needsUpdate = true;
+  applyTextureAnisotropy(tex);
   return tex;
 }
 
@@ -2221,39 +2244,39 @@ function createDitheredLensFlareTexture(variant = 0) {
       const idx = (y * size + x) * 4;
 
       if (variant === 0) {
-        // Hexagonal Aperture Flare Disk
+        // Discreet Hexagonal Aperture Flare Disk
         const angle = Math.atan2(dy, dx);
         const hexR = dist * (Math.cos((((angle % (Math.PI / 3)) + (Math.PI / 3)) % (Math.PI / 3)) - Math.PI / 6));
-        if (hexR <= 11.5) {
-          const alpha = 0.70 * (1.0 - hexR / 11.5);
+        if (hexR <= 8.5) {
+          const alpha = 0.32 * (1.0 - hexR / 8.5);
           if (alpha > bayerVal) {
-            data[idx + 0] = 255;
-            data[idx + 1] = 170;
+            data[idx + 0] = 235;
+            data[idx + 1] = 160;
             data[idx + 2] = 50;
-            data[idx + 3] = 160;
+            data[idx + 3] = 70;
           }
         }
       } else if (variant === 1) {
-        // Pixel Ring Halo
-        if (dist >= 6.5 && dist <= 12.5) {
-          const ringDist = Math.abs(dist - 9.5);
-          const alpha = 0.75 * (1.0 - ringDist / 3.0);
+        // Discreet Pixel Ring Halo
+        if (dist >= 5.5 && dist <= 10.5) {
+          const ringDist = Math.abs(dist - 8.0);
+          const alpha = 0.35 * (1.0 - ringDist / 2.5);
           if (alpha > bayerVal) {
-            data[idx + 0] = 100;
-            data[idx + 1] = 200;
-            data[idx + 2] = 255;
-            data[idx + 3] = 170;
+            data[idx + 0] = 90;
+            data[idx + 1] = 180;
+            data[idx + 2] = 245;
+            data[idx + 3] = 75;
           }
         }
       } else {
-        // Anamorphic Burst Star
-        if (dist <= 14.0) {
-          const alpha = 0.60 * (1.0 - dist / 14.0);
+        // Discreet Anamorphic Star Burst
+        if (dist <= 9.0) {
+          const alpha = 0.28 * (1.0 - dist / 9.0);
           if (alpha > bayerVal) {
-            data[idx + 0] = 255;
-            data[idx + 1] = 230;
-            data[idx + 2] = 120;
-            data[idx + 3] = 150;
+            data[idx + 0] = 245;
+            data[idx + 1] = 210;
+            data[idx + 2] = 100;
+            data[idx + 3] = 60;
           }
         }
       }
@@ -2265,7 +2288,7 @@ function createDitheredLensFlareTexture(variant = 0) {
   tex.magFilter = THREE.NearestFilter;
   tex.minFilter = THREE.NearestFilter;
   tex.generateMipmaps = false;
-  tex.needsUpdate = true;
+  applyTextureAnisotropy(tex);
   return tex;
 }
 
@@ -2532,12 +2555,12 @@ export class RCT3DRenderer {
     this.scene.add(this.sunLight);
     this.scene.add(this.sunLight.target);
 
-    // Dynamic Night Point Light Pool (Optimized pool for low-end dual-core hardware)
-    this.maxNightLights = 16;
+    // Dynamic Night Point Light Pool (Optimized pool for realistic 1P/3P light propagation)
+    this.maxNightLights = 32;
     this.maxShadowPointLights = 0; // Point lights do direct local shading; sun/moon provides directional shadows
     this.nightLightPool = [];
     for (let i = 0; i < this.maxNightLights; i++) {
-      const pl = new THREE.PointLight(0xffaa44, 0, 12, 1.8);
+      const pl = new THREE.PointLight(0xffaa44, 0, 24, 1.2);
       pl.castShadow = false;
       this.scene.add(pl);
       this.nightLightPool.push(pl);
@@ -3462,10 +3485,10 @@ export class RCT3DRenderer {
     this.lensFlareElements = [];
 
     const flareConfigs = [
-      { variant: 0, scale: 0.22, factor: 0.35, color: 0xffaa44 },
-      { variant: 1, scale: 0.38, factor: 0.70, color: 0x64b4ff },
-      { variant: 0, scale: 0.15, factor: 1.10, color: 0xffdd66 },
-      { variant: 2, scale: 0.30, factor: -0.30, color: 0xff9933 }
+      { variant: 0, scale: 0.09, factor: 0.35, color: 0xcc8833 },
+      { variant: 1, scale: 0.14, factor: 0.70, color: 0x4488cc },
+      { variant: 0, scale: 0.06, factor: 1.10, color: 0xccaa44 },
+      { variant: 2, scale: 0.10, factor: -0.25, color: 0xcc6622 }
     ];
 
     for (const cfg of flareConfigs) {
@@ -3475,6 +3498,7 @@ export class RCT3DRenderer {
         map: fTex,
         color: cfg.color,
         transparent: true,
+        opacity: 0.40,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
         depthTest: false,
@@ -3612,9 +3636,60 @@ export class RCT3DRenderer {
     return this.shadowsEnabled;
   }
 
+  setAnisotropy(level) {
+    const maxAniso = this.renderer?.capabilities?.getMaxAnisotropy ? this.renderer.capabilities.getMaxAnisotropy() : 16;
+    let aniso = 1;
+    if (typeof level === "number") {
+      aniso = Math.max(1, Math.min(level, maxAniso));
+    } else if (level === "2X" || level === 2) {
+      aniso = Math.min(2, maxAniso);
+    } else if (level === "4X" || level === 4) {
+      aniso = Math.min(4, maxAniso);
+    } else if (level === "8X" || level === 8) {
+      aniso = Math.min(8, maxAniso);
+    } else if (level === "16X" || level === 16) {
+      aniso = Math.min(16, maxAniso);
+    } else {
+      aniso = 1;
+    }
+
+    this.graphicOptions.anisotropy = aniso;
+    currentGlobalAnisotropy = aniso;
+
+    for (const tex of REGISTERED_TEXTURES) {
+      applyTextureAnisotropy(tex, aniso);
+    }
+
+    const scanDict = (dict) => {
+      if (!dict) return;
+      for (const val of Object.values(dict)) {
+        if (Array.isArray(val)) {
+          for (const m of val) scanMat(m);
+        } else {
+          scanMat(val);
+        }
+      }
+    };
+
+    const scanMat = (mat) => {
+      if (!mat) return;
+      if (mat.map) applyTextureAnisotropy(mat.map, aniso);
+      if (mat.normalMap) applyTextureAnisotropy(mat.normalMap, aniso);
+      if (mat.roughnessMap) applyTextureAnisotropy(mat.roughnessMap, aniso);
+      if (mat.metalnessMap) applyTextureAnisotropy(mat.metalnessMap, aniso);
+      if (mat.alphaMap) applyTextureAnisotropy(mat.alphaMap, aniso);
+    };
+
+    scanDict(this.materialsIso);
+    scanDict(this.materialsPerspective);
+  }
+
   setGraphicOptions(opts) {
     if (!opts) return;
     Object.assign(this.graphicOptions, opts);
+    if (opts.anisotropy !== undefined) {
+      this.setAnisotropy(opts.anisotropy);
+    }
     this.syncActiveMaterials(this.isPerspectiveActive());
   }
 
@@ -3877,17 +3952,22 @@ export class RCT3DRenderer {
     return map[y * MAP_WIDTH + x];
   }
 
-  getTileSurfaceHeight(map, tx, ty) {
-    const t = this.getTileTypeAt(map, tx, ty);
-    if (t === TILE_WATER) return 0.08;
-    const h00 = this.getCornerHeight(map, tx, ty);
-    const h10 = this.getCornerHeight(map, tx + 1, ty);
-    const h11 = this.getCornerHeight(map, tx + 1, ty + 1);
-    const h01 = this.getCornerHeight(map, tx, ty + 1);
-    return Math.max(
-      (h00 + h10 + h11 + h01) / 4.0,
-      Math.max(h00, h10, h11, h01) - 0.05
-    );
+  getTileSurfaceHeight(map, tx, ty, fpW = 1, fpH = 1) {
+    let minH = Infinity;
+    for (let dy = 0; dy <= fpH; dy++) {
+      for (let dx = 0; dx <= fpW; dx++) {
+        const cx = tx + dx;
+        const cy = ty + dy;
+        const t = this.getTileTypeAt(map, Math.min(cx, tx + fpW - 1), Math.min(cy, ty + fpH - 1));
+        if (t === TILE_WATER) {
+          minH = Math.min(minH, 0.08);
+        } else {
+          const h = this.getCornerHeight(map, cx, cy);
+          minH = Math.min(minH, h);
+        }
+      }
+    }
+    return Number.isFinite(minH) ? minH : 0.0;
   }
 
   getSurfaceElevation(map, x, y) {
@@ -4341,8 +4421,9 @@ export class RCT3DRenderer {
       this.scene.fog.density = targetFogDensity;
     }
 
-    const sunIntensity = k1.sunI + (k2.sunI - k1.sunI) * sAlpha;
-    const ambIntensity = k1.ambI + (k2.ambI - k1.ambI) * sAlpha;
+    const isPersp = this.isPerspectiveActive();
+    const sunIntensity = (k1.sunI + (k2.sunI - k1.sunI) * sAlpha) * (isPersp ? 1.25 : 1.0);
+    const ambIntensity = (k1.ambI + (k2.ambI - k1.ambI) * sAlpha) * (isPersp ? 1.15 : 1.0);
 
     this.sunLight.intensity = sunIntensity;
     this.ambientLight.intensity = ambIntensity;
@@ -4668,13 +4749,13 @@ export class RCT3DRenderer {
           if (!isPersp) {
             // Isometric view: classic 8% density
             if (shouldSpawnGrassTuft(tx, ty) && foliageCount < 1200) {
-              const midH = (h00 + h10 + h11 + h01) / 4.0;
+              const midH = Math.min(h00, h10, h11, h01);
               matHelper.identity();
-              matHelper.setPosition(tx + 0.5, midH, ty + 0.5);
+              matHelper.setPosition(tx + 0.5, midH - 0.04, ty + 0.5);
               this.instGrassTufts.setMatrixAt(foliageCount++, matHelper);
             }
           } else {
-            // 1P/3P Perspective Mode: High density of small, delicate natural grass tufts
+            // 1P/3P Perspective Mode: High density of small, delicate natural grass tufts planted firmly into ground
             let tHash = Math.imul(tx ^ Math.imul(ty, 198491317), 445582319);
             tHash = Math.imul(tHash ^ (tHash >>> 11), 892341233) >>> 0;
             const spawnChance = tHash % 100;
@@ -4687,9 +4768,13 @@ export class RCT3DRenderer {
                 const ox = 0.15 + ((subHash & 0xFF) / 255.0) * 0.70;
                 const oy = 0.15 + (((subHash >> 8) & 0xFF) / 255.0) * 0.70;
 
-                const hX0 = h00 + (h10 - h00) * ox;
-                const hX1 = h01 + (h11 - h01) * ox;
-                const tuftY = hX0 + (hX1 - hX0) * oy;
+                let groundY;
+                if (ox <= oy) {
+                  groundY = h00 + (h01 - h00) * oy + (h11 - h01) * ox;
+                } else {
+                  groundY = h00 + (h10 - h00) * ox + (h11 - h10) * oy;
+                }
+                const tuftY = groundY - 0.06;
 
                 const rotY = (((subHash >> 16) & 0xFF) / 255.0) * Math.PI * 2;
                 const scale = 0.85 + (((subHash >> 24) & 0xFF) / 255.0) * 0.35;
@@ -5181,9 +5266,20 @@ export class RCT3DRenderer {
       const isPlantOrItem = isTree || isCactus || isWoodLog || isStoneItem || isTorch || isCampfire || isRoad;
 
       const isItem = !e.properties.brain && !isBuilding && !isTree && !isCactus && !isWoodLog && !isStoneItem && !isTorch && !isCampfire && !isRoad;
-      const surfaceH = isBuilding
-        ? this.getTileSurfaceHeight(map, Math.floor(e.x), Math.floor(e.y))
-        : this.getSurfaceElevation(map, isPlantOrItem ? e.x + 0.5 : e.x, isPlantOrItem ? e.y + 0.5 : e.y);
+      let surfaceH;
+      if (isHouse) {
+        const h = e.properties?.house;
+        const isLeaderHouse = !!e.properties?.leaderHouse || !!h?.isLeaderHouse;
+        const fpW = h?.footprintW || (isLeaderHouse ? 3 : (h?.footprint ? Number(h.footprint.split("x")[0]) : 1)) || 1;
+        const fpH = h?.footprintH || (isLeaderHouse ? 3 : (h?.footprint ? Number(h.footprint.split("x")[1]) : 1)) || 1;
+        surfaceH = this.getTileSurfaceHeight(map, Math.floor(e.x), Math.floor(e.y), fpW, fpH);
+      } else if (isWarehouse || isSlaughterhouse || isKitchen || isArtisanHut) {
+        surfaceH = this.getTileSurfaceHeight(map, Math.floor(e.x), Math.floor(e.y), 2, 2);
+      } else if (isBuilding) {
+        surfaceH = this.getTileSurfaceHeight(map, Math.floor(e.x), Math.floor(e.y), 1, 1);
+      } else {
+        surfaceH = this.getSurfaceElevation(map, isPlantOrItem ? e.x + 0.5 : e.x, isPlantOrItem ? e.y + 0.5 : e.y);
+      }
 
       // --- 3D WOOD LOGS (Volumetric Stacked Timber Logs) ---
       if (isWoodLog && woodLogCount < this.maxInstances) {
@@ -5923,9 +6019,10 @@ export class RCT3DRenderer {
         const e = visibleEntities[i];
         if (!e || e.destroyed) continue;
 
+        const isPersp = this.isPerspectiveActive();
         const sz = currentZoneSize || 8;
 
-        // 1. Standing Furniture Torches on Ground (1/4 Zone Radius, Soft Non-Blinding Glow)
+        // 1. Standing Furniture Torches on Ground
         const isStandingTorch = !!e.properties?.torch;
         if (isStandingTorch && e.properties?.torch?.isLit !== false && (e.properties?.torch?.fuel || 0) > 0) {
           const sH = this.getSurfaceElevation(map, e.x + 0.5, e.y + 0.5);
@@ -5936,15 +6033,15 @@ export class RCT3DRenderer {
           c.y = sH + 1.20;
           c.z = e.y + 0.5;
           c.color = 0xffa040;
-          c.distance = Math.max(2.5, sz * 0.38); // 1/4 Zone Light Radius
-          c.decay = 1.4;
-          c.intensity = nightGlow * 1.8;
+          c.distance = isPersp ? 18.0 : Math.max(2.5, sz * 0.38);
+          c.decay = isPersp ? 1.15 : 1.4;
+          c.intensity = isPersp ? nightGlow * 2.4 : nightGlow * 1.8;
           c.priority = 1; // Top priority for placed torches
           c.distSq = dx * dx + dy * dy;
           continue;
         }
 
-        // 2. Wood Campfire (1 Full Zone Radius, Warm Radiant Firelight)
+        // 2. Wood Campfire (Warm Radiant Firelight with atmospheric reach and balanced brightness)
         const isCampfire = !!e.properties?.campfire;
         if (isCampfire && e.properties?.campfire?.isLit && (e.properties?.campfire?.fuel || 0) > 0) {
           const sH = this.getSurfaceElevation(map, e.x + 0.5, e.y + 0.5);
@@ -5952,18 +6049,18 @@ export class RCT3DRenderer {
           const dy = (e.y + 0.5) - focusY;
           const c = this.lightCandidatesPool[candidateCount++];
           c.x = e.x + 0.5;
-          c.y = sH + 0.40;
+          c.y = sH + 0.50;
           c.z = e.y + 0.5;
           c.color = 0xff7b18;
-          c.distance = Math.max(8.0, sz * 1.45); // 1 Full Zone Light Radius
-          c.decay = 1.0;
-          c.intensity = nightGlow * 6.5;
+          c.distance = isPersp ? 34.0 : Math.max(8.0, sz * 1.45);
+          c.decay = isPersp ? 1.0 : 1.0;
+          c.intensity = isPersp ? nightGlow * 6.8 : nightGlow * 6.5;
           c.priority = 0; // Highest priority for central campfires
           c.distSq = dx * dx + dy * dy;
           continue;
         }
 
-        // 3. Torches Carried by Intelligent Creatures (MainHand or OffHand - 1/4 Zone Radius)
+        // 3. Torches Carried by Intelligent Creatures
         const isIntelligent = !!e.properties?.brain || !!e.properties?.group_member;
         if (isIntelligent) {
           const leftTorch = e.properties.arm_left?.heldItem?.resourceType === "torch" && (e.properties.arm_left?.heldItem?.fuel || 0) > 0;
@@ -5978,9 +6075,9 @@ export class RCT3DRenderer {
             c.y = sH + 0.95;
             c.z = e.y;
             c.color = 0xffaa44;
-            c.distance = Math.max(2.2, sz * 0.32);
-            c.decay = 1.5;
-            c.intensity = nightGlow * 1.6;
+            c.distance = isPersp ? 16.0 : Math.max(2.2, sz * 0.32);
+            c.decay = isPersp ? 1.2 : 1.5;
+            c.intensity = isPersp ? nightGlow * 2.2 : nightGlow * 1.6;
             c.priority = e.id === this.selectedEntityId ? 0 : 2;
             c.distSq = dx * dx + dy * dy;
           }
@@ -5990,7 +6087,7 @@ export class RCT3DRenderer {
         // 4. Wall Torches / Watchtower Torch Brackets
         const isWall = e.properties?.structure && !e.properties?.house && !e.properties?.door && !!e.properties?.torch;
         if (isWall) {
-          const sH = this.getTileSurfaceHeight(map, Math.floor(e.x), Math.floor(e.y));
+          const sH = this.getTileSurfaceHeight(map, Math.floor(e.x), Math.floor(e.y), 1, 1);
           const dx = (e.x + 0.5) - focusX;
           const dy = (e.y + 0.5) - focusY;
           const c = this.lightCandidatesPool[candidateCount++];
@@ -5998,9 +6095,9 @@ export class RCT3DRenderer {
           c.y = sH + 1.60;
           c.z = e.y + 0.5;
           c.color = 0xffb555;
-          c.distance = 10.0;
-          c.decay = 1.6;
-          c.intensity = nightGlow * 2.0;
+          c.distance = isPersp ? 20.0 : 10.0;
+          c.decay = isPersp ? 1.2 : 1.6;
+          c.intensity = isPersp ? nightGlow * 2.6 : nightGlow * 2.0;
           c.priority = 3;
           c.distSq = dx * dx + dy * dy;
         }
