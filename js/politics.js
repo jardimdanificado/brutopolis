@@ -724,20 +724,38 @@ export function updatePolitics(dt, globalTick) {
       }
     }
 
+    if (group.govType === "AUTOCRACY") {
+      group.diplomats = [group.leaderId, group.leaderId, group.leaderId, group.leaderId, group.leaderId, group.leaderId];
+    }
+
     for (let i = 0; i < 6; i++) {
       group.diplomatTermTicks[i] += POLITICS_TICK_RATE;
       
-      // 7 days = 7 * 2400 ticks = 16800 ticks
-      if (group.govType === "DEMOCRACY" || group.govType === "PSEUDOCRACY") {
-        if (group.diplomatTermTicks[i] >= 16800) {
-          group.diplomatTermTicks[i] = 0;
-          holdElection(group, "DIPLOMAT", i, globalTick);
+      if (group.govType === "AUTOCRACY") {
+        group.diplomats[i] = group.leaderId;
+      } else {
+        // 7 days = 7 * 2400 ticks = 16800 ticks (Scheduled elections)
+        if (group.govType === "DEMOCRACY" || group.govType === "PSEUDOCRACY") {
+          if (group.diplomatTermTicks[i] >= 16800) {
+            group.diplomatTermTicks[i] = 0;
+            holdElection(group, "DIPLOMAT", i, globalTick);
+          }
         }
-      }
 
-      // Fill any empty or deceased spots across all regimes
-      if (!group.diplomats[i] || !isAlive(group.diplomats[i])) {
-        fillVacantDiplomat(group, i, globalTick);
+        // Vacate on death and hold emergency election if candidates exist
+        if (!group.diplomats[i] || !isAlive(group.diplomats[i])) {
+          group.diplomats[i] = null;
+          const otherDips = (group.diplomats || []).filter((d, idx) => idx !== i && d);
+          const availableCandidates = getValidCandidates(group, [group.leaderId, ...otherDips]);
+
+          if (availableCandidates.length > 0) {
+            if (group.govType === "DEMOCRACY" || group.govType === "PSEUDOCRACY") {
+              holdElection(group, "DIPLOMAT", i, globalTick);
+            } else {
+              fillVacantDiplomat(group, i, globalTick);
+            }
+          }
+        }
       }
     }
 

@@ -2,8 +2,8 @@
 // Brutopolis
 // =============================================================================
 
-const BrutopolisVersion = "0.119.5";
-const BrutopolisVersionName = "Honour all men. Love the brotherhood. Fear God. Honour the king.";
+const BrutopolisVersion = "0.120.3";
+const BrutopolisVersionName = "Rejoice with those who rejoice; mourn with those who mourn.";
 
 // WASM replaced by Pure JS Renderer
 import { World } from "./js/world.js";
@@ -1284,6 +1284,36 @@ function applyEditorActionAt(tileX, tileY) {
   }
 }
 
+let isFirstPersonMode = false; // First-person creature camera perspective with free rotation
+let firstPersonEntityId = null;
+
+function toggleFirstPersonMode(targetId = null) {
+  const idToUse = targetId || lastSelectedId;
+  if (!idToUse) return;
+
+  if (isFirstPersonMode && firstPersonEntityId === idToUse) {
+    exitFirstPersonMode();
+  } else {
+    isFirstPersonMode = true;
+    firstPersonEntityId = idToUse;
+    lastSelectedId = idToUse;
+    isFollowMode = false;
+    currentMode = "MAP";
+    if (!is3DMode) toggle3DMode();
+    if (rctRenderer && typeof rctRenderer.setFirstPersonMode === "function") {
+      rctRenderer.setFirstPersonMode(true, idToUse);
+    }
+  }
+}
+
+function exitFirstPersonMode() {
+  isFirstPersonMode = false;
+  firstPersonEntityId = null;
+  if (rctRenderer && typeof rctRenderer.setFirstPersonMode === "function") {
+    rctRenderer.setFirstPersonMode(false, null);
+  }
+}
+
 function toggleFollowMode() {
   isFollowMode = !isFollowMode;
 }
@@ -1791,6 +1821,21 @@ window.addEventListener("mousemove", (e) => {
     }
   }
 
+  // First-Person Mode Free Camera Look Drag
+  if (isFirstPersonMode && is3DMode && rctRenderer && typeof rctRenderer.isFirstPersonActive === "function" && rctRenderer.isFirstPersonActive()) {
+    if (isMouseDown) {
+      const dx = e.clientX - dragStartClientX;
+      const dy = e.clientY - dragStartClientY;
+      dragStartClientX = e.clientX;
+      dragStartClientY = e.clientY;
+      if (typeof rctRenderer.rotateFirstPersonCamera === "function") {
+        rctRenderer.rotateFirstPersonCamera(dx * 0.006, dy * 0.006);
+      }
+      isDragging = true;
+      return;
+    }
+  }
+
   // Camera Drag (Right Click or Left Click Drag when not painting)
   if (isMouseDown && (renderer || rctRenderer) && !isPainting && currentMode === "MAP") {
     const totalDist = Math.hypot(e.clientX - dragStartClientX, e.clientY - dragStartClientY);
@@ -1933,6 +1978,20 @@ window.addEventListener("keydown", (e) => {
     toggleFollowMode();
   } else if (e.code === "KeyV") {
     toggleCreatureVisionMode();
+  } else if (e.code === "KeyP") {
+    toggleFirstPersonMode();
+  } else if (e.code === "ArrowLeft" && isFirstPersonMode && rctRenderer?.rotateFirstPersonCamera) {
+    e.preventDefault();
+    rctRenderer.rotateFirstPersonCamera(-0.08, 0);
+  } else if (e.code === "ArrowRight" && isFirstPersonMode && rctRenderer?.rotateFirstPersonCamera) {
+    e.preventDefault();
+    rctRenderer.rotateFirstPersonCamera(0.08, 0);
+  } else if (e.code === "ArrowUp" && isFirstPersonMode && rctRenderer?.rotateFirstPersonCamera) {
+    e.preventDefault();
+    rctRenderer.rotateFirstPersonCamera(0, -0.05);
+  } else if (e.code === "ArrowDown" && isFirstPersonMode && rctRenderer?.rotateFirstPersonCamera) {
+    e.preventDefault();
+    rctRenderer.rotateFirstPersonCamera(0, 0.05);
   } else if (e.code === "Tab") {
     e.preventDefault();
     cycleNextLivingEntity();
@@ -1951,7 +2010,7 @@ window.addEventListener("keydown", (e) => {
     inspectingLogEvent = null;
   } else if (e.code === "KeyM") {
     toggle3DMode();
-  } else if (e.code === "KeyS") {
+  } else if (e.code === "KeyS" && !isFirstPersonMode) {
     isEditorOpen = !isEditorOpen;
     if (isEditorOpen) {
       if (!editorTool) editorTool = "PAINT";
@@ -1961,7 +2020,9 @@ window.addEventListener("keydown", (e) => {
       isPainting = false;
     }
   } else if (e.code === "Escape") {
-    if (isEditorOpen) {
+    if (isFirstPersonMode) {
+      exitFirstPersonMode();
+    } else if (isEditorOpen) {
       isEditorOpen = false;
       editorTool = null;
       editorActiveSpawner = null;
@@ -2978,6 +3039,15 @@ function renderDossierModal() {
 
   // Action Buttons
   if (!target.destroyed) {
+    const isCreature = !!props.life || !!props.brain;
+    if (isCreature) {
+      const is1PAct = isFirstPersonMode && firstPersonEntityId === target.id;
+      drawNESButton(mx + mw - 325, my + 6, 120, 24, "1ST PERSON (1P)", is1PAct, false);
+      registerClickableRegion(mx + mw - 325, my + 6, 120, 24, () => {
+        toggleFirstPersonMode(target.id);
+      });
+    }
+
     drawNESButton(mx + mw - 195, my + 6, 75, 24, "FOCUS", false, false);
     registerClickableRegion(mx + mw - 195, my + 6, 75, 24, () => {
       focusEntityAndFollow(target);
@@ -4320,19 +4390,33 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
     let dipY = contentY + 46;
     for (let i = 0; i < 6; i++) {
       const lbl = dLabels[i];
-      const dId = g.diplomats && g.diplomats.length > i ? g.diplomats[i] : null;
-      const dEnt = dId ? getEntityById(dId) : null;
-      const dStr = dEnt ? (dEnt.properties?.life?.isDead ? `(DECEASED) ${dEnt.properties.name}` : dEnt.properties.name) : "VACANT";
-      const dCol = dEnt ? "#d0d0e0" : "#7b7b88";
-      drawText8x8(`Diplomat (${lbl}): ${dStr}`, mx + 320, dipY + 4, dCol, 1);
-      if (dEnt) {
-        drawNESButton(mx + mw - 95, dipY, 65, 18, "INSPECT", false, false);
-        const curDId = dId;
-        registerClickableRegion(mx + mw - 95, dipY, 65, 18, () => {
-          lastSelectedId = curDId;
-          dossierTab = "OVERVIEW";
-          currentMode = "INSPECT";
-        });
+      if (g.govType === "AUTOCRACY") {
+        const aStr = leaderEnt ? `[AUTOCRAT] ${leaderEnt.properties?.name || "Líder"}` : "[AUTOCRAT] Líder";
+        drawText8x8(`Diplomat (${lbl}): ${aStr}`, mx + 320, dipY + 4, "#3cbcfc", 1);
+        if (leaderEnt) {
+          drawNESButton(mx + mw - 95, dipY, 65, 18, "INSPECT", false, false);
+          const lId = g.leaderId;
+          registerClickableRegion(mx + mw - 95, dipY, 65, 18, () => {
+            lastSelectedId = lId;
+            dossierTab = "OVERVIEW";
+            currentMode = "INSPECT";
+          });
+        }
+      } else {
+        const dId = g.diplomats && g.diplomats.length > i ? g.diplomats[i] : null;
+        const dEnt = dId ? getEntityById(dId) : null;
+        const dStr = dEnt ? (dEnt.properties?.life?.isDead ? `(DECEASED) ${dEnt.properties.name}` : dEnt.properties.name) : "VACANT";
+        const dCol = dEnt ? "#d0d0e0" : "#7b7b88";
+        drawText8x8(`Diplomat (${lbl}): ${dStr}`, mx + 320, dipY + 4, dCol, 1);
+        if (dEnt) {
+          drawNESButton(mx + mw - 95, dipY, 65, 18, "INSPECT", false, false);
+          const curDId = dId;
+          registerClickableRegion(mx + mw - 95, dipY, 65, 18, () => {
+            lastSelectedId = curDId;
+            dossierTab = "OVERVIEW";
+            currentMode = "INSPECT";
+          });
+        }
       }
       dipY += 22;
     }
@@ -5798,6 +5882,27 @@ function renderCreatureVisionOverlay() {
 }
 
 /**
+ * First-Person Mode HUD Overlay with Orientation Info & Quick Exit
+ */
+function renderFirstPersonHUD() {
+  if (!isFirstPersonMode || !firstPersonEntityId || currentMode !== "MAP") return;
+  const ent = getEntityById(firstPersonEntityId);
+  const name = ent ? (ent.properties?.name || `CREATURE #${ent.id}`).toUpperCase() : "CREATURE";
+
+  const bw = Math.min(540, CANVAS_WIDTH - 24);
+  const bx = Math.floor((CANVAS_WIDTH - bw) / 2);
+  const by = 8;
+  drawNESBox(bx, by, bw, 28);
+
+  drawText8x8(`1ST PERSON: ${name} | [DRAG/ARROWS: LOOK]`, bx + 10, by + 10, "#58d854", 1);
+
+  drawNESButton(bx + bw - 90, by + 4, 80, 20, "EXIT 1P", false, false);
+  registerClickableRegion(bx + bw - 90, by + 4, 80, 20, () => {
+    exitFirstPersonMode();
+  });
+}
+
+/**
  * Compact HUD Box with Summary Info and Quick Toggles for Selected Creature
  */
 function renderCreatureSummaryBox() {
@@ -5807,7 +5912,8 @@ function renderCreatureSummaryBox() {
 
   const bx = 8;
   const by = 38;
-  const bw = 240;
+  const isCreature = !!ent.properties.brain;
+  const bw = isCreature ? 310 : 240;
   const bh = 82;
 
   drawNESBox(bx, by, bw, bh);
@@ -5817,7 +5923,6 @@ function renderCreatureSummaryBox() {
   const nameStr = (ent.properties.name || `Entity #${ent.id}`).slice(0, 18).toUpperCase();
   drawText8x8(nameStr, bx + 8, by + 8, "#f8b800", 1);
 
-  const isCreature = !!ent.properties.brain;
   const speciesStr = (ent.properties.species || (isCreature ? "Creature" : "Item")).toUpperCase();
   const clanStr = (ent.properties.group?.name || (isCreature ? "Solitary" : "Resource")).slice(0, 10).toUpperCase();
   drawText8x8(`${speciesStr} | ${clanStr}`, bx + 8, by + 20, "#3cbcfc", 1);
@@ -5829,18 +5934,25 @@ function renderCreatureSummaryBox() {
     drawText8x8(info, bx + 8, by + 34, "#a0e0a0", 1);
   }
 
-  // Toggles for Follow & Vision (Creatures only)
+  // Toggles for Follow, Vision & 1st Person (Creatures only)
   if (isCreature) {
     const followTxt = isFollowMode ? "FOLLOW:ON" : "FOLLOW:OFF";
-    drawNESButton(bx + 8, by + 50, 108, 24, followTxt, isFollowMode, false);
-    registerClickableRegion(bx + 8, by + 50, 108, 24, () => {
+    drawNESButton(bx + 8, by + 50, 92, 24, followTxt, isFollowMode, false);
+    registerClickableRegion(bx + 8, by + 50, 92, 24, () => {
       isFollowMode = !isFollowMode;
     });
 
     const visionTxt = isCreatureVisionMode ? "VISION:ON" : "VISION:OFF";
-    drawNESButton(bx + 124, by + 50, 108, 24, visionTxt, isCreatureVisionMode, false);
-    registerClickableRegion(bx + 124, by + 50, 108, 24, () => {
+    drawNESButton(bx + 104, by + 50, 92, 24, visionTxt, isCreatureVisionMode, false);
+    registerClickableRegion(bx + 104, by + 50, 92, 24, () => {
       isCreatureVisionMode = !isCreatureVisionMode;
+    });
+
+    const is1PAct = isFirstPersonMode && firstPersonEntityId === ent.id;
+    const fpTxt = is1PAct ? "1P:ON" : "1P:OFF";
+    drawNESButton(bx + 200, by + 50, 92, 24, fpTxt, is1PAct, false);
+    registerClickableRegion(bx + 200, by + 50, 92, 24, () => {
+      toggleFirstPersonMode(ent.id);
     });
   }
 }
@@ -6686,6 +6798,7 @@ function frame(time) {
         renderTerritoryOverlay();
         renderHoverTooltip();
         renderCreatureSummaryBox();
+        renderFirstPersonHUD();
         renderCreatureEventLogPanel();
         renderMapEditorOverlay();
         renderCompactEditorPanel();

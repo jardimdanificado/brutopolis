@@ -5,7 +5,7 @@
 import * as THREE from "https://esm.sh/three@0.160.0";
 import { ASSET_DATA } from "./assets_data.js";
 import { MAP_WIDTH, MAP_HEIGHT, TILE_FLOOR, TILE_MOUNTAIN, TILE_WATER, TILE_SAND, TILE_STONE, TILE_VOID, TILE_ROAD_GRASS, TILE_ROAD_SAND, TILE_ROAD_STONE } from "./world_gen.js";
-import { globalWallCoords, resolveWallSkin, getEntitiesInViewport } from "./engine.js";
+import { globalWallCoords, resolveWallSkin, getEntitiesInViewport, getEntityById } from "./engine.js";
 import { getClanBlueprintTiles, currentZoneSize } from "./properties.js";
 
 // Cache for raw asset images
@@ -1775,6 +1775,14 @@ export class RCT3DRenderer {
     this.isPaused = false;
     this.targetTps = 60;
 
+    // 2.1 First-Person Perspective Camera & Free Look
+    this.isFirstPersonMode = false;
+    this.fpCamera = new THREE.PerspectiveCamera(75, aspect, 0.1, 1000);
+    this.fpYaw = 0; // Horizontal rotation radians
+    this.fpPitch = 0; // Vertical pitch radians
+    this.fpEntityId = null;
+    this.fpEyeHeight = 0.85;
+
     // Temporary Colors for Lerping
     this.tempColor1 = new THREE.Color();
     this.tempColor2 = new THREE.Color();
@@ -3020,6 +3028,28 @@ export class RCT3DRenderer {
   getCameraZoom() { return this.zoom; }
 
   selectEntity(id) { this.selectedEntityId = id; }
+
+  setFirstPersonMode(enabled, entityId = null) {
+    this.isFirstPersonMode = !!enabled;
+    this.fpEntityId = enabled && entityId !== null && entityId !== undefined ? Number(entityId) : null;
+    if (enabled && entityId !== null && entityId !== undefined) {
+      this.selectedEntityId = Number(entityId);
+      this.fpYaw = 0;
+      this.fpPitch = 0;
+      this.lastBuiltCamTileX = -9999;
+      this.lastBuiltCamTileY = -9999;
+    }
+  }
+
+  isFirstPersonActive() {
+    return this.isFirstPersonMode && this.fpEntityId !== null && this.fpEntityId !== undefined;
+  }
+
+  rotateFirstPersonCamera(dYaw, dPitch) {
+    this.fpYaw = (this.fpYaw + dYaw) % (Math.PI * 2);
+    if (this.fpYaw < 0) this.fpYaw += Math.PI * 2;
+    this.fpPitch = Math.max(-Math.PI * 0.35, Math.min(Math.PI * 0.35, this.fpPitch + dPitch));
+  }
   getSelectedId() { return this.selectedEntityId; }
 
   getTileBaseHeight(tileType) {
@@ -3399,7 +3429,45 @@ export class RCT3DRenderer {
     if (this.editorCursorLine) this.editorCursorLine.visible = false;
   }
 
-  updateCamera() {
+  updateCamera(entities = null) {
+    if (this.isFirstPersonActive()) {
+      let targetEnt = entities ? entities.find(e => e && Number(e.id) === Number(this.fpEntityId)) : null;
+      if (!targetEnt && typeof getEntityById === "function") {
+        targetEnt = getEntityById(this.fpEntityId);
+      }
+
+      if (targetEnt && !targetEnt.destroyed && (!targetEnt.properties?.life || !targetEnt.properties.life.isDead)) {
+        const eyeX = targetEnt.x;
+        const eyeZ = targetEnt.y;
+        const surfaceH = this.currentMap ? this.getSurfaceElevation(this.currentMap, eyeX, eyeZ) : 1.0;
+        const eyeY = surfaceH + 0.65; // True creature eye level above terrain surface
+
+        this.camX = eyeX;
+        this.camY = eyeZ;
+
+        const aspect = this.width / this.height;
+        this.fpCamera.aspect = aspect;
+        this.fpCamera.near = 0.05;
+        this.fpCamera.far = 800;
+        this.fpCamera.updateProjectionMatrix();
+
+        this.fpCamera.position.set(eyeX, eyeY, eyeZ);
+
+        const lookDist = 20.0;
+        const cosPitch = Math.cos(this.fpPitch);
+        const sinPitch = Math.sin(this.fpPitch);
+        const sinYaw = Math.sin(this.fpYaw);
+        const cosYaw = Math.cos(this.fpYaw);
+
+        const targetX = eyeX + sinYaw * cosPitch * lookDist;
+        const targetY = eyeY + sinPitch * lookDist;
+        const targetZ = eyeZ + cosYaw * cosPitch * lookDist;
+
+        this.fpCamera.lookAt(targetX, targetY, targetZ);
+        return;
+      }
+    }
+
     const aspect = this.width / this.height;
     const viewSize = (28 / this.zoom);
     this.camera.left = -viewSize * aspect;
@@ -3993,7 +4061,7 @@ export class RCT3DRenderer {
       }
     }
 
-    this.updateCamera();
+    this.updateCamera(entities);
     const nightGlow = this.updateDayNightLighting(world);
 
     let minTx, maxTx, minTy, maxTy;
@@ -4005,9 +4073,9 @@ export class RCT3DRenderer {
       maxTy = MAP_HEIGHT - 1;
     } else {
       const aspect = this.width / this.height;
-      const viewSize = Math.min(maxDist, 28 / this.zoom);
+      const viewSize = this.isFirstPersonActive() ? 64 : Math.min(maxDist, 28 / this.zoom);
       const diagonal = Math.hypot(viewSize * aspect, viewSize);
-      const radius = Math.min(maxDist, Math.ceil(diagonal * 1.25) + 3);
+      const radius = Math.min(maxDist || 64, Math.ceil(diagonal * 1.25) + 3);
 
       minTx = Math.max(0, Math.floor(this.camX - radius));
       maxTx = Math.min(MAP_WIDTH - 1, Math.ceil(this.camX + radius));
@@ -4630,17 +4698,26 @@ export class RCT3DRenderer {
 
         const isSleeping = !!e.properties?.life?.isSleeping && !!e.properties?.brain;
         const isStandingTorch = !!e.properties?.torch;
+        const billboardRotY = this.isFirstPersonActive() ? (this.fpYaw + Math.PI) : this.fixedRotationY;
+        const isPossessed = this.isFirstPersonActive() && e.id === this.fpEntityId;
+
+        if (isPossessed) {
+          sprite.visible = false;
+        } else {
+          sprite.visible = true;
+        }
+
         if (isStandingTorch) {
           sprite.scale.set(0.68, 0.68, 0.68);
           sprite.position.set(e.x + 0.5, surfaceH, e.y + 0.5);
-          sprite.rotation.y = this.fixedRotationY;
+          sprite.rotation.y = billboardRotY;
           sprite.rotation.z = 0;
           sprite.castShadow = false; // Do not occlude own light source
           sprite.receiveShadow = false;
         } else if (isItem) {
           sprite.scale.set(0.48, 0.48, 0.48);
           sprite.position.set(e.x, surfaceH, e.y);
-          sprite.rotation.y = this.fixedRotationY;
+          sprite.rotation.y = billboardRotY;
           sprite.rotation.z = 0;
           sprite.castShadow = true;
           sprite.receiveShadow = true;
@@ -4648,13 +4725,13 @@ export class RCT3DRenderer {
           // Lying down flat on the ground while sleeping
           sprite.scale.set(0.65, 0.65, 0.65);
           sprite.position.set(e.x, surfaceH + 0.10, e.y);
-          sprite.rotation.y = this.fixedRotationY;
+          sprite.rotation.y = billboardRotY;
           sprite.rotation.z = Math.PI / 2;
         } else {
           // Compact 2/3 scale for creatures
           sprite.scale.set(0.72, 0.72, 0.72);
           sprite.position.set(e.x, surfaceH, e.y);
-          sprite.rotation.y = this.fixedRotationY;
+          sprite.rotation.y = billboardRotY;
           sprite.rotation.z = 0;
         }
 
@@ -5157,13 +5234,15 @@ export class RCT3DRenderer {
     }
 
     // Draw WebGL Frame
-    this.renderer.render(this.scene, this.camera);
+    const activeCam = this.isFirstPersonActive() ? this.fpCamera : this.camera;
+    this.renderer.render(this.scene, activeCam);
   }
 
   projectWorldToScreen(worldX, worldY, elevation = 0) {
-    if (!this.camera) return null;
+    const activeCam = this.isFirstPersonActive() ? this.fpCamera : this.camera;
+    if (!activeCam) return null;
     const v = new THREE.Vector3(worldX, elevation, worldY);
-    v.project(this.camera);
+    v.project(activeCam);
     const sw = (typeof CANVAS_WIDTH !== "undefined" && CANVAS_WIDTH > 0) ? CANVAS_WIDTH : (this.width || 800);
     const sh = (typeof CANVAS_HEIGHT !== "undefined" && CANVAS_HEIGHT > 0) ? CANVAS_HEIGHT : (this.height || 600);
     const sx = (v.x * 0.5 + 0.5) * sw;
