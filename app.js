@@ -2935,6 +2935,12 @@ function renderDossierModal() {
   });
 
   // Modal Sub-Views
+  if (inspectingLogEvent) {
+    renderLogDetailView(mx, my, mw, mh, inspectingLogEvent);
+    ctx.restore();
+    return;
+  }
+
   if (inspectingBattle) {
     renderBattleDetailView(mx, my, mw, mh, inspectingBattle);
     ctx.restore();
@@ -2943,13 +2949,6 @@ function renderDossierModal() {
 
   if (inspectingRelationship) {
     renderRelationshipModal(mx, my, mw, mh, inspectingRelationship);
-    ctx.restore();
-    return;
-  }
-
-  // If viewing a specific event detail from creature chronicle:
-  if (inspectingLogEvent) {
-    renderLogDetailView(mx, my, mw, mh, inspectingLogEvent);
     ctx.restore();
     return;
   }
@@ -3426,7 +3425,7 @@ function renderDossierModal() {
 
         const ts = battle.timestamp ? `D${battle.timestamp.day} ${String(battle.timestamp.hour).padStart(2, "0")}:${String(battle.timestamp.minute).padStart(2, "0")}` : `T${battle.startTick}`;
         drawText8x8(ts, mx + 18, curY + 5, "#bcbcbc", 1);
-        drawText8x8(`[⚔️ BATTLE #${battle.id}]`, mx + 110, curY + 5, "#f83800", 1);
+        drawText8x8(`[BATTLE #${battle.id}]`, mx + 110, curY + 5, "#f83800", 1);
 
         const battleHeader = `${battle.name} • [${battle.combatants.length} FIGHTERS • ${Math.round(battle.totalDamage)} DMG]`;
         drawText8x8(battleHeader.slice(0, Math.floor((mw - 380) / 8)), mx + 245, curY + 5, "#ffd700", 1);
@@ -3435,6 +3434,11 @@ function renderDossierModal() {
         drawText8x8(causeShort, mx + 245, curY + 18, "#bcbcbc", 1);
 
         const curBattle = battle;
+        // Click row to inspect battle
+        registerClickableRegion(mx + 12, curY, mw - 110, rowH, () => {
+          inspectingBattle = curBattle;
+        });
+        
         drawNESButton(mx + mw - 95, curY + 4, 75, 22, "DOSSIER", false, false);
         registerClickableRegion(mx + mw - 95, curY + 4, 75, 22, () => {
           inspectingBattle = curBattle;
@@ -3805,6 +3809,12 @@ function renderGroupsModal() {
   });
 
   // Modal Sub-Views
+  if (inspectingLogEvent) {
+    renderLogDetailView(mx, my, mw, mh, inspectingLogEvent);
+    ctx.restore();
+    return;
+  }
+
   if (inspectingBattle) {
     renderBattleDetailView(mx, my, mw, mh, inspectingBattle);
     ctx.restore();
@@ -3813,13 +3823,6 @@ function renderGroupsModal() {
 
   if (inspectingRelationship) {
     renderRelationshipModal(mx, my, mw, mh, inspectingRelationship);
-    ctx.restore();
-    return;
-  }
-
-  // If viewing a specific event detail from clan history:
-  if (inspectingLogEvent) {
-    renderLogDetailView(mx, my, mw, mh, inspectingLogEvent);
     ctx.restore();
     return;
   }
@@ -4487,6 +4490,12 @@ function renderLogsModal() {
   });
 
   // Modal Sub-Views
+  if (inspectingLogEvent) {
+    renderLogDetailView(mx, my, mw, mh, inspectingLogEvent);
+    ctx.restore();
+    return;
+  }
+
   if (inspectingBattle) {
     renderBattleDetailView(mx, my, mw, mh, inspectingBattle);
     ctx.restore();
@@ -4495,12 +4504,6 @@ function renderLogsModal() {
 
   if (inspectingRelationship) {
     renderRelationshipModal(mx, my, mw, mh, inspectingRelationship);
-    ctx.restore();
-    return;
-  }
-
-  if (inspectingLogEvent) {
-    renderLogDetailView(mx, my, mw, mh, inspectingLogEvent);
     ctx.restore();
     return;
   }
@@ -4562,12 +4565,12 @@ function renderLogsModal() {
             `Strikes: ${battle.attacksCount}x | Damage: ${Math.round(battle.totalDamage)} HP`,
             `Casualties: ${battle.amputations.length} amputations, ${battle.fatalities.length} fatalities`
           ];
-          setHoverTooltip(`⚔️ Battle #${battle.id}: ${battle.name}`, tipLines);
+          setHoverTooltip(`Battle #${battle.id}: ${battle.name}`, tipLines);
         }
 
         const ts = battle.timestamp ? `D${battle.timestamp.day} ${String(battle.timestamp.hour).padStart(2, "0")}:${String(battle.timestamp.minute).padStart(2, "0")}` : `T${battle.startTick}`;
         drawText8x8(ts, mx + 18, rowY + 5, "#bcbcbc", 1);
-        drawText8x8(`[⚔️ BATTLE #${battle.id}]`, mx + 110, rowY + 5, "#f83800", 1);
+        drawText8x8(`[BATTLE #${battle.id}]`, mx + 110, rowY + 5, "#f83800", 1);
 
         const battleHeader = `${battle.name} • [${battle.combatants.length} FIGHTERS • ${Math.round(battle.totalDamage)} DMG]`;
         drawText8x8(battleHeader.slice(0, Math.floor((mw - 380) / 8)), mx + 245, rowY + 5, "#ffd700", 1);
@@ -4663,7 +4666,7 @@ function renderLogsModal() {
 }
 
 function renderBattleDetailView(mx, my, mw, mh, battle) {
-  drawText8x8(`⚔️ BATTLE RECORD (#${battle.id}): ${battle.name}`, mx + 16, my + 14, "#f83800", 1);
+  drawText8x8(`BATTLE RECORD (#${battle.id}): ${battle.name}`, mx + 16, my + 14, "#f83800", 1);
 
   // Close / Back button
   drawNESButton(mx + mw - 32, my + 6, 26, 24, "X", false, true);
@@ -4844,15 +4847,10 @@ function renderLogDetailView(mx, my, mw, mh, ev) {
 
   drawText8x8(`EVENT DETAIL (#${ev.id})`, mx + 16, my + 14, "#f8b800", 1);
 
-  // Close X Button: Always returns to MAP
+  // Close X Button
   drawNESButton(mx + mw - 32, my + 6, 26, 24, "X", false, true);
   registerClickableRegion(mx + mw - 32, my + 6, 26, 24, () => {
-    currentMode = "MAP";
     inspectingLogEvent = null;
-    inspectingBattle = null;
-    inspectingRelationship = null;
-    inspectingGroup = null;
-    inspectingFromCreature = false;
   });
 
   const isLie = ev.opcode === 18 || ev.type === "LIE" || !!ev.metadata?.isLie;

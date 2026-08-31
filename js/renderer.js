@@ -539,13 +539,13 @@ export class Renderer {
       if (ve.properties?.group && ve.properties.group.id) {
         clanGroups.set(ve.properties.group.id, ve.properties.group);
       }
-      if (ve.properties?.house || ve.properties?.render?.skin === "Overworld_House.png" || ve.properties?.name?.includes("Casa")) {
+      if (ve.properties?.house || ve.properties?.render?.skin === "Feature_Wood.png" || ve.properties?.name?.includes("Casa")) {
         occupiedHouseTiles.add(`${Math.floor(ve.x)}_${Math.floor(ve.y)}`);
       }
     }
 
     if (clanGroups.size > 0) {
-      const houseTex = findTexture("Overworld_House.png");
+      const houseTex = findTexture("Feature_Wood.png");
       for (const group of clanGroups.values()) {
         if (!group || !group.claimedZones) continue;
         const bpTiles = getClanBlueprintTiles(group);
@@ -624,7 +624,7 @@ export class Renderer {
         const isWell = !isRoad && !isWarehouse && !isSlaughterhouse && !isKitchen && (!!e.properties.well || !!e.properties.isWell || e.properties.name?.includes("Poço") || e.properties.name?.includes("Well"));
         const isCampfire = !isRoad && !isWarehouse && !isSlaughterhouse && !isKitchen && !isWell && (!!e.properties.campfire || e.properties.name?.includes("Campfire") || e.properties.name?.includes("Fogueira"));
         const isDoor = !isWarehouse && !isSlaughterhouse && !isKitchen && !isWell && !isCampfire && !isRoad && !!e.properties.door;
-        const isHouse = !isWarehouse && !isSlaughterhouse && !isKitchen && !isWell && !isCampfire && !isRoad && !e.properties.edible && !e.properties.resourceType && !e.properties.germination && e.properties.species !== "item" && (!!e.properties.house || (e.properties.species === "structure" && r.skin === "Overworld_House.png"));
+        const isHouse = !isWarehouse && !isSlaughterhouse && !isKitchen && !isWell && !isCampfire && !isRoad && !e.properties.edible && !e.properties.resourceType && !e.properties.germination && e.properties.species !== "item" && (!!e.properties.house || (e.properties.species === "structure" && r.skin === "Feature_Wood.png"));
         const isWall = !isDoor && !isHouse && !isWarehouse && !isSlaughterhouse && !isKitchen && !isWell && !isCampfire && !isRoad && !e.properties.edible && !e.properties.resourceType && !e.properties.germination && (r.skin?.startsWith("Wall_") || e.properties.name?.includes("Muralha") || e.properties.name?.includes("Wall") || (e.properties.structure && !e.properties.isWell && !e.properties.well));
         let entSkin = r.skin || "Human_Knight_M.png";
         if (isRoad) {
@@ -663,17 +663,17 @@ export class Renderer {
           } else {
             // 10 distinct house styles
             switch (hVar) {
-              case 0: entSkin = "Overworld_House.png"; entFg = rgba32(212, 163, 115); break; // Wood Cabin
+              case 0: entSkin = "Feature_Wood.png"; entFg = rgba32(212, 163, 115); break; // Wood Cabin
               case 1: entSkin = "Feature_Brick_A.png"; entFg = rgba32(200, 200, 200); break; // Stone Cottage
-              case 2: entSkin = "Overworld_House.png"; entFg = rgba32(230, 200, 110); break; // Thatched Hut
+              case 2: entSkin = "Feature_Wood.png"; entFg = rgba32(230, 200, 110); break; // Thatched Hut
               case 3: entSkin = "Feature_Wood.png"; entFg = rgba32(139, 90, 43); break; // Log Lodge
-              case 4: entSkin = "Overworld_House.png"; entFg = rgba32(240, 230, 210); break; // Half-Timbered
+              case 4: entSkin = "Feature_Brick_B.png"; entFg = rgba32(240, 230, 210); break; // Half-Timbered
               case 5: entSkin = "Feature_Brick_B.png"; entFg = rgba32(210, 150, 90); break; // Mud Brick Adobe
               case 6: entSkin = "Feature_Wood.png"; entFg = rgba32(150, 130, 120); break; // Mountain Stilt
-              case 7: entSkin = "Overworld_House.png"; entFg = rgba32(160, 100, 50); break; // Longhouse
+              case 7: entSkin = "Feature_Wood.png"; entFg = rgba32(160, 100, 50); break; // Longhouse
               case 8: entSkin = "Feature_Stone_B.png"; entFg = rgba32(245, 245, 220); break; // Bone Ossuary
               case 9: entSkin = "Feature_Brick_A.png"; entFg = rgba32(180, 120, 80); break; // Watchtower Villa
-              default: entSkin = "Overworld_House.png"; break;
+              default: entSkin = "Feature_Wood.png"; break;
             }
           }
         } else if (isWall) {

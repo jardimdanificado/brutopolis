@@ -801,7 +801,7 @@ export function getRelationshipSummary(entA_Id, entB_Id, entityRegistry = null) 
     statusLabel = "CHERISHED ALLIES / CLOSE FRIENDS";
     statusColor = "#58d854";
   } else if (score <= -40 || hostileCount >= 6) {
-    statusLabel = "BITTER BLOOD RIVALS ⚔️";
+    statusLabel = "BITTER BLOOD RIVALS";
     statusColor = "#f83800";
   } else if (rejectedProposal) {
     statusLabel = "UNREQUITED / ESTRANGED";

@@ -186,7 +186,7 @@ export function createTintedTexture(skinName, fgHex = 0xffffff, bgHex = 0x000000
         const g = data[i + 1];
         const b = data[i + 2];
 
-        if (r > 110 || g > 110 || b > 110) {
+        if (r > 60 || g > 60 || b > 60) {
           data[i] = fgR;
           data[i + 1] = fgG;
           data[i + 2] = fgB;
@@ -2839,13 +2839,21 @@ export class RCT3DRenderer {
         void main() {
           if (uFade <= 0.01) discard;
 
-          vec2 uv = vUv * 14.0 + vec2(uTime * 0.002, uTime * 0.001);
+          // Scaled up vUv for smaller, more numerous clouds
+          vec2 uv = vUv * 28.0 + vec2(uTime * 0.002, uTime * 0.001);
           float n = fbm(uv);
-          float density = smoothstep(0.50, 0.78, n);
+          // Increased density by lowering the thresholds
+          float density = smoothstep(0.40, 0.70, n);
+
+          float effectiveAlpha = density * uFade;
+
+          // Clean empty areas BEFORE dithering to prevent stray dots on 0.0 threshold
+          if (effectiveAlpha <= 0.02) {
+            discard; 
+          }
 
           ivec2 pixelCoord = ivec2(mod(gl_FragCoord.xy, 4.0));
           float ditherThreshold = bayerMatrix[pixelCoord.x][pixelCoord.y];
-          float effectiveAlpha = density * uFade;
 
           if (effectiveAlpha < ditherThreshold) {
             discard;
