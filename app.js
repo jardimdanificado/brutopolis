@@ -2,7 +2,7 @@
 // Brutopolis
 // =============================================================================
 
-const BrutopolisVersion = "0.121.4";
+const BrutopolisVersion = "0.121.5";
 const BrutopolisVersionName = "Charm is deceptive, and beauty is fleeting;";
 
 // WASM replaced by Pure JS Renderer

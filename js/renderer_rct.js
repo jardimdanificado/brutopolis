@@ -262,16 +262,28 @@ export function applyRetroDitherToMaterial(mat, steps = 24.0, intensity = 0.50) 
       }
     ` + shader.fragmentShader;
 
-    shader.fragmentShader = shader.fragmentShader.replace(
-      '#include <dithering_fragment>',
-      `
+    const ditherCode = `
       #include <dithering_fragment>
-      // Subtle, controlled Bayer dithering on color transitions & 3D edges
+      // Controlled retro Bayer dithering on colors, 3D lighting gradients and shadow falloffs
       float bayer = (getBayer4x4(gl_FragCoord.xy) - 0.5) * ${intensity.toFixed(2)};
       float dSteps = ${steps.toFixed(1)};
       gl_FragColor.rgb = floor(gl_FragColor.rgb * dSteps + bayer + 0.5) / dSteps;
-      `
-    );
+    `;
+
+    if (shader.fragmentShader.includes('#include <dithering_fragment>')) {
+      shader.fragmentShader = shader.fragmentShader.replace(
+        '#include <dithering_fragment>',
+        ditherCode
+      );
+    } else if (shader.fragmentShader.includes('gl_FragColor = vec4( outgoingLight, diffuseColor.a );')) {
+      shader.fragmentShader = shader.fragmentShader.replace(
+        'gl_FragColor = vec4( outgoingLight, diffuseColor.a );',
+        `gl_FragColor = vec4( outgoingLight, diffuseColor.a );
+        float bayer = (getBayer4x4(gl_FragCoord.xy) - 0.5) * ${intensity.toFixed(2)};
+        float dSteps = ${steps.toFixed(1)};
+        gl_FragColor.rgb = floor(gl_FragColor.rgb * dSteps + bayer + 0.5) / dSteps;`
+      );
+    }
   };
 }
 
@@ -426,7 +438,7 @@ function createSaguaroCactusGeometry() {
   return merged;
 }
 
-function createNaturalGrassGeometry(w = 0.72, h = 0.58) {
+function createNaturalGrassGeometry(w = 0.44, h = 0.42) {
   const p1 = new THREE.PlaneGeometry(w, h);
   p1.translate(0, h / 2, 0);
 
@@ -2017,30 +2029,30 @@ function createDitheredCelestialTexture(type) {
     15/16,  7/16, 13/16,  5/16
   ];
 
-  const cx = 16;
-  const cy = 16;
+  const cx = 15.5;
+  const cy = 15.5;
 
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
-      const dx = x - cx + 0.5;
-      const dy = y - cy + 0.5;
+      const dx = x - cx;
+      const dy = y - cy;
       const dist = Math.hypot(dx, dy);
       const bayerVal = bayer4x4[(y % 4) * 4 + (x % 4)];
       const idx = (y * size + x) * 4;
 
       if (type === "sun") {
-        if (dist <= 6.0) {
+        if (dist <= 6.5) {
           data[idx + 0] = 255;
           data[idx + 1] = 255;
-          data[idx + 2] = 200;
+          data[idx + 2] = 210;
           data[idx + 3] = 255;
-        } else if (dist <= 8.0) {
+        } else if (dist <= 8.5) {
           data[idx + 0] = 255;
-          data[idx + 1] = 180;
+          data[idx + 1] = 190;
           data[idx + 2] = 30;
           data[idx + 3] = 255;
         } else if (dist <= 15.5) {
-          const alpha = Math.max(0.0, 1.0 - (dist - 8.0) / 7.5);
+          const alpha = Math.max(0.0, 1.0 - (dist - 8.5) / 7.0);
           if (alpha > bayerVal) {
             data[idx + 0] = 255;
             data[idx + 1] = Math.floor(100 + alpha * 120);
@@ -2053,7 +2065,7 @@ function createDitheredCelestialTexture(type) {
           data[idx + 3] = 0;
         }
       } else if (type === "moon") {
-        if (dist <= 6.0) {
+        if (dist <= 6.5) {
           const isCrater = ((x === 14 && y === 14) || (x === 15 && y === 14) || (x === 17 && y === 17) || (x === 18 && y === 16) || (x === 13 && y === 17));
           if (isCrater) {
             data[idx + 0] = 150;
@@ -2066,16 +2078,16 @@ function createDitheredCelestialTexture(type) {
             data[idx + 2] = 255;
             data[idx + 3] = 255;
           }
-        } else if (dist <= 7.5) {
+        } else if (dist <= 8.5) {
           data[idx + 0] = 160;
           data[idx + 1] = 195;
           data[idx + 2] = 245;
           data[idx + 3] = 255;
-        } else if (dist <= 15.0) {
-          const alpha = Math.max(0.0, 1.0 - (dist - 7.5) / 7.5);
+        } else if (dist <= 15.5) {
+          const alpha = Math.max(0.0, 1.0 - (dist - 8.5) / 7.0);
           if (alpha > bayerVal) {
-            data[idx + 0] = 110;
-            data[idx + 1] = 160;
+            data[idx + 0] = 90;
+            data[idx + 1] = 150;
             data[idx + 2] = 240;
             data[idx + 3] = 255;
           } else {
@@ -2589,17 +2601,19 @@ export class RCT3DRenderer {
     this.materialsPerspective = buildDict(true);
     this.materials = Object.assign({}, this.materialsIso);
 
-    // Apply Bayer ordered dithering & GPU Wind Vertex sway to foliage
-    for (const mat of Object.values(this.materials)) {
-      if (Array.isArray(mat)) {
-        for (const m of mat) applyRetroDitherToMaterial(m);
-      } else {
-        applyRetroDitherToMaterial(mat);
+    // Apply Bayer ordered dithering to all materials in both Isometric and 1P/3P Perspective modes
+    for (const dict of [this.materialsIso, this.materialsPerspective]) {
+      for (const mat of Object.values(dict)) {
+        if (Array.isArray(mat)) {
+          for (const m of mat) applyRetroDitherToMaterial(m);
+        } else {
+          applyRetroDitherToMaterial(mat);
+        }
       }
+      applyWindFoliageShader(dict.oakLeaves, 0.055);
+      applyWindFoliageShader(dict.pineLeaves, 0.038);
+      applyWindFoliageShader(dict.grassFoliage, 0.025);
     }
-    applyWindFoliageShader(this.materials.oakLeaves, 0.055);
-    applyWindFoliageShader(this.materials.pineLeaves, 0.038);
-    applyWindFoliageShader(this.materials.grassFoliage, 0.025);
 
     // Dark Quad Grid Material (RCT Style)
     this.rctGridMaterial = new THREE.LineBasicMaterial({
@@ -2878,9 +2892,9 @@ export class RCT3DRenderer {
     this.instHouseStage3.castShadow = true;
     this.instHouseStage3.receiveShadow = true;
 
-    // Natural Grass Tufts
-    const grassGeo = createNaturalGrassGeometry(0.72, 0.58);
-    this.instGrassTufts = new THREE.InstancedMesh(grassGeo, this.materials.grassFoliage, 1200);
+    // Natural Grass Tufts (Proportional height, delicate blades, high buffer capacity)
+    const grassGeo = createNaturalGrassGeometry(0.44, 0.42);
+    this.instGrassTufts = new THREE.InstancedMesh(grassGeo, this.materials.grassFoliage, 5000);
 
     // 3D Volumetric Resource Items (Wood Logs and Stone Blocks)
     const woodLogGeo = createWoodLogGeometry();
@@ -3219,26 +3233,34 @@ export class RCT3DRenderer {
 
     // 1. Pixelated & Heavy-Dithered Sun Billboard
     const sunTex = createDitheredCelestialTexture("sun");
-    const sunGeo = new THREE.PlaneGeometry(30, 30);
+    const sunGeo = new THREE.PlaneGeometry(36, 36);
     const sunMat = new THREE.MeshBasicMaterial({
       map: sunTex,
       transparent: true,
+      alphaTest: 0.05,
       depthWrite: false,
+      depthTest: true,
+      fog: false,
       side: THREE.DoubleSide
     });
     this.sunMesh = new THREE.Mesh(sunGeo, sunMat);
+    this.sunMesh.renderOrder = 400;
     this.celestialGroup.add(this.sunMesh);
 
     // 2. Pixelated & Heavy-Dithered Moon Billboard
     const moonTex = createDitheredCelestialTexture("moon");
-    const moonGeo = new THREE.PlaneGeometry(26, 26);
+    const moonGeo = new THREE.PlaneGeometry(32, 32);
     const moonMat = new THREE.MeshBasicMaterial({
       map: moonTex,
       transparent: true,
+      alphaTest: 0.05,
       depthWrite: false,
+      depthTest: true,
+      fog: false,
       side: THREE.DoubleSide
     });
     this.moonMesh = new THREE.Mesh(moonGeo, moonMat);
+    this.moonMesh.renderOrder = 400;
     this.celestialGroup.add(this.moonMesh);
     this.celestialGroup.visible = false;
   }
@@ -3443,6 +3465,7 @@ export class RCT3DRenderer {
     if (this.instPineLeaves && activeDict.pineLeaves) this.instPineLeaves.material = activeDict.pineLeaves;
     if (this.instCacti && activeDict.cactus) this.instCacti.material = activeDict.cactus;
     if (this.instCampfireFlames && activeDict.campfireFlames) this.instCampfireFlames.material = activeDict.campfireFlames;
+    if (this.instGrassTufts && activeDict.grassFoliage) this.instGrassTufts.material = activeDict.grassFoliage;
 
     // Reset camera tile marker so terrain chunks re-bind with active materials
     this.lastBuiltCamTileX = -9999;
@@ -4136,14 +4159,14 @@ export class RCT3DRenderer {
 
         if (isDaytime) {
           this.sunMesh.visible = true;
-          this.sunMesh.position.set(this.camX + lightOrbitX * 2.5, lightOrbitY * 2.5, this.camY + lightOrbitZ * 2.5);
+          this.sunMesh.position.set(this.camX + lightOrbitX * 1.4, lightOrbitY * 1.4, this.camY + lightOrbitZ * 1.4);
           if (activeCam) {
             this.sunMesh.lookAt(activeCam.position);
           }
           this.moonMesh.visible = false;
         } else {
           this.moonMesh.visible = true;
-          this.moonMesh.position.set(this.camX + lightOrbitX * 2.5, lightOrbitY * 2.5, this.camY + lightOrbitZ * 2.5);
+          this.moonMesh.position.set(this.camX + lightOrbitX * 1.4, lightOrbitY * 1.4, this.camY + lightOrbitZ * 1.4);
           if (activeCam) {
             this.moonMesh.lookAt(activeCam.position);
           }
@@ -4265,6 +4288,7 @@ export class RCT3DRenderer {
     const gridLinePositions = [];
     const matHelper = new THREE.Matrix4();
     let foliageCount = 0;
+    const isPersp = this.isPerspectiveActive();
 
     const clampedMinTx = Math.max(0, Math.min(MAP_WIDTH - 1, minTx));
     const clampedMaxTx = Math.max(0, Math.min(MAP_WIDTH - 1, maxTx));
@@ -4371,12 +4395,48 @@ export class RCT3DRenderer {
           }
         }
 
-        // 3D Natural Grass Tufts with Moderate 8% Density
-        if (tType === TILE_FLOOR && shouldSpawnGrassTuft(tx, ty) && foliageCount < 1200) {
-          const midH = (h00 + h10 + h11 + h01) / 4.0;
-          matHelper.setPosition(tx + 0.5, midH, ty + 0.5);
-          this.instGrassTufts.setMatrixAt(foliageCount, matHelper);
-          foliageCount++;
+        // 3D Natural Grass Tufts (Clean, small, fine tufts with dense placement in 1P/3P)
+        if (tType === TILE_FLOOR) {
+          if (!isPersp) {
+            // Isometric view: classic 8% density
+            if (shouldSpawnGrassTuft(tx, ty) && foliageCount < 1200) {
+              const midH = (h00 + h10 + h11 + h01) / 4.0;
+              matHelper.identity();
+              matHelper.setPosition(tx + 0.5, midH, ty + 0.5);
+              this.instGrassTufts.setMatrixAt(foliageCount++, matHelper);
+            }
+          } else {
+            // 1P/3P Perspective Mode: High density of small, delicate natural grass tufts
+            let tHash = Math.imul(tx ^ Math.imul(ty, 198491317), 445582319);
+            tHash = Math.imul(tHash ^ (tHash >>> 11), 892341233) >>> 0;
+            const spawnChance = tHash % 100;
+
+            if (spawnChance < 75) {
+              const numTufts = (spawnChance < 30) ? 3 : ((spawnChance < 60) ? 2 : 1);
+              for (let k = 0; k < numTufts; k++) {
+                if (foliageCount >= 5000) break;
+                const subHash = Math.imul(tHash ^ (k * 1337 + 7), 2654435761) >>> 0;
+                const ox = 0.15 + ((subHash & 0xFF) / 255.0) * 0.70;
+                const oy = 0.15 + (((subHash >> 8) & 0xFF) / 255.0) * 0.70;
+
+                const hX0 = h00 + (h10 - h00) * ox;
+                const hX1 = h01 + (h11 - h01) * ox;
+                const tuftY = hX0 + (hX1 - hX0) * oy;
+
+                const rotY = (((subHash >> 16) & 0xFF) / 255.0) * Math.PI * 2;
+                const scale = 0.85 + (((subHash >> 24) & 0xFF) / 255.0) * 0.35;
+
+                matHelper.identity();
+                this._rotEuler.set(0, rotY, 0, "YXZ");
+                matHelper.makeRotationFromEuler(this._rotEuler);
+                matHelper.setPosition(tx + ox, tuftY, ty + oy);
+                this._scaleMatrix.makeScale(scale, scale, scale);
+                matHelper.multiply(this._scaleMatrix);
+
+                this.instGrassTufts.setMatrixAt(foliageCount++, matHelper);
+              }
+            }
+          }
         }
 
         // 4-Sided Cliff Drop-walls (South, East, North, West) for full 360-degree visibility
