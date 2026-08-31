@@ -3716,7 +3716,7 @@ export function initClanPlaza(group) {
       placed = true;
     } else {
       // 2. Search outwardly in spiral for a valid clear rectangle
-      for (let r = 1; r <= 15 && !placed; r++) {
+      for (let r = 1; r <= 20 && !placed; r++) {
         for (let dy = -r; dy <= r && !placed; dy++) {
           for (let dx = -r; dx <= r && !placed; dx++) {
             const candX = baseX + dx;
@@ -3725,6 +3725,27 @@ export function initClanPlaza(group) {
               plazaPicks[def.key] = { x: candX, y: candY };
               reserveArea(candX, candY, def.w, def.h);
               placed = true;
+            }
+          }
+        }
+      }
+
+      // 3. Fallback: Search across all tiles in all claimed zones to guarantee placement
+      if (!placed) {
+        for (const zk of group.claimedZones || []) {
+          if (placed) break;
+          const zp = zk.includes("_") ? zk.split("_") : zk.split(",");
+          const czx = parseInt(zp[0], 10);
+          const czy = parseInt(zp[1], 10);
+          for (let ox = 0; ox <= sz - def.w && !placed; ox++) {
+            for (let oy = 0; oy <= sz - def.h && !placed; oy++) {
+              const cx = czx * sz + ox;
+              const cy = czy * sz + oy;
+              if (isAreaFree(cx, cy, def.w, def.h)) {
+                plazaPicks[def.key] = { x: cx, y: cy };
+                reserveArea(cx, cy, def.w, def.h);
+                placed = true;
+              }
             }
           }
         }
@@ -8830,7 +8851,8 @@ export function createLocomotionProp() {
               if (needsThisMat) {
                 const dist = Math.abs(bp.x - ent.x) + Math.abs(bp.y - ent.y);
                 const isOwnHouse = (bp.ownerId === ent.id);
-                const weightDist = isOwnHouse ? dist * 0.05 : dist * 0.25;
+                const isLeaderPlot = bp.isLeaderHouse || bp.type === "leader_house";
+                const weightDist = isLeaderPlot ? dist * 0.02 : (isOwnHouse ? dist * 0.05 : dist * 0.25);
                 if (weightDist < minBuildDist) {
                   minBuildDist = weightDist;
                   targetBuild = { x: bp.x, y: bp.y, type: bp.type };

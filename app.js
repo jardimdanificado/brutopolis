@@ -792,14 +792,56 @@ function mapUnicodeToGlyphIndex(codePoint) {
   }
 }
 
+// Pre-rendered 16x16 glyph atlas cache per color (eliminates 10,000s of fillRect per frame)
+const _glyphAtlasCache = new Map();
+
+function getGlyphAtlas(color) {
+  let atlas = _glyphAtlasCache.get(color);
+  if (atlas) return atlas;
+
+  atlas = document.createElement("canvas");
+  atlas.width = 128;
+  atlas.height = 128;
+  const actx = atlas.getContext("2d");
+  actx.fillStyle = color;
+
+  for (let idx = 0; idx < 256; idx++) {
+    const glyph = FONT_8X8[idx];
+    if (!glyph) continue;
+    const gx = (idx % 16) * 8;
+    const gy = Math.floor(idx / 16) * 8;
+    for (let r = 0; r < 8; r++) {
+      const rowBits = glyph[r];
+      let startC = -1;
+      for (let c = 0; c < 8; c++) {
+        if (rowBits & (1 << (7 - c))) {
+          if (startC === -1) startC = c;
+        } else {
+          if (startC !== -1) {
+            actx.fillRect(gx + startC, gy + r, c - startC, 1);
+            startC = -1;
+          }
+        }
+      }
+      if (startC !== -1) {
+        actx.fillRect(gx + startC, gy + r, 8 - startC, 1);
+      }
+    }
+  }
+
+  _glyphAtlasCache.set(color, atlas);
+  return atlas;
+}
+
 /**
- * Draws crisp text using the embedded 8x8 engine font directly to Canvas.
+ * Draws crisp text using high-performance GPU-accelerated glyph atlas.
  */
 function drawText8x8(text, startX, startY, color = "#ffffff", scale = 1) {
   if (text === undefined || text === null) return;
   const str = String(text);
-  ctx.save();
-  ctx.fillStyle = color;
+  const atlas = getGlyphAtlas(color);
+  const dw = 8 * scale;
+  const dh = 8 * scale;
 
   let cx = startX;
   let cy = startY;
@@ -817,19 +859,12 @@ function drawText8x8(text, startX, startY, color = "#ffffff", scale = 1) {
     }
 
     const charIdx = mapUnicodeToGlyphIndex(codePoint);
-    const glyph = FONT_8X8[charIdx] || FONT_8X8[63];
+    const gx = (charIdx % 16) * 8;
+    const gy = Math.floor(charIdx / 16) * 8;
 
-    for (let r = 0; r < 8; r++) {
-      const rowBits = glyph[r];
-      for (let c = 0; c < 8; c++) {
-        if (rowBits & (1 << (7 - c))) {
-          ctx.fillRect(cx + c * scale, cy + r * scale, scale, scale);
-        }
-      }
-    }
-    cx += 8 * scale;
+    ctx.drawImage(atlas, gx, gy, 8, 8, cx, cy, dw, dh);
+    cx += dw;
   }
-  ctx.restore();
 }
 
 function wrapText8x8(text, maxCharsPerLine) {
@@ -983,6 +1018,37 @@ let isFollowMode = false; // Camera automatically follows and locks onto selecte
 let isCreatureVisionMode = false; // "See through creature's eyes" perception FOV & Fog of War
 let hasActiveGame = false; // True if player has generated/started an active game world
 let speciesFilter = ""; // Specific species filter for entities modal list
+
+// High-Performance Modal Caches (eliminates per-frame scan bottleneck / 1fps lag)
+const _dossierCache = {
+  targetId: null,
+  events: null,
+  battles: null,
+  familyTree: null,
+  house: null,
+  lastEventCount: -1
+};
+
+const _clanDossierCache = {
+  groupId: null,
+  stockpile: null,
+  history: null,
+  lastStockpileUpdate: 0,
+  lastEventCount: -1
+};
+
+const _logsFilterCache = {
+  filter: null,
+  eventCount: -1,
+  list: []
+};
+
+const _entitiesFilterCache = {
+  filter: null,
+  speciesFilter: null,
+  entityCount: -1,
+  list: []
+};
 
 // Prefab Scenarios for Title Screen & Game Presets
 const PREFAB_SCENARIOS = [
@@ -2238,22 +2304,34 @@ function renderBottomToolbar() {
 
 function getHouseForEntity(entId) {
   if (!entId) return null;
+  if (_dossierCache.targetId === entId && _dossierCache.house !== undefined && _dossierCache.house !== null) {
+    return _dossierCache.house;
+  }
+  let found = null;
   for (const e of entities) {
     if (!e.destroyed && e.properties?.house && (e.properties.house.ownerId === entId || e.properties.house.partnerId === entId)) {
-      return e;
+      found = e;
+      break;
     }
   }
-  if (entityRegistry) {
+  if (!found && entityRegistry) {
     for (const e of entityRegistry.values()) {
       if (e.properties?.house && (e.properties.house.ownerId === entId || e.properties.house.partnerId === entId)) {
-        return e;
+        found = e;
+        break;
       }
     }
   }
-  return null;
+  if (_dossierCache.targetId === entId) {
+    _dossierCache.house = found;
+  }
+  return found;
 }
 
 function getFamilyTreeData(targetId) {
+  if (_dossierCache.targetId === targetId && _dossierCache.familyTree) {
+    return _dossierCache.familyTree;
+  }
   const target = getEntityById(targetId) || (entityRegistry ? entityRegistry.get(targetId) : null);
   if (!target) return null;
   const props = target.properties || {};
@@ -2334,7 +2412,7 @@ function getFamilyTreeData(targetId) {
     }
   }
 
-  return {
+  const res = {
     target,
     father,
     mother,
@@ -2347,6 +2425,10 @@ function getFamilyTreeData(targetId) {
     children,
     grandchildren
   };
+  if (_dossierCache.targetId === targetId) {
+    _dossierCache.familyTree = res;
+  }
+  return res;
 }
 
 function renderFamilyTab(mx, my, mw, mh, target) {
@@ -2890,12 +2972,20 @@ function renderDossierModal() {
     });
   }
 
-  // Calculate Tab Counts
+  // Invalidate cache if inspected target changed or new events arrived
+  if (_dossierCache.targetId !== target.id || _dossierCache.lastEventCount !== allEvents.length) {
+    _dossierCache.targetId = target.id;
+    _dossierCache.events = null;
+    _dossierCache.battles = null;
+    _dossierCache.familyTree = null;
+    _dossierCache.house = null;
+    _dossierCache.lastEventCount = allEvents.length;
+  }
+
+  // Calculate Tab Counts (Lightweight & Cached)
   const isHouse = !!props.house;
   const isCreature = !!props.life || !!props.brain;
   const knownAffinities = Object.entries(props.brain?.affinities || {});
-  const creatureEvents = getFullHistoryForEntity(target.id);
-  const creatureBattles = isCreature ? getClusteredBattles({ entityId: target.id, limit: 100 }) : [];
 
   // Modal Tabs Bar
   const tabs = [
@@ -2905,9 +2995,9 @@ function renderDossierModal() {
       { id: "FAMILY", label: "FAMILY" },
       { id: "TREE", label: "FAMILY TREE" },
       { id: "AFFINITIES", label: `AFFINITIES (${knownAffinities.length})` },
-      { id: "BATTLES", label: `BATTLES (${creatureBattles.length})` }
+      { id: "BATTLES", label: `BATTLES${_dossierCache.battles ? ` (${_dossierCache.battles.length})` : ""}` }
     ] : []),
-    { id: "CHRONICLE", label: `CHRONICLE (${creatureEvents.length})` }
+    { id: "CHRONICLE", label: `CHRONICLE${_dossierCache.events ? ` (${_dossierCache.events.length})` : ""}` }
   ];
 
   let tabX = mx + 16;
@@ -3285,6 +3375,11 @@ function renderDossierModal() {
   // TAB: BATTLES (Creature Personal Combat & War Dossier)
   // ---------------------------------------------------------------------------
   else if (dossierTab === "BATTLES") {
+    if (!_dossierCache.battles) {
+      _dossierCache.battles = isCreature ? getClusteredBattles({ entityId: target.id, limit: 100 }) : [];
+    }
+    const creatureBattles = _dossierCache.battles;
+
     const listY = my + 62;
     const listH = mh - 72;
     drawNESBox(mx + 10, listY, mw - 20, listH);
@@ -3335,6 +3430,11 @@ function renderDossierModal() {
   // TAB 6: CHRONICLE (Creature Life Chronicle - Full Long Descriptions)
   // ---------------------------------------------------------------------------
   else if (dossierTab === "CHRONICLE") {
+    if (!_dossierCache.events) {
+      _dossierCache.events = getFullHistoryForEntity(target.id);
+    }
+    const creatureEvents = _dossierCache.events;
+
     const listY = my + 62;
     const listH = mh - 72;
     drawNESBox(mx + 10, listY, mw - 20, listH);
@@ -3429,7 +3529,15 @@ function renderDossierModal() {
 // ---------------------------------------------------------------------------
 
 function getFilteredEntities() {
-  return entities.filter(e => {
+  if (
+    _entitiesFilterCache.filter === entityFilter &&
+    _entitiesFilterCache.speciesFilter === speciesFilter &&
+    _entitiesFilterCache.entityCount === entities.length
+  ) {
+    return _entitiesFilterCache.list;
+  }
+
+  const result = entities.filter(e => {
     if (e.destroyed) return false;
     if (entityFilter === "SPECIES") {
       return (e.properties?.species || "").toLowerCase() === speciesFilter.toLowerCase();
@@ -3470,6 +3578,12 @@ function getFilteredEntities() {
     }
     return true;
   });
+
+  _entitiesFilterCache.filter = entityFilter;
+  _entitiesFilterCache.speciesFilter = speciesFilter;
+  _entitiesFilterCache.entityCount = entities.length;
+  _entitiesFilterCache.list = result;
+  return result;
 }
 
 function renderEntitiesModal() {
@@ -3808,8 +3922,30 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
   const leaderIdToFind = g.leaderId || g.members[0];
   const lEnt = getEntityById(leaderIdToFind);
   const leaderEnt = (lEnt && !lEnt.destroyed) ? lEnt : null;
-  const stockpile = getGroupStockpile(g, entities);
-  const groupEvents = getFullHistoryForGroup(g);
+  // Cache invalidation when group changes or new events occur
+  if (_clanDossierCache.groupId !== g.id || _clanDossierCache.lastEventCount !== allEvents.length) {
+    _clanDossierCache.groupId = g.id;
+    _clanDossierCache.stockpile = null;
+    _clanDossierCache.history = null;
+    _clanDossierCache.lastStockpileUpdate = 0;
+    _clanDossierCache.lastEventCount = allEvents.length;
+  }
+
+  // Only calculate stockpile on demand / throttled (max once per second)
+  if (groupDetailTab === "STOCKPILE" || !_clanDossierCache.stockpile) {
+    const now = performance.now();
+    if (!_clanDossierCache.stockpile || now - _clanDossierCache.lastStockpileUpdate > 1000) {
+      _clanDossierCache.stockpile = getGroupStockpile(g, entities);
+      _clanDossierCache.lastStockpileUpdate = now;
+    }
+  }
+  const stockpile = _clanDossierCache.stockpile || { totalCount: 0, items: {}, breakdown: { ground: 0, members: 0, storage: 0 } };
+
+  // Only calculate group history when on HISTORY tab
+  if (groupDetailTab === "HISTORY" && !_clanDossierCache.history) {
+    _clanDossierCache.history = getFullHistoryForGroup(g);
+  }
+  const groupEvents = _clanDossierCache.history || [];
 
   const flagTex = g.flagSkin ? findTexture(g.flagSkin) : null;
   const gFgColor = g.color ? `#${(g.color & 0xffffff).toString(16).padStart(6, "0")}` : "#f8b800";
@@ -3853,9 +3989,9 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
   // Top Tabs: [ZONES] [STOCKPILE] [MEMBERS] [HISTORY]
   const tabs = [
     { id: "ZONES", label: `ZONES (${g.claimedZones?.length || 0})` },
-    { id: "STOCKPILE", label: `STOCKPILE (${stockpile.totalCount})` },
+    { id: "STOCKPILE", label: `STOCKPILE${_clanDossierCache.stockpile ? ` (${_clanDossierCache.stockpile.totalCount})` : ""}` },
     { id: "MEMBERS", label: `MEMBERS (${livingMembers.length}/${g.members.length})` },
-    { id: "HISTORY", label: `HISTORY (${groupEvents.length})` }
+    { id: "HISTORY", label: `HISTORY${_clanDossierCache.history ? ` (${_clanDossierCache.history.length})` : ""}` }
   ];
 
   let tabX = mx + 16;
@@ -4272,12 +4408,21 @@ function renderActiveHoverTooltip() {
 }
 
 function getFilteredLogs() {
-  if (logFilter === "BATTLES") {
-    return getClusteredBattles({ limit: 100 });
+  if (_logsFilterCache.filter === logFilter && _logsFilterCache.eventCount === allEvents.length) {
+    return _logsFilterCache.list;
   }
-  const events = allEvents.slice().reverse();
-  if (logFilter === "ALL") return events;
-  return events.filter(e => e.type === logFilter);
+  let result = [];
+  if (logFilter === "BATTLES") {
+    result = getClusteredBattles({ limit: 100 });
+  } else {
+    const events = allEvents.slice().reverse();
+    if (logFilter === "ALL") result = events;
+    else result = events.filter(e => e.type === logFilter);
+  }
+  _logsFilterCache.filter = logFilter;
+  _logsFilterCache.eventCount = allEvents.length;
+  _logsFilterCache.list = result;
+  return result;
 }
 
 function renderLogsModal() {

@@ -29,19 +29,19 @@ for (const item of ASSET_DATA) {
 // ---------------------------------------------------------------------------
 
 const DAY_NIGHT_KEYFRAMES = [
-  { t: 0.0,  sun: 0x5a7ca8, amb: 0x22324c, bg: 0x0a101c, sunI: 0.35, ambI: 0.40 }, // Midnight
-  { t: 4.5,  sun: 0x6a8cb8, amb: 0x283854, bg: 0x0e1422, sunI: 0.38, ambI: 0.42 }, // Pre-dawn
-  { t: 5.5,  sun: 0xff7b39, amb: 0x8a5870, bg: 0x241628, sunI: 0.70, ambI: 0.52 }, // Sunrise start
-  { t: 6.5,  sun: 0xffa048, amb: 0xb88890, bg: 0x342430, sunI: 0.95, ambI: 0.65 }, // Golden dawn
-  { t: 7.5,  sun: 0xffd285, amb: 0xd0b8ae, bg: 0x2e303c, sunI: 1.25, ambI: 0.78 }, // Early morning
-  { t: 9.0,  sun: 0xfffaea, amb: 0xdde8f5, bg: 0x151c28, sunI: 1.40, ambI: 0.85 }, // Morning
-  { t: 12.0, sun: 0xffffff, amb: 0xe5f0ff, bg: 0x121922, sunI: 1.55, ambI: 0.90 }, // Solar Noon
-  { t: 15.5, sun: 0xfffaea, amb: 0xdde8f5, bg: 0x151c28, sunI: 1.40, ambI: 0.85 }, // Afternoon
-  { t: 17.0, sun: 0xffab4c, amb: 0xb57870, bg: 0x241a24, sunI: 1.10, ambI: 0.72 }, // Sunset start
-  { t: 18.2, sun: 0xff6a35, amb: 0x8a4565, bg: 0x221226, sunI: 0.80, ambI: 0.58 }, // Sunset golden hour
-  { t: 19.5, sun: 0x724888, amb: 0x48345c, bg: 0x160f22, sunI: 0.50, ambI: 0.45 }, // Dusk twilight
-  { t: 21.0, sun: 0x5a7ca8, amb: 0x253550, bg: 0x0c121e, sunI: 0.38, ambI: 0.40 }, // Nightfall
-  { t: 24.0, sun: 0x5a7ca8, amb: 0x22324c, bg: 0x0a101c, sunI: 0.35, ambI: 0.40 }  // Wrap to midnight
+  { t: 0.0,  sun: 0x5a7ca8, amb: 0x22324c, bg: 0x22324c, sunI: 0.35, ambI: 0.40 }, // Midnight
+  { t: 4.5,  sun: 0x6a8cb8, amb: 0x283854, bg: 0x283854, sunI: 0.38, ambI: 0.42 }, // Pre-dawn
+  { t: 5.5,  sun: 0xff7b39, amb: 0x8a5870, bg: 0x8a5870, sunI: 0.70, ambI: 0.52 }, // Sunrise start
+  { t: 6.5,  sun: 0xffa048, amb: 0xb88890, bg: 0xb88890, sunI: 0.95, ambI: 0.65 }, // Golden dawn
+  { t: 7.5,  sun: 0xffd285, amb: 0xd0b8ae, bg: 0xd0b8ae, sunI: 1.25, ambI: 0.78 }, // Early morning
+  { t: 9.0,  sun: 0xfffaea, amb: 0xdde8f5, bg: 0xdde8f5, sunI: 1.40, ambI: 0.85 }, // Morning
+  { t: 12.0, sun: 0xffffff, amb: 0xe5f0ff, bg: 0xe5f0ff, sunI: 1.55, ambI: 0.90 }, // Solar Noon
+  { t: 15.5, sun: 0xfffaea, amb: 0xdde8f5, bg: 0xdde8f5, sunI: 1.40, ambI: 0.85 }, // Afternoon
+  { t: 17.0, sun: 0xffab4c, amb: 0xb57870, bg: 0xb57870, sunI: 1.10, ambI: 0.72 }, // Sunset start
+  { t: 18.2, sun: 0xff6a35, amb: 0x8a4565, bg: 0x8a4565, sunI: 0.80, ambI: 0.58 }, // Sunset golden hour
+  { t: 19.5, sun: 0x724888, amb: 0x48345c, bg: 0x48345c, sunI: 0.50, ambI: 0.45 }, // Dusk twilight
+  { t: 21.0, sun: 0x5a7ca8, amb: 0x253550, bg: 0x253550, sunI: 0.38, ambI: 0.40 }, // Nightfall
+  { t: 24.0, sun: 0x5a7ca8, amb: 0x22324c, bg: 0x22324c, sunI: 0.35, ambI: 0.40 }  // Wrap to midnight
 ];
 
 const EMOTE_SKINS = [
@@ -649,7 +649,7 @@ function createWoodCabinWallGeo() {
 }
 function createWoodCabinRoofGeo() {
   const roof = createCleanPitchedRoof(1.92, 0.92, 0.85);
-  roof.translate(1.0, 2.30, 0.5);
+  roof.translate(0, 2.30, 0);
   return roof;
 }
 
@@ -665,7 +665,7 @@ function createStoneCottageWallGeo() {
 }
 function createStoneCottageRoofGeo() {
   const roof = createCleanPitchedRoof(1.92, 1.92, 0.95, false);
-  roof.translate(1.0, 2.32, 1.0);
+  roof.translate(0, 2.32, 0);
   return roof;
 }
 
@@ -697,7 +697,7 @@ function createLogLodgeWallGeo() {
 }
 function createLogLodgeRoofGeo() {
   const roof = createCleanPitchedRoof(1.92, 1.92, 0.95, false);
-  roof.translate(1.0, 3.12, 1.0);
+  roof.translate(0, 3.12, 0);
   return roof;
 }
 
@@ -713,7 +713,7 @@ function createHalfTimberedWallGeo() {
 }
 function createHalfTimberedRoofGeo() {
   const roof = createCleanPitchedRoof(1.92, 0.92, 0.90);
-  roof.translate(1.0, 2.28, 0.5);
+  roof.translate(0, 2.28, 0);
   return roof;
 }
 
@@ -749,7 +749,7 @@ function createMountainStiltWallGeo() {
 }
 function createMountainStiltRoofGeo() {
   const roof = createCleanPitchedRoof(1.92, 1.92, 1.00, false);
-  roof.translate(1.0, 3.49, 1.0);
+  roof.translate(0, 3.49, 0);
   return roof;
 }
 
@@ -763,7 +763,7 @@ function createLonghouseWallGeo() {
 }
 function createLonghouseRoofGeo() {
   const roof = createCleanPitchedRoof(2.92, 1.92, 1.10);
-  roof.translate(1.5, 2.35, 1.0);
+  roof.translate(0, 2.35, 0);
   return roof;
 }
 
@@ -907,41 +907,42 @@ function createSingleStoneCottageRoofGeo() {
 }
 
 // 16. Fenced Ranch Compound (1-Story, 3x3x1 Footprint: X [0.05..2.95], Z [0.05..2.95])
+// 16. Fenced Ranch Compound (1-Story, 3x3x1 Footprint: centered at origin)
 function createFencedRanchWallGeo() {
   const parts = []; 
-  const wingBack = new THREE.BoxGeometry(2.80, 0.88, 1.25); wingBack.translate(0, 0.44, 0.70); parts.push(wingBack);
-  const wingSide = new THREE.BoxGeometry(1.20, 0.85, 1.45); wingSide.translate(0.65, 0.425, 2.05); parts.push(wingSide);
-  const fPost1 = new THREE.BoxGeometry(0.08, 0.45, 0.08); fPost1.translate(0.10, 0.225, 2.90); parts.push(fPost1);
-  const fPost2 = new THREE.BoxGeometry(0.08, 0.45, 0.08); fPost2.translate(2.90, 0.225, 2.90); parts.push(fPost2);
-  const fPost3 = new THREE.BoxGeometry(0.08, 0.45, 0.08); fPost3.translate(2.90, 0.225, 1.40); parts.push(fPost3);
-  const railFront = new THREE.BoxGeometry(2.80, 0.08, 0.06); railFront.translate(1.50, 0.35, 2.90); parts.push(railFront);
-  const railSide = new THREE.BoxGeometry(0.06, 0.08, 1.50); railSide.translate(2.90, 0.35, 2.15); parts.push(railSide);
+  const wingBack = new THREE.BoxGeometry(2.80, 0.88, 1.25); wingBack.translate(0, 0.44, -0.65); parts.push(wingBack);
+  const wingSide = new THREE.BoxGeometry(1.20, 0.85, 1.45); wingSide.translate(0.65, 0.425, 0.65); parts.push(wingSide);
+  const fPost1 = new THREE.BoxGeometry(0.08, 0.45, 0.08); fPost1.translate(-1.35, 0.225, 1.35); parts.push(fPost1);
+  const fPost2 = new THREE.BoxGeometry(0.08, 0.45, 0.08); fPost2.translate(1.35, 0.225, 1.35); parts.push(fPost2);
+  const fPost3 = new THREE.BoxGeometry(0.08, 0.45, 0.08); fPost3.translate(1.35, 0.225, -0.10); parts.push(fPost3);
+  const railFront = new THREE.BoxGeometry(2.70, 0.08, 0.06); railFront.translate(0, 0.35, 1.35); parts.push(railFront);
+  const railSide = new THREE.BoxGeometry(0.06, 0.08, 1.45); railSide.translate(1.35, 0.35, 0.65); parts.push(railSide);
   return mergeBufferGeometries(parts);
 }
 function createFencedRanchRoofGeo() {
   const parts = [];
-  const rBack = createCleanPitchedRoof(2.85, 1.30, 0.55); rBack.translate(1.5, 0.88, 0.70); parts.push(rBack);
-  const rSide = createCleanPitchedRoof(1.25, 1.50, 0.52); rSide.translate(0.65, 0.85, 2.05); parts.push(rSide);
+  const rBack = createCleanPitchedRoof(2.85, 1.30, 0.55); rBack.translate(0, 0.88, -0.65); parts.push(rBack);
+  const rSide = createCleanPitchedRoof(1.25, 1.50, 0.52); rSide.translate(0.65, 0.85, 0.65); parts.push(rSide);
   return mergeBufferGeometries(parts);
 }
 
-// 17. Courtyard Hacienda Estate (1-Story Condominium Compound, 4x4x1 Footprint: X [0.05..3.95], Z [0.05..3.95])
+// 17. Courtyard Hacienda Estate (1-Story Condominium Compound, 4x4x1 Footprint: centered at origin)
 function createCourtyardHaciendaWallGeo() {
   const parts = []; 
-  const wingN = new THREE.BoxGeometry(3.85, 0.90, 1.05); wingN.translate(0, 0.45, 0.60); parts.push(wingN);
-  const wingS = new THREE.BoxGeometry(3.85, 0.90, 1.05); wingS.translate(0, 0.45, 3.40); parts.push(wingS);
-  const wingE = new THREE.BoxGeometry(1.05, 0.90, 1.75); wingE.translate(3.40, 0.45, 0); parts.push(wingE);
-  const wingW = new THREE.BoxGeometry(1.05, 0.90, 1.75); wingW.translate(0.60, 0.45, 0); parts.push(wingW);
+  const wingN = new THREE.BoxGeometry(3.85, 0.90, 1.05); wingN.translate(0, 0.45, -1.40); parts.push(wingN);
+  const wingS = new THREE.BoxGeometry(3.85, 0.90, 1.05); wingS.translate(0, 0.45, 1.40); parts.push(wingS);
+  const wingE = new THREE.BoxGeometry(1.05, 0.90, 1.75); wingE.translate(1.40, 0.45, 0); parts.push(wingE);
+  const wingW = new THREE.BoxGeometry(1.05, 0.90, 1.75); wingW.translate(-1.40, 0.45, 0); parts.push(wingW);
   const patio = new THREE.BoxGeometry(1.80, 0.08, 1.80); patio.translate(0, 0.04, 0); parts.push(patio);
   const fountain = new THREE.CylinderGeometry(0.35, 0.40, 0.35, 8); fountain.translate(0, 0.20, 0); parts.push(fountain);
   return mergeBufferGeometries(parts);
 }
 function createCourtyardHaciendaRoofGeo() {
   const parts = []; 
-  const rN = createCleanPitchedRoof(3.90, 1.10, 0.48); rN.translate(0, 0.90, 0.60); parts.push(rN);
-  const rS = createCleanPitchedRoof(3.90, 1.10, 0.48); rS.translate(0, 0.90, 3.40); parts.push(rS);
-  const rE = createCleanPitchedRoof(1.10, 1.80, 0.48); rE.translate(3.40, 0.90, 0); parts.push(rE);
-  const rW = createCleanPitchedRoof(1.10, 1.80, 0.48); rW.translate(0.60, 0.90, 0); parts.push(rW);
+  const rN = createCleanPitchedRoof(3.90, 1.10, 0.48); rN.translate(0, 0.90, -1.40); parts.push(rN);
+  const rS = createCleanPitchedRoof(3.90, 1.10, 0.48); rS.translate(0, 0.90, 1.40); parts.push(rS);
+  const rE = createCleanPitchedRoof(1.10, 1.80, 0.48); rE.translate(1.40, 0.90, 0); parts.push(rE);
+  const rW = createCleanPitchedRoof(1.10, 1.80, 0.48); rW.translate(-1.40, 0.90, 0); parts.push(rW);
   return mergeBufferGeometries(parts);
 }
 
@@ -3457,9 +3458,11 @@ export class RCT3DRenderer {
     this.tempColor1.setHex(k1.bg);
     this.tempColor2.setHex(k2.bg);
     this.tempColor1.lerp(this.tempColor2, sAlpha);
+    if (!this.scene.background) this.scene.background = new THREE.Color();
     this.scene.background.copy(this.tempColor1);
+    this.renderer.setClearColor(this.tempColor1, 1.0);
     if (!this.scene.fog) {
-      this.scene.fog = new THREE.FogExp2(this.tempColor1.getHex(), 0.0018);
+      this.scene.fog = new THREE.FogExp2(this.tempColor1.getHex(), 0.0012);
     } else {
       this.scene.fog.color.copy(this.tempColor1);
     }
@@ -5130,13 +5133,13 @@ export class RCT3DRenderer {
       this.reticleMesh.visible = false;
     }
 
-    // Update 3D Atmosphere Clouds (Procedural High Altitude Clouds)
+    // Update 3D Atmosphere Clouds (Only appear at highest altitude / satellite zoom levels)
     if (this.cloudMesh && this.cloudMat) {
-      if (this.zoom <= 0.8) {
+      if (this.zoom <= 0.38) {
         this.cloudMesh.visible = true;
-        this.cloudMesh.position.set(this.camX, 22.0, this.camY);
+        this.cloudMesh.position.set(this.camX, 55.0, this.camY);
         this.cloudMat.uniforms.uTime.value = performance.now() * 0.001;
-        const fade = Math.min(1.0, (0.8 - this.zoom) / 0.35);
+        const fade = Math.min(1.0, (0.38 - this.zoom) / 0.18);
         this.cloudMat.uniforms.uFade.value = fade;
         this.cloudMat.uniforms.uSunColor.value.copy(this.sunLight.color);
         this.cloudMat.uniforms.uAmbColor.value.copy(this.ambientLight.color);
