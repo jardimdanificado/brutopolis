@@ -2458,20 +2458,32 @@ export class RCT3DRenderer {
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap; // High quality smooth shadows
     this.renderer.setClearColor(0xdde8f5, 1.0);
 
-    // 3.1 Post-Processing Pipeline (Depth of Field, Chromatic Aberration & Atmospheric Lens)
+    // 3.1 Post-Processing Pipeline (Ambient Occlusion, Depth of Field, Chromatic Aberration & Atmospheric Lens)
     this.postEffectsEnabled = true;
     this.renderTarget = new THREE.WebGLRenderTarget(Math.max(160, Math.floor(this.width * this.scaleFactor)), Math.max(120, Math.floor(this.height * this.scaleFactor)), {
       minFilter: THREE.LinearFilter,
       magFilter: THREE.LinearFilter,
-      format: THREE.RGBAFormat
+      format: THREE.RGBAFormat,
+      depthBuffer: true
     });
+    this.renderTarget.depthTexture = new THREE.DepthTexture();
+    this.renderTarget.depthTexture.format = THREE.DepthFormat;
+    this.renderTarget.depthTexture.type = THREE.UnsignedIntType;
+
     this.postScene = new THREE.Scene();
     this.postCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
     this.postMaterial = new THREE.ShaderMaterial({
       uniforms: {
         tDiffuse: { value: this.renderTarget.texture },
+        tDepth: { value: this.renderTarget.depthTexture },
         uChroma: { value: 1.0 },
-        uDofStrength: { value: 1.0 }
+        uDofStrength: { value: 1.0 },
+        uAoEnabled: { value: 1.0 },
+        uAoType: { value: 2 }, // 0 = CONTACT, 1 = CREVICE, 2 = SSAO, 3 = DEEP
+        uAoIntensity: { value: 1.0 },
+        uCameraNear: { value: 0.1 },
+        uCameraFar: { value: 1000.0 },
+        uResolution: { value: new THREE.Vector2(800, 600) }
       },
       vertexShader: `
         varying vec2 vUv;
@@ -2482,9 +2494,87 @@ export class RCT3DRenderer {
       `,
       fragmentShader: `
         uniform sampler2D tDiffuse;
+        uniform sampler2D tDepth;
         uniform float uChroma;
         uniform float uDofStrength;
+        uniform float uAoEnabled;
+        uniform int uAoType;
+        uniform float uAoIntensity;
+        uniform float uCameraNear;
+        uniform float uCameraFar;
+        uniform vec2 uResolution;
         varying vec2 vUv;
+
+        float readLinearDepth(vec2 coord) {
+          float depth = texture2D(tDepth, coord).x;
+          if (depth >= 1.0) return uCameraFar;
+          float z_ndc = depth * 2.0 - 1.0;
+          return (2.0 * uCameraNear * uCameraFar) / (uCameraFar + uCameraNear - z_ndc * (uCameraFar - uCameraNear));
+        }
+
+        // 4x4 Bayer Dither Matrix for ordered noise
+        float bayer4x4(vec2 p) {
+          int x = int(mod(p.x, 4.0));
+          int y = int(mod(p.y, 4.0));
+          int idx = x + y * 4;
+          if (idx == 0) return 0.0 / 16.0;
+          if (idx == 1) return 8.0 / 16.0;
+          if (idx == 2) return 2.0 / 16.0;
+          if (idx == 3) return 10.0 / 16.0;
+          if (idx == 4) return 12.0 / 16.0;
+          if (idx == 5) return 4.0 / 16.0;
+          if (idx == 6) return 14.0 / 16.0;
+          if (idx == 7) return 6.0 / 16.0;
+          if (idx == 8) return 3.0 / 16.0;
+          if (idx == 9) return 11.0 / 16.0;
+          if (idx == 10) return 1.0 / 16.0;
+          if (idx == 11) return 9.0 / 16.0;
+          if (idx == 12) return 15.0 / 16.0;
+          if (idx == 13) return 7.0 / 16.0;
+          if (idx == 14) return 13.0 / 16.0;
+          return 5.0 / 16.0;
+        }
+
+        float calculateAO(vec2 uv, float centerDepth) {
+          if (centerDepth >= (uCameraFar * 0.95) || centerDepth < 0.05) return 1.0;
+
+          // AO radius scaled by distance & AO type
+          float baseRadius = 3.5;
+          if (uAoType == 0) baseRadius = 1.8;       // CONTACT (Tight contact shadows around feet/bases)
+          else if (uAoType == 1) baseRadius = 3.8;  // CREVICE (Foundations and wall crevices)
+          else if (uAoType == 2) baseRadius = 7.0;  // SSAO (Balanced screen-space ambient occlusion)
+          else if (uAoType == 3) baseRadius = 11.5; // DEEP (Deep ambient room and landscape occlusion)
+
+          vec2 texel = 1.0 / max(uResolution, vec2(160.0, 120.0));
+          float projRadius = clamp((baseRadius * 18.0) / max(centerDepth, 0.8), 1.5, 36.0);
+
+          float dither = bayer4x4(gl_FragCoord.xy);
+          float angleBase = dither * 6.2831853;
+
+          float occlusion = 0.0;
+          const int TAPS = 8;
+
+          for (int i = 0; i < TAPS; i++) {
+            float fi = float(i);
+            float angle = angleBase + fi * 2.3999632;
+            float rNorm = (fi + 0.5) / float(TAPS);
+            float dist = rNorm * projRadius;
+            vec2 offset = vec2(cos(angle), sin(angle)) * dist * texel;
+
+            float sampleDepth = readLinearDepth(uv + offset);
+            float depthDelta = centerDepth - sampleDepth;
+
+            float maxRange = clamp(centerDepth * 0.16 + 0.40, 0.20, 5.5);
+            if (depthDelta > 0.02 && depthDelta < maxRange) {
+              float weight = 1.0 - (depthDelta / maxRange);
+              occlusion += weight * weight;
+            }
+          }
+
+          occlusion = clamp(occlusion / float(TAPS), 0.0, 1.0);
+          float ao = 1.0 - (occlusion * uAoIntensity);
+          return clamp(ao, 0.0, 1.0);
+        }
 
         void main() {
           vec2 uv = vUv;
@@ -2497,6 +2587,14 @@ export class RCT3DRenderer {
           float g = texture2D(tDiffuse, uv).g;
           float b = texture2D(tDiffuse, uv - center * chromaOffset).b;
           float a = texture2D(tDiffuse, uv).a;
+          vec3 baseColor = vec3(r, g, b);
+
+          // Ambient Occlusion Shading
+          if (uAoEnabled > 0.5 && uAoIntensity > 0.01) {
+            float centerLinearZ = readLinearDepth(uv);
+            float ao = calculateAO(uv, centerLinearZ);
+            baseColor *= ao;
+          }
 
           // Multi-tap Golden-Angle Bokeh Depth of Field
           if (uDofStrength > 0.001) {
@@ -2513,11 +2611,18 @@ export class RCT3DRenderer {
             blurCol += texture2D(tDiffuse, uv + vec2( 1.0,     0.0)   * blur);
             blurCol *= 0.125;
 
+            // Apply AO to blurred background as well if active
+            if (uAoEnabled > 0.5 && uAoIntensity > 0.01) {
+              float centerLinearZ = readLinearDepth(uv);
+              float ao = calculateAO(uv, centerLinearZ);
+              blurCol.rgb *= ao;
+            }
+
             float blend = smoothstep(0.04, 0.38, dist);
-            vec3 finalCol = mix(vec3(r, g, b), blurCol.rgb, blend * 0.65);
+            vec3 finalCol = mix(baseColor, blurCol.rgb, blend * 0.65);
             gl_FragColor = vec4(finalCol, a);
           } else {
-            gl_FragColor = vec4(r, g, b, a);
+            gl_FragColor = vec4(baseColor, a);
           }
         }
       `,
@@ -2597,7 +2702,11 @@ export class RCT3DRenderer {
       waterReflections: true,
       fog: "LIGHT",
       godRays: true,
-      lensFlare: true
+      lensFlare: true,
+      anisotropy: 4,
+      ambientOcclusion: true,
+      aoType: "SSAO", // "CONTACT" | "CREVICE" | "SSAO" | "DEEP"
+      aoIntensity: "HIGH" // "LOW" | "MED" | "HIGH" | "ULTRA"
     };
     this._lastPerspState = null;
 
@@ -3636,24 +3745,8 @@ export class RCT3DRenderer {
     return this.shadowsEnabled;
   }
 
-  setAnisotropy(level) {
-    const maxAniso = this.renderer?.capabilities?.getMaxAnisotropy ? this.renderer.capabilities.getMaxAnisotropy() : 16;
-    let aniso = 1;
-    if (typeof level === "number") {
-      aniso = Math.max(1, Math.min(level, maxAniso));
-    } else if (level === "2X" || level === 2) {
-      aniso = Math.min(2, maxAniso);
-    } else if (level === "4X" || level === 4) {
-      aniso = Math.min(4, maxAniso);
-    } else if (level === "8X" || level === 8) {
-      aniso = Math.min(8, maxAniso);
-    } else if (level === "16X" || level === 16) {
-      aniso = Math.min(16, maxAniso);
-    } else {
-      aniso = 1;
-    }
-
-    this.graphicOptions.anisotropy = aniso;
+  applyAnisotropyForMode(isPersp = this.isPerspectiveActive()) {
+    const aniso = isPersp ? (this.graphicOptions.anisotropy || 4) : 1;
     currentGlobalAnisotropy = aniso;
 
     for (const tex of REGISTERED_TEXTURES) {
@@ -3684,6 +3777,27 @@ export class RCT3DRenderer {
     scanDict(this.materialsPerspective);
   }
 
+  setAnisotropy(level) {
+    const maxAniso = this.renderer?.capabilities?.getMaxAnisotropy ? this.renderer.capabilities.getMaxAnisotropy() : 16;
+    let aniso = 1;
+    if (typeof level === "number") {
+      aniso = Math.max(1, Math.min(level, maxAniso));
+    } else if (level === "2X" || level === 2) {
+      aniso = Math.min(2, maxAniso);
+    } else if (level === "4X" || level === 4) {
+      aniso = Math.min(4, maxAniso);
+    } else if (level === "8X" || level === 8) {
+      aniso = Math.min(8, maxAniso);
+    } else if (level === "16X" || level === 16) {
+      aniso = Math.min(16, maxAniso);
+    } else {
+      aniso = 1;
+    }
+
+    this.graphicOptions.anisotropy = aniso;
+    this.applyAnisotropyForMode(this.isPerspectiveActive());
+  }
+
   setGraphicOptions(opts) {
     if (!opts) return;
     Object.assign(this.graphicOptions, opts);
@@ -3694,6 +3808,8 @@ export class RCT3DRenderer {
   }
 
   syncActiveMaterials(isPersp = this.isPerspectiveActive()) {
+    this.applyAnisotropyForMode(isPersp);
+
     const useNormalMaps = isPersp && (this.graphicOptions.normalMaps !== false);
     const activeDict = useNormalMaps ? this.materialsPerspective : this.materialsIso;
 
@@ -4413,7 +4529,14 @@ export class RCT3DRenderer {
     if (!this.scene.background) this.scene.background = new THREE.Color();
     this.scene.background.copy(this.tempColor1);
     this.renderer.setClearColor(this.tempColor1, 1.0);
-    const targetFogDensity = this.isPerspectiveActive() ? 0.016 : 0.0012;
+    const isPersp = this.isPerspectiveActive();
+    let targetFogDensity = 0.0;
+    if (isPersp) {
+      const fogOpt = this.graphicOptions.fog || "LIGHT";
+      if (fogOpt === "OFF") targetFogDensity = 0.0;
+      else if (fogOpt === "DENSE") targetFogDensity = 0.025;
+      else targetFogDensity = 0.016;
+    }
     if (!this.scene.fog) {
       this.scene.fog = new THREE.FogExp2(this.tempColor1.getHex(), targetFogDensity);
     } else {
@@ -4421,7 +4544,6 @@ export class RCT3DRenderer {
       this.scene.fog.density = targetFogDensity;
     }
 
-    const isPersp = this.isPerspectiveActive();
     const sunIntensity = (k1.sunI + (k2.sunI - k1.sunI) * sAlpha) * (isPersp ? 1.25 : 1.0);
     const ambIntensity = (k1.ambI + (k2.ambI - k1.ambI) * sAlpha) * (isPersp ? 1.15 : 1.0);
 
@@ -6324,6 +6446,32 @@ export class RCT3DRenderer {
       this.postMaterial.uniforms.uDofStrength.value = dofVal;
 
       this.postMaterial.uniforms.uChroma.value = (this.graphicOptions?.chroma !== false) ? 1.0 : 0.0;
+
+      // Configure Ambient Occlusion (AO) Pass
+      const aoEnabled = (this.graphicOptions?.ambientOcclusion !== false);
+      const aoTypeStr = this.graphicOptions?.aoType || "SSAO";
+      let aoTypeInt = 2;
+      if (aoTypeStr === "CONTACT") aoTypeInt = 0;
+      else if (aoTypeStr === "CREVICE") aoTypeInt = 1;
+      else if (aoTypeStr === "SSAO") aoTypeInt = 2;
+      else if (aoTypeStr === "DEEP") aoTypeInt = 3;
+
+      const aoIntStr = this.graphicOptions?.aoIntensity || "HIGH";
+      let aoIntensityVal = 1.0;
+      if (aoIntStr === "LOW") aoIntensityVal = 0.45;
+      else if (aoIntStr === "MED") aoIntensityVal = 0.70;
+      else if (aoIntStr === "HIGH") aoIntensityVal = 1.00;
+      else if (aoIntStr === "ULTRA") aoIntensityVal = 1.45;
+
+      this.postMaterial.uniforms.uAoEnabled.value = aoEnabled ? 1.0 : 0.0;
+      this.postMaterial.uniforms.uAoType.value = aoTypeInt;
+      this.postMaterial.uniforms.uAoIntensity.value = aoIntensityVal;
+      this.postMaterial.uniforms.uCameraNear.value = activeCam.near || 0.05;
+      this.postMaterial.uniforms.uCameraFar.value = activeCam.far || 800.0;
+      this.postMaterial.uniforms.uResolution.value.set(
+        Math.max(160, Math.floor(this.width * this.scaleFactor)),
+        Math.max(120, Math.floor(this.height * this.scaleFactor))
+      );
 
       this.renderer.render(this.postScene, this.postCamera);
     } else {

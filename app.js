@@ -2,8 +2,8 @@
 // Brutopolis
 // =============================================================================
 
-const BrutopolisVersion = "0.121.9";
-const BrutopolisVersionName = "Charm is deceptive, and beauty is fleeting;";
+const BrutopolisVersion = "0.121.10";
+const BrutopolisVersionName = "Charm is deceptive, and beauty is fleeting";
 
 // WASM replaced by Pure JS Renderer
 import { World } from "./js/world.js";
@@ -6133,7 +6133,10 @@ const gameOptions = {
   perspectiveChromaticAberration: true,
   perspectiveWaterReflections: true,
   perspectiveFog: "LIGHT", // "OFF" | "LIGHT" | "DENSE"
-  perspectiveAnisotropy: 4 // 1 (OFF) | 2 (2X) | 4 (4X) | 8 (8X) | 16 (16X)
+  perspectiveAnisotropy: 4, // 1 (OFF) | 2 (2X) | 4 (4X) | 8 (8X) | 16 (16X)
+  perspectiveAmbientOcclusion: true,
+  perspectiveAOType: "SSAO", // "CONTACT" | "CREVICE" | "SSAO" | "DEEP"
+  perspectiveAOIntensity: "HIGH" // "LOW" | "MED" | "HIGH" | "ULTRA"
 };
 
 function loadGameOptions() {
@@ -6168,7 +6171,10 @@ function applyGameOptions() {
         chroma: gameOptions.perspectiveChromaticAberration,
         waterReflections: gameOptions.perspectiveWaterReflections,
         fog: gameOptions.perspectiveFog,
-        anisotropy: gameOptions.perspectiveAnisotropy
+        anisotropy: gameOptions.perspectiveAnisotropy,
+        ambientOcclusion: gameOptions.perspectiveAmbientOcclusion,
+        aoType: gameOptions.perspectiveAOType,
+        aoIntensity: gameOptions.perspectiveAOIntensity
       });
     }
   }
@@ -6571,6 +6577,70 @@ function renderOptionsModal() {
       const v = opt.val;
       registerClickableRegion(bx, curY + 10, bw, 22, () => {
         gameOptions.perspectiveAnisotropy = v;
+        applyGameOptions();
+        saveGameOptions();
+      });
+      bx += bw + 6;
+    }
+    curY += 40;
+
+    // 7. Ambient Occlusion (Active / Type / Intensity)
+    const aoActive = gameOptions.perspectiveAmbientOcclusion !== false;
+    const aoType = gameOptions.perspectiveAOType || "SSAO";
+    const aoInt = gameOptions.perspectiveAOIntensity || "HIGH";
+    drawText8x8(`AMBIENT OCCLUSION (AO): [ ${aoActive ? "ON" : "OFF"} | ${aoType} | ${aoInt} ]`, mx + 16, curY, "#3cbcfc", 1);
+    bx = mx + 16;
+    drawNESButton(bx, curY + 10, 58, 22, "ON", aoActive, false);
+    registerClickableRegion(bx, curY + 10, 58, 22, () => {
+      gameOptions.perspectiveAmbientOcclusion = true;
+      applyGameOptions();
+      saveGameOptions();
+    });
+    bx += 64;
+    drawNESButton(bx, curY + 10, 58, 22, "OFF", !aoActive, false);
+    registerClickableRegion(bx, curY + 10, 58, 22, () => {
+      gameOptions.perspectiveAmbientOcclusion = false;
+      applyGameOptions();
+      saveGameOptions();
+    });
+    bx += 74;
+
+    const aoTypes = [
+      { val: "CONTACT", label: "CONTACT" },
+      { val: "CREVICE", label: "CREVICE" },
+      { val: "SSAO", label: "SSAO" },
+      { val: "DEEP", label: "DEEP" }
+    ];
+    for (const opt of aoTypes) {
+      const isSel = aoType === opt.val;
+      const bw = isMobile ? 54 : 64;
+      drawNESButton(bx, curY + 10, bw, 22, opt.label, isSel, false);
+      const v = opt.val;
+      registerClickableRegion(bx, curY + 10, bw, 22, () => {
+        gameOptions.perspectiveAOType = v;
+        applyGameOptions();
+        saveGameOptions();
+      });
+      bx += bw + 6;
+    }
+    curY += 34;
+
+    // AO Intensity
+    drawText8x8(`AO SHADOW INTENSITY: [ ${aoInt} ]`, mx + 16, curY, "#3cbcfc", 1);
+    const aoIntensities = [
+      { val: "LOW", label: "LOW" },
+      { val: "MED", label: "MED" },
+      { val: "HIGH", label: "HIGH" },
+      { val: "ULTRA", label: "ULTRA" }
+    ];
+    bx = mx + 16;
+    for (const opt of aoIntensities) {
+      const isSel = aoInt === opt.val;
+      const bw = isMobile ? 54 : 70;
+      drawNESButton(bx, curY + 10, bw, 22, opt.label, isSel, false);
+      const v = opt.val;
+      registerClickableRegion(bx, curY + 10, bw, 22, () => {
+        gameOptions.perspectiveAOIntensity = v;
         applyGameOptions();
         saveGameOptions();
       });
