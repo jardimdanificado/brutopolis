@@ -2,7 +2,7 @@
 // Brutopolis
 // =============================================================================
 
-const BrutopolisVersion = "0.120.4";
+const BrutopolisVersion = "0.120.6";
 const BrutopolisVersionName = "Rejoice with those who rejoice; mourn with those who mourn.";
 
 // WASM replaced by Pure JS Renderer
@@ -1721,6 +1721,9 @@ function spawnEntityAtCamera(spawnerLabel) {
 
 function focusEntityAndFollow(ent) {
   if (!ent) return;
+  if ((isFirstPersonMode || isThirdPersonMode) && perspectiveEntityId !== ent.id) {
+    exitPerspectiveMode();
+  }
   lastSelectedId = ent.id;
   isFollowMode = true;
   if (renderer) {
@@ -1737,6 +1740,9 @@ function focusEntityAndFollow(ent) {
 }
 
 function focusLocation(x, y, zoom = 1.5) {
+  if (isFirstPersonMode || isThirdPersonMode) {
+    exitPerspectiveMode();
+  }
   if (renderer) renderer.setCamera(x, y, zoom);
   if (rctRenderer) rctRenderer.setCamera(x, y, zoom);
   currentMode = "MAP";
@@ -1746,8 +1752,11 @@ function focusLocation(x, y, zoom = 1.5) {
 }
 
 function cycleNextLivingEntity() {
+  if (isFirstPersonMode || isThirdPersonMode) {
+    exitPerspectiveMode();
+  }
   if (entities.length === 0 || !renderer) return;
-  const living = entities.filter(e => !e.destroyed && e.properties && e.properties.life);
+  const living = entities.filter(e => !e.destroyed && e.properties && e.properties.life && !e.properties.life.isDead);
   if (living.length === 0) return;
 
   const curIdx = living.findIndex(e => e.id === lastSelectedId);
@@ -1932,12 +1941,14 @@ window.addEventListener("mouseup", (e) => {
       }
 
       if (!isOverUi && coords.inside && coords.y > 32 && coords.y < CANVAS_HEIGHT - 36) {
-        const foundId = (is3DMode && rctRenderer)
-          ? rctRenderer.selectAt(e.clientX, e.clientY, entities)
-          : renderer.selectAt(coords.x, coords.y, entities);
-        lastSelectedId = foundId;
-        if (is3DMode && rctRenderer) rctRenderer.selectEntity(foundId);
-        if (renderer) renderer.selectEntity(foundId);
+        if (!isFirstPersonMode && !isThirdPersonMode) {
+          const foundId = (is3DMode && rctRenderer)
+            ? rctRenderer.selectAt(e.clientX, e.clientY, entities)
+            : renderer.selectAt(coords.x, coords.y, entities);
+          lastSelectedId = foundId;
+          if (is3DMode && rctRenderer) rctRenderer.selectEntity(foundId);
+          if (renderer) renderer.selectEntity(foundId);
+        }
       }
     }
   }
@@ -2010,7 +2021,11 @@ window.addEventListener("keydown", (e) => {
     currentMode = currentMode === "GENERATOR" ? "MAP" : "GENERATOR";
     modalScroll = 0;
   } else if (e.code === "KeyC") {
-    centerCamera();
+    if (isFirstPersonMode && rctRenderer?.toggleFirstPersonAutoCam) {
+      rctRenderer.toggleFirstPersonAutoCam();
+    } else {
+      centerCamera();
+    }
   } else if (e.code === "KeyK") {
     if (lastSelectedId > 0) {
       if (simWorker) {
@@ -5941,14 +5956,23 @@ function renderPerspectiveHUD() {
   const ent = getEntityById(perspectiveEntityId);
   const name = ent ? (ent.properties?.name || `CREATURE #${ent.id}`).toUpperCase() : "CREATURE";
 
-  const bw = Math.min(580, CANVAS_WIDTH - 24);
+  const bw = Math.min(640, CANVAS_WIDTH - 24);
   const bx = Math.floor((CANVAS_WIDTH - bw) / 2);
   const by = 8;
   drawNESBox(bx, by, bw, 28);
 
-  const modeStr = isThirdPersonMode ? "3RD PERSON (ORBIT)" : "1ST PERSON";
-  const helpStr = isThirdPersonMode ? "[DRAG/TOUCH: ORBIT] [WHEEL/PINCH: ZOOM]" : "[DRAG/TOUCH: LOOK]";
+  const modeStr = isThirdPersonMode ? "3RD PERSON" : "1ST PERSON";
+  const helpStr = isThirdPersonMode ? "[DRAG/TOUCH: ORBIT] [WHEEL: ZOOM]" : "[DRAG/TOUCH: LOOK]";
   drawText8x8(`${modeStr}: ${name} | ${helpStr}`, bx + 10, by + 10, "#58d854", 1);
+
+  if (isFirstPersonMode && rctRenderer) {
+    const isAuto = rctRenderer.isFirstPersonAutoCam?.() ?? true;
+    const autoTxt = isAuto ? "AUTO:ON" : "AUTO:OFF";
+    drawNESButton(bx + bw - 176, by + 4, 80, 20, autoTxt, isAuto, false);
+    registerClickableRegion(bx + bw - 176, by + 4, 80, 20, () => {
+      if (rctRenderer?.toggleFirstPersonAutoCam) rctRenderer.toggleFirstPersonAutoCam();
+    });
+  }
 
   const exitTxt = isThirdPersonMode ? "EXIT 3P" : "EXIT 1P";
   drawNESButton(bx + bw - 90, by + 4, 80, 20, exitTxt, false, false);
@@ -6752,6 +6776,16 @@ function frame(time) {
     lastFpsUpdate = time;
   }
 
+  // Perspective Selection Lock & Death Guard (1P and 3P)
+  if ((isFirstPersonMode || isThirdPersonMode) && perspectiveEntityId) {
+    const pEnt = getEntityById(perspectiveEntityId);
+    if (!pEnt || pEnt.destroyed || pEnt.properties?.life?.isDead) {
+      exitPerspectiveMode();
+    } else if (lastSelectedId !== perspectiveEntityId) {
+      exitPerspectiveMode();
+    }
+  }
+
   handleCameraKeys(dt);
   activeUiRegions = [];
 
@@ -7310,13 +7344,15 @@ canvas.addEventListener("touchend", (e) => {
 
       // 2. Check Map Selection (2D & 3D)
       if (!clickedUi && currentMode === "MAP" && coords.inside && coords.y > 32 && coords.y < CANVAS_HEIGHT - 36) {
-        let foundId = -1;
-        if (is3DMode && rctRenderer) {
-          foundId = rctRenderer.selectAt(touchStartX, touchStartY, entities, world);
-        } else if (renderer) {
-          foundId = renderer.selectAt(coords.x, coords.y, entities);
+        if (!isFirstPersonMode && !isThirdPersonMode) {
+          let foundId = -1;
+          if (is3DMode && rctRenderer) {
+            foundId = rctRenderer.selectAt(touchStartX, touchStartY, entities, world);
+          } else if (renderer) {
+            foundId = renderer.selectAt(coords.x, coords.y, entities);
+          }
+          lastSelectedId = foundId;
         }
-        lastSelectedId = foundId;
       }
     }
 

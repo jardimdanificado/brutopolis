@@ -1785,6 +1785,9 @@ export class RCT3DRenderer {
     this.tpDistance = 4.5; // Third-person orbital distance
     this.tpMinDistance = 1.2;
     this.tpMaxDistance = 24.0;
+    this.fpAutoCam = true; // Auto-cam for 1P mode (automatically aligns yaw to creature walking direction)
+    this.lastTargetPosX = null;
+    this.lastTargetPosZ = null;
 
     // Temporary Colors for Lerping
     this.tempColor1 = new THREE.Color();
@@ -3085,6 +3088,19 @@ export class RCT3DRenderer {
     this.rotatePerspectiveCamera(dYaw, dPitch);
   }
 
+  toggleFirstPersonAutoCam() {
+    this.fpAutoCam = !this.fpAutoCam;
+    return this.fpAutoCam;
+  }
+
+  setFirstPersonAutoCam(enabled) {
+    this.fpAutoCam = !!enabled;
+  }
+
+  isFirstPersonAutoCam() {
+    return !!this.fpAutoCam;
+  }
+
   adjustThirdPersonDistance(delta) {
     this.tpDistance = Math.max(this.tpMinDistance, Math.min(this.tpMaxDistance, this.tpDistance + delta));
   }
@@ -3467,7 +3483,7 @@ export class RCT3DRenderer {
     if (this.editorCursorLine) this.editorCursorLine.visible = false;
   }
 
-  updateCamera(entities = null) {
+  updateCamera(entities = null, dt = 0.016) {
     if (this.isPerspectiveActive()) {
       let targetEnt = entities ? entities.find(e => e && Number(e.id) === Number(this.fpEntityId)) : null;
       if (!targetEnt && typeof getEntityById === "function") {
@@ -3482,6 +3498,29 @@ export class RCT3DRenderer {
 
         this.camX = eyeX;
         this.camY = eyeZ;
+
+        // Auto-Cam for 1P: automatically align fpYaw with creature movement direction
+        if (this.isFirstPersonActive() && this.fpAutoCam) {
+          if (this.lastTargetPosX !== null && this.lastTargetPosZ !== null) {
+            const dx = eyeX - this.lastTargetPosX;
+            const dz = eyeZ - this.lastTargetPosZ;
+            const moveDist = Math.hypot(dx, dz);
+            if (moveDist > 0.002) {
+              const moveYaw = Math.atan2(dx, dz);
+              let diff = (moveYaw - this.fpYaw) % (Math.PI * 2);
+              if (diff > Math.PI) diff -= Math.PI * 2;
+              if (diff < -Math.PI) diff += Math.PI * 2;
+              const step = Math.min(1.0, (dt || 0.016) * 7.5);
+              this.fpYaw = (this.fpYaw + diff * step) % (Math.PI * 2);
+              if (this.fpYaw < 0) this.fpYaw += Math.PI * 2;
+            }
+          }
+          this.lastTargetPosX = eyeX;
+          this.lastTargetPosZ = eyeZ;
+        } else {
+          this.lastTargetPosX = eyeX;
+          this.lastTargetPosZ = eyeZ;
+        }
 
         const aspect = this.width / this.height;
         this.fpCamera.aspect = aspect;
@@ -3514,6 +3553,10 @@ export class RCT3DRenderer {
           this.fpCamera.lookAt(targetX, targetY, targetZ);
         }
         return;
+      } else {
+        this.isFirstPersonMode = false;
+        this.isThirdPersonMode = false;
+        this.fpEntityId = null;
       }
     }
 
@@ -3851,11 +3894,12 @@ export class RCT3DRenderer {
           foliageCount++;
         }
 
-        // Cliff Drop-walls with Contact Ambient Occlusion gradient
+        // 4-Sided Cliff Drop-walls (South, East, North, West) for full 360-degree visibility
         const baseH = (tType === TILE_WATER) ? -0.4 : 0.0;
         const cliffBaseAO = 0.65 * zoneMult;
         const cliffTopAO = 0.95 * zoneMult;
 
+        // 1. South Face (+Y, at ty + 1, facing +Z)
         if (ty === clampedMaxTy || map[(ty + 1) * MAP_WIDTH + tx] === TILE_WATER) {
           bucket.pos.push(
             tx, baseH, ty + 1,
@@ -3867,31 +3911,80 @@ export class RCT3DRenderer {
             tx, h01, ty + 1
           );
           bucket.uvs.push(0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1);
-          bucket.colors.push(cliffBaseAO, cliffBaseAO, cliffBaseAO);
-          bucket.colors.push(cliffBaseAO, cliffBaseAO, cliffBaseAO);
-          bucket.colors.push(cliffTopAO, cliffTopAO, cliffTopAO);
-          bucket.colors.push(cliffBaseAO, cliffBaseAO, cliffBaseAO);
-          bucket.colors.push(cliffTopAO, cliffTopAO, cliffTopAO);
-          bucket.colors.push(cliffTopAO, cliffTopAO, cliffTopAO);
+          bucket.colors.push(
+            cliffBaseAO, cliffBaseAO, cliffBaseAO,
+            cliffBaseAO, cliffBaseAO, cliffBaseAO,
+            cliffTopAO, cliffTopAO, cliffTopAO,
+            cliffBaseAO, cliffBaseAO, cliffBaseAO,
+            cliffTopAO, cliffTopAO, cliffTopAO,
+            cliffTopAO, cliffTopAO, cliffTopAO
+          );
         }
 
+        // 2. East Face (+X, at tx + 1, facing +X)
         if (tx === clampedMaxTx || map[yOffset + tx + 1] === TILE_WATER) {
           bucket.pos.push(
-            tx + 1, h10, ty,
-            tx + 1, h11, ty + 1,
             tx + 1, baseH, ty + 1,
+            tx + 1, baseH, ty,
+            tx + 1, h10, ty,
 
-            tx + 1, h10, ty,
             tx + 1, baseH, ty + 1,
-            tx + 1, baseH, ty
+            tx + 1, h10, ty,
+            tx + 1, h11, ty + 1
           );
-          bucket.uvs.push(0, 1, 1, 1, 1, 0, 0, 1, 1, 0, 0, 0);
-          bucket.colors.push(cliffTopAO, cliffTopAO, cliffTopAO);
-          bucket.colors.push(cliffTopAO, cliffTopAO, cliffTopAO);
-          bucket.colors.push(cliffBaseAO, cliffBaseAO, cliffBaseAO);
-          bucket.colors.push(cliffTopAO, cliffTopAO, cliffTopAO);
-          bucket.colors.push(cliffBaseAO, cliffBaseAO, cliffBaseAO);
-          bucket.colors.push(cliffBaseAO, cliffBaseAO, cliffBaseAO);
+          bucket.uvs.push(0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1);
+          bucket.colors.push(
+            cliffBaseAO, cliffBaseAO, cliffBaseAO,
+            cliffBaseAO, cliffBaseAO, cliffBaseAO,
+            cliffTopAO, cliffTopAO, cliffTopAO,
+            cliffBaseAO, cliffBaseAO, cliffBaseAO,
+            cliffTopAO, cliffTopAO, cliffTopAO,
+            cliffTopAO, cliffTopAO, cliffTopAO
+          );
+        }
+
+        // 3. North Face (-Y, at ty, facing -Z)
+        if (ty === clampedMinTy || map[(ty - 1) * MAP_WIDTH + tx] === TILE_WATER) {
+          bucket.pos.push(
+            tx + 1, baseH, ty,
+            tx, baseH, ty,
+            tx, h00, ty,
+
+            tx + 1, baseH, ty,
+            tx, h00, ty,
+            tx + 1, h10, ty
+          );
+          bucket.uvs.push(0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1);
+          bucket.colors.push(
+            cliffBaseAO, cliffBaseAO, cliffBaseAO,
+            cliffBaseAO, cliffBaseAO, cliffBaseAO,
+            cliffTopAO, cliffTopAO, cliffTopAO,
+            cliffBaseAO, cliffBaseAO, cliffBaseAO,
+            cliffTopAO, cliffTopAO, cliffTopAO,
+            cliffTopAO, cliffTopAO, cliffTopAO
+          );
+        }
+
+        // 4. West Face (-X, at tx, facing -X)
+        if (tx === clampedMinTx || map[yOffset + tx - 1] === TILE_WATER) {
+          bucket.pos.push(
+            tx, baseH, ty,
+            tx, baseH, ty + 1,
+            tx, h01, ty + 1,
+
+            tx, baseH, ty,
+            tx, h01, ty + 1,
+            tx, h00, ty
+          );
+          bucket.uvs.push(0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1);
+          bucket.colors.push(
+            cliffBaseAO, cliffBaseAO, cliffBaseAO,
+            cliffBaseAO, cliffBaseAO, cliffBaseAO,
+            cliffTopAO, cliffTopAO, cliffTopAO,
+            cliffBaseAO, cliffBaseAO, cliffBaseAO,
+            cliffTopAO, cliffTopAO, cliffTopAO,
+            cliffTopAO, cliffTopAO, cliffTopAO
+          );
         }
       }
     }
@@ -4110,7 +4203,7 @@ export class RCT3DRenderer {
       }
     }
 
-    this.updateCamera(entities);
+    this.updateCamera(entities, dt);
     const nightGlow = this.updateDayNightLighting(world);
 
     let minTx, maxTx, minTy, maxTy;
