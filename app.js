@@ -2,7 +2,7 @@
 // Brutopolis
 // =============================================================================
 
-const BrutopolisVersion = "0.119.2";
+const BrutopolisVersion = "0.119.3";
 const BrutopolisVersionName = "Honour all men. Love the brotherhood. Fear God. Honour the king.";
 
 // WASM replaced by Pure JS Renderer
@@ -1007,7 +1007,13 @@ let inspectingLogEvent = null;
 let inspectingBattle = null; // Currently inspected battle dossier
 let inspectingRelationship = null; // Currently inspected two-character relationship summary
 let inspectingGroup = null; // Currently inspected clan for full dossier/stockpile view
-let groupDetailTab = "ZONES"; // Active tab in clan dossier: "ZONES", "STOCKPILE", "MEMBERS", "HISTORY"
+let inspectingDiplomacyGroup = null; // Clan inspected for diplomacy relations modal
+let inspectingPoliticalHistoryGroup = null; // Clan inspected for political chronicles modal
+let inspectingElectionRecord = null; // Election record inspected in election inspector
+let diplomacyModalScroll = 0;
+let politicalModalScroll = 0;
+let electionModalScroll = 0;
+let groupDetailTab = "ZONES"; // Active tab in clan dossier: "ZONES", "STOCKPILE", "MEMBERS", "POLITICS", "HISTORY"
 let dossierTab = "OVERVIEW"; // Active tab in creature dossier: "OVERVIEW", "AFFINITIES", "OFFSPRING", "CHRONICLE"
 let familyTreeZoom = 1.0; // Zoom factor for graphical family tree
 let familyTreePanX = 0; // Pan offset X for family tree
@@ -3829,6 +3835,24 @@ function renderGroupsModal() {
   });
 
   // Modal Sub-Views
+  if (inspectingElectionRecord) {
+    renderElectionInspector(mx, my, mw, mh, inspectingElectionRecord);
+    ctx.restore();
+    return;
+  }
+
+  if (inspectingPoliticalHistoryGroup) {
+    renderPoliticalHistoryModal(mx, my, mw, mh, inspectingPoliticalHistoryGroup);
+    ctx.restore();
+    return;
+  }
+
+  if (inspectingDiplomacyGroup) {
+    renderDiplomacyModal(mx, my, mw, mh, inspectingDiplomacyGroup);
+    ctx.restore();
+    return;
+  }
+
   if (inspectingLogEvent) {
     renderLogDetailView(mx, my, mw, mh, inspectingLogEvent);
     ctx.restore();
@@ -4140,7 +4164,7 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
         const rmCoords = `[X:${Math.floor(rm.zx * 8 + 4)}, Y:${Math.floor(rm.zy * 8 + 4)}]`;
         const membersCount = rm.assignedMembers?.length || 0;
 
-        drawText8x8(`🏠 ROOM: ${rmName} - ${rmCoords} (${membersCount} OCCUPANTS)`, mx + 20, curY + 6, "#3cbcfc", 1);
+        drawText8x8(`• ROOM: ${rmName} - ${rmCoords} (${membersCount} OCCUPANTS)`, mx + 20, curY + 6, "#3cbcfc", 1);
 
         drawNESButton(mx + mw - 95, curY + 2, 70, 20, "FOCUS", false, false);
         registerClickableRegion(mx + mw - 95, curY + 2, 70, 20, () => {
@@ -4267,8 +4291,6 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
   // TAB 4: POLITICS
   // -------------------------------------------------------------------------
   else if (groupDetailTab === "POLITICS") {
-    // Retroactive UI-side init removed, worker handles it
-
     drawNESBox(mx + 12, contentY, mw - 24, contentH);
     const leaderEnt = g.leaderId ? getEntityById(g.leaderId) : null;
     const leaderStr = leaderEnt ? (leaderEnt.properties?.life?.isDead ? `(DECEASED) ${leaderEnt.properties.name}` : leaderEnt.properties.name) : "N/A";
@@ -4277,44 +4299,58 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
     drawText8x8(`Type:   ${g.govType || "UNKNOWN"}`, mx + 30, contentY + 28, "#3cbcfc", 1);
     drawText8x8(`Gender: ${g.govGender || "UNKNOWN"}`, mx + 30, contentY + 42, "#3cbcfc", 1);
 
-    drawText8x8(`POLITICAL LEADERSHIP`, mx + 320, contentY + 12, "#ffd700", 1);
-    drawText8x8(`High Leader: ${leaderStr}`, mx + 330, contentY + 28, "#58d854", 1);
+    // Political Chronicles & Elections Button
+    const polHistCount = g.politicalHistory?.length || 0;
+    drawNESButton(mx + 20, contentY + 62, 270, 24, `POLITICAL CHRONICLES (${polHistCount})`, false, false);
+    registerClickableRegion(mx + 20, contentY + 62, 270, 24, () => {
+      inspectingPoliticalHistoryGroup = g;
+      politicalModalScroll = 0;
+    });
+
+    // Diplomatic Relations Button
+    const relCount = g.relations ? Object.keys(g.relations).length : 0;
+    drawNESButton(mx + 20, contentY + 92, 270, 24, `DIPLOMATIC RELATIONS (${relCount})`, false, false);
+    registerClickableRegion(mx + 20, contentY + 92, 270, 24, () => {
+      inspectingDiplomacyGroup = g;
+      diplomacyModalScroll = 0;
+    });
+
+    drawText8x8(`POLITICAL LEADERSHIP & POSTS`, mx + 310, contentY + 12, "#ffd700", 1);
+
+    // High Leader
+    drawText8x8(`High Leader: ${leaderStr}`, mx + 320, contentY + 28, "#58d854", 1);
+    if (leaderEnt) {
+      drawNESButton(mx + mw - 95, contentY + 24, 65, 18, "INSPECT", false, false);
+      registerClickableRegion(mx + mw - 95, contentY + 24, 65, 18, () => {
+        lastSelectedId = leaderEnt.id;
+        dossierTab = "OVERVIEW";
+        currentMode = "INSPECT";
+      });
+    }
 
     const dLabels = ["Trade", "War", "Alliances", "Interior", "Expansion", "Chief Diplomat"];
-    let dipY = contentY + 44;
+    let dipY = contentY + 46;
     for (let i = 0; i < 6; i++) {
       const dId = g.diplomats && g.diplomats.length > i ? g.diplomats[i] : null;
       const dEnt = dId ? getEntityById(dId) : null;
       const dStr = dEnt ? (dEnt.properties?.life?.isDead ? `[X] ${dEnt.properties.name}` : dEnt.properties.name) : "VACANT";
       const lbl = dLabels[i];
-      drawText8x8(`Diplomat (${lbl}): ${dStr}`, mx + 330, dipY, "#d0d0e0", 1);
-      dipY += 14;
-    }
-
-    drawText8x8(`DIPLOMATIC RELATIONS`, mx + 20, contentY + 70, "#ffd700", 1);
-    let relY = contentY + 86;
-    let foundRels = false;
-
-    if (g.relations) {
-      for (const [otherIdStr, score] of Object.entries(g.relations)) {
-        const otherGrp = getAllWorldGroups().find(og => og.id === Number(otherIdStr));
-        if (otherGrp) {
-          foundRels = true;
-          const isWar = g.wars && g.wars.includes(otherGrp.id);
-          const color = isWar ? "#ff2040" : (score < -50 ? "#e40058" : (score > 50 ? "#58d854" : "#ffffff"));
-          const st = isWar ? "AT WAR" : (score < -50 ? "HOSTILE" : (score > 50 ? "ALLIED" : "NEUTRAL"));
-          drawText8x8(`${otherGrp.name}: ${Math.round(score)} / 100 [${st}]`, mx + 30, relY, color, 1);
-          relY += 14;
-        }
+      drawText8x8(`Diplomat (${lbl}): ${dStr}`, mx + 320, dipY + 4, "#d0d0e0", 1);
+      if (dEnt) {
+        drawNESButton(mx + mw - 95, dipY, 65, 18, "INSPECT", false, false);
+        const curDId = dId;
+        registerClickableRegion(mx + mw - 95, dipY, 65, 18, () => {
+          lastSelectedId = curDId;
+          dossierTab = "OVERVIEW";
+          currentMode = "INSPECT";
+        });
       }
-    }
-    if (!foundRels) {
-      drawText8x8(`No known relations with other groups.`, mx + 30, relY, "#7b7b7b", 1);
+      dipY += 22;
     }
   }
 
   // -------------------------------------------------------------------------
-  // TAB 5: HISTORY (Chronological Clan & Member Event Log)
+  // TAB 5: HISTORY (Chronological Clan & Member Event Log - Newest on Top!)
   // -------------------------------------------------------------------------
   else if (groupDetailTab === "HISTORY") {
     drawNESBox(mx + 12, contentY, mw - 24, contentH);
@@ -4324,15 +4360,16 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
     if (groupEvents.length === 0) {
       drawText8x8("NO HISTORICAL EVENTS RECORDED FOR THIS CLAN YET.", mx + 20, contentY + 40, "#bcbcbc", 1);
     } else {
-      const eventsReversed = groupEvents.slice().reverse();
+      // Sort newest on top (b.id - a.id / b.tick - a.tick)
+      const eventsSorted = groupEvents.slice().sort((a, b) => (b.tick !== a.tick ? b.tick - a.tick : b.id - a.id));
       const rowHeight = 26;
       const visibleCount = Math.floor((contentH - 44) / rowHeight);
-      const maxScroll = Math.max(0, eventsReversed.length - visibleCount);
+      const maxScroll = Math.max(0, eventsSorted.length - visibleCount);
       modalScroll = Math.max(0, Math.min(maxScroll, modalScroll));
 
       let logY = contentY + 34;
-      for (let i = modalScroll; i < Math.min(eventsReversed.length, modalScroll + visibleCount); i++) {
-        const ev = eventsReversed[i];
+      for (let i = modalScroll; i < Math.min(eventsSorted.length, modalScroll + visibleCount); i++) {
+        const ev = eventsSorted[i];
         const isHover = mouseX >= mx + 16 && mouseX <= mx + mw - 170 && mouseY >= logY - 2 && mouseY <= logY + 22;
         if (isHover) {
           ctx.fillStyle = "#181828";
@@ -4389,6 +4426,279 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
 
         logY += rowHeight;
       }
+    }
+  }
+}
+
+/**
+ * Modal Sub-View: Clan Diplomatic Relations
+ */
+function renderDiplomacyModal(mx, my, mw, mh, g) {
+  const gFgColor = g.color ? `#${(g.color & 0xffffff).toString(16).padStart(6, "0")}` : "#f8b800";
+  drawText8x8(`DIPLOMATIC RELATIONS: ${(g.name || "CLAN").toUpperCase()}`, mx + 16, my + 14, gFgColor, 1);
+
+  // Back Button
+  drawNESButton(mx + mw - 110, my + 6, 100, 24, "< DOSSIER", false, false);
+  registerClickableRegion(mx + mw - 110, my + 6, 100, 24, () => {
+    inspectingDiplomacyGroup = null;
+  });
+
+  const contentY = my + 38;
+  const contentH = (my + mh - 12) - contentY;
+  drawNESBox(mx + 12, contentY, mw - 24, contentH);
+
+  const allOtherGroups = getAllGroups().filter(og => og.id !== g.id);
+
+  if (allOtherGroups.length === 0) {
+    drawText8x8("NO OTHER CLANS DISCOVERED IN THE WORLD YET.", mx + 24, contentY + 24, "#bcbcbc", 1);
+    return;
+  }
+
+  const rowH = 46;
+  const visibleCount = Math.floor((contentH - 24) / rowH);
+  const maxScroll = Math.max(0, allOtherGroups.length - visibleCount);
+  diplomacyModalScroll = Math.max(0, Math.min(maxScroll, diplomacyModalScroll));
+
+  let curY = contentY + 12;
+  for (let i = diplomacyModalScroll; i < Math.min(allOtherGroups.length, diplomacyModalScroll + visibleCount); i++) {
+    const og = allOtherGroups[i];
+    const score = (g.relations && g.relations[og.id] !== undefined) ? g.relations[og.id] : 0;
+    const isWar = (g.wars && g.wars.includes(og.id)) || (og.wars && og.wars.includes(g.id));
+    const status = isWar ? "AT WAR" : (score < -50 ? "HOSTILE" : (score < 0 ? "UNFRIENDLY" : (score > 50 ? "ALLIED" : "NEUTRAL")));
+    const statusCol = isWar ? "#ff2040" : (score < -50 ? "#e40058" : (score < 0 ? "#ffaa00" : (score > 50 ? "#58d854" : "#ffffff")));
+
+    const isHover = mouseX >= mx + 16 && mouseX <= mx + mw - 16 && mouseY >= curY - 2 && mouseY <= curY + rowH - 4;
+    if (isHover) {
+      ctx.fillStyle = "#181828";
+      ctx.fillRect(mx + 16, curY - 2, mw - 32, rowH - 2);
+    }
+
+    const oLeaderEnt = og.leaderId ? getEntityById(og.leaderId) : null;
+    const oLeaderStr = oLeaderEnt ? (oLeaderEnt.properties?.name || "Líder Desconhecido") : "Sem Líder";
+
+    // Clan Name & Details
+    drawText8x8(`CLAN: ${og.name.toUpperCase()}`, mx + 24, curY + 4, "#ffd700", 1);
+    drawText8x8(`Leader: ${oLeaderStr} | Members: ${og.members?.length || 0} | Gov: ${og.govType || "UNKNOWN"} (${og.govGender || "NEUTRAL"})`, mx + 24, curY + 18, "#d0d0e0", 1);
+
+    // Relation Score & Status
+    drawText8x8(`Relation: ${Math.round(score)}/100 [${status}]`, mx + 24, curY + 30, statusCol, 1);
+
+    // Mini Relation Progress Bar
+    const barX = mx + 290;
+    const barY = curY + 30;
+    const barW = 120;
+    const barH = 8;
+    ctx.fillStyle = "#101018";
+    ctx.fillRect(barX, barY, barW, barH);
+    ctx.strokeStyle = "#444455";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(barX, barY, barW, barH);
+    const normRatio = Math.max(0, Math.min(1, (score + 100) / 200));
+    ctx.fillStyle = statusCol;
+    ctx.fillRect(barX + 1, barY + 1, Math.floor((barW - 2) * normRatio), barH - 2);
+
+    const curOG = og;
+
+    // Button: DOSSIER
+    drawNESButton(mx + mw - 190, curY + 10, 80, 22, "DOSSIER", false, false);
+    registerClickableRegion(mx + mw - 190, curY + 10, 80, 22, () => {
+      inspectingGroup = curOG;
+      inspectingDiplomacyGroup = null;
+    });
+
+    // Button: LEADER
+    if (oLeaderEnt) {
+      drawNESButton(mx + mw - 100, curY + 10, 80, 22, "LEADER", false, false);
+      const oLId = og.leaderId;
+      registerClickableRegion(mx + mw - 100, curY + 10, 80, 22, () => {
+        lastSelectedId = oLId;
+        dossierTab = "OVERVIEW";
+        currentMode = "INSPECT";
+      });
+    }
+
+    curY += rowH;
+  }
+}
+
+/**
+ * Modal Sub-View: Clan Political Chronicles & Elections History
+ */
+function renderPoliticalHistoryModal(mx, my, mw, mh, g) {
+  const gFgColor = g.color ? `#${(g.color & 0xffffff).toString(16).padStart(6, "0")}` : "#f8b800";
+  drawText8x8(`POLITICAL CHRONICLES & ELECTIONS: ${(g.name || "CLAN").toUpperCase()}`, mx + 16, my + 14, gFgColor, 1);
+
+  // Back Button
+  drawNESButton(mx + mw - 110, my + 6, 100, 24, "< DOSSIER", false, false);
+  registerClickableRegion(mx + mw - 110, my + 6, 100, 24, () => {
+    inspectingPoliticalHistoryGroup = null;
+  });
+
+  const contentY = my + 38;
+  const contentH = (my + mh - 12) - contentY;
+  drawNESBox(mx + 12, contentY, mw - 24, contentH);
+
+  const polHistory = g.politicalHistory || [];
+
+  if (polHistory.length === 0) {
+    drawText8x8("NO POLITICAL EVENTS OR ELECTIONS RECORDED FOR THIS CLAN YET.", mx + 24, contentY + 24, "#bcbcbc", 1);
+    return;
+  }
+
+  const rowH = 34;
+  const visibleCount = Math.floor((contentH - 24) / rowH);
+  const maxScroll = Math.max(0, polHistory.length - visibleCount);
+  politicalModalScroll = Math.max(0, Math.min(maxScroll, politicalModalScroll));
+
+  let curY = contentY + 12;
+  for (let i = politicalModalScroll; i < Math.min(polHistory.length, politicalModalScroll + visibleCount); i++) {
+    const ev = polHistory[i];
+    const isHover = mouseX >= mx + 16 && mouseX <= mx + mw - 16 && mouseY >= curY - 2 && mouseY <= curY + rowH - 4;
+    if (isHover) {
+      ctx.fillStyle = "#181828";
+      ctx.fillRect(mx + 16, curY - 2, mw - 32, rowH - 2);
+    }
+
+    const typeCol = ev.type === "ELECTION" ? "#58d854" : ev.type === "WAR_DECLARED" ? "#ff2040" : ev.type === "LEADER_DEATH" ? "#e40058" : ev.type === "DIPLOMATIC_MISSION" ? "#3cbcfc" : "#ffd700";
+    const typeBadge = `[${ev.type || "EVENT"}]`;
+    const tickStr = ev.tick !== undefined ? `(Tick ${ev.tick})` : "";
+
+    drawText8x8(`${typeBadge} ${ev.title || "POLITICAL EVENT"} ${tickStr}`, mx + 24, curY + 2, typeCol, 1);
+    drawText8x8(ev.description || "", mx + 24, curY + 16, "#e0e0e0", 1);
+
+    const curEv = ev;
+
+    // Action button if it is an election
+    if (ev.type === "ELECTION") {
+      drawNESButton(mx + mw - 150, curY + 4, 130, 22, "INSPECT VOTES", false, false);
+      registerClickableRegion(mx + mw - 150, curY + 4, 130, 22, () => {
+        const foundElec = (g.elections || []).find(el => el.id === curEv.electionId) || (g.elections ? g.elections[0] : null);
+        if (foundElec) {
+          inspectingElectionRecord = foundElec;
+          electionModalScroll = 0;
+        }
+      });
+    } else if (ev.winnerId) {
+      drawNESButton(mx + mw - 95, curY + 4, 75, 22, "INSPECT", false, false);
+      const wId = ev.winnerId;
+      registerClickableRegion(mx + mw - 95, curY + 4, 75, 22, () => {
+        lastSelectedId = wId;
+        dossierTab = "OVERVIEW";
+        currentMode = "INSPECT";
+      });
+    } else if (ev.targetGroupId) {
+      drawNESButton(mx + mw - 95, curY + 4, 75, 22, "CLAN", false, false);
+      const tGId = ev.targetGroupId;
+      registerClickableRegion(mx + mw - 95, curY + 4, 75, 22, () => {
+        const tGrp = getAllGroups().find(og => og.id === tGId);
+        if (tGrp) inspectingGroup = tGrp;
+      });
+    }
+
+    curY += rowH;
+  }
+}
+
+/**
+ * Modal Sub-View: Full Election Forensic Ledger & Voter Justifications
+ */
+function renderElectionInspector(mx, my, mw, mh, elec) {
+  drawText8x8(`ELECTION INSPECTOR: ${(elec.roleTitle || "LEADERSHIP").toUpperCase()} - ${(elec.groupName || "CLAN").toUpperCase()}`, mx + 16, my + 14, "#58d854", 1);
+
+  // Back Button
+  drawNESButton(mx + mw - 120, my + 6, 110, 24, "< CHRONICLES", false, false);
+  registerClickableRegion(mx + mw - 120, my + 6, 110, 24, () => {
+    inspectingElectionRecord = null;
+  });
+
+  // Top Summary Card
+  const topH = 74;
+  drawNESBox(mx + 12, my + 36, mw - 24, topH);
+  drawText8x8(`Government: ${elec.govType} (${elec.govGender}) | Election Tick: ${elec.tick}`, mx + 24, my + 44, "#3cbcfc", 1);
+  drawText8x8(`WINNER: ${elec.winnerName} (${elec.winnerVotes} votes, ${elec.winnerPercent}% of valid votes)`, mx + 24, my + 58, "#58d854", 1);
+  drawText8x8(`Participation: ${elec.totalVotesCast}/${elec.totalEligible} eligible voters | Blanks: ${elec.blankVotes} | Abstentions: ${elec.abstentions}`, mx + 24, my + 72, "#ffd700", 1);
+
+  if (elec.winnerId) {
+    drawNESButton(mx + mw - 160, my + 52, 130, 22, "INSPECT WINNER", false, false);
+    const winId = elec.winnerId;
+    registerClickableRegion(mx + mw - 160, my + 52, 130, 22, () => {
+      lastSelectedId = winId;
+      dossierTab = "OVERVIEW";
+      currentMode = "INSPECT";
+    });
+  }
+
+  const bottomY = my + 36 + topH + 8;
+  const bottomH = (my + mh - 12) - bottomY;
+
+  // Left Column: Candidates Ranking
+  const leftW = Math.min(260, Math.floor((mw - 32) * 0.36));
+  drawNESBox(mx + 12, bottomY, leftW, bottomH);
+  drawText8x8(`CANDIDATES RANKING:`, mx + 20, bottomY + 10, "#ffd700", 1);
+
+  let rankY = bottomY + 26;
+  const rankList = elec.ranking || [];
+  for (let r = 0; r < rankList.length && rankY < bottomY + bottomH - 30; r++) {
+    const c = rankList[r];
+    const isWin = r === 0 && c.votes > 0;
+    const nameCol = isWin ? "#58d854" : "#ffffff";
+    drawText8x8(`#${r + 1} ${c.name}`, mx + 20, rankY, nameCol, 1);
+    drawText8x8(`${c.votes} votes (${c.percent}%)`, mx + 20, rankY + 12, "#bcbcbc", 1);
+
+    // Inspect candidate button
+    const cId = c.id;
+    drawNESButton(mx + leftW - 40, rankY + 2, 34, 18, "VIEW", false, false);
+    registerClickableRegion(mx + leftW - 40, rankY + 2, 34, 18, () => {
+      lastSelectedId = cId;
+      dossierTab = "OVERVIEW";
+      currentMode = "INSPECT";
+    });
+
+    rankY += 28;
+  }
+
+  // Right Column: Individual Voter Ledger & Reasoning
+  const rightX = mx + 12 + leftW + 6;
+  const rightW = mw - 24 - leftW - 6;
+  drawNESBox(rightX, bottomY, rightW, bottomH);
+
+  const voters = elec.voterDetails || [];
+  drawText8x8(`VOTER LEDGER & JUSTIFICATIONS (${voters.length} CITIZENS):`, rightX + 10, bottomY + 10, "#ffd700", 1);
+
+  if (voters.length === 0) {
+    drawText8x8("NO INDIVIDUAL VOTER RECORDS FOR THIS ELECTION.", rightX + 10, bottomY + 30, "#bcbcbc", 1);
+  } else {
+    const rowH = 34;
+    const visibleCount = Math.floor((bottomH - 26) / rowH);
+    const maxScroll = Math.max(0, voters.length - visibleCount);
+    electionModalScroll = Math.max(0, Math.min(maxScroll, electionModalScroll));
+
+    let vY = bottomY + 26;
+    for (let i = electionModalScroll; i < Math.min(voters.length, electionModalScroll + visibleCount); i++) {
+      const v = voters[i];
+      const isHover = mouseX >= rightX + 6 && mouseX <= rightX + rightW - 6 && mouseY >= vY - 2 && mouseY <= vY + rowH - 4;
+      if (isHover) {
+        ctx.fillStyle = "#181828";
+        ctx.fillRect(rightX + 6, vY - 2, rightW - 12, rowH - 2);
+      }
+
+      const moodCol = v.voterMood < -20 ? "#ff2040" : (v.voterMood > 20 ? "#58d854" : "#ffffff");
+      const moodStr = `[Mood: ${v.voterMood >= 0 ? "+" : ""}${Math.round(v.voterMood || 0)}]`;
+      const targetCol = v.isBlank ? "#bcbcbc" : (v.isAbstain ? "#e40058" : "#58d854");
+
+      drawText8x8(`• ${v.voterName} -> ${v.votedForName} ${moodStr}`, rightX + 10, vY, targetCol, 1);
+      drawText8x8(`"${v.justification}"`, rightX + 18, vY + 14, "#a0a0b0", 1);
+
+      // Button to inspect voter
+      const voterId = v.voterId;
+      drawNESButton(rightX + rightW - 55, vY + 2, 45, 18, "CITIZEN", false, false);
+      registerClickableRegion(rightX + rightW - 55, vY + 2, 45, 18, () => {
+        lastSelectedId = voterId;
+        dossierTab = "OVERVIEW";
+        currentMode = "INSPECT";
+      });
+
+      vY += rowH;
     }
   }
 }

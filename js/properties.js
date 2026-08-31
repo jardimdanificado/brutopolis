@@ -2824,7 +2824,7 @@ export function createGroup(name, founder, baseZone = null, claimedZones = null)
   }
 
   const govTypes = ["DEMOCRACY", "PSEUDOCRACY", "PRESIDENTIALISM", "COMMUNISM", "MONARCHY", "AUTOCRACY"];
-  const govGenders = ["PATRIARCHAL", "MATRIARCHAL", "NEUTRAL"];
+  const govGenders = ["PATRIARCHAL", "MATRIARCHAL", "NEUTRAL", "MACHIST", "FEMIST"];
   const group = {
     id: nextGroupId++,
     name: name || gerarNomeGrupo(),

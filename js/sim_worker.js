@@ -661,7 +661,9 @@ function sanitizeForTransfer(obj, depth = 0) {
           diplomats: val.diplomats ? [...val.diplomats] : [null, null, null, null, null, null],
           relations: val.relations ? { ...val.relations } : {},
           wars: val.wars ? [...val.wars] : [],
-          rooms: val.rooms ? val.rooms.map(r => ({ ...r })) : []
+          rooms: val.rooms ? val.rooms.map(r => ({ ...r })) : [],
+          elections: val.elections ? val.elections.slice(0, 30).map(e => ({ ...e, ranking: e.ranking ? [...e.ranking] : [], voterDetails: e.voterDetails ? [...e.voterDetails] : [] })) : [],
+          politicalHistory: val.politicalHistory ? val.politicalHistory.slice(0, 50).map(h => ({ ...h })) : []
         };
       } else {
         const sanitized = sanitizeForTransfer(val, depth + 1);
@@ -764,6 +766,8 @@ function serializeGroups() {
     diplomats: g.diplomats ? [...g.diplomats] : [null, null, null, null, null, null],
     relations: g.relations ? { ...g.relations } : {},
     wars: g.wars ? [...g.wars] : [],
+    elections: g.elections ? g.elections.slice(0, 30).map(e => ({ ...e, ranking: e.ranking ? [...e.ranking] : [], voterDetails: e.voterDetails ? [...e.voterDetails] : [] })) : [],
+    politicalHistory: g.politicalHistory ? g.politicalHistory.slice(0, 50).map(h => ({ ...h })) : [],
     _plannedRoads: g._plannedRoads ? g._plannedRoads.map(r => ({ x: r.x, y: r.y, isSnapPoint: !!r.isSnapPoint, roadType: r.roadType || 0 })) : null,
     _plaza: g._plaza ? { warehouse: { ...g._plaza.warehouse }, campfire: { ...g._plaza.campfire }, well: { ...g._plaza.well } } : null,
     _housePlots: g._housePlots ? { ...g._housePlots } : null
