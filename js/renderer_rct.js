@@ -1775,13 +1775,16 @@ export class RCT3DRenderer {
     this.isPaused = false;
     this.targetTps = 60;
 
-    // 2.1 First-Person Perspective Camera & Free Look
+    // 2.1 First-Person & Third-Person Perspective Cameras & Free Orbital Look
     this.isFirstPersonMode = false;
+    this.isThirdPersonMode = false;
     this.fpCamera = new THREE.PerspectiveCamera(75, aspect, 0.1, 1000);
     this.fpYaw = 0; // Horizontal rotation radians
     this.fpPitch = 0; // Vertical pitch radians
     this.fpEntityId = null;
-    this.fpEyeHeight = 0.85;
+    this.tpDistance = 4.5; // Third-person orbital distance
+    this.tpMinDistance = 1.2;
+    this.tpMaxDistance = 24.0;
 
     // Temporary Colors for Lerping
     this.tempColor1 = new THREE.Color();
@@ -3031,6 +3034,7 @@ export class RCT3DRenderer {
 
   setFirstPersonMode(enabled, entityId = null) {
     this.isFirstPersonMode = !!enabled;
+    if (enabled) this.isThirdPersonMode = false;
     this.fpEntityId = enabled && entityId !== null && entityId !== undefined ? Number(entityId) : null;
     if (enabled && entityId !== null && entityId !== undefined) {
       this.selectedEntityId = Number(entityId);
@@ -3041,14 +3045,48 @@ export class RCT3DRenderer {
     }
   }
 
+  setThirdPersonMode(enabled, entityId = null) {
+    this.isThirdPersonMode = !!enabled;
+    if (enabled) this.isFirstPersonMode = false;
+    this.fpEntityId = enabled && entityId !== null && entityId !== undefined ? Number(entityId) : null;
+    if (enabled && entityId !== null && entityId !== undefined) {
+      this.selectedEntityId = Number(entityId);
+      this.fpYaw = 0;
+      this.fpPitch = 0.35; // Default angled down view towards creature
+      this.tpDistance = 4.5;
+      this.lastBuiltCamTileX = -9999;
+      this.lastBuiltCamTileY = -9999;
+    }
+  }
+
   isFirstPersonActive() {
     return this.isFirstPersonMode && this.fpEntityId !== null && this.fpEntityId !== undefined;
   }
 
-  rotateFirstPersonCamera(dYaw, dPitch) {
+  isThirdPersonActive() {
+    return this.isThirdPersonMode && this.fpEntityId !== null && this.fpEntityId !== undefined;
+  }
+
+  isPerspectiveActive() {
+    return (this.isFirstPersonMode || this.isThirdPersonMode) && this.fpEntityId !== null && this.fpEntityId !== undefined;
+  }
+
+  rotatePerspectiveCamera(dYaw, dPitch) {
     this.fpYaw = (this.fpYaw + dYaw) % (Math.PI * 2);
     if (this.fpYaw < 0) this.fpYaw += Math.PI * 2;
-    this.fpPitch = Math.max(-Math.PI * 0.35, Math.min(Math.PI * 0.35, this.fpPitch + dPitch));
+    if (this.isThirdPersonActive()) {
+      this.fpPitch = Math.max(-Math.PI * 0.15, Math.min(Math.PI * 0.45, this.fpPitch + dPitch));
+    } else {
+      this.fpPitch = Math.max(-Math.PI * 0.35, Math.min(Math.PI * 0.35, this.fpPitch + dPitch));
+    }
+  }
+
+  rotateFirstPersonCamera(dYaw, dPitch) {
+    this.rotatePerspectiveCamera(dYaw, dPitch);
+  }
+
+  adjustThirdPersonDistance(delta) {
+    this.tpDistance = Math.max(this.tpMinDistance, Math.min(this.tpMaxDistance, this.tpDistance + delta));
   }
   getSelectedId() { return this.selectedEntityId; }
 
@@ -3430,7 +3468,7 @@ export class RCT3DRenderer {
   }
 
   updateCamera(entities = null) {
-    if (this.isFirstPersonActive()) {
+    if (this.isPerspectiveActive()) {
       let targetEnt = entities ? entities.find(e => e && Number(e.id) === Number(this.fpEntityId)) : null;
       if (!targetEnt && typeof getEntityById === "function") {
         targetEnt = getEntityById(this.fpEntityId);
@@ -3440,7 +3478,7 @@ export class RCT3DRenderer {
         const eyeX = targetEnt.x;
         const eyeZ = targetEnt.y;
         const surfaceH = this.currentMap ? this.getSurfaceElevation(this.currentMap, eyeX, eyeZ) : 1.0;
-        const eyeY = surfaceH + 0.65; // True creature eye level above terrain surface
+        const eyeY = surfaceH + 0.65; // Creature center height
 
         this.camX = eyeX;
         this.camY = eyeZ;
@@ -3451,19 +3489,30 @@ export class RCT3DRenderer {
         this.fpCamera.far = 800;
         this.fpCamera.updateProjectionMatrix();
 
-        this.fpCamera.position.set(eyeX, eyeY, eyeZ);
-
-        const lookDist = 20.0;
         const cosPitch = Math.cos(this.fpPitch);
         const sinPitch = Math.sin(this.fpPitch);
         const sinYaw = Math.sin(this.fpYaw);
         const cosYaw = Math.cos(this.fpYaw);
 
-        const targetX = eyeX + sinYaw * cosPitch * lookDist;
-        const targetY = eyeY + sinPitch * lookDist;
-        const targetZ = eyeZ + cosYaw * cosPitch * lookDist;
+        if (this.isThirdPersonActive()) {
+          // 3P Orbital Camera: Orbit behind/around creature and look directly at creature
+          const camPosX = eyeX - sinYaw * cosPitch * this.tpDistance;
+          const camPosY = eyeY + sinPitch * this.tpDistance;
+          const camPosZ = eyeZ - cosYaw * cosPitch * this.tpDistance;
 
-        this.fpCamera.lookAt(targetX, targetY, targetZ);
+          this.fpCamera.position.set(camPosX, camPosY, camPosZ);
+          this.fpCamera.lookAt(eyeX, eyeY, eyeZ);
+        } else {
+          // 1P First Person Camera: Position at creature eyes and look forward
+          this.fpCamera.position.set(eyeX, eyeY, eyeZ);
+
+          const lookDist = 20.0;
+          const targetX = eyeX + sinYaw * cosPitch * lookDist;
+          const targetY = eyeY + sinPitch * lookDist;
+          const targetZ = eyeZ + cosYaw * cosPitch * lookDist;
+
+          this.fpCamera.lookAt(targetX, targetY, targetZ);
+        }
         return;
       }
     }
@@ -4698,8 +4747,8 @@ export class RCT3DRenderer {
 
         const isSleeping = !!e.properties?.life?.isSleeping && !!e.properties?.brain;
         const isStandingTorch = !!e.properties?.torch;
-        const billboardRotY = this.isFirstPersonActive() ? (this.fpYaw + Math.PI) : this.fixedRotationY;
-        const isPossessed = this.isFirstPersonActive() && e.id === this.fpEntityId;
+        const billboardRotY = this.isPerspectiveActive() ? (this.fpYaw + Math.PI) : this.fixedRotationY;
+        const isPossessed = this.isFirstPersonActive() && Number(e.id) === Number(this.fpEntityId);
 
         if (isPossessed) {
           sprite.visible = false;
@@ -5218,13 +5267,13 @@ export class RCT3DRenderer {
       this.reticleMesh.visible = false;
     }
 
-    // Update 3D Atmosphere Clouds (Only appear at highest altitude / satellite zoom levels)
+    // Update 3D Atmosphere Clouds (Always visible in 1P & 3P modes, and at high altitude zoom in isometric)
     if (this.cloudMesh && this.cloudMat) {
-      if (this.zoom <= 0.38) {
+      if (this.isPerspectiveActive() || this.zoom <= 0.38) {
         this.cloudMesh.visible = true;
-        this.cloudMesh.position.set(this.camX, 55.0, this.camY);
+        this.cloudMesh.position.set(this.camX, 42.0, this.camY);
         this.cloudMat.uniforms.uTime.value = performance.now() * 0.001;
-        const fade = Math.min(1.0, (0.38 - this.zoom) / 0.18);
+        const fade = this.isPerspectiveActive() ? 0.95 : Math.min(1.0, (0.38 - this.zoom) / 0.18);
         this.cloudMat.uniforms.uFade.value = fade;
         this.cloudMat.uniforms.uSunColor.value.copy(this.sunLight.color);
         this.cloudMat.uniforms.uAmbColor.value.copy(this.ambientLight.color);
@@ -5234,12 +5283,12 @@ export class RCT3DRenderer {
     }
 
     // Draw WebGL Frame
-    const activeCam = this.isFirstPersonActive() ? this.fpCamera : this.camera;
+    const activeCam = this.isPerspectiveActive() ? this.fpCamera : this.camera;
     this.renderer.render(this.scene, activeCam);
   }
 
   projectWorldToScreen(worldX, worldY, elevation = 0) {
-    const activeCam = this.isFirstPersonActive() ? this.fpCamera : this.camera;
+    const activeCam = this.isPerspectiveActive() ? this.fpCamera : this.camera;
     if (!activeCam) return null;
     const v = new THREE.Vector3(worldX, elevation, worldY);
     v.project(activeCam);
