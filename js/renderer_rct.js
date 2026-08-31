@@ -1823,10 +1823,14 @@ export function createNormalMapFromTexture(skinName, intensity = 1.6) {
       ny /= len;
       nz /= len;
 
+      const r = Math.round(((nx * 0.5 + 0.5) * 255) / 32) * 32;
+      const g = Math.round(((ny * 0.5 + 0.5) * 255) / 32) * 32;
+      const b = Math.round(((nz * 0.5 + 0.5) * 255) / 32) * 32;
+
       const idx = (y * size + x) * 4;
-      data[idx + 0] = Math.floor((nx * 0.5 + 0.5) * 255);
-      data[idx + 1] = Math.floor((ny * 0.5 + 0.5) * 255);
-      data[idx + 2] = Math.floor((nz * 0.5 + 0.5) * 255);
+      data[idx + 0] = Math.min(255, r);
+      data[idx + 1] = Math.min(255, g);
+      data[idx + 2] = Math.min(255, b);
       data[idx + 3] = 255;
     }
   }
@@ -1842,6 +1846,340 @@ export function createNormalMapFromTexture(skinName, intensity = 1.6) {
   tex.needsUpdate = true;
   normalMapCache.set(cacheKey, tex);
   return tex;
+}
+
+// ---------------------------------------------------------------------------
+// Procedural Pixelated Terrain Normal Map Generator (Grass & Sand)
+// ---------------------------------------------------------------------------
+function generateProceduralTerrainNormalMap(type, intensity = 1.35) {
+  const size = 32;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  const imgData = ctx.createImageData(size, size);
+  const data = imgData.data;
+
+  const heightMap = new Float32Array(size * size);
+
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      let h = 0.5;
+      if (type === "grass") {
+        const f1 = Math.sin(x * 1.8 + Math.sin(y * 0.8) * 2.0);
+        const f2 = Math.sin((x + y) * 1.2);
+        h = 0.5 + 0.3 * f1 + 0.2 * f2;
+      } else if (type === "sand") {
+        const r1 = Math.sin(x * 0.4 + y * 0.2);
+        const r2 = Math.cos(x * 0.8 - y * 0.3);
+        h = 0.5 + 0.35 * r1 + 0.15 * r2;
+      }
+      heightMap[y * size + x] = Math.round(h * 6) / 6;
+    }
+  }
+
+  for (let y = 0; y < size; y++) {
+    const ym = (y - 1 + size) % size;
+    const yp = (y + 1) % size;
+    for (let x = 0; x < size; x++) {
+      const xm = (x - 1 + size) % size;
+      const xp = (x + 1) % size;
+
+      const dX = (heightMap[y * size + xp] - heightMap[y * size + xm]) * (intensity * 1.8);
+      const dY = (heightMap[yp * size + x] - heightMap[ym * size + x]) * (intensity * 1.8);
+
+      let nx = -dX;
+      let ny = -dY;
+      let nz = 1.0;
+      const len = Math.hypot(nx, ny, nz);
+      nx /= len;
+      ny /= len;
+      nz /= len;
+
+      const r = Math.round(((nx * 0.5 + 0.5) * 255) / 32) * 32;
+      const g = Math.round(((ny * 0.5 + 0.5) * 255) / 32) * 32;
+      const b = Math.round(((nz * 0.5 + 0.5) * 255) / 32) * 32;
+
+      const idx = (y * size + x) * 4;
+      data[idx + 0] = Math.min(255, r);
+      data[idx + 1] = Math.min(255, g);
+      data[idx + 2] = Math.min(255, b);
+      data[idx + 3] = 255;
+    }
+  }
+
+  ctx.putImageData(imgData, 0, 0);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.NearestFilter;
+  tex.generateMipmaps = false;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+// ---------------------------------------------------------------------------
+// Foliage & Plant Pixelated Normal Map Generator (Oak, Pine, Cactus)
+// ---------------------------------------------------------------------------
+function generateProceduralFoliageNormalMap(type, intensity = 1.6) {
+  const size = 32;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  const imgData = ctx.createImageData(size, size);
+  const data = imgData.data;
+
+  const heightMap = new Float32Array(size * size);
+
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      let h = 0.5;
+      if (type === "oak") {
+        const l1 = Math.sin(x * 0.8 + Math.cos(y * 0.9) * 1.5);
+        const l2 = Math.cos(x * 1.4 - y * 1.1);
+        const l3 = Math.sin((x + y) * 2.1);
+        h = 0.5 + 0.3 * l1 + 0.15 * l2 + 0.1 * l3;
+      } else if (type === "pine") {
+        const n1 = Math.sin(y * 2.8 + (x % 4) * 0.7);
+        const n2 = Math.cos(x * 3.2);
+        h = 0.5 + 0.35 * n1 + 0.15 * n2;
+      } else if (type === "cactus") {
+        const rib = Math.sin((x / 32) * Math.PI * 8);
+        const spine = ((x % 4 === 0) && (y % 6 === 0)) ? 0.9 : 0.0;
+        h = 0.5 + 0.4 * rib + spine;
+      }
+      heightMap[y * size + x] = Math.round(h * 5) / 5;
+    }
+  }
+
+  for (let y = 0; y < size; y++) {
+    const ym = (y - 1 + size) % size;
+    const yp = (y + 1) % size;
+    for (let x = 0; x < size; x++) {
+      const xm = (x - 1 + size) % size;
+      const xp = (x + 1) % size;
+
+      const dX = (heightMap[y * size + xp] - heightMap[y * size + xm]) * (intensity * 1.8);
+      const dY = (heightMap[yp * size + x] - heightMap[ym * size + x]) * (intensity * 1.8);
+
+      let nx = -dX;
+      let ny = -dY;
+      let nz = 1.0;
+      const len = Math.hypot(nx, ny, nz);
+      nx /= len;
+      ny /= len;
+      nz /= len;
+
+      const r = Math.round(((nx * 0.5 + 0.5) * 255) / 32) * 32;
+      const g = Math.round(((ny * 0.5 + 0.5) * 255) / 32) * 32;
+      const b = Math.round(((nz * 0.5 + 0.5) * 255) / 32) * 32;
+
+      const idx = (y * size + x) * 4;
+      data[idx + 0] = Math.min(255, r);
+      data[idx + 1] = Math.min(255, g);
+      data[idx + 2] = Math.min(255, b);
+      data[idx + 3] = 255;
+    }
+  }
+
+  ctx.putImageData(imgData, 0, 0);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.NearestFilter;
+  tex.generateMipmaps = false;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+// ---------------------------------------------------------------------------
+// Heavy-Dithered Pixel Art Celestial Texture Generator (Sun & Moon)
+// ---------------------------------------------------------------------------
+function createDitheredCelestialTexture(type) {
+  const size = 32;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  const imgData = ctx.createImageData(size, size);
+  const data = imgData.data;
+
+  // 4x4 Bayer Dither Matrix
+  const bayer4x4 = [
+     0/16,  8/16,  2/16, 10/16,
+    12/16,  4/16, 14/16,  6/16,
+     3/16, 11/16,  1/16,  9/16,
+    15/16,  7/16, 13/16,  5/16
+  ];
+
+  const cx = 16;
+  const cy = 16;
+
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const dx = x - cx + 0.5;
+      const dy = y - cy + 0.5;
+      const dist = Math.hypot(dx, dy);
+      const bayerVal = bayer4x4[(y % 4) * 4 + (x % 4)];
+      const idx = (y * size + x) * 4;
+
+      if (type === "sun") {
+        if (dist <= 6.0) {
+          data[idx + 0] = 255;
+          data[idx + 1] = 255;
+          data[idx + 2] = 200;
+          data[idx + 3] = 255;
+        } else if (dist <= 8.0) {
+          data[idx + 0] = 255;
+          data[idx + 1] = 180;
+          data[idx + 2] = 30;
+          data[idx + 3] = 255;
+        } else if (dist <= 15.5) {
+          const alpha = Math.max(0.0, 1.0 - (dist - 8.0) / 7.5);
+          if (alpha > bayerVal) {
+            data[idx + 0] = 255;
+            data[idx + 1] = Math.floor(100 + alpha * 120);
+            data[idx + 2] = 0;
+            data[idx + 3] = 255;
+          } else {
+            data[idx + 3] = 0;
+          }
+        } else {
+          data[idx + 3] = 0;
+        }
+      } else if (type === "moon") {
+        if (dist <= 6.0) {
+          const isCrater = ((x === 14 && y === 14) || (x === 15 && y === 14) || (x === 17 && y === 17) || (x === 18 && y === 16) || (x === 13 && y === 17));
+          if (isCrater) {
+            data[idx + 0] = 150;
+            data[idx + 1] = 175;
+            data[idx + 2] = 210;
+            data[idx + 3] = 255;
+          } else {
+            data[idx + 0] = 235;
+            data[idx + 1] = 245;
+            data[idx + 2] = 255;
+            data[idx + 3] = 255;
+          }
+        } else if (dist <= 7.5) {
+          data[idx + 0] = 160;
+          data[idx + 1] = 195;
+          data[idx + 2] = 245;
+          data[idx + 3] = 255;
+        } else if (dist <= 15.0) {
+          const alpha = Math.max(0.0, 1.0 - (dist - 7.5) / 7.5);
+          if (alpha > bayerVal) {
+            data[idx + 0] = 110;
+            data[idx + 1] = 160;
+            data[idx + 2] = 240;
+            data[idx + 3] = 255;
+          } else {
+            data[idx + 3] = 0;
+          }
+        } else {
+          data[idx + 3] = 0;
+        }
+      }
+    }
+  }
+
+  ctx.putImageData(imgData, 0, 0);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.NearestFilter;
+  tex.generateMipmaps = false;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+// ---------------------------------------------------------------------------
+// Dynamic Realistic Flame Shader Material (1P & 3P Modes)
+// ---------------------------------------------------------------------------
+export function createRealisticFlameMaterial() {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0.0 },
+      uCoreColor: { value: new THREE.Color(0xffffdd) },
+      uMidColor: { value: new THREE.Color(0xff8811) },
+      uEdgeColor: { value: new THREE.Color(0xcc1100) },
+      uSmokeColor: { value: new THREE.Color(0x220500) }
+    },
+    vertexShader: `
+      uniform float uTime;
+      varying vec2 vUv;
+      varying float vNoise;
+
+      void main() {
+        vUv = uv;
+        vec3 pos = position;
+
+        float h = clamp(pos.y, 0.0, 1.5);
+        float sway = sin(uTime * 12.0 + pos.y * 6.0) * 0.12 * h;
+        float flutter = cos(uTime * 18.0 + pos.x * 8.0) * 0.08 * h;
+
+        pos.x += sway;
+        pos.z += flutter;
+        pos.xz *= (1.0 - h * 0.45);
+
+        vec4 worldInst = vec4(pos, 1.0);
+        #ifdef USE_INSTANCING
+          worldInst = instanceMatrix * worldInst;
+        #endif
+
+        vNoise = sway;
+        gl_Position = projectionMatrix * viewMatrix * worldInst;
+      }
+    `,
+    fragmentShader: `
+      uniform float uTime;
+      uniform vec3 uCoreColor;
+      uniform vec3 uMidColor;
+      uniform vec3 uEdgeColor;
+      uniform vec3 uSmokeColor;
+      varying vec2 vUv;
+      varying float vNoise;
+
+      void main() {
+        vec2 uv = vUv;
+        float t = uTime * 6.0;
+
+        float n1 = sin(uv.x * 12.0 + sin(uv.y * 14.0 - t * 1.5) * 4.0);
+        float n2 = cos(uv.x * 20.0 - uv.y * 18.0 + t * 2.0);
+        float noise = (n1 + n2) * 0.25;
+
+        float centerDist = abs(uv.x - 0.5) * 2.0;
+        float shape = (1.0 - centerDist) * (1.0 - uv.y * 0.85) + noise * (1.0 - uv.y);
+
+        if (shape < 0.15) discard;
+
+        vec3 col = uCoreColor;
+        if (uv.y > 0.25) {
+          float blend1 = smoothstep(0.25, 0.65, uv.y);
+          col = mix(uCoreColor, uMidColor, blend1);
+        }
+        if (uv.y > 0.60) {
+          float blend2 = smoothstep(0.60, 0.95, uv.y);
+          col = mix(col, uEdgeColor, blend2);
+        }
+        if (uv.y > 0.90) {
+          float blend3 = smoothstep(0.90, 1.0, uv.y);
+          col = mix(col, uSmokeColor, blend3);
+        }
+
+        float alpha = clamp(shape * 1.8 * (1.0 - uv.y * 0.4), 0.0, 1.0);
+        gl_FragColor = vec4(col, alpha);
+      }
+    `,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -2066,9 +2404,12 @@ export class RCT3DRenderer {
     };
     this._lastPerspState = null;
 
-    // 4.6 Texture-Derived Normal Maps (Pixel-Perfect Alignment with Tile Sprite Art)
-    const normGrass = createNormalMapFromTexture("Feature_Grass.png", 1.4);
-    const normSand = createNormalMapFromTexture("Feature_Pebbles.png", 1.4);
+    // 4.6 Texture-Derived & Procedural Normal Maps
+    const normGrass = generateProceduralTerrainNormalMap("grass", 1.25);
+    const normSand = generateProceduralTerrainNormalMap("sand", 1.15);
+    const normOak = generateProceduralFoliageNormalMap("oak", 1.5);
+    const normPine = generateProceduralFoliageNormalMap("pine", 1.5);
+    const normCactus = generateProceduralFoliageNormalMap("cactus", 1.6);
     const normStoneB = createNormalMapFromTexture("Feature_Stone_B.png", 1.6);
     const normStoneC = createNormalMapFromTexture("Feature_Stone_C.png", 1.8);
     const normBrickA = createNormalMapFromTexture("Feature_Brick_A.png", 1.6);
@@ -2103,9 +2444,9 @@ export class RCT3DRenderer {
       cliff: makeMat(isPersp, { map: createTintedTexture("Feature_Stone_C.png", 0x887a6a, 0x2b2218, 1.0), dithering: true, vertexColors: true, side: THREE.DoubleSide }, normStoneC, 1.1, 0.72, 0.05),
       grassFoliage: makeMat(isPersp, { map: createTintedTexture("Feature_Grass.png", 0x3c7228, 0x000000, 0.0), dithering: true, transparent: false, alphaTest: 0.5, depthWrite: true, depthTest: true, side: THREE.DoubleSide }, normGrass, 0.7, 0.85, 0.02),
       treeTrunk: makeMat(isPersp, { color: 0x583c1e, dithering: true }, normWood, 0.9, 0.75, 0.02),
-      oakLeaves: new THREE.MeshLambertMaterial({ color: 0x3e8226, dithering: true }),
-      pineLeaves: new THREE.MeshLambertMaterial({ color: 0x205222, dithering: true }),
-      cactus: new THREE.MeshLambertMaterial({ color: 0x3c7c2c, dithering: true }),
+      oakLeaves: makeMat(isPersp, { color: 0x3e8226, dithering: true }, normOak, 1.2, 0.70, 0.02),
+      pineLeaves: makeMat(isPersp, { color: 0x205222, dithering: true }, normPine, 1.2, 0.70, 0.02),
+      cactus: makeMat(isPersp, { color: 0x3c7c2c, dithering: true }, normCactus, 1.3, 0.75, 0.02),
       houseWall: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_B.png", 0xfffaea, 0x8a6242, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickB, 1.0, 0.60, 0.05),
       houseRoof: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xff6238, 0x941e0a, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 1.2, 0.45, 0.08),
       woodHouseWall: makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xd4a373, 0x4a3525, 1.0), dithering: true, side: THREE.DoubleSide }, normWood, 0.9, 0.65, 0.04),
@@ -2121,9 +2462,9 @@ export class RCT3DRenderer {
       stoneItem: makeMat(isPersp, { map: createTintedTexture("Feature_Stone_B.png", 0xd8d8e6, 0x3c3c46, 1.0), dithering: true, side: THREE.DoubleSide }, normStoneB, 1.0, 0.65, 0.05),
       gate: makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xad7842, 0x3a2214, 1.0), dithering: true, side: THREE.DoubleSide }, normWood, 0.9, 0.65, 0.04),
       gateBlueprint: new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xc89858, 0x482c18, 1.0), dithering: true, side: THREE.DoubleSide }),
-      torchFlames: new THREE.MeshBasicMaterial({ color: 0xffaa33, dithering: true }),
+      torchFlames: isPersp ? createRealisticFlameMaterial() : new THREE.MeshBasicMaterial({ color: 0xffaa33, dithering: true }),
       campfireLogs: makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0x8a5228, 0x2e1a0a, 1.0), dithering: true, side: THREE.DoubleSide }, normWood, 0.9, 0.70, 0.03),
-      campfireFlames: new THREE.MeshBasicMaterial({ color: 0xff7711, dithering: true }),
+      campfireFlames: isPersp ? createRealisticFlameMaterial() : new THREE.MeshBasicMaterial({ color: 0xff7711, dithering: true }),
       warehouse: makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xd4a373, 0x4a3525, 1.0), dithering: true, side: THREE.DoubleSide }, normWood, 0.9, 0.65, 0.04),
       stoneWarehouse: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 1.0, 0.60, 0.05),
       slaughterhouseTimber: makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xc89858, 0x482c18, 1.0), dithering: true, side: THREE.DoubleSide }, normWood, 0.9, 0.65, 0.04),
@@ -2871,6 +3212,35 @@ export class RCT3DRenderer {
     this.cloudMesh.renderOrder = 500;
     this.cloudMesh.frustumCulled = false;
     this.scene.add(this.cloudMesh);
+
+    // 3D Celestial Orbit Group (Sun & Moon in Perspective Mode)
+    this.celestialGroup = new THREE.Group();
+    this.scene.add(this.celestialGroup);
+
+    // 1. Pixelated & Heavy-Dithered Sun Billboard
+    const sunTex = createDitheredCelestialTexture("sun");
+    const sunGeo = new THREE.PlaneGeometry(30, 30);
+    const sunMat = new THREE.MeshBasicMaterial({
+      map: sunTex,
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide
+    });
+    this.sunMesh = new THREE.Mesh(sunGeo, sunMat);
+    this.celestialGroup.add(this.sunMesh);
+
+    // 2. Pixelated & Heavy-Dithered Moon Billboard
+    const moonTex = createDitheredCelestialTexture("moon");
+    const moonGeo = new THREE.PlaneGeometry(26, 26);
+    const moonMat = new THREE.MeshBasicMaterial({
+      map: moonTex,
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide
+    });
+    this.moonMesh = new THREE.Mesh(moonGeo, moonMat);
+    this.celestialGroup.add(this.moonMesh);
+    this.celestialGroup.visible = false;
   }
 
   // ---------------------------------------------------------------------------
@@ -3069,6 +3439,10 @@ export class RCT3DRenderer {
       }
     }
     if (this.instBoneWalls && activeDict.boneWall) this.instBoneWalls.material = activeDict.boneWall;
+    if (this.instOakLeaves && activeDict.oakLeaves) this.instOakLeaves.material = activeDict.oakLeaves;
+    if (this.instPineLeaves && activeDict.pineLeaves) this.instPineLeaves.material = activeDict.pineLeaves;
+    if (this.instCacti && activeDict.cactus) this.instCacti.material = activeDict.cactus;
+    if (this.instCampfireFlames && activeDict.campfireFlames) this.instCampfireFlames.material = activeDict.campfireFlames;
 
     // Reset camera tile marker so terrain chunks re-bind with active materials
     this.lastBuiltCamTileX = -9999;
@@ -3754,6 +4128,32 @@ export class RCT3DRenderer {
     this.sunLight.target.position.set(this.camX, 0, this.camY);
     this.sunLight.target.updateMatrixWorld();
 
+    // Position and Orient 3D Sun & Moon in Sky Dome during 1P/3P Perspective Mode
+    if (this.celestialGroup) {
+      if (this.isPerspectiveActive()) {
+        this.celestialGroup.visible = true;
+        const activeCam = this.fpCamera;
+
+        if (isDaytime) {
+          this.sunMesh.visible = true;
+          this.sunMesh.position.set(this.camX + lightOrbitX * 2.5, lightOrbitY * 2.5, this.camY + lightOrbitZ * 2.5);
+          if (activeCam) {
+            this.sunMesh.lookAt(activeCam.position);
+          }
+          this.moonMesh.visible = false;
+        } else {
+          this.moonMesh.visible = true;
+          this.moonMesh.position.set(this.camX + lightOrbitX * 2.5, lightOrbitY * 2.5, this.camY + lightOrbitZ * 2.5);
+          if (activeCam) {
+            this.moonMesh.lookAt(activeCam.position);
+          }
+          this.sunMesh.visible = false;
+        }
+      } else {
+        this.celestialGroup.visible = false;
+      }
+    }
+
     // Update directional shadow camera frustum to encompass viewport
     const aspect = this.width / this.height;
     const viewSize = (28 / this.zoom);
@@ -4309,9 +4709,10 @@ export class RCT3DRenderer {
       maxTy = MAP_HEIGHT - 1;
     } else {
       const aspect = this.width / this.height;
-      const viewSize = this.isFirstPersonActive() ? 64 : Math.min(maxDist, 28 / this.zoom);
+      const isPerspActive = this.isPerspectiveActive();
+      const viewSize = isPerspActive ? Math.max(72, maxDist || 64) : Math.min(maxDist, 28 / this.zoom);
       const diagonal = Math.hypot(viewSize * aspect, viewSize);
-      const radius = Math.min(maxDist || 64, Math.ceil(diagonal * 1.25) + 3);
+      const radius = isPerspActive ? Math.max(72, maxDist || 64) : Math.min(maxDist || 64, Math.ceil(diagonal * 1.25) + 3);
 
       minTx = Math.max(0, Math.floor(this.camX - radius));
       maxTx = Math.min(MAP_WIDTH - 1, Math.ceil(this.camX + radius));
@@ -5471,6 +5872,15 @@ export class RCT3DRenderer {
       } else {
         this.cloudMesh.visible = false;
       }
+    }
+
+    // Animated realistic flame shaders for campfires and torches
+    const flameTime = performance.now() * 0.001;
+    if (this.materials.campfireFlames?.uniforms?.uTime) {
+      this.materials.campfireFlames.uniforms.uTime.value = flameTime;
+    }
+    if (this.materials.torchFlames?.uniforms?.uTime) {
+      this.materials.torchFlames.uniforms.uTime.value = flameTime;
     }
 
     // Draw WebGL Frame with Depth of Field & Chromatic Aberration in Perspective Modes

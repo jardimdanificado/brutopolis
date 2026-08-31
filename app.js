@@ -2,8 +2,8 @@
 // Brutopolis
 // =============================================================================
 
-const BrutopolisVersion = "0.121.3";
-const BrutopolisVersionName = "Rejoice with those who rejoice; mourn with those who mourn.";
+const BrutopolisVersion = "0.121.4";
+const BrutopolisVersionName = "Charm is deceptive, and beauty is fleeting;";
 
 // WASM replaced by Pure JS Renderer
 import { World } from "./js/world.js";
