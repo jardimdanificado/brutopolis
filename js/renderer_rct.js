@@ -1737,6 +1737,114 @@ function createCampfireFlameGeometry() {
 }
 
 // ---------------------------------------------------------------------------
+// Texture-Derived Normal Map Generator (Pixel-Perfect Alignment with Tile Art)
+// ---------------------------------------------------------------------------
+const normalMapCache = new Map();
+
+export function createNormalMapFromTexture(skinName, intensity = 1.6) {
+  const cacheKey = `${skinName}_${intensity}`;
+  if (normalMapCache.has(cacheKey)) return normalMapCache.get(cacheKey);
+
+  const clean = (skinName || "").toLowerCase().replace(/\\/g, "/");
+  const base = clean.split("/").pop();
+
+  let img = rawImages.get(base) || rawImages.get(clean);
+  if (!img) {
+    const baseNoExt = base.replace(/\.png$/, "");
+    for (const [k, v] of rawImages.entries()) {
+      if (k.includes(baseNoExt)) {
+        img = v;
+        break;
+      }
+    }
+  }
+
+  const size = 16;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  const imgData = ctx.createImageData(size, size);
+  const data = imgData.data;
+
+  const heightMap = new Float32Array(size * size);
+
+  if (img && img.naturalWidth > 0) {
+    const tempCanvas = document.createElement("canvas");
+    tempCanvas.width = size;
+    tempCanvas.height = size;
+    const tempCtx = tempCanvas.getContext("2d");
+    tempCtx.drawImage(img, 0, 0, size, size);
+    const srcData = tempCtx.getImageData(0, 0, size, size).data;
+
+    for (let i = 0; i < size * size; i++) {
+      const r = srcData[i * 4];
+      const g = srcData[i * 4 + 1];
+      const b = srcData[i * 4 + 2];
+      const a = srcData[i * 4 + 3] / 255.0;
+      // Perceptual luminance height from the actual sprite pixels
+      const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255.0;
+      heightMap[i] = lum * a;
+    }
+  } else {
+    // Organic subtle procedural height fallback for non-textured tiles
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        heightMap[y * size + x] = 0.5 + 0.25 * Math.sin(x * 1.8 + Math.sin(y * 1.2) * 2.0);
+      }
+    }
+  }
+
+  // 3x3 Sobel filter across sprite pixels for accurate surface relief
+  for (let y = 0; y < size; y++) {
+    const ym = (y - 1 + size) % size;
+    const yp = (y + 1) % size;
+    for (let x = 0; x < size; x++) {
+      const xm = (x - 1 + size) % size;
+      const xp = (x + 1) % size;
+
+      const dX = (
+        (heightMap[ym * size + xp] - heightMap[ym * size + xm]) * 1.0 +
+        (heightMap[y  * size + xp] - heightMap[y  * size + xm]) * 2.0 +
+        (heightMap[yp * size + xp] - heightMap[yp * size + xm]) * 1.0
+      ) * (intensity / 4.0);
+
+      const dY = (
+        (heightMap[yp * size + xm] - heightMap[ym * size + xm]) * 1.0 +
+        (heightMap[yp * size + x ] - heightMap[ym * size + x ]) * 2.0 +
+        (heightMap[yp * size + xp] - heightMap[yp * size + xp]) * 1.0
+      ) * (intensity / 4.0);
+
+      let nx = -dX;
+      let ny = -dY;
+      let nz = 1.0;
+      const len = Math.hypot(nx, ny, nz);
+      nx /= len;
+      ny /= len;
+      nz /= len;
+
+      const idx = (y * size + x) * 4;
+      data[idx + 0] = Math.floor((nx * 0.5 + 0.5) * 255);
+      data[idx + 1] = Math.floor((ny * 0.5 + 0.5) * 255);
+      data[idx + 2] = Math.floor((nz * 0.5 + 0.5) * 255);
+      data[idx + 3] = 255;
+    }
+  }
+
+  ctx.putImageData(imgData, 0, 0);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.NearestFilter;
+  tex.generateMipmaps = false;
+  tex.needsUpdate = true;
+  normalMapCache.set(cacheKey, tex);
+  return tex;
+}
+
+// ---------------------------------------------------------------------------
 // Main RCT 3D Renderer Class (Volumetric 3D Models + Shaded Terrain)
 // ---------------------------------------------------------------------------
 
@@ -1850,23 +1958,30 @@ export class RCT3DRenderer {
           vec2 center = uv - 0.5;
           float dist = dot(center, center);
 
-          float chromaOffset = dist * (uChroma * 0.012);
+          // Chromatic aberration (RGB fringe towards screen edge)
+          float chromaOffset = dist * (uChroma * 0.014);
           float r = texture2D(tDiffuse, uv + center * chromaOffset).r;
           float g = texture2D(tDiffuse, uv).g;
           float b = texture2D(tDiffuse, uv - center * chromaOffset).b;
           float a = texture2D(tDiffuse, uv).a;
 
+          // Multi-tap Golden-Angle Bokeh Depth of Field
           if (uDofStrength > 0.001) {
-            float blur = dist * uDofStrength * 0.0035;
+            float blur = dist * uDofStrength * 0.0065;
             vec4 blurCol = vec4(0.0);
-            blurCol += texture2D(tDiffuse, uv + vec2(-blur, -blur));
-            blurCol += texture2D(tDiffuse, uv + vec2( blur, -blur));
-            blurCol += texture2D(tDiffuse, uv + vec2(-blur,  blur));
-            blurCol += texture2D(tDiffuse, uv + vec2( blur,  blur));
-            blurCol *= 0.25;
+            // 8-tap circular bokeh disk
+            blurCol += texture2D(tDiffuse, uv + vec2(-0.707, -0.707) * blur);
+            blurCol += texture2D(tDiffuse, uv + vec2( 0.707, -0.707) * blur);
+            blurCol += texture2D(tDiffuse, uv + vec2(-0.707,  0.707) * blur);
+            blurCol += texture2D(tDiffuse, uv + vec2( 0.707,  0.707) * blur);
+            blurCol += texture2D(tDiffuse, uv + vec2( 0.0,    -1.0)   * blur);
+            blurCol += texture2D(tDiffuse, uv + vec2( 0.0,     1.0)   * blur);
+            blurCol += texture2D(tDiffuse, uv + vec2(-1.0,     0.0)   * blur);
+            blurCol += texture2D(tDiffuse, uv + vec2( 1.0,     0.0)   * blur);
+            blurCol *= 0.125;
 
-            float blend = smoothstep(0.06, 0.42, dist);
-            vec3 finalCol = mix(vec3(r, g, b), blurCol.rgb, blend * 0.42);
+            float blend = smoothstep(0.04, 0.38, dist);
+            vec3 finalCol = mix(vec3(r, g, b), blurCol.rgb, blend * 0.65);
             gl_FragColor = vec4(finalCol, a);
           } else {
             gl_FragColor = vec4(r, g, b, a);
@@ -1941,390 +2056,197 @@ export class RCT3DRenderer {
       });
     }
 
-    // 5. Materials with Vertex Colors for Contact AO, Textures & Dithering
-    this.materials = {
-      [TILE_FLOOR]: new THREE.MeshLambertMaterial({
-        color: 0x2e5424,
-        dithering: true,
-        vertexColors: true,
-        side: THREE.DoubleSide
-      }),
-      sandClean: new THREE.MeshLambertMaterial({
-        color: 0xdec078,
-        dithering: true,
-        vertexColors: true,
-        side: THREE.DoubleSide
-      }),
-      [TILE_SAND]: new THREE.MeshLambertMaterial({
-        map: createTintedTexture("Feature_Pebbles.png", 0x6e5228, 0xdec078, 1.0),
-        dithering: true,
-        vertexColors: true,
-        side: THREE.DoubleSide
-      }),
-      [TILE_STONE]: new THREE.MeshLambertMaterial({
-        map: createTintedTexture("Feature_Stone_B.png", 0xa5a5af, 0x3a3a44, 1.0),
-        dithering: true,
-        vertexColors: true,
-        side: THREE.DoubleSide
-      }),
-      [TILE_MOUNTAIN]: new THREE.MeshLambertMaterial({
-        map: createTintedTexture("Feature_Stone_C.png", 0xb4afaa, 0x484242, 1.0),
-        dithering: true,
-        vertexColors: true,
-        side: THREE.DoubleSide
-      }),
-      [TILE_WATER]: new THREE.MeshLambertMaterial({
-        map: createTintedTexture("Feature_Waves.png", 0x64b4ff, 0x143764, 1.0),
-        dithering: true,
-        vertexColors: true,
-        transparent: false,
-        opacity: 1.0,
-        side: THREE.DoubleSide
-      }),
-      [TILE_ROAD_GRASS]: new THREE.MeshLambertMaterial({
-        map: createTintedTexture("Feature_Stone_B.png", 0xa67c52, 0x3d2816, 1.0),
-        dithering: true,
-        vertexColors: true,
-        side: THREE.DoubleSide
-      }),
-      [TILE_ROAD_SAND]: new THREE.MeshLambertMaterial({
-        map: createTintedTexture("Feature_Pebbles.png", 0xc8a060, 0x5c4220, 1.0),
-        dithering: true,
-        vertexColors: true,
-        side: THREE.DoubleSide
-      }),
-      [TILE_ROAD_STONE]: new THREE.MeshLambertMaterial({
-        map: createTintedTexture("Feature_Brick_A.png", 0x909098, 0x383842, 1.0),
-        dithering: true,
-        vertexColors: true,
-        side: THREE.DoubleSide
-      }),
-      cliff: new THREE.MeshLambertMaterial({
-        map: createTintedTexture("Feature_Stone_C.png", 0x887a6a, 0x2b2218, 1.0),
-        dithering: true,
-        vertexColors: true,
-        side: THREE.DoubleSide
-      }),
-      grassFoliage: new THREE.MeshLambertMaterial({
-        map: createTintedTexture("Feature_Grass.png", 0x3c7228, 0x000000, 0.0),
-        dithering: true,
-        transparent: false,
-        alphaTest: 0.5,
-        depthWrite: true,
-        depthTest: true,
-        side: THREE.DoubleSide
-      }),
-      treeTrunk: new THREE.MeshLambertMaterial({ color: 0x583c1e, dithering: true }),
+    // 4.5 Graphic Options (Calibrated via in-game Settings Modal)
+    this.graphicOptions = {
+      normalMaps: true,
+      dofStrength: "HIGH",
+      chroma: true,
+      waterReflections: true,
+      fog: "LIGHT"
+    };
+    this._lastPerspState = null;
+
+    // 4.6 Texture-Derived Normal Maps (Pixel-Perfect Alignment with Tile Sprite Art)
+    const normGrass = createNormalMapFromTexture("Feature_Grass.png", 1.4);
+    const normSand = createNormalMapFromTexture("Feature_Pebbles.png", 1.4);
+    const normStoneB = createNormalMapFromTexture("Feature_Stone_B.png", 1.6);
+    const normStoneC = createNormalMapFromTexture("Feature_Stone_C.png", 1.8);
+    const normBrickA = createNormalMapFromTexture("Feature_Brick_A.png", 1.6);
+    const normBrickB = createNormalMapFromTexture("Feature_Brick_B.png", 1.5);
+    const normBrickC = createNormalMapFromTexture("Feature_Brick_C.png", 1.8);
+    const normWood = createNormalMapFromTexture("Feature_Wood.png", 1.5);
+    const normWaves = createNormalMapFromTexture("Feature_Waves.png", 1.5);
+
+    const makeMat = (isPersp, baseParams, normalMap = null, normalScale = 1.0, roughness = 0.65, metalness = 0.05) => {
+      if (!isPersp || !normalMap) {
+        return new THREE.MeshLambertMaterial(baseParams);
+      }
+      const params = Object.assign({}, baseParams, {
+        normalMap: normalMap,
+        normalScale: new THREE.Vector2(normalScale, normalScale),
+        roughness: roughness,
+        metalness: metalness
+      });
+      return new THREE.MeshStandardMaterial(params);
+    };
+
+    const buildDict = (isPersp) => ({
+      [TILE_FLOOR]: makeMat(isPersp, { color: 0x2e5424, dithering: true, vertexColors: true, side: THREE.DoubleSide }, normGrass, 0.8, 0.82, 0.05),
+      sandClean: makeMat(isPersp, { color: 0xdec078, dithering: true, vertexColors: true, side: THREE.DoubleSide }, normSand, 0.8, 0.88, 0.02),
+      [TILE_SAND]: makeMat(isPersp, { map: createTintedTexture("Feature_Pebbles.png", 0x6e5228, 0xdec078, 1.0), dithering: true, vertexColors: true, side: THREE.DoubleSide }, normSand, 0.9, 0.86, 0.03),
+      [TILE_STONE]: makeMat(isPersp, { map: createTintedTexture("Feature_Stone_B.png", 0xa5a5af, 0x3a3a44, 1.0), dithering: true, vertexColors: true, side: THREE.DoubleSide }, normStoneB, 1.1, 0.70, 0.08),
+      [TILE_MOUNTAIN]: makeMat(isPersp, { map: createTintedTexture("Feature_Stone_C.png", 0xb4afaa, 0x484242, 1.0), dithering: true, vertexColors: true, side: THREE.DoubleSide }, normStoneC, 1.25, 0.65, 0.10),
+      [TILE_WATER]: makeMat(isPersp, { color: isPersp ? 0x1668b8 : 0xffffff, map: createTintedTexture("Feature_Waves.png", 0x64b4ff, 0x143764, 1.0), dithering: true, vertexColors: true, transparent: false, opacity: 1.0, side: THREE.DoubleSide }, normWaves, 0.9, 0.18, 0.14),
+      [TILE_ROAD_GRASS]: makeMat(isPersp, { map: createTintedTexture("Feature_Stone_B.png", 0xa67c52, 0x3d2816, 1.0), dithering: true, vertexColors: true, side: THREE.DoubleSide }, normStoneB, 0.9, 0.75, 0.05),
+      [TILE_ROAD_SAND]: makeMat(isPersp, { map: createTintedTexture("Feature_Pebbles.png", 0xc8a060, 0x5c4220, 1.0), dithering: true, vertexColors: true, side: THREE.DoubleSide }, normSand, 0.9, 0.82, 0.04),
+      [TILE_ROAD_STONE]: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0x909098, 0x383842, 1.0), dithering: true, vertexColors: true, side: THREE.DoubleSide }, normBrickA, 1.1, 0.65, 0.08),
+      cliff: makeMat(isPersp, { map: createTintedTexture("Feature_Stone_C.png", 0x887a6a, 0x2b2218, 1.0), dithering: true, vertexColors: true, side: THREE.DoubleSide }, normStoneC, 1.1, 0.72, 0.05),
+      grassFoliage: makeMat(isPersp, { map: createTintedTexture("Feature_Grass.png", 0x3c7228, 0x000000, 0.0), dithering: true, transparent: false, alphaTest: 0.5, depthWrite: true, depthTest: true, side: THREE.DoubleSide }, normGrass, 0.7, 0.85, 0.02),
+      treeTrunk: makeMat(isPersp, { color: 0x583c1e, dithering: true }, normWood, 0.9, 0.75, 0.02),
       oakLeaves: new THREE.MeshLambertMaterial({ color: 0x3e8226, dithering: true }),
       pineLeaves: new THREE.MeshLambertMaterial({ color: 0x205222, dithering: true }),
       cactus: new THREE.MeshLambertMaterial({ color: 0x3c7c2c, dithering: true }),
-      // Textured House Walls (Warm Timbered Plaster/Brick) & Roofs (Terracotta Shingles)
-      houseWall: new THREE.MeshLambertMaterial({
-        map: createTintedTexture("Feature_Brick_B.png", 0xfffaea, 0x8a6242, 1.0),
-        dithering: true,
-        side: THREE.DoubleSide
-      }),
-      houseRoof: new THREE.MeshLambertMaterial({
-        map: createTintedTexture("Feature_Brick_C.png", 0xff6238, 0x941e0a, 1.0),
-        dithering: true,
-        side: THREE.DoubleSide
-      }),
-      woodHouseWall: new THREE.MeshLambertMaterial({
-        map: createTintedTexture("Feature_Wood.png", 0xd4a373, 0x4a3525, 1.0),
-        dithering: true,
-        side: THREE.DoubleSide
-      }),
-      woodHouseRoof: new THREE.MeshLambertMaterial({
-        map: createTintedTexture("Feature_Wood.png", 0xa67c52, 0x3b271a, 1.0),
-        dithering: true,
-        side: THREE.DoubleSide
-      }),
-      stoneHouseWall: new THREE.MeshLambertMaterial({
-        map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0),
-        dithering: true,
-        side: THREE.DoubleSide
-      }),
-      stoneHouseRoof: new THREE.MeshLambertMaterial({
-        map: createTintedTexture("Feature_Brick_A.png", 0x9098a8, 0x2d3748, 1.0),
-        dithering: true,
-        side: THREE.DoubleSide
-      }),
-      houseBlueprint: new THREE.MeshLambertMaterial({
-        map: createTintedTexture("Feature_Wood.png", 0xdfa052, 0x5a3418, 1.0),
-        dithering: true,
-        side: THREE.DoubleSide
-      }),
-      wall: new THREE.MeshLambertMaterial({
-        map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0),
-        dithering: true,
-        side: THREE.DoubleSide
-      }),
-      woodWall: new THREE.MeshLambertMaterial({
-        map: createTintedTexture("Feature_Wood.png", 0xc89858, 0x482c18, 1.0),
-        dithering: true,
-        side: THREE.DoubleSide
-      }),
-      mixedWall: new THREE.MeshLambertMaterial({
-        map: createTintedTexture("Feature_Brick_B.png", 0xdfd0b0, 0x3d3024, 1.0),
-        dithering: true,
-        side: THREE.DoubleSide
-      }),
-      wallBlueprint: new THREE.MeshLambertMaterial({
-        map: createTintedTexture("Feature_Brick_A.png", 0x9a8f82, 0x3d3024, 1.0),
-        dithering: true,
-        side: THREE.DoubleSide
-      }),
-      woodLog: new THREE.MeshLambertMaterial({
-        map: createTintedTexture("Feature_Wood.png", 0xc89858, 0x3d2210, 1.0),
-        dithering: true,
-        side: THREE.DoubleSide
-      }),
-      stoneItem: new THREE.MeshLambertMaterial({
-        map: createTintedTexture("Feature_Stone_B.png", 0xd8d8e6, 0x3c3c46, 1.0),
-        dithering: true,
-        side: THREE.DoubleSide
-      }),
-      gate: new THREE.MeshLambertMaterial({
-        map: createTintedTexture("Feature_Wood.png", 0xad7842, 0x3a2214, 1.0),
-        dithering: true,
-        side: THREE.DoubleSide
-      }),
-      gateBlueprint: new THREE.MeshLambertMaterial({
-        map: createTintedTexture("Feature_Wood.png", 0xc89858, 0x482c18, 1.0),
-        dithering: true,
-        side: THREE.DoubleSide
-      }),
-      warehouse: new THREE.MeshLambertMaterial({
-        map: createTintedTexture("Feature_Wood.png", 0xd4a373, 0x4a3525, 1.0),
-        dithering: true,
-        side: THREE.DoubleSide
-      }),
-      stoneWarehouse: new THREE.MeshLambertMaterial({
-        map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0),
-        dithering: true,
-        side: THREE.DoubleSide
-      }),
-      slaughterhouseTimber: new THREE.MeshLambertMaterial({
-        map: createTintedTexture("Feature_Wood.png", 0xc89858, 0x482c18, 1.0),
-        dithering: true,
-        side: THREE.DoubleSide
-      }),
-      slaughterhouseStone: new THREE.MeshLambertMaterial({
-        map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0),
-        dithering: true,
-        side: THREE.DoubleSide
-      }),
-      kitchenBrick: new THREE.MeshLambertMaterial({
-        map: createTintedTexture("Feature_Brick_B.png", 0xfffaea, 0x8a6242, 1.0),
-        dithering: true,
-        side: THREE.DoubleSide
-      }),
-      kitchenTimber: new THREE.MeshLambertMaterial({
-        map: createTintedTexture("Feature_Wood.png", 0xd4a373, 0x4a3525, 1.0),
-        dithering: true,
-        side: THREE.DoubleSide
-      }),
+      houseWall: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_B.png", 0xfffaea, 0x8a6242, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickB, 1.0, 0.60, 0.05),
+      houseRoof: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xff6238, 0x941e0a, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 1.2, 0.45, 0.08),
+      woodHouseWall: makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xd4a373, 0x4a3525, 1.0), dithering: true, side: THREE.DoubleSide }, normWood, 0.9, 0.65, 0.04),
+      woodHouseRoof: makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xa67c52, 0x3b271a, 1.0), dithering: true, side: THREE.DoubleSide }, normWood, 1.0, 0.55, 0.05),
+      stoneHouseWall: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 1.05, 0.60, 0.06),
+      stoneHouseRoof: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0x9098a8, 0x2d3748, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 1.15, 0.50, 0.08),
+      houseBlueprint: new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xdfa052, 0x5a3418, 1.0), dithering: true, side: THREE.DoubleSide }),
+      wall: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 1.0, 0.60, 0.05),
+      woodWall: makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xc89858, 0x482c18, 1.0), dithering: true, side: THREE.DoubleSide }, normWood, 0.9, 0.65, 0.04),
+      mixedWall: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_B.png", 0xdfd0b0, 0x3d3024, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickB, 1.0, 0.60, 0.05),
+      wallBlueprint: new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_A.png", 0x9a8f82, 0x3d3024, 1.0), dithering: true, side: THREE.DoubleSide }),
+      woodLog: makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xc89858, 0x3d2210, 1.0), dithering: true, side: THREE.DoubleSide }, normWood, 0.9, 0.70, 0.03),
+      stoneItem: makeMat(isPersp, { map: createTintedTexture("Feature_Stone_B.png", 0xd8d8e6, 0x3c3c46, 1.0), dithering: true, side: THREE.DoubleSide }, normStoneB, 1.0, 0.65, 0.05),
+      gate: makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xad7842, 0x3a2214, 1.0), dithering: true, side: THREE.DoubleSide }, normWood, 0.9, 0.65, 0.04),
+      gateBlueprint: new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xc89858, 0x482c18, 1.0), dithering: true, side: THREE.DoubleSide }),
+      torchFlames: new THREE.MeshBasicMaterial({ color: 0xffaa33, dithering: true }),
+      campfireLogs: makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0x8a5228, 0x2e1a0a, 1.0), dithering: true, side: THREE.DoubleSide }, normWood, 0.9, 0.70, 0.03),
+      campfireFlames: new THREE.MeshBasicMaterial({ color: 0xff7711, dithering: true }),
+      warehouse: makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xd4a373, 0x4a3525, 1.0), dithering: true, side: THREE.DoubleSide }, normWood, 0.9, 0.65, 0.04),
+      stoneWarehouse: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 1.0, 0.60, 0.05),
+      slaughterhouseTimber: makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xc89858, 0x482c18, 1.0), dithering: true, side: THREE.DoubleSide }, normWood, 0.9, 0.65, 0.04),
+      slaughterhouseStone: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 1.0, 0.60, 0.05),
+      kitchenBrick: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_B.png", 0xfffaea, 0x8a6242, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickB, 1.0, 0.60, 0.05),
+      kitchenTimber: makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xd4a373, 0x4a3525, 1.0), dithering: true, side: THREE.DoubleSide }, normWood, 0.9, 0.65, 0.04),
       multiBuildingPalette: [
-        // 0: MAT_STONE
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }),
-        // 1: MAT_TIMBER
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xc89858, 0x482c18, 1.0), dithering: true, side: THREE.DoubleSide }),
-        // 2: MAT_PLASTER
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_B.png", 0xfffaea, 0x8a6242, 1.0), dithering: true, side: THREE.DoubleSide }),
-        // 3: MAT_DARK_BEAMS
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0x4a2e18, 0x1a0f08, 1.0), dithering: true, side: THREE.DoubleSide }),
-        // 4: MAT_DOOR
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xb87838, 0x3e1e0a, 1.0), dithering: true, side: THREE.DoubleSide }),
-        // 5: MAT_WINDOW_GLASS
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 1.0, 0.60, 0.05),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xc89858, 0x482c18, 1.0), dithering: true, side: THREE.DoubleSide }, normWood, 0.9, 0.65, 0.04),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_B.png", 0xfffaea, 0x8a6242, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickB, 1.0, 0.60, 0.05),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0x4a2e18, 0x1a0f08, 1.0), dithering: true, side: THREE.DoubleSide }, normWood, 0.9, 0.65, 0.04),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xb87838, 0x3e1e0a, 1.0), dithering: true, side: THREE.DoubleSide }, normWood, 0.9, 0.65, 0.04),
         new THREE.MeshLambertMaterial({ color: 0x64c8ff, dithering: true, side: THREE.DoubleSide }),
-        // 6: MAT_BRICK_CHIMNEY
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_C.png", 0xb44a2c, 0x4a180c, 1.0), dithering: true, side: THREE.DoubleSide }),
-        // 7: MAT_ROOF_CLAY
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_C.png", 0xdb5832, 0x6a1c0c, 1.0), dithering: true, side: THREE.DoubleSide }),
-        // 8: MAT_ROOF_THATCH
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Grass.png", 0xd4a044, 0x583e10, 1.0), dithering: true, side: THREE.DoubleSide }),
-        // 9: MAT_ROOF_SLATE
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_A.png", 0x4a5568, 0x1a202c, 1.0), dithering: true, side: THREE.DoubleSide }),
-        // 10: MAT_ADOBE
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_B.png", 0xd49b6a, 0x4a2e1a, 1.0), dithering: true, side: THREE.DoubleSide }),
-        // 11: MAT_DRAGON_PROW
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xd4a040, 0x44260a, 1.0), dithering: true, side: THREE.DoubleSide }),
-        // 12: MAT_BASALT_BONE
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Stone_C.png", 0x383842, 0x141418, 1.0), dithering: true, side: THREE.DoubleSide })
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xb44a2c, 0x4a180c, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 1.2, 0.50, 0.08),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xdb5832, 0x6a1c0c, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 1.2, 0.50, 0.08),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Grass.png", 0xd4a044, 0x583e10, 1.0), dithering: true, side: THREE.DoubleSide }, normGrass, 0.8, 0.80, 0.02),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0x4a5568, 0x1a202c, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 1.0, 0.55, 0.08),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_B.png", 0xd49b6a, 0x4a2e1a, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickB, 1.0, 0.60, 0.05),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xd4a040, 0x44260a, 1.0), dithering: true, side: THREE.DoubleSide }, normWood, 0.9, 0.65, 0.04),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Stone_C.png", 0x383842, 0x141418, 1.0), dithering: true, side: THREE.DoubleSide }, normStoneC, 1.1, 0.65, 0.08)
       ],
       warehouseWalls: [
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xd4a373, 0x4a3525, 1.0), dithering: true, side: THREE.DoubleSide }),
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide })
+        makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xd4a373, 0x4a3525, 1.0), dithering: true, side: THREE.DoubleSide }, normWood, 0.9, 0.65, 0.04),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 1.0, 0.60, 0.05)
       ],
       warehouseRoofs: [
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide })
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 1.2, 0.45, 0.08),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 1.2, 0.45, 0.08)
       ],
       slaughterhouseWalls: [
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xc89858, 0x482c18, 1.0), dithering: true, side: THREE.DoubleSide }),
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide })
+        makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xc89858, 0x482c18, 1.0), dithering: true, side: THREE.DoubleSide }, normWood, 0.9, 0.65, 0.04),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 1.0, 0.60, 0.05)
       ],
       slaughterhouseRoofs: [
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide })
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 1.2, 0.45, 0.08),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 1.2, 0.45, 0.08)
       ],
       kitchenWalls: [
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_B.png", 0xfffaea, 0x8a6242, 1.0), dithering: true, side: THREE.DoubleSide }),
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xd4a373, 0x4a3525, 1.0), dithering: true, side: THREE.DoubleSide })
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_B.png", 0xfffaea, 0x8a6242, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickB, 1.0, 0.60, 0.05),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xd4a373, 0x4a3525, 1.0), dithering: true, side: THREE.DoubleSide }, normWood, 0.9, 0.65, 0.04)
       ],
       kitchenRoofs: [
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide })
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 1.2, 0.45, 0.08),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 1.2, 0.45, 0.08)
       ],
       houseWallVariants: [
-        // 0: Wood Cabin Wall (Standard Wood)
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xd4a373, 0x4a3525, 1.0), dithering: true, side: THREE.DoubleSide }),
-        // 1: Stone Cottage Wall (Standard Stone)
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }),
-        // 2: Thatched Hut Wall (Standard Plaster/Stone)
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_B.png", 0xfffaea, 0x8a6242, 1.0), dithering: true, side: THREE.DoubleSide }),
-        // 3: Log Lodge Wall (Standard Timber)
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xc89858, 0x482c18, 1.0), dithering: true, side: THREE.DoubleSide }),
-        // 4: Half-Timbered Wall (Standard Plaster)
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_B.png", 0xfffaea, 0x8a6242, 1.0), dithering: true, side: THREE.DoubleSide }),
-        // 5: Mud-Brick Adobe Wall (Standard Mixed Stone)
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_B.png", 0xdfd0b0, 0x3d3024, 1.0), dithering: true, side: THREE.DoubleSide }),
-        // 6: Mountain Stilt Wall (Standard Stone Pillars)
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }),
-        // 7: Nordic Longhouse Wall (Standard Wood)
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xd4a373, 0x4a3525, 1.0), dithering: true, side: THREE.DoubleSide }),
-        // 8: Bone Ossuary Wall (Standard Stone)
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }),
-        // 9: Manor Villa Wall (Standard Stone)
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }),
-        // 10: Slender Timber Tower Wall
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xd4a373, 0x4a3525, 1.0), dithering: true, side: THREE.DoubleSide }),
-        // 11: Slender Stone Townhouse Wall
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }),
-        // 12: Stilt Watch-Shack Wall
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xa67c52, 0x3b271a, 1.0), dithering: true, side: THREE.DoubleSide }),
-        // 13: Plaster Steeple Townhouse Wall
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_B.png", 0xfffaea, 0x8a6242, 1.0), dithering: true, side: THREE.DoubleSide }),
-        // 14: Single-Story Timber Ranch Wall
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xd4a373, 0x4a3525, 1.0), dithering: true, side: THREE.DoubleSide }),
-        // 15: Single-Story Stone Cottage Wall
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }),
-        // 16: Fenced Ranch Compound Wall
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xba8048, 0x3d2412, 1.0), dithering: true, side: THREE.DoubleSide }),
-        // 17: Courtyard Hacienda Wall
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_B.png", 0xfffaea, 0x8a6242, 1.0), dithering: true, side: THREE.DoubleSide }),
-        // 18: Single-Story Adobe Rancho Wall
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_B.png", 0xdfd0b0, 0x3d3024, 1.0), dithering: true, side: THREE.DoubleSide }),
-        // 19: Ground Thatched Croft Wall
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xba8048, 0x3d2412, 1.0), dithering: true, side: THREE.DoubleSide })
+        makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xd4a373, 0x4a3525, 1.0), dithering: true, side: THREE.DoubleSide }, normWood, 0.9, 0.65, 0.04),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 1.0, 0.60, 0.05),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_B.png", 0xfffaea, 0x8a6242, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickB, 1.0, 0.60, 0.05),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xc89858, 0x482c18, 1.0), dithering: true, side: THREE.DoubleSide }, normWood, 0.9, 0.65, 0.04),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_B.png", 0xfffaea, 0x8a6242, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickB, 1.0, 0.60, 0.05),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_B.png", 0xdfd0b0, 0x3d3024, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickB, 1.0, 0.60, 0.05),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 1.0, 0.60, 0.05),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xd4a373, 0x4a3525, 1.0), dithering: true, side: THREE.DoubleSide }, normWood, 0.9, 0.65, 0.04),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 1.0, 0.60, 0.05),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 1.0, 0.60, 0.05),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xd4a373, 0x4a3525, 1.0), dithering: true, side: THREE.DoubleSide }, normWood, 0.9, 0.65, 0.04),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 1.0, 0.60, 0.05),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xa67c52, 0x3b271a, 1.0), dithering: true, side: THREE.DoubleSide }, normWood, 0.9, 0.65, 0.04),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_B.png", 0xfffaea, 0x8a6242, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickB, 1.0, 0.60, 0.05),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xd4a373, 0x4a3525, 1.0), dithering: true, side: THREE.DoubleSide }, normWood, 0.9, 0.65, 0.04),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 1.0, 0.60, 0.05),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xba8048, 0x3d2412, 1.0), dithering: true, side: THREE.DoubleSide }, normWood, 0.9, 0.65, 0.04),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_B.png", 0xfffaea, 0x8a6242, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickB, 1.0, 0.60, 0.05),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_B.png", 0xdfd0b0, 0x3d3024, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickB, 1.0, 0.60, 0.05),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xba8048, 0x3d2412, 1.0), dithering: true, side: THREE.DoubleSide }, normWood, 0.9, 0.65, 0.04)
       ],
       houseRoofVariants: [
-        // 0..19: Clan-tintable roofs with high dynamic range base texture
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_A.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_A.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_B.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide })
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 1.2, 0.45, 0.08),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 1.2, 0.45, 0.08),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normWood, 0.9, 0.55, 0.04),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 1.2, 0.45, 0.08),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normWood, 0.9, 0.55, 0.04),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 1.2, 0.45, 0.08),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 1.2, 0.45, 0.08),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normWood, 0.9, 0.55, 0.04),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 1.0, 0.55, 0.08),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 1.2, 0.45, 0.08),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normWood, 0.9, 0.55, 0.04),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 1.0, 0.55, 0.08),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normWood, 0.9, 0.55, 0.04),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 1.2, 0.45, 0.08),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normWood, 0.9, 0.55, 0.04),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 1.2, 0.45, 0.08),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normWood, 0.9, 0.55, 0.04),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 1.2, 0.45, 0.08),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_B.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickB, 1.0, 0.55, 0.05),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normWood, 0.9, 0.55, 0.04)
       ],
       leaderWallVariants: [
-        // 0: Citadel (Stone)
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }),
-        // 1: Jarl High Hall (Dark Wood)
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xb87a40, 0x3a2214, 1.0), dithering: true, side: THREE.DoubleSide }),
-        // 2: Ziggurat (Sandstone)
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_B.png", 0xdfd0b0, 0x3d3024, 1.0), dithering: true, side: THREE.DoubleSide }),
-        // 3: Chieftain Pagoda (Lacquered Timber)
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xc89858, 0x482c18, 1.0), dithering: true, side: THREE.DoubleSide }),
-        // 4: Sanctuary Keep (Plaster / White Stone)
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_B.png", 0xfffaea, 0x8a6242, 1.0), dithering: true, side: THREE.DoubleSide }),
-        // 5: Basalt Monolith Castle (Dark Basalt)
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Stone_C.png", 0x383842, 0x141418, 1.0), dithering: true, side: THREE.DoubleSide }),
-        // 6: Imperial Pavilion (Imperial Stone & Wood)
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide })
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 1.0, 0.60, 0.05),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xb87a40, 0x3a2214, 1.0), dithering: true, side: THREE.DoubleSide }, normWood, 0.9, 0.65, 0.04),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_B.png", 0xdfd0b0, 0x3d3024, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickB, 1.0, 0.60, 0.05),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xc89858, 0x482c18, 1.0), dithering: true, side: THREE.DoubleSide }, normWood, 0.9, 0.65, 0.04),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_B.png", 0xfffaea, 0x8a6242, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickB, 1.0, 0.60, 0.05),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Stone_C.png", 0x383842, 0x141418, 1.0), dithering: true, side: THREE.DoubleSide }, normStoneC, 1.1, 0.65, 0.08),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 1.0, 0.60, 0.05)
       ],
       leaderRoofVariants: [
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_B.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_A.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide })
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 1.2, 0.45, 0.08),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normWood, 0.9, 0.55, 0.04),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_B.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickB, 1.0, 0.55, 0.05),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 1.2, 0.45, 0.08),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 1.2, 0.45, 0.08),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 1.0, 0.55, 0.08),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 1.2, 0.45, 0.08)
       ],
-      boneHouseWall: new THREE.MeshLambertMaterial({
-        map: createTintedTexture("Feature_Stone_B.png", 0xf5f3ea, 0x5a554a, 1.0),
-        dithering: true,
-        side: THREE.DoubleSide
-      }),
-      boneHouseRoof: new THREE.MeshLambertMaterial({
-        map: createTintedTexture("Feature_Stone_B.png", 0xe6e2d3, 0x3d3830, 1.0),
-        dithering: true,
-        side: THREE.DoubleSide
-      }),
-      boneWall: new THREE.MeshLambertMaterial({
-        map: createTintedTexture("Feature_Stone_B.png", 0xf5f3ea, 0x5a554a, 1.0),
-        dithering: true,
-        side: THREE.DoubleSide
-      }),
-      campfireFlame: new THREE.MeshBasicMaterial({
-        color: 0xff8800
-      }),
-      road: new THREE.MeshLambertMaterial({
-        map: createTintedTexture("Feature_Stone_B.png", 0x9b7653, 0x4a3520, 1.0),
-        dithering: true,
-        side: THREE.DoubleSide
-      }),
-      roadSnap: new THREE.MeshLambertMaterial({
-        map: createTintedTexture("Feature_Pebbles.png", 0xd8ba80, 0x6a5024, 1.0),
-        dithering: true,
-        side: THREE.DoubleSide
-      }),
-      waterWellBase: new THREE.MeshLambertMaterial({
-        map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0),
-        dithering: true,
-        side: THREE.DoubleSide
-      }),
-      waterWellWood: new THREE.MeshLambertMaterial({
-        map: createTintedTexture("Feature_Wood.png", 0xd4a373, 0x4a3525, 1.0),
-        dithering: true,
-        side: THREE.DoubleSide
-      }),
-      waterWellRoof: new THREE.MeshLambertMaterial({
-        map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0),
-        dithering: true,
-        side: THREE.DoubleSide
-      }),
-      woodBridge: new THREE.MeshLambertMaterial({
-        map: createTintedTexture("Feature_Wood.png", 0x8b5a2b, 0x3a2214, 1.0),
-        dithering: true,
-        side: THREE.DoubleSide
-      }),
-      stoneBridge: new THREE.MeshLambertMaterial({
-        map: createTintedTexture("Feature_Brick_A.png", 0xc8c8c8, 0x4a4a4a, 1.0),
-        dithering: true,
-        side: THREE.DoubleSide
-      }),
-      waterPlatform: new THREE.MeshLambertMaterial({
-        map: createTintedTexture("Feature_Wood.png", 0x7c4c24, 0x2e1a0e, 1.0),
-        dithering: true,
-        side: THREE.DoubleSide
-      })
-    };
+      boneHouseWall: makeMat(isPersp, { map: createTintedTexture("Feature_Stone_B.png", 0xf5f3ea, 0x5a554a, 1.0), dithering: true, side: THREE.DoubleSide }, normStoneB, 1.0, 0.65, 0.05),
+      boneHouseRoof: makeMat(isPersp, { map: createTintedTexture("Feature_Stone_B.png", 0xe6e2d3, 0x3d3830, 1.0), dithering: true, side: THREE.DoubleSide }, normStoneB, 1.0, 0.65, 0.05),
+      boneWall: makeMat(isPersp, { map: createTintedTexture("Feature_Stone_B.png", 0xf5f3ea, 0x5a554a, 1.0), dithering: true, side: THREE.DoubleSide }, normStoneB, 1.0, 0.65, 0.05),
+      road: makeMat(isPersp, { map: createTintedTexture("Feature_Stone_B.png", 0x9b7653, 0x4a3520, 1.0), dithering: true, side: THREE.DoubleSide }, normStoneB, 0.9, 0.75, 0.05),
+      roadSnap: makeMat(isPersp, { map: createTintedTexture("Feature_Pebbles.png", 0xd8ba80, 0x6a5024, 1.0), dithering: true, side: THREE.DoubleSide }, normSand, 0.9, 0.82, 0.04),
+      waterWellBase: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 1.0, 0.60, 0.05),
+      waterWellWood: makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xd4a373, 0x4a3525, 1.0), dithering: true, side: THREE.DoubleSide }, normWood, 0.9, 0.65, 0.04),
+      waterWellRoof: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 1.2, 0.45, 0.08),
+      woodBridge: makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0x8b5a2b, 0x3a2214, 1.0), dithering: true, side: THREE.DoubleSide }, normWood, 0.9, 0.65, 0.04),
+      stoneBridge: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xc8c8c8, 0x4a4a4a, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 1.0, 0.60, 0.05),
+      waterPlatform: makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0x7c4c24, 0x2e1a0e, 1.0), dithering: true, side: THREE.DoubleSide }, normWood, 0.9, 0.65, 0.04)
+    });
+
+    this.materialsIso = buildDict(false);
+    this.materialsPerspective = buildDict(true);
+    this.materials = Object.assign({}, this.materialsIso);
 
     // Apply Bayer ordered dithering & GPU Wind Vertex sway to foliage
     for (const mat of Object.values(this.materials)) {
@@ -3074,6 +2996,84 @@ export class RCT3DRenderer {
     return this.shadowsEnabled;
   }
 
+  setGraphicOptions(opts) {
+    if (!opts) return;
+    Object.assign(this.graphicOptions, opts);
+    this.syncActiveMaterials(this.isPerspectiveActive());
+  }
+
+  syncActiveMaterials(isPersp = this.isPerspectiveActive()) {
+    const useNormalMaps = isPersp && (this.graphicOptions.normalMaps !== false);
+    const activeDict = useNormalMaps ? this.materialsPerspective : this.materialsIso;
+
+    for (const [k, mat] of Object.entries(activeDict)) {
+      this.materials[k] = mat;
+    }
+
+    if (this.instHouseWalls && activeDict.houseWall) this.instHouseWalls.material = activeDict.houseWall;
+    if (this.instHouseRoofs && activeDict.houseRoof) this.instHouseRoofs.material = activeDict.houseRoof;
+    if (this.instHouseWallVariants) {
+      for (let i = 0; i < this.instHouseWallVariants.length; i++) {
+        if (this.instHouseWallVariants[i] && activeDict.houseWallVariants[i]) {
+          this.instHouseWallVariants[i].material = activeDict.houseWallVariants[i];
+        }
+      }
+    }
+    if (this.instHouseRoofVariants) {
+      for (let i = 0; i < this.instHouseRoofVariants.length; i++) {
+        if (this.instHouseRoofVariants[i] && activeDict.houseRoofVariants[i]) {
+          this.instHouseRoofVariants[i].material = activeDict.houseRoofVariants[i];
+        }
+      }
+    }
+    if (this.instLeaderHouseWallVariants) {
+      for (let i = 0; i < this.instLeaderHouseWallVariants.length; i++) {
+        if (this.instLeaderHouseWallVariants[i] && activeDict.leaderWallVariants[i]) {
+          this.instLeaderHouseWallVariants[i].material = activeDict.leaderWallVariants[i];
+        }
+      }
+    }
+    if (this.instLeaderHouseRoofVariants) {
+      for (let i = 0; i < this.instLeaderHouseRoofVariants.length; i++) {
+        if (this.instLeaderHouseRoofVariants[i] && activeDict.leaderRoofVariants[i]) {
+          this.instLeaderHouseRoofVariants[i].material = activeDict.leaderRoofVariants[i];
+        }
+      }
+    }
+    if (this.instWarehouseWalls) {
+      for (let i = 0; i < this.instWarehouseWalls.length; i++) {
+        if (this.instWarehouseWalls[i] && activeDict.warehouseWalls[i]) {
+          this.instWarehouseWalls[i].material = activeDict.warehouseWalls[i];
+        }
+      }
+    }
+    if (this.instWarehouseRoofs) {
+      for (let i = 0; i < this.instWarehouseRoofs.length; i++) {
+        if (this.instWarehouseRoofs[i] && activeDict.warehouseRoofs[i]) {
+          this.instWarehouseRoofs[i].material = activeDict.warehouseRoofs[i];
+        }
+      }
+    }
+    if (this.instSlaughterhouseWalls) {
+      for (let i = 0; i < this.instSlaughterhouseWalls.length; i++) {
+        if (this.instSlaughterhouseWalls[i] && activeDict.slaughterhouseWalls[i]) {
+          this.instSlaughterhouseWalls[i].material = activeDict.slaughterhouseWalls[i];
+        }
+      }
+    }
+    if (this.instSlaughterhouseRoofs) {
+      for (let i = 0; i < this.instSlaughterhouseRoofs.length; i++) {
+        if (this.instSlaughterhouseRoofs[i] && activeDict.slaughterhouseRoofs[i]) {
+          this.instSlaughterhouseRoofs[i].material = activeDict.slaughterhouseRoofs[i];
+        }
+      }
+    }
+    if (this.instBoneWalls && activeDict.boneWall) this.instBoneWalls.material = activeDict.boneWall;
+
+    // Reset camera tile marker so terrain chunks re-bind with active materials
+    this.lastBuiltCamTileX = -9999;
+  }
+
   toggleFullWorld() {
     this.renderFullWorld = !this.renderFullWorld;
     this.lastBuiltCamTileX = -9999;
@@ -3155,10 +3155,10 @@ export class RCT3DRenderer {
 
   rotatePerspectiveCamera(dYaw, dPitch) {
     if (this.isThirdPersonActive()) {
-      // 3P Orbital Camera: Dragging right orbits camera right, dragging up tilts up
+      // 3P Orbital Camera: Dragging right orbits camera right, dragging down lowers / dragging up raises
       this.fpYaw = (this.fpYaw - dYaw) % (Math.PI * 2);
       if (this.fpYaw < 0) this.fpYaw += Math.PI * 2;
-      this.fpPitch = Math.max(-Math.PI * 0.15, Math.min(Math.PI * 0.45, this.fpPitch - dPitch));
+      this.fpPitch = Math.max(-Math.PI * 0.15, Math.min(Math.PI * 0.45, this.fpPitch + dPitch));
     } else {
       // 1P First Person Camera: Dragging right turns right, dragging up looks up
       this.fpYaw = (this.fpYaw + dYaw) % (Math.PI * 2);
@@ -4262,16 +4262,25 @@ export class RCT3DRenderer {
     if (!this.width || !this.height || !world) return;
     this.currentMap = world.map;
 
+    const isPersp = this.isPerspectiveActive();
+    if (this._lastPerspState !== isPersp) {
+      this._lastPerspState = isPersp;
+      this.syncActiveMaterials(isPersp);
+    }
+
     if (!this.isPaused) {
       this.waterTime += dt * 1.0;
 
       const waterMat = this.materials[TILE_WATER];
-      if (waterMat && waterMat.map) {
-        waterMat.map.offset.x = (this.waterTime * 0.12) % 1;
-        waterMat.map.offset.y = (this.waterTime * 0.08) % 1;
-      }
-      if (waterMat?.userData?.shader) {
-        waterMat.userData.shader.uniforms.uWaterTime.value = this.waterTime;
+      if (waterMat) {
+        if (waterMat.map) {
+          waterMat.map.offset.x = (this.waterTime * 0.12) % 1;
+          waterMat.map.offset.y = (this.waterTime * 0.08) % 1;
+        }
+        if (waterMat.normalMap) {
+          waterMat.normalMap.offset.x = (this.waterTime * 0.09) % 1;
+          waterMat.normalMap.offset.y = (this.waterTime * 0.06) % 1;
+        }
       }
       this.waterGroup.position.y = Math.sin(this.waterTime * 2.8) * 0.035;
 
@@ -4955,26 +4964,30 @@ export class RCT3DRenderer {
           sprite.rotation.y = billboardRotY;
           sprite.rotation.z = Math.PI / 2;
         } else {
-          // Compact 2/3 scale for creatures
-          sprite.scale.set(0.72, 0.72, 0.72);
-          sprite.position.set(e.x, surfaceH, e.y);
+          // Compact scale for creatures with subtle elevation in 1P/3P mode so they don't clip ground
+          const cScale = this.isPerspectiveActive() ? 0.82 : 0.72;
+          const cElev = this.isPerspectiveActive() ? 0.04 : 0.0;
+          sprite.scale.set(cScale, cScale, cScale);
+          sprite.position.set(e.x, surfaceH + cElev, e.y);
           sprite.rotation.y = billboardRotY;
           sprite.rotation.z = 0;
         }
 
         // Dimming in Vision Mode outside current zone
+        const isConsciousCreature = !isItem && !isDoor && !!e.properties?.brain;
         const inCurZone = !knownZones || (Math.floor(e.x / zoneSz) === curVisionZx && Math.floor(e.y / zoneSz) === curVisionZy);
 
         if (e.combatFlash > 0) {
           sprite.material.color.setHex(0xff3333);
         } else if (!inCurZone) {
           sprite.material.color.setHex(0x555555); // Dimmed
+        } else if (this.isPerspectiveActive() && isConsciousCreature) {
+          sprite.material.color.setHex(0xffffff); // Crisp and vibrant in perspective
         } else {
           sprite.material.color.setHex(0xffffff); // Full bright
         }
 
         // --- 3D FLOATING EMOTES & HELD ITEMS / BACKPACKS PER HAND (STRICTLY CONSCIOUS CREATURES) ---
-        const isConsciousCreature = !isItem && !isDoor && !!e.properties?.brain;
         if (isConsciousCreature) {
           const emoteSkin = getCreatureEmoteSkin(e);
           const heldItems = [];
@@ -5467,6 +5480,16 @@ export class RCT3DRenderer {
       this.renderer.render(this.scene, activeCam);
       this.renderer.setRenderTarget(null);
       this.postMaterial.uniforms.tDiffuse.value = this.renderTarget.texture;
+
+      const dofOpt = this.graphicOptions?.dofStrength || "HIGH";
+      let dofVal = 0.0;
+      if (dofOpt === "LOW") dofVal = 0.85;
+      else if (dofOpt === "MED") dofVal = 1.45;
+      else if (dofOpt === "HIGH") dofVal = this.isFirstPersonActive() ? 2.1 : 1.35;
+      this.postMaterial.uniforms.uDofStrength.value = dofVal;
+
+      this.postMaterial.uniforms.uChroma.value = (this.graphicOptions?.chroma !== false) ? 1.0 : 0.0;
+
       this.renderer.render(this.postScene, this.postCamera);
     } else {
       this.renderer.setRenderTarget(null);

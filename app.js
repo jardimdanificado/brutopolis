@@ -2,7 +2,7 @@
 // Brutopolis
 // =============================================================================
 
-const BrutopolisVersion = "0.120.7";
+const BrutopolisVersion = "0.121.3";
 const BrutopolisVersionName = "Rejoice with those who rejoice; mourn with those who mourn.";
 
 // WASM replaced by Pure JS Renderer
@@ -5803,7 +5803,7 @@ function renderMapEditorOverlay() {
 // ---------------------------------------------------------------------------
 
 function renderHoverTooltip() {
-  if (currentMode !== "MAP" || !world) return;
+  if (currentMode !== "MAP" || !world || isFirstPersonMode || isThirdPersonMode) return;
   if (mouseY < 36 || mouseY > CANVAS_HEIGHT - 40) return; // Don't show tooltip when hovering over HUD bars
 
   let hoveredEnt = null;
@@ -6127,6 +6127,12 @@ const gameOptions = {
   shadowQuality: 2048,      // 1024, 2048, 4096
   showBadges: true,
   showClanFlags: true,
+  // 1P / 3P Graphic Settings & Calibration
+  perspectiveNormalMaps: true,
+  perspectiveDofStrength: "HIGH", // "OFF" | "LOW" | "MED" | "HIGH"
+  perspectiveChromaticAberration: true,
+  perspectiveWaterReflections: true,
+  perspectiveFog: "LIGHT" // "OFF" | "LIGHT" | "DENSE"
 };
 
 function loadGameOptions() {
@@ -6154,6 +6160,15 @@ function applyGameOptions() {
   if (rctRenderer) {
     if (rctRenderer.setShadowQuality) rctRenderer.setShadowQuality(gameOptions.shadowQuality);
     if (rctRenderer.setOverheadBadgesVisible) rctRenderer.setOverheadBadgesVisible(gameOptions.showBadges);
+    if (rctRenderer.setGraphicOptions) {
+      rctRenderer.setGraphicOptions({
+        normalMaps: gameOptions.perspectiveNormalMaps,
+        dofStrength: gameOptions.perspectiveDofStrength,
+        chroma: gameOptions.perspectiveChromaticAberration,
+        waterReflections: gameOptions.perspectiveWaterReflections,
+        fog: gameOptions.perspectiveFog
+      });
+    }
   }
 }
 
@@ -6190,12 +6205,13 @@ function renderOptionsModal() {
   const tabY = my + 30;
   const tabs = [
     { id: "OPTIMIZATION", label: "OPTIMIZATION" },
-    { id: "GRAPHICS", label: "GRAPHICS & 3D" },
+    { id: "GRAPHICS", label: "GRAPHICS" },
+    { id: "PERSPECTIVE", label: "1P/3P EFFECTS" },
     { id: "AUDIO", label: "AUDIO" }
   ];
   for (const t of tabs) {
     const isSel = optionsTab === t.id;
-    const tw = isMobile ? 88 : 130;
+    const tw = isMobile ? 70 : 110;
     drawNESButton(tabX, tabY, tw, 22, t.label, isSel, false);
     const tid = t.id;
     registerClickableRegion(tabX, tabY, tw, 22, () => {
@@ -6221,14 +6237,14 @@ function renderOptionsModal() {
     let bx = mx + 16;
     for (const opt of worldLimits) {
       const isSel = gameOptions.maxWorldEvents === opt.val;
-      const bw = isMobile ? 54 : 70;
+      const bw = isMobile ? 48 : 68;
       drawNESButton(bx, curY + 10, bw, 22, opt.label, isSel, false);
       const v = opt.val;
       registerClickableRegion(bx, curY + 10, bw, 22, () => {
         gameOptions.maxWorldEvents = v;
         saveGameOptions();
       });
-      bx += bw + 4;
+      bx += bw + 6;
     }
     curY += 40;
 
@@ -6246,14 +6262,14 @@ function renderOptionsModal() {
     bx = mx + 16;
     for (const opt of creatureLimits) {
       const isSel = gameOptions.maxCreatureEvents === opt.val;
-      const bw = isMobile ? 54 : 70;
+      const bw = isMobile ? 48 : 68;
       drawNESButton(bx, curY + 10, bw, 22, opt.label, isSel, false);
       const v = opt.val;
       registerClickableRegion(bx, curY + 10, bw, 22, () => {
         gameOptions.maxCreatureEvents = v;
         saveGameOptions();
       });
-      bx += bw + 4;
+      bx += bw + 6;
     }
     curY += 40;
 
@@ -6271,7 +6287,7 @@ function renderOptionsModal() {
     bx = mx + 16;
     for (const opt of distOptions) {
       const isSel = gameOptions.max3DRenderDistance === opt.val;
-      const bw = isMobile ? 54 : 70;
+      const bw = isMobile ? 48 : 68;
       drawNESButton(bx, curY + 10, bw, 22, opt.label, isSel, false);
       const v = opt.val;
       registerClickableRegion(bx, curY + 10, bw, 22, () => {
@@ -6286,7 +6302,7 @@ function renderOptionsModal() {
         }
         saveGameOptions();
       });
-      bx += bw + 4;
+      bx += bw + 6;
     }
     curY += 40;
 
@@ -6403,6 +6419,109 @@ function renderOptionsModal() {
       applyGameOptions();
       saveGameOptions();
     });
+  } else if (optionsTab === "PERSPECTIVE") {
+    // 1. Surface Normal Maps (Pixel-Derived Relief for Tiles & Buildings)
+    const normOn = gameOptions.perspectiveNormalMaps !== false;
+    drawText8x8(`SURFACE NORMAL MAPS (1P/3P): [ ${normOn ? "ON" : "OFF"} ]`, mx + 16, curY, "#3cbcfc", 1);
+    let bx = mx + 16;
+    drawNESButton(bx, curY + 10, 80, 22, "ON", normOn, false);
+    registerClickableRegion(bx, curY + 10, 80, 22, () => {
+      gameOptions.perspectiveNormalMaps = true;
+      applyGameOptions();
+      saveGameOptions();
+    });
+    bx += 88;
+    drawNESButton(bx, curY + 10, 80, 22, "OFF", !normOn, false);
+    registerClickableRegion(bx, curY + 10, 80, 22, () => {
+      gameOptions.perspectiveNormalMaps = false;
+      applyGameOptions();
+      saveGameOptions();
+    });
+    curY += 40;
+
+    // 2. Depth of Field (Bokeh Blur Strength)
+    const dofVal = gameOptions.perspectiveDofStrength || "HIGH";
+    drawText8x8(`DEPTH OF FIELD (1P/3P BOKEH): [ ${dofVal} ]`, mx + 16, curY, "#3cbcfc", 1);
+    const dofOptions = [
+      { val: "OFF", label: "OFF" },
+      { val: "LOW", label: "LOW" },
+      { val: "MED", label: "MED" },
+      { val: "HIGH", label: "HIGH" }
+    ];
+    bx = mx + 16;
+    for (const opt of dofOptions) {
+      const isSel = dofVal === opt.val;
+      const bw = isMobile ? 54 : 70;
+      drawNESButton(bx, curY + 10, bw, 22, opt.label, isSel, false);
+      const v = opt.val;
+      registerClickableRegion(bx, curY + 10, bw, 22, () => {
+        gameOptions.perspectiveDofStrength = v;
+        applyGameOptions();
+        saveGameOptions();
+      });
+      bx += bw + 6;
+    }
+    curY += 40;
+
+    // 3. Chromatic Aberration
+    const chromaOn = gameOptions.perspectiveChromaticAberration !== false;
+    drawText8x8(`CHROMATIC ABERRATION (1P/3P): [ ${chromaOn ? "ON" : "OFF"} ]`, mx + 16, curY, "#3cbcfc", 1);
+    bx = mx + 16;
+    drawNESButton(bx, curY + 10, 80, 22, "ON", chromaOn, false);
+    registerClickableRegion(bx, curY + 10, 80, 22, () => {
+      gameOptions.perspectiveChromaticAberration = true;
+      applyGameOptions();
+      saveGameOptions();
+    });
+    bx += 88;
+    drawNESButton(bx, curY + 10, 80, 22, "OFF", !chromaOn, false);
+    registerClickableRegion(bx, curY + 10, 80, 22, () => {
+      gameOptions.perspectiveChromaticAberration = false;
+      applyGameOptions();
+      saveGameOptions();
+    });
+    curY += 40;
+
+    // 4. Water Ripple Reflections & Atmospheric Fog
+    const waterOn = gameOptions.perspectiveWaterReflections !== false;
+    drawText8x8(`WATER RIPPLES & SPECULAR: [ ${waterOn ? "ON" : "OFF"} ]`, mx + 16, curY, "#3cbcfc", 1);
+    bx = mx + 16;
+    drawNESButton(bx, curY + 10, 80, 22, "ON", waterOn, false);
+    registerClickableRegion(bx, curY + 10, 80, 22, () => {
+      gameOptions.perspectiveWaterReflections = true;
+      applyGameOptions();
+      saveGameOptions();
+    });
+    bx += 88;
+    drawNESButton(bx, curY + 10, 80, 22, "OFF", !waterOn, false);
+    registerClickableRegion(bx, curY + 10, 80, 22, () => {
+      gameOptions.perspectiveWaterReflections = false;
+      applyGameOptions();
+      saveGameOptions();
+    });
+    curY += 40;
+
+    // 5. Atmospheric Horizon Fog
+    const fogVal = gameOptions.perspectiveFog || "LIGHT";
+    drawText8x8(`HORIZON ATMOSPHERIC FOG: [ ${fogVal} ]`, mx + 16, curY, "#3cbcfc", 1);
+    const fogOptions = [
+      { val: "OFF", label: "OFF" },
+      { val: "LIGHT", label: "LIGHT" },
+      { val: "DENSE", label: "DENSE" }
+    ];
+    bx = mx + 16;
+    for (const opt of fogOptions) {
+      const isSel = fogVal === opt.val;
+      const bw = isMobile ? 64 : 80;
+      drawNESButton(bx, curY + 10, bw, 22, opt.label, isSel, false);
+      const v = opt.val;
+      registerClickableRegion(bx, curY + 10, bw, 22, () => {
+        gameOptions.perspectiveFog = v;
+        applyGameOptions();
+        saveGameOptions();
+      });
+      bx += bw + 6;
+    }
   } else if (optionsTab === "AUDIO") {
     // 1. Audio & Sound FX
     drawText8x8(`AUDIO & SOUND FX: [ ${isAudioMuted ? "MUTED" : "ENABLED"} ]`, mx + 16, curY, "#3cbcfc", 1);
