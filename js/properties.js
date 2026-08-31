@@ -6765,7 +6765,8 @@ let freeArm = null; for (const k in ent.properties) { const p = ent.properties[k
                 style = "mixed";
               }
 
-              const newHouse = bp.isLeaderHouse
+              const isLeaderPlot = bp.isLeaderHouse || bp.type === "leader_house";
+              const newHouse = isLeaderPlot
                 ? createLeaderHouseEntity(bp.x, bp.y, group, houseOwnerId, ownerName)
                 : createHouseEntity(bp.x, bp.y, style, houseOwnerId, ownerName, "wood");
               if (newHouse) {
@@ -8855,7 +8856,7 @@ export function createLocomotionProp() {
                 const weightDist = isLeaderPlot ? dist * 0.02 : (isOwnHouse ? dist * 0.05 : dist * 0.25);
                 if (weightDist < minBuildDist) {
                   minBuildDist = weightDist;
-                  targetBuild = { x: bp.x, y: bp.y, type: bp.type };
+                  targetBuild = { x: bp.x, y: bp.y, type: bp.type, isLeaderHouse: isLeaderPlot, footprintW: isLeaderPlot ? 3 : (bp.footprintW || 1), footprintH: isLeaderPlot ? 3 : (bp.footprintH || 1), ownerId: bp.ownerId };
                 }
               }
             } else if (bp.type === "warehouse") {
@@ -9043,7 +9044,7 @@ export function createLocomotionProp() {
           }
 
           if (targetBuild) {
-            ent._buildTarget = { x: targetBuild.x, y: targetBuild.y, type: targetBuild.type, ownerId: targetBuild.ownerId };
+            ent._buildTarget = { x: targetBuild.x, y: targetBuild.y, type: targetBuild.type, isLeaderHouse: targetBuild.isLeaderHouse, footprintW: targetBuild.footprintW, footprintH: targetBuild.footprintH, ownerId: targetBuild.ownerId };
             const buildChebDist = Math.max(Math.abs(targetBuild.x - ent.x), Math.abs(targetBuild.y - ent.y));
             if (buildChebDist <= 1) {
               chosenDx = 0;

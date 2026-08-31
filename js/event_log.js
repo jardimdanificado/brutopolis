@@ -498,31 +498,44 @@ export function getFullHistoryForGroup(group) {
  * - Detailed strikes, hit body parts, amputations
  * - Direct & delayed fatal casualties (died in battle or later from wounds)
  */
+let _lastClusteredEventCount = -1;
+let _cachedGlobalBattles = [];
+
 export function getClusteredBattles({ entityId = null, groupId = null, limit = 50 } = {}) {
-  const combatEvents = allEvents.filter(ev => {
-    return ev.type === "ATTACK" || ev.type === "AMPUTATION" || (ev.type === "DEATH" && (ev.metadata?.attackerId || ev.metadata?.fatalAttackerId || ev.metadata?.causedByBattleId));
-  }).sort((a, b) => a.tick - b.tick);
+  let allClustered = _cachedGlobalBattles;
+  if (_lastClusteredEventCount !== allEvents.length) {
+    _lastClusteredEventCount = allEvents.length;
+    const combatEvents = allEvents.filter(ev => {
+      return ev.type === "ATTACK" || ev.type === "AMPUTATION" || (ev.type === "DEATH" && (ev.metadata?.attackerId || ev.metadata?.fatalAttackerId || ev.metadata?.causedByBattleId));
+    }).sort((a, b) => a.tick - b.tick);
 
-  if (combatEvents.length === 0) return [];
-
-  const clusters = [];
-  let curCluster = null;
-
-  for (const ev of combatEvents) {
-    if (!curCluster) {
-      curCluster = [ev];
-      continue;
-    }
-
-    const prev = curCluster[curCluster.length - 1];
-    const timeDelta = Math.abs(ev.tick - prev.tick);
-    const distDelta = Math.hypot(ev.location.x - prev.location.x, ev.location.y - prev.location.y);
-
-    // Group events within 360 ticks (~6 seconds of combat) and within 20 tiles distance
-    if (timeDelta <= 360 && distDelta <= 20) {
-      curCluster.push(ev);
+    if (combatEvents.length === 0) {
+      _cachedGlobalBattles = [];
     } else {
-      clusters.push(curCluster);
+      const clusters = [];
+      let curCluster = null;
+
+      for (const ev of combatEvents) {
+        if (!curCluster) {
+          curCluster = [ev];
+          continue;
+        }
+
+        const prev = curCluster[curCluster.length - 1];
+        const timeDelta = Math.abs(ev.tick - prev.tick);
+        const distDelta = Math.hypot(ev.location.x - prev.location.x, ev.location.y - prev.location.y);
+
+        // Group events within 360 ticks (~6 seconds of combat) and within 20 tiles distance
+        if (timeDelta <= 360 && distDelta <= 20) {
+          curCluster.push(ev);
+        } else {
+          clusters.push(curCluster);
+          curCluster = [ev];
+        }
+      }
+      if (curCluster && curCluster.length > 0) {
+        clusters.push(curCluster);
+      }
       curCluster = [ev];
     }
   }
@@ -667,8 +680,10 @@ export function getClusteredBattles({ entityId = null, groupId = null, limit = 5
 
     battles.push(battleRecord);
   }
+  _cachedGlobalBattles = battles;
+  }
 
-  let filtered = battles;
+  let filtered = _cachedGlobalBattles;
   if (entityId !== null && entityId !== undefined) {
     filtered = filtered.filter(b => b.combatants.some(c => c.id === entityId));
   }

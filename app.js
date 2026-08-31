@@ -4671,13 +4671,6 @@ function renderBattleDetailView(mx, my, mw, mh, battle) {
   drawText8x8(`CAUSE / TRIGGER: ${battle.triggerCause}`, mx + 26, my + 84, "#ffd700", 1);
   drawText8x8(`TOTAL CASUALTIES: ${battle.amputations.length} AMPUTATIONS, ${battle.fatalities.length} FATALITIES • ${Math.round(battle.totalDamage)} TOTAL DAMAGE DEALT`, mx + 26, my + 102, "#f87858", 1);
 
-  // Mouse scroll logic for battle detail
-  if (mouseScrollY !== 0) {
-    modalScroll += Math.sign(mouseScrollY);
-    if (modalScroll < 0) modalScroll = 0;
-    mouseScrollY = 0;
-  }
-
   // Combatants Roster & Strikes Timeline Split
   const splitY = my + 136;
   const splitH = mh - 190;

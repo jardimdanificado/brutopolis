@@ -2839,9 +2839,9 @@ export class RCT3DRenderer {
         void main() {
           if (uFade <= 0.01) discard;
 
-          vec2 uv = vUv * 6.0 + vec2(uTime * 0.002, uTime * 0.001);
+          vec2 uv = vUv * 14.0 + vec2(uTime * 0.002, uTime * 0.001);
           float n = fbm(uv);
-          float density = smoothstep(0.48, 0.75, n);
+          float density = smoothstep(0.50, 0.78, n);
 
           ivec2 pixelCoord = ivec2(mod(gl_FragCoord.xy, 4.0));
           float ditherThreshold = bayerMatrix[pixelCoord.x][pixelCoord.y];
@@ -2860,7 +2860,7 @@ export class RCT3DRenderer {
       side: THREE.DoubleSide
     });
     this.cloudMesh = new THREE.Mesh(cloudGeo, this.cloudMat);
-    this.cloudMesh.position.set(512, 18.0, 512);
+    this.cloudMesh.position.set(512, 55.0, 512);
     this.cloudMesh.renderOrder = 500;
     this.cloudMesh.frustumCulled = false;
     this.scene.add(this.cloudMesh);
