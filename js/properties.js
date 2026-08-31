@@ -1040,7 +1040,10 @@ export function createArtisanHutEntity(x, y, group = null) {
         stoneCost: 4,
         woodCurrent: 0,
         stoneCurrent: 0,
-        isCompleted: false
+        isCompleted: false,
+        footprint: "2x2",
+        footprintW: 2,
+        footprintH: 2
       },
       structure: { condition: 12000, maxCondition: 12000, defense: 90 },
       render: { skin: "Feature_Cauldron.png", color: group?.color !== undefined ? group.color : 0xffd4a373, backcolor: 0xff5c4033 },
@@ -11893,20 +11896,6 @@ export function createEmbarkParty(centerX, centerY, world, entities, customOpts 
   // Spawn Clan Plaza Leader Palace & Central Hearth directly on embark for every clan!
   if (entities) {
     const plaza = clan._plaza || initClanPlaza(clan);
-    if (plaza?.leader_house) {
-      const lhX = plaza.leader_house.x;
-      const lhY = plaza.leader_house.y;
-      const leaderTower = createLeaderHouseEntity(lhX, lhY, clan, founder.id, founder.properties.name);
-      if (leaderTower) {
-        leaderTower.properties.group = clan;
-        leaderTower.properties.groupId = clan.id;
-        leaderTower.properties.house.isCompleted = true;
-        leaderTower.properties.house.woodCurrent = leaderTower.properties.house.woodCost;
-        leaderTower.properties.house.stoneCurrent = leaderTower.properties.house.stoneCost;
-        entities.push(leaderTower);
-        registerEntitySpatial(leaderTower);
-      }
-    }
 
     if (plaza?.campfire) {
       const cf = createCampfireEntity(plaza.campfire.x, plaza.campfire.y);

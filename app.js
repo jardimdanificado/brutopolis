@@ -1932,37 +1932,8 @@ window.addEventListener("keyup", (e) => {
 });
 
 function handleCameraKeys(dt) {
-  if (currentMode !== "MAP") return;
-  const activeRenderer = (is3DMode && rctRenderer) ? rctRenderer : renderer;
-  if (!activeRenderer) return;
-
-  let cx = activeRenderer.getCameraX();
-  let cy = activeRenderer.getCameraY();
-  let zoom = activeRenderer.getCameraZoom();
-
-  const speed = (200.0 / zoom) * dt;
-  let mx = 0, my = 0;
-
-  if (keysDown.has("ArrowUp") || keysDown.has("KeyW")) my -= speed;
-  if (keysDown.has("ArrowDown") || keysDown.has("KeyS")) my += speed;
-  if (keysDown.has("ArrowLeft") || keysDown.has("KeyA")) mx -= speed;
-  if (keysDown.has("ArrowRight") || keysDown.has("KeyD")) mx += speed;
-
-  if (mx !== 0 || my !== 0) {
-    if (is3DMode) {
-      const rot = Math.PI / 4;
-      const moveX = mx * Math.cos(rot) - my * Math.sin(rot);
-      const moveY = mx * Math.sin(rot) + my * Math.cos(rot);
-      cx += moveX;
-      cy += moveY;
-    } else {
-      cx += mx;
-      cy += my;
-    }
-    activeRenderer.setCamera(cx, cy, zoom);
-    if (renderer) renderer.setCamera(cx, cy, zoom);
-    if (rctRenderer) rctRenderer.setCamera(cx, cy, zoom);
-  }
+  // Disabled by user request: "setas e wasd estão completamente descalibrados, deixe amovimentação apenas via mouse/touch mesmo."
+  return;
 }
 
 // ---------------------------------------------------------------------------
@@ -2386,10 +2357,85 @@ function renderFamilyTab(mx, my, mw, mh, target) {
   const contentH = (my + mh - 12) - contentY;
   drawNESBox(mx + 10, contentY, mw - 20, contentH);
 
-  // Collect all family sections into a structured list
   const sections = [];
 
-  // Section 1: Grandparents (Ancestors)
+  const currentPartner = treeData.partner;
+
+  // 1. Marriage / Partnership
+  const partnerList = [];
+  if (currentPartner) {
+    partnerList.push({ role: "CURRENT PARTNER / SPOUSE", ent: currentPartner });
+  }
+  if (partnerList.length > 0) {
+    sections.push({ title: "MARRIAGE & PARTNERSHIP", members: partnerList });
+  }
+
+  // 2. Extramarital Affairs / Lovers
+  const affairs = [];
+  const knownAffs = Object.entries(target.properties?.brain?.affinities || {});
+  for (const [oIdStr, val] of knownAffs) {
+    const oId = parseInt(oIdStr, 10);
+    if (currentPartner && oId === currentPartner.id) continue;
+    if (val >= 60 && target.properties?.monogamy) {
+      const oEnt = entityRegistry.get(oId);
+      if (oEnt && !oEnt.destroyed) {
+        affairs.push({ role: "LOVER / AFFAIR", ent: oEnt });
+      }
+    }
+  }
+  if (affairs.length > 0) {
+    sections.push({ title: "EXTRAMARITAL AFFAIRS & LOVERS", members: affairs });
+  }
+
+  // 3. Ex-Partners / Separations
+  const exPartners = [];
+  if (exPartners.length > 0) {
+    sections.push({ title: "EX-PARTNERS & SEPARATIONS", members: exPartners });
+  }
+
+  // 4. Children (Legitimate vs Bastards)
+  const legitimate = [];
+  const bastards = [];
+  for (const child of treeData.children) {
+    const fId = child.properties?.life?.fatherId;
+    const mId = child.properties?.life?.motherId;
+    
+    if (currentPartner) {
+       if (fId === currentPartner.id || mId === currentPartner.id) {
+         legitimate.push({ role: "LEGITIMATE CHILD", ent: child });
+       } else {
+         bastards.push({ role: "BASTARD CHILD", ent: child });
+       }
+    } else {
+       legitimate.push({ role: "CHILD", ent: child });
+    }
+  }
+  
+  if (legitimate.length > 0) {
+    sections.push({ title: `LEGITIMATE OFFSPRING (${legitimate.length})`, members: legitimate });
+  }
+  if (bastards.length > 0) {
+    sections.push({ title: `BASTARD CHILDREN (${bastards.length})`, members: bastards });
+  }
+
+  // 5. Parents
+  const parents = [];
+  if (treeData.father) parents.push({ role: "FATHER", ent: treeData.father });
+  if (treeData.mother) parents.push({ role: "MOTHER", ent: treeData.mother });
+  if (parents.length > 0) {
+    sections.push({ title: "PARENTS (GENERATION -1)", members: parents });
+  }
+
+  // 6. Siblings
+  const siblings = [];
+  for (const sib of treeData.siblings) {
+    siblings.push({ role: "SIBLING", ent: sib });
+  }
+  if (siblings.length > 0) {
+    sections.push({ title: `SIBLINGS (${siblings.length})`, members: siblings });
+  }
+
+  // 7. Grandparents
   const grandparents = [];
   if (treeData.patGrandpa) grandparents.push({ role: "PATERNAL GRANDFATHER", ent: treeData.patGrandpa });
   if (treeData.patGrandma) grandparents.push({ role: "PATERNAL GRANDMOTHER", ent: treeData.patGrandma });
@@ -2399,33 +2445,10 @@ function renderFamilyTab(mx, my, mw, mh, target) {
     sections.push({ title: "GRANDPARENTS (ANCESTORS - GEN -2)", members: grandparents });
   }
 
-  // Section 2: Parents
-  const parents = [];
-  if (treeData.father) parents.push({ role: "FATHER", ent: treeData.father });
-  if (treeData.mother) parents.push({ role: "MOTHER", ent: treeData.mother });
-  if (parents.length > 0) {
-    sections.push({ title: "PARENTS (GENERATION -1)", members: parents });
-  }
-
-  // Section 3: Current Generation (Subject, Partner, Siblings)
-  const currentGen = [];
-  currentGen.push({ role: "SUBJECT (SELECTED)", ent: treeData.target, isSubject: true });
-  if (treeData.partner) currentGen.push({ role: "SPOUSE / PARTNER", ent: treeData.partner });
-  for (const sib of treeData.siblings) {
-    currentGen.push({ role: "SIBLING", ent: sib });
-  }
-  sections.push({ title: `CURRENT GENERATION (GEN 0 - ${currentGen.length} MEMBERS)`, members: currentGen });
-
-  // Section 4: Children / Offspring
-  if (treeData.children.length > 0) {
-    const childrenEntries = treeData.children.map(c => ({ role: "CHILD", ent: c }));
-    sections.push({ title: `CHILDREN & OFFSPRING (GEN +1 - ${treeData.children.length} OFFSPRING)`, members: childrenEntries });
-  }
-
-  // Section 5: Grandchildren
+  // 8. Grandchildren
   if (treeData.grandchildren.length > 0) {
-    const gEntries = treeData.grandchildren.map(gc => ({ role: `GRANDCHILD (OF ${gc.parentName.toUpperCase()})`, ent: gc.entity }));
-    sections.push({ title: `GRANDCHILDREN (GEN +2 - ${treeData.grandchildren.length} GRANDCHILDREN)`, members: gEntries });
+    const gEntries = treeData.grandchildren.map(gc => ({ role: `GRANDCHILD`, ent: gc.entity }));
+    sections.push({ title: `GRANDCHILDREN (${treeData.grandchildren.length})`, members: gEntries });
   }
 
   // Flatten for scrolling
@@ -4503,18 +4526,28 @@ function renderBattleDetailView(mx, my, mw, mh, battle) {
   drawText8x8(`CAUSE / TRIGGER: ${battle.triggerCause}`, mx + 26, my + 84, "#ffd700", 1);
   drawText8x8(`TOTAL CASUALTIES: ${battle.amputations.length} AMPUTATIONS, ${battle.fatalities.length} FATALITIES • ${Math.round(battle.totalDamage)} TOTAL DAMAGE DEALT`, mx + 26, my + 102, "#f87858", 1);
 
+  // Mouse scroll logic for battle detail
+  if (mouseScrollY !== 0) {
+    modalScroll += Math.sign(mouseScrollY);
+    if (modalScroll < 0) modalScroll = 0;
+    mouseScrollY = 0;
+  }
+
   // Combatants Roster & Strikes Timeline Split
   const splitY = my + 136;
   const splitH = mh - 190;
   const halfW = Math.floor((mw - 34) / 2);
+  const maxRows = Math.floor((splitH - 40) / 22);
 
   // Left Box: Combatants Roster
   drawNESBox(mx + 14, splitY, halfW, splitH);
   drawText8x8(`COMBATANTS PARTICIPATION (${battle.combatants.length}):`, mx + 24, splitY + 10, "#ffd700", 1);
 
   let cY = splitY + 28;
-  for (const c of battle.combatants) {
+  const cStart = Math.min(modalScroll, Math.max(0, battle.combatants.length - maxRows));
+  for (let i = cStart; i < battle.combatants.length; i++) {
     if (cY > splitY + splitH - 24) break;
+    const c = battle.combatants[i];
     const isAlive = !c.isDead;
     const statusBadge = isAlive ? "[ALIVE]" : "[DEAD]";
     const statusCol = isAlive ? "#58d854" : "#f83800";
@@ -4539,8 +4572,10 @@ function renderBattleDetailView(mx, my, mw, mh, battle) {
   drawText8x8(`BATTLE TIMELINE (${battle.events.length} STRIKES/ACTIONS):`, mx + 24 + halfW + 6, splitY + 10, "#ffd700", 1);
 
   let eY = splitY + 28;
-  for (const ev of battle.events) {
+  const eStart = Math.min(modalScroll, Math.max(0, battle.events.length - maxRows));
+  for (let i = eStart; i < battle.events.length; i++) {
     if (eY > splitY + splitH - 24) break;
+    const ev = battle.events[i];
     const typeCol = ev.type === "DEATH" ? "#f83800" : ev.type === "AMPUTATION" ? "#e40058" : "#f8b800";
     drawText8x8(`[${ev.type}]`, mx + 24 + halfW + 6, eY + 4, typeCol, 1);
 
@@ -4548,8 +4583,8 @@ function renderBattleDetailView(mx, my, mw, mh, battle) {
     drawText8x8(desc, mx + 115 + halfW + 6, eY + 4, "#ffffff", 1);
 
     const curEv = ev;
-    drawNESButton(mx + mw - 55, eY + 1, 36, 18, "LOG", false, false);
-    registerClickableRegion(mx + mw - 55, eY + 1, 36, 18, () => {
+    drawNESButton(mx + halfW + halfW - 45, eY + 1, 36, 18, "LOG", false, false);
+    registerClickableRegion(mx + halfW + halfW - 45, eY + 1, 36, 18, () => {
       inspectingLogEvent = curEv;
     });
 
@@ -5515,10 +5550,9 @@ function renderOptionsModal() {
     const curFpsLbl = gameOptions.targetFps === 0 ? "UNLIMITED" : `${gameOptions.targetFps} FPS`;
     drawText8x8(`TARGET FRAMERATE (FPS CAP): [ ${curFpsLbl} ]`, mx + 16, curY, "#3cbcfc", 1);
     const fpsOptions = [
+      { val: 15, label: "15 FPS" },
       { val: 30, label: "30 FPS" },
-      { val: 60, label: "60 FPS" },
-      { val: 120, label: "120 FPS" },
-      { val: 0, label: "MAX" }
+      { val: 60, label: "60 FPS" }
     ];
     bx = mx + 16;
     for (const opt of fpsOptions) {
@@ -6101,31 +6135,35 @@ function frame(time) {
       renderOptionsModal();
     } else {
       if (currentMode !== "MAP") {
-        // Full-screen modal rendering
+        if (currentMode === "INSPECT") renderDossierModal();
+        else if (currentMode === "ENTITIES") renderEntitiesModal();
+        else if (currentMode === "GROUPS") renderGroupsModal();
+        else if (currentMode === "LOGS") renderLogsModal();
+        else if (currentMode === "GENERATOR") renderGeneratorModal();
+        else if (currentMode === "OPTIONS") renderOptionsModal();
+
+        // Full-screen modal overlays (drawn in sequence to allow stacking)
         if (inspectingLogEvent) {
           const mx = 30;
           const my = 36;
           const mw = CANVAS_WIDTH - 60;
           const mh = CANVAS_HEIGHT - 72;
           renderLogDetailView(mx, my, mw, mh, inspectingLogEvent);
-        } else if (inspectingBattle) {
+        }
+        if (inspectingBattle) {
           const mx = 30;
           const my = 36;
           const mw = CANVAS_WIDTH - 60;
           const mh = CANVAS_HEIGHT - 72;
           renderBattleDetailView(mx, my, mw, mh, inspectingBattle);
-        } else if (inspectingRelationship) {
+        }
+        if (inspectingRelationship) {
           const mx = 30;
           const my = 36;
           const mw = CANVAS_WIDTH - 60;
           const mh = CANVAS_HEIGHT - 72;
           renderRelationshipModal(mx, my, mw, mh, inspectingRelationship);
-        } else if (currentMode === "INSPECT") renderDossierModal();
-        else if (currentMode === "ENTITIES") renderEntitiesModal();
-        else if (currentMode === "GROUPS") renderGroupsModal();
-        else if (currentMode === "LOGS") renderLogsModal();
-        else if (currentMode === "GENERATOR") renderGeneratorModal();
-        else if (currentMode === "OPTIONS") renderOptionsModal();
+        }
       } else {
         renderCreatureVisionOverlay();
         renderTerritoryOverlay();
