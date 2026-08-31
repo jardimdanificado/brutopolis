@@ -343,11 +343,11 @@ export function applyWindFoliageShader(mat, deformScale = 0.20) {
 }
 
 // ---------------------------------------------------------------------------
-// 3D Procedural Geometries (Saguaro Cactus, Natural Grass, Textured Houses)
+// 3D Procedural Geometries (Saguaro Cactus, Natural Grass, Houses)
 // ---------------------------------------------------------------------------
 
 function mergeBufferGeometries(geometries) {
-  const nonIndexed = geometries.map(g => g.index ? g.toNonIndexed() : g);
+  const nonIndexed = geometries.map(g => (g && g.geo ? g.geo : g)).map(g => (g.index ? g.toNonIndexed() : g));
 
   let totalPos = 0;
   let totalUv = 0;
@@ -376,7 +376,6 @@ function mergeBufferGeometries(geometries) {
         uvArr.set(u, uvOffset);
         uvOffset += u.length;
       } else {
-        // Fallback default UVs
         const vertCount = p.length / 3;
         for (let v = 0; v < vertCount; v++) {
           uvArr[uvOffset++] = (v % 2);
@@ -639,25 +638,10 @@ function createCleanPitchedRoof(w, d, h) {
 function createWoodCabinWallGeo() {
   const parts = [];
   const cx = 1.0, cz = 0.5;
-  // Plinth: Rustic stone foundation plinth
   const plinth = new THREE.BoxGeometry(1.90, 0.20, 0.90); plinth.translate(cx, 0.10, cz); parts.push(plinth);
-
-  // 1st Floor: Log timber walls (Height 1.10)
-  const f1 = new THREE.BoxGeometry(1.85, 1.10, 0.85); f1.translate(cx, 0.20 + 0.55, cz); parts.push(f1);
-  // Front Entrance Door & Lintel
-  const door = new THREE.BoxGeometry(0.35, 0.75, 0.08); door.translate(cx - 0.35, 0.20 + 0.375, cz + 0.44); parts.push(door);
-  const lintel = new THREE.BoxGeometry(0.42, 0.10, 0.10); lintel.translate(cx - 0.35, 0.20 + 0.78, cz + 0.44); parts.push(lintel);
-  // Framed Window with Sill
-  const sill = new THREE.BoxGeometry(0.38, 0.08, 0.10); sill.translate(cx + 0.35, 0.20 + 0.40, cz + 0.44); parts.push(sill);
-  const win = new THREE.BoxGeometry(0.32, 0.35, 0.06); win.translate(cx + 0.35, 0.20 + 0.60, cz + 0.44); parts.push(win);
-
-  // 2nd Floor: Overhanging Loft with Balcony Railing (Height 1.0)
-  const f2 = new THREE.BoxGeometry(1.90, 1.00, 0.90); f2.translate(cx, 1.30 + 0.50, cz); parts.push(f2);
-  const balustrade = new THREE.BoxGeometry(1.90, 0.30, 0.06); balustrade.translate(cx, 1.30 + 0.15, cz + 0.46); parts.push(balustrade);
-
-  // Stone Hearth Masonry Chimney
+  const f1 = new THREE.BoxGeometry(1.85, 1.10, 0.85); f1.translate(cx, 0.75, cz); parts.push(f1);
+  const f2 = new THREE.BoxGeometry(1.90, 1.00, 0.90); f2.translate(cx, 1.80, cz); parts.push(f2);
   const chimney = new THREE.BoxGeometry(0.35, 2.80, 0.35); chimney.translate(cx + 0.75, 1.40, cz - 0.25); parts.push(chimney);
-
   return mergeBufferGeometries(parts);
 }
 function createWoodCabinRoofGeo() {
@@ -670,22 +654,9 @@ function createWoodCabinRoofGeo() {
 function createStoneCottageWallGeo() {
   const parts = [];
   const cx = 1.0, cz = 1.0;
-  // Foundation Stone Plinth
   const plinth = new THREE.BoxGeometry(1.90, 0.22, 1.90); plinth.translate(cx, 0.11, cz); parts.push(plinth);
-
-  // 1st Floor: Ground Chiseled Stone Base (Height 1.10)
-  const f1 = new THREE.BoxGeometry(1.85, 1.10, 1.85); f1.translate(cx, 0.22 + 0.55, cz); parts.push(f1);
-  // Arched Stone Entrance with Keystone
-  const door = new THREE.BoxGeometry(0.38, 0.75, 0.08); door.translate(cx, 0.22 + 0.375, cz + 0.94); parts.push(door);
-  const arch = new THREE.BoxGeometry(0.50, 0.12, 0.10); arch.translate(cx, 0.22 + 0.80, cz + 0.94); parts.push(arch);
-
-  // 2nd Floor: Upper Stone Apartment (Height 1.0)
-  const f2 = new THREE.BoxGeometry(1.80, 1.00, 1.80); f2.translate(cx, 1.32 + 0.50, cz); parts.push(f2);
-  // Windows with Chiseled Sills
-  const sill1 = new THREE.BoxGeometry(0.36, 0.08, 0.10); sill1.translate(cx - 0.45, 1.32 + 0.40, cz + 0.91); parts.push(sill1);
-  const sill2 = new THREE.BoxGeometry(0.36, 0.08, 0.10); sill2.translate(cx + 0.45, 1.32 + 0.40, cz + 0.91); parts.push(sill2);
-
-  // Ashlar Hearth Chimney
+  const f1 = new THREE.BoxGeometry(1.85, 1.10, 1.85); f1.translate(cx, 0.77, cz); parts.push(f1);
+  const f2 = new THREE.BoxGeometry(1.80, 1.00, 1.80); f2.translate(cx, 1.82, cz); parts.push(f2);
   const chimney = new THREE.BoxGeometry(0.40, 2.90, 0.40); chimney.translate(cx - 0.70, 1.45, cz + 0.65); parts.push(chimney);
   return mergeBufferGeometries(parts);
 }
@@ -699,43 +670,25 @@ function createStoneCottageRoofGeo() {
 function createThatchedHutWallGeo() {
   const parts = [];
   const cx = 0.5, cz = 0.5;
-  // Low Stone Ring Footing
   const footing = new THREE.CylinderGeometry(0.44, 0.46, 0.15, 16); footing.translate(cx, 0.075, cz); parts.push(footing);
-  // 1st Floor: Ground Drum (Height 0.95)
-  const f1 = new THREE.CylinderGeometry(0.42, 0.44, 0.95, 16); f1.translate(cx, 0.15 + 0.475, cz); parts.push(f1);
-  // 2nd Floor: Upper Loft Drum (Height 0.90)
-  const f2 = new THREE.CylinderGeometry(0.40, 0.42, 0.90, 16); f2.translate(cx, 1.10 + 0.45, cz); parts.push(f2);
-  // Timber Porch Canopy
-  const porch = new THREE.BoxGeometry(0.28, 0.65, 0.18); porch.translate(cx, 0.15 + 0.325, cz + 0.44); parts.push(porch);
+  const f1 = new THREE.CylinderGeometry(0.42, 0.44, 0.95, 16); f1.translate(cx, 0.625, cz); parts.push(f1);
+  const f2 = new THREE.CylinderGeometry(0.40, 0.42, 0.90, 16); f2.translate(cx, 1.55, cz); parts.push(f2);
   return mergeBufferGeometries(parts);
 }
 function createThatchedHutRoofGeo() {
-  const parts = [];
   const cx = 0.5, cz = 0.5;
-  const roof = new THREE.ConeGeometry(0.55, 0.85, 16); roof.translate(cx, 2.00 + 0.425, cz); parts.push(roof);
-  const finial = new THREE.CylinderGeometry(0.03, 0.03, 0.40, 6); finial.translate(cx, 2.00 + 0.85 + 0.15, cz); parts.push(finial);
-  return mergeBufferGeometries(parts);
+  const roof = new THREE.ConeGeometry(0.55, 0.85, 16); roof.translate(cx, 2.425, cz);
+  return roof;
 }
 
 // 3. Heavy Log Lodge (3-Story, 2x2x3 Footprint: X [0.05..1.95], Z [0.05..1.95])
 function createLogLodgeWallGeo() {
   const parts = [];
   const cx = 1.0, cz = 1.0;
-  // Boulder Stone Footing
   const stoneBase = new THREE.BoxGeometry(1.90, 0.22, 1.90); stoneBase.translate(cx, 0.11, cz); parts.push(stoneBase);
-
-  // 1st Floor: Interlocking Pine Logs (Height 1.0)
-  const f1 = new THREE.BoxGeometry(1.85, 1.00, 1.85); f1.translate(cx, 0.22 + 0.50, cz); parts.push(f1);
-
-  // 2nd Floor: Mid Floor with Side Balconies (Height 1.0)
-  const f2 = new THREE.BoxGeometry(1.88, 1.00, 1.88); f2.translate(cx, 1.22 + 0.50, cz); parts.push(f2);
-  const balR = new THREE.BoxGeometry(0.18, 0.30, 1.60); balR.translate(cx + 0.95, 1.22 + 0.15, cz); parts.push(balR);
-  const balL = new THREE.BoxGeometry(0.18, 0.30, 1.60); balL.translate(cx - 0.95, 1.22 + 0.15, cz); parts.push(balL);
-
-  // 3rd Floor: Peaked Attic Loft (Height 0.90)
-  const f3 = new THREE.BoxGeometry(1.70, 0.90, 1.70); f3.translate(cx, 2.22 + 0.45, cz); parts.push(f3);
-
-  // Dual Stone Hearth Chimneys
+  const f1 = new THREE.BoxGeometry(1.85, 1.00, 1.85); f1.translate(cx, 0.72, cz); parts.push(f1);
+  const f2 = new THREE.BoxGeometry(1.88, 1.00, 1.88); f2.translate(cx, 1.72, cz); parts.push(f2);
+  const f3 = new THREE.BoxGeometry(1.70, 0.90, 1.70); f3.translate(cx, 2.67, cz); parts.push(f3);
   const chim1 = new THREE.BoxGeometry(0.35, 3.80, 0.35); chim1.translate(cx + 0.70, 1.90, cz - 0.45); parts.push(chim1);
   return mergeBufferGeometries(parts);
 }
@@ -749,19 +702,9 @@ function createLogLodgeRoofGeo() {
 function createHalfTimberedWallGeo() {
   const parts = [];
   const cx = 1.0, cz = 0.5;
-  // Stone Foundation
   const plinth = new THREE.BoxGeometry(1.90, 0.18, 0.90); plinth.translate(cx, 0.09, cz); parts.push(plinth);
-
-  // 1st Floor: Plaster & Timber Base (Height 1.10)
-  const f1 = new THREE.BoxGeometry(1.85, 1.10, 0.85); f1.translate(cx, 0.18 + 0.55, cz); parts.push(f1);
-
-  // 2nd Floor: Jettied Floor (Height 1.0)
-  const f2 = new THREE.BoxGeometry(1.90, 1.00, 0.90); f2.translate(cx, 1.28 + 0.50, cz); parts.push(f2);
-  // Black Timber Diagonal Cross-Bracing
-  const braceL = new THREE.BoxGeometry(0.05, 0.85, 0.04); braceL.rotateZ(0.65); braceL.translate(cx - 0.45, 1.28 + 0.50, cz + 0.46); parts.push(braceL);
-  const braceR = new THREE.BoxGeometry(0.05, 0.85, 0.04); braceR.rotateZ(-0.65); braceR.translate(cx + 0.45, 1.28 + 0.50, cz + 0.46); parts.push(braceR);
-
-  // Red Brick Chimney Stack
+  const f1 = new THREE.BoxGeometry(1.85, 1.10, 0.85); f1.translate(cx, 0.73, cz); parts.push(f1);
+  const f2 = new THREE.BoxGeometry(1.90, 1.00, 0.90); f2.translate(cx, 1.78, cz); parts.push(f2);
   const chimney = new THREE.BoxGeometry(0.35, 2.90, 0.35); chimney.translate(cx + 0.75, 1.45, cz); parts.push(chimney);
   return mergeBufferGeometries(parts);
 }
@@ -775,31 +718,15 @@ function createHalfTimberedRoofGeo() {
 function createMudBrickAdobeWallGeo() {
   const parts = [];
   const cx = 1.0, cz = 1.0;
-  // 1st Floor: Ground Mud Brick Block (Height 1.15)
   const f1 = new THREE.BoxGeometry(1.90, 1.15, 1.90); f1.translate(cx, 0.575, cz); parts.push(f1);
-
-  // Protruding Horizontal Cedar Vigas Logs
-  for (let i = -0.60; i <= 0.60; i += 0.30) {
-    const viga = new THREE.CylinderGeometry(0.04, 0.04, 1.96, 8);
-    viga.rotateZ(Math.PI / 2);
-    viga.translate(cx, 1.10, cz + i);
-    parts.push(viga);
-  }
-
-  // 2nd Floor: Stepped Setback Terrace Room (Height 1.0)
-  const f2 = new THREE.BoxGeometry(1.30, 1.00, 1.30); f2.translate(cx - 0.25, 1.15 + 0.50, cz - 0.25); parts.push(f2);
-  // Roof Terrace Access Timber Ladder
-  const ladder = new THREE.BoxGeometry(0.20, 1.45, 0.06); ladder.rotateX(-0.25); ladder.translate(cx + 0.60, 0.75, cz + 0.60); parts.push(ladder);
-
+  const f2 = new THREE.BoxGeometry(1.30, 1.00, 1.30); f2.translate(cx - 0.25, 1.65, cz - 0.25); parts.push(f2);
   return mergeBufferGeometries(parts);
 }
 function createMudBrickAdobeRoofGeo() {
   const parts = [];
   const cx = 1.0, cz = 1.0;
-  // 1st Floor Parapet Roof Slab
-  const p1 = new THREE.BoxGeometry(1.92, 0.12, 1.92); p1.translate(cx, 1.15 + 0.06, cz); parts.push(p1);
-  // 2nd Floor Roof Parapet Slab
-  const p2 = new THREE.BoxGeometry(1.34, 0.12, 1.34); p2.translate(cx - 0.25, 2.15 + 0.06, cz - 0.25); parts.push(p2);
+  const p1 = new THREE.BoxGeometry(1.92, 0.12, 1.92); p1.translate(cx, 1.21, cz); parts.push(p1);
+  const p2 = new THREE.BoxGeometry(1.34, 0.12, 1.34); p2.translate(cx - 0.25, 2.21, cz - 0.25); parts.push(p2);
   return mergeBufferGeometries(parts);
 }
 
@@ -807,20 +734,14 @@ function createMudBrickAdobeRoofGeo() {
 function createMountainStiltWallGeo() {
   const parts = [];
   const cx = 1.0, cz = 1.0;
-  // 1st Floor: 4 Heavy Timber Pilings (Height 1.25) leaving ground open
   const stilt = new THREE.BoxGeometry(0.18, 1.25, 0.18);
   const s1 = stilt.clone(); s1.translate(cx - 0.80, 0.625, cz - 0.80); parts.push(s1);
   const s2 = stilt.clone(); s2.translate(cx + 0.80, 0.625, cz - 0.80); parts.push(s2);
   const s3 = stilt.clone(); s3.translate(cx - 0.80, 0.625, cz + 0.80); parts.push(s3);
   const s4 = stilt.clone(); s4.translate(cx + 0.80, 0.625, cz + 0.80); parts.push(s4);
-
-  // 2nd Floor: Main Living Platform Deck & Room (Height 1.10)
-  const deck = new THREE.BoxGeometry(1.90, 0.14, 1.90); deck.translate(cx, 1.25 + 0.07, cz); parts.push(deck);
-  const balustrade = new THREE.BoxGeometry(1.90, 0.30, 0.06); balustrade.translate(cx, 1.25 + 0.25, cz + 0.92); parts.push(balustrade);
-  const f2 = new THREE.BoxGeometry(1.70, 1.10, 1.70); f2.translate(cx, 1.39 + 0.55, cz); parts.push(f2);
-
-  // 3rd Floor: Upper Loft (Height 1.0)
-  const f3 = new THREE.BoxGeometry(1.80, 1.00, 1.80); f3.translate(cx, 2.49 + 0.50, cz); parts.push(f3);
+  const deck = new THREE.BoxGeometry(1.90, 0.14, 1.90); deck.translate(cx, 1.32, cz); parts.push(deck);
+  const f2 = new THREE.BoxGeometry(1.70, 1.10, 1.70); f2.translate(cx, 1.94, cz); parts.push(f2);
+  const f3 = new THREE.BoxGeometry(1.80, 1.00, 1.80); f3.translate(cx, 2.99, cz); parts.push(f3);
   return mergeBufferGeometries(parts);
 }
 function createMountainStiltRoofGeo() {
@@ -833,15 +754,8 @@ function createMountainStiltRoofGeo() {
 function createLonghouseWallGeo() {
   const parts = [];
   const cx = 1.5, cz = 1.0;
-  // Fieldstone Foundation Skirting
   const skirt = new THREE.BoxGeometry(2.90, 0.25, 1.90); skirt.translate(cx, 0.125, cz); parts.push(skirt);
-
-  // 1st, 2nd & 3rd Floor: Curved Stave-Wood Bowed Hull Body (Height 2.10)
-  const body = new THREE.BoxGeometry(2.85, 2.10, 1.85); body.translate(cx, 0.25 + 1.05, cz); parts.push(body);
-
-  // Dragon Prows at Gables
-  const prow1 = new THREE.BoxGeometry(0.10, 0.75, 0.10); prow1.translate(cx - 1.40, 3.00, cz); prow1.rotateZ(0.25); parts.push(prow1);
-  const prow2 = new THREE.BoxGeometry(0.10, 0.75, 0.10); prow2.translate(cx + 1.40, 3.00, cz); prow2.rotateZ(-0.25); parts.push(prow2);
+  const body = new THREE.BoxGeometry(2.85, 2.10, 1.85); body.translate(cx, 1.30, cz); parts.push(body);
   return mergeBufferGeometries(parts);
 }
 function createLonghouseRoofGeo() {
@@ -854,58 +768,257 @@ function createLonghouseRoofGeo() {
 function createBoneOssuaryWallGeo() {
   const parts = [];
   const cx = 1.0, cz = 1.0;
-  // Basalt Ashlar Foundation
   const f1 = new THREE.BoxGeometry(1.90, 1.10, 1.90); f1.translate(cx, 0.55, cz); parts.push(f1);
-
-  // 2nd Floor: Crypt Sanctuary Level (Height 1.10)
-  const f2 = new THREE.BoxGeometry(1.75, 1.10, 1.75); f2.translate(cx, 1.10 + 0.55, cz); parts.push(f2);
-
-  // 3rd Floor: Spired Reliquary Turret (Height 1.0)
-  const f3 = new THREE.BoxGeometry(1.10, 1.00, 1.10); f3.translate(cx, 2.20 + 0.50, cz); parts.push(f3);
-
-  // Corner Skull Ornaments
-  const skull = new THREE.SphereGeometry(0.14, 6, 6);
-  const sk1 = skull.clone(); sk1.translate(cx - 0.85, 2.20, cz - 0.85); parts.push(sk1);
-  const sk2 = skull.clone(); sk2.translate(cx + 0.85, 2.20, cz - 0.85); parts.push(sk2);
-  const sk3 = skull.clone(); sk3.translate(cx - 0.85, 2.20, cz + 0.85); parts.push(sk3);
-  const sk4 = skull.clone(); sk4.translate(cx + 0.85, 2.20, cz + 0.85); parts.push(sk4);
+  const f2 = new THREE.BoxGeometry(1.75, 1.10, 1.75); f2.translate(cx, 1.65, cz); parts.push(f2);
+  const f3 = new THREE.BoxGeometry(1.10, 1.00, 1.10); f3.translate(cx, 2.70, cz); parts.push(f3);
   return mergeBufferGeometries(parts);
 }
 function createBoneOssuaryRoofGeo() {
   const parts = [];
   const cx = 1.0, cz = 1.0;
   const r1 = createCleanPitchedRoof(1.92, 1.92, 0.70, false); r1.translate(cx, 2.20, cz); parts.push(r1);
-  const spire = new THREE.ConeGeometry(0.60, 1.20, 8); spire.translate(cx, 3.20 + 0.60, cz); parts.push(spire);
+  const spire = new THREE.ConeGeometry(0.60, 1.20, 8); spire.translate(cx, 3.80, cz); parts.push(spire);
   return mergeBufferGeometries(parts);
 }
 
-// 9. Turreted Villa / Manor Keep (4-Story, 3x3x4 Footprint: X [0.05..2.95], Z [0.05..2.95])
+// 9. Manor Villa (4-Story, 3x3x4 Footprint: X [0.05..2.95], Z [0.05..2.95])
 function createWatchtowerVillaWallGeo() {
   const parts = [];
   const cx = 1.5, cz = 1.5;
-  // 1st Floor: Rusticated Stone Ashlar Base (Height 1.15)
-  const f1 = new THREE.BoxGeometry(2.85, 1.15, 2.85); f1.translate(cx - 0.05, 0.575, cz - 0.05); parts.push(f1);
-
-  // 2nd Floor: Main Residential Floor (Height 1.10) with Balcony
-  const f2 = new THREE.BoxGeometry(2.65, 1.10, 2.65); f2.translate(cx - 0.05, 1.15 + 0.55, cz - 0.05); parts.push(f2);
-  const balc = new THREE.BoxGeometry(0.80, 0.22, 0.15); balc.translate(cx - 0.05, 1.15 + 0.12, cz + 1.30); parts.push(balc);
-
-  // 3rd Floor: Upper Suites (Height 1.0)
-  const f3 = new THREE.BoxGeometry(2.45, 1.00, 2.45); f3.translate(cx - 0.05, 2.25 + 0.50, cz - 0.05); parts.push(f3);
-
-  // 4th Floor: Fortified Corner Turret (Height 4.40)
-  const turret = new THREE.BoxGeometry(0.90, 4.40, 0.90); turret.translate(cx + 0.90, 2.20, cz + 0.90); parts.push(turret);
-  // Crenellated Turret Battlements
-  const battlement = new THREE.BoxGeometry(1.05, 0.30, 1.05); battlement.translate(cx + 0.90, 4.40 + 0.15, cz + 0.90); parts.push(battlement);
-
+  const f1 = new THREE.BoxGeometry(2.85, 1.15, 2.85); f1.translate(cx, 0.575, cz); parts.push(f1);
+  const f2 = new THREE.BoxGeometry(2.65, 1.10, 2.65); f2.translate(cx, 1.70, cz); parts.push(f2);
+  const f3 = new THREE.BoxGeometry(2.45, 1.00, 2.45); f3.translate(cx, 2.75, cz); parts.push(f3);
+  const f4 = new THREE.BoxGeometry(2.15, 0.90, 2.15); f4.translate(cx, 3.70, cz); parts.push(f4);
+  const chimney = new THREE.BoxGeometry(0.45, 4.80, 0.45); chimney.translate(cx + 0.95, 2.40, cz - 0.75); parts.push(chimney);
   return mergeBufferGeometries(parts);
 }
 function createWatchtowerVillaRoofGeo() {
-  const parts = [];
   const cx = 1.5, cz = 1.5;
-  const mainRoof = createCleanPitchedRoof(2.50, 2.50, 1.00, false); mainRoof.translate(cx - 0.05, 3.25, cz - 0.05); parts.push(mainRoof);
-  const turretSpire = new THREE.ConeGeometry(0.65, 1.00, 8); turretSpire.translate(cx + 0.90, 4.55 + 0.50, cz + 0.90); parts.push(turretSpire);
+  const mainRoof = createCleanPitchedRoof(2.25, 2.25, 1.00, false);
+  mainRoof.translate(cx, 4.15, cz);
+  return mainRoof;
+}
+
+// 10. Slender Timber Tower House (1x1x3 Footprint: X [0.05..0.95], Z [0.05..0.95])
+function createTimberTowerWallGeo() {
+  const parts = [];
+  const cx = 0.5, cz = 0.5;
+  const base = new THREE.BoxGeometry(0.90, 0.20, 0.90); base.translate(cx, 0.10, cz); parts.push(base);
+  const f1 = new THREE.BoxGeometry(0.85, 1.00, 0.85); f1.translate(cx, 0.70, cz); parts.push(f1);
+  const f2 = new THREE.BoxGeometry(0.88, 0.95, 0.88); f2.translate(cx, 1.675, cz); parts.push(f2);
+  const f3 = new THREE.BoxGeometry(0.82, 0.90, 0.82); f3.translate(cx, 2.60, cz); parts.push(f3);
   return mergeBufferGeometries(parts);
+}
+function createTimberTowerRoofGeo() {
+  const cx = 0.5, cz = 0.5;
+  const roof = createCleanPitchedRoof(0.92, 0.92, 0.75, false);
+  roof.translate(cx, 3.05, cz);
+  return roof;
+}
+
+// 11. Slender Stone Townhouse (1x1x3 Footprint: X [0.05..0.95], Z [0.05..0.95])
+function createStoneTownhouseWallGeo() {
+  const parts = [];
+  const cx = 0.5, cz = 0.5;
+  const plinth = new THREE.BoxGeometry(0.92, 0.25, 0.92); plinth.translate(cx, 0.125, cz); parts.push(plinth);
+  const f1 = new THREE.BoxGeometry(0.86, 1.05, 0.86); f1.translate(cx, 0.775, cz); parts.push(f1);
+  const f2 = new THREE.BoxGeometry(0.84, 1.00, 0.84); f2.translate(cx, 1.80, cz); parts.push(f2);
+  const f3 = new THREE.BoxGeometry(0.80, 0.90, 0.80); f3.translate(cx, 2.75, cz); parts.push(f3);
+  return mergeBufferGeometries(parts);
+}
+function createStoneTownhouseRoofGeo() {
+  const cx = 0.5, cz = 0.5;
+  const spire = new THREE.ConeGeometry(0.52, 1.10, 4);
+  spire.rotateY(Math.PI / 4);
+  spire.translate(cx, 3.20 + 0.55, cz);
+  return spire;
+}
+
+// 12. Stilt Watch-Shack (1x1x2 Footprint: X [0.05..0.95], Z [0.05..0.95])
+function createStiltWatchShackWallGeo() {
+  const parts = [];
+  const cx = 0.5, cz = 0.5;
+  const stilt = new THREE.BoxGeometry(0.12, 1.10, 0.12);
+  const s1 = stilt.clone(); s1.translate(cx - 0.35, 0.55, cz - 0.35); parts.push(s1);
+  const s2 = stilt.clone(); s2.translate(cx + 0.35, 0.55, cz - 0.35); parts.push(s2);
+  const s3 = stilt.clone(); s3.translate(cx - 0.35, 0.55, cz + 0.35); parts.push(s3);
+  const s4 = stilt.clone(); s4.translate(cx + 0.35, 0.55, cz + 0.35); parts.push(s4);
+  const deck = new THREE.BoxGeometry(0.92, 0.12, 0.92); deck.translate(cx, 1.16, cz); parts.push(deck);
+  const f2 = new THREE.BoxGeometry(0.85, 0.95, 0.85); f2.translate(cx, 1.70, cz); parts.push(f2);
+  return mergeBufferGeometries(parts);
+}
+function createStiltWatchShackRoofGeo() {
+  const cx = 0.5, cz = 0.5;
+  const roof = createCleanPitchedRoof(0.94, 0.94, 0.65, false);
+  roof.translate(cx, 2.175, cz);
+  return roof;
+}
+
+// 13. Plaster Steeple Townhouse (1x1x4 Footprint: X [0.05..0.95], Z [0.05..0.95])
+function createPlasterSteepleWallGeo() {
+  const parts = [];
+  const cx = 0.5, cz = 0.5;
+  const plinth = new THREE.BoxGeometry(0.90, 0.18, 0.90); plinth.translate(cx, 0.09, cz); parts.push(plinth);
+  const f1 = new THREE.BoxGeometry(0.85, 1.00, 0.85); f1.translate(cx, 0.68, cz); parts.push(f1);
+  const f2 = new THREE.BoxGeometry(0.88, 0.95, 0.88); f2.translate(cx, 1.655, cz); parts.push(f2);
+  const f3 = new THREE.BoxGeometry(0.82, 0.90, 0.82); f3.translate(cx, 2.58, cz); parts.push(f3);
+  const f4 = new THREE.BoxGeometry(0.76, 0.85, 0.76); f4.translate(cx, 3.455, cz); parts.push(f4);
+  return mergeBufferGeometries(parts);
+}
+function createPlasterSteepleRoofGeo() {
+  const cx = 0.5, cz = 0.5;
+  const spire = new THREE.ConeGeometry(0.48, 1.40, 8);
+  spire.translate(cx, 3.88 + 0.70, cz);
+  return spire;
+}
+
+// -----------------------------------------------------------------------------
+// Leader House / Chieftain Palace 7 Variations (3x3 Footprint, 7 Stories Tall)
+// -----------------------------------------------------------------------------
+
+// 0: Citadel Palace (7 Stories)
+function createLeaderCitadelWallGeo() {
+  const parts = []; const cx = 1.5, cz = 1.5;
+  const f1 = new THREE.BoxGeometry(2.90, 1.05, 2.90); f1.translate(cx, 0.525, cz); parts.push(f1);
+  const f2 = new THREE.BoxGeometry(2.75, 1.00, 2.75); f2.translate(cx, 1.55, cz); parts.push(f2);
+  const f3 = new THREE.BoxGeometry(2.55, 0.95, 2.55); f3.translate(cx, 2.525, cz); parts.push(f3);
+  const f4 = new THREE.BoxGeometry(2.35, 0.90, 2.35); f4.translate(cx, 3.45, cz); parts.push(f4);
+  const f5 = new THREE.BoxGeometry(2.10, 0.85, 2.10); f5.translate(cx, 4.325, cz); parts.push(f5);
+  const f6 = new THREE.BoxGeometry(1.80, 0.80, 1.80); f6.translate(cx, 5.15, cz); parts.push(f6);
+  const f7 = new THREE.BoxGeometry(1.45, 0.75, 1.45); f7.translate(cx, 5.925, cz); parts.push(f7);
+  return mergeBufferGeometries(parts);
+}
+function createLeaderCitadelRoofGeo() {
+  const cx = 1.5, cz = 1.5;
+  const roof = createCleanPitchedRoof(1.60, 1.60, 1.25, false);
+  roof.translate(cx, 6.30, cz);
+  return roof;
+}
+
+// 1: Nordic Jarl High Long-Hall Tower (7 Stories)
+function createLeaderJarlHallWallGeo() {
+  const parts = []; const cx = 1.5, cz = 1.5;
+  const skirt = new THREE.BoxGeometry(2.92, 0.35, 2.92); skirt.translate(cx, 0.175, cz); parts.push(skirt);
+  for (let i = 0; i < 7; i++) {
+    const s = 2.80 - i * 0.18;
+    const h = 0.90;
+    const tier = new THREE.BoxGeometry(s, h, s);
+    tier.translate(cx, 0.35 + i * 0.90 + 0.45, cz);
+    parts.push(tier);
+  }
+  return mergeBufferGeometries(parts);
+}
+function createLeaderJarlHallRoofGeo() {
+  const cx = 1.5, cz = 1.5;
+  const roof = createCleanPitchedRoof(1.70, 1.70, 1.50);
+  roof.translate(cx, 6.65, cz);
+  return roof;
+}
+
+// 2: Stepped Ziggurat Palace (7 Stories)
+function createLeaderZigguratWallGeo() {
+  const parts = []; const cx = 1.5, cz = 1.5;
+  for (let i = 0; i < 7; i++) {
+    const s = 2.90 - i * 0.24;
+    const h = 0.88;
+    const tier = new THREE.BoxGeometry(s, h, s);
+    tier.translate(cx, i * 0.88 + 0.44, cz);
+    parts.push(tier);
+  }
+  return mergeBufferGeometries(parts);
+}
+function createLeaderZigguratRoofGeo() {
+  const cx = 1.5, cz = 1.5;
+  const altarRoof = new THREE.BoxGeometry(1.50, 0.25, 1.50);
+  altarRoof.translate(cx, 7 * 0.88 + 0.125, cz);
+  return altarRoof;
+}
+
+// 3: Chieftain Pagoda Spire (7 Stories)
+function createLeaderPagodaWallGeo() {
+  const parts = []; const cx = 1.5, cz = 1.5;
+  for (let i = 0; i < 7; i++) {
+    const s = 2.70 - i * 0.22;
+    const h = 0.85;
+    const tier = new THREE.BoxGeometry(s, h, s);
+    tier.translate(cx, i * 0.85 + 0.425, cz);
+    parts.push(tier);
+  }
+  return mergeBufferGeometries(parts);
+}
+function createLeaderPagodaRoofGeo() {
+  const parts = []; const cx = 1.5, cz = 1.5;
+  for (let i = 0; i < 7; i++) {
+    const s = 2.95 - i * 0.22;
+    const cap = new THREE.BoxGeometry(s, 0.10, s);
+    cap.translate(cx, (i + 1) * 0.85, cz);
+    parts.push(cap);
+  }
+  const topSpire = new THREE.ConeGeometry(0.50, 1.30, 8);
+  topSpire.translate(cx, 7 * 0.85 + 0.65, cz);
+  parts.push(topSpire);
+  return mergeBufferGeometries(parts);
+}
+
+// 4: Sanctuary Cathedral Keep (7 Stories)
+function createLeaderSanctuaryWallGeo() {
+  const parts = []; const cx = 1.5, cz = 1.5;
+  const f1 = new THREE.BoxGeometry(2.90, 1.10, 2.90); f1.translate(cx, 0.55, cz); parts.push(f1);
+  const f2 = new THREE.BoxGeometry(2.70, 1.05, 2.70); f2.translate(cx, 1.625, cz); parts.push(f2);
+  const f3 = new THREE.BoxGeometry(2.50, 1.00, 2.50); f3.translate(cx, 2.65, cz); parts.push(f3);
+  const f4 = new THREE.BoxGeometry(2.30, 0.95, 2.30); f4.translate(cx, 3.625, cz); parts.push(f4);
+  const f5 = new THREE.BoxGeometry(2.00, 0.90, 2.00); f5.translate(cx, 4.55, cz); parts.push(f5);
+  const f6 = new THREE.BoxGeometry(1.70, 0.85, 1.70); f6.translate(cx, 5.425, cz); parts.push(f6);
+  const f7 = new THREE.BoxGeometry(1.35, 0.80, 1.35); f7.translate(cx, 6.25, cz); parts.push(f7);
+  return mergeBufferGeometries(parts);
+}
+function createLeaderSanctuaryRoofGeo() {
+  const cx = 1.5, cz = 1.5;
+  const spire = new THREE.ConeGeometry(0.65, 1.80, 8);
+  spire.translate(cx, 6.65 + 0.90, cz);
+  return spire;
+}
+
+// 5: Basalt Monolith Castle (7 Stories)
+function createLeaderMonolithWallGeo() {
+  const parts = []; const cx = 1.5, cz = 1.5;
+  for (let i = 0; i < 7; i++) {
+    const s = 2.85 - i * 0.16;
+    const h = 0.92;
+    const tier = new THREE.BoxGeometry(s, h, s);
+    tier.translate(cx, i * 0.92 + 0.46, cz);
+    parts.push(tier);
+  }
+  const battlement = new THREE.BoxGeometry(1.95, 0.35, 1.95);
+  battlement.translate(cx, 7 * 0.92 + 0.175, cz);
+  parts.push(battlement);
+  return mergeBufferGeometries(parts);
+}
+function createLeaderMonolithRoofGeo() {
+  const cx = 1.5, cz = 1.5;
+  const roof = createCleanPitchedRoof(1.75, 1.75, 0.90, false);
+  roof.translate(cx, 7 * 0.92 + 0.35, cz);
+  return roof;
+}
+
+// 6: Imperial Pavilion Palace (7 Stories)
+function createLeaderImperialWallGeo() {
+  const parts = []; const cx = 1.5, cz = 1.5;
+  const base = new THREE.BoxGeometry(2.92, 0.30, 2.92); base.translate(cx, 0.15, cz); parts.push(base);
+  for (let i = 0; i < 7; i++) {
+    const s = 2.75 - i * 0.20;
+    const h = 0.88;
+    const tier = new THREE.BoxGeometry(s, h, s);
+    tier.translate(cx, 0.30 + i * 0.88 + 0.44, cz);
+    parts.push(tier);
+  }
+  return mergeBufferGeometries(parts);
+}
+function createLeaderImperialRoofGeo() {
+  const cx = 1.5, cz = 1.5;
+  const roof = createCleanPitchedRoof(1.65, 1.65, 1.30);
+  roof.translate(cx, 0.30 + 7 * 0.88, cz);
+  return roof;
 }
 
 // -----------------------------------------------------------------------------
@@ -1735,6 +1848,34 @@ export class RCT3DRenderer {
         dithering: true,
         side: THREE.DoubleSide
       }),
+      multiBuildingPalette: [
+        // 0: MAT_STONE
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }),
+        // 1: MAT_TIMBER
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xc89858, 0x482c18, 1.0), dithering: true, side: THREE.DoubleSide }),
+        // 2: MAT_PLASTER
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_B.png", 0xfffaea, 0x8a6242, 1.0), dithering: true, side: THREE.DoubleSide }),
+        // 3: MAT_DARK_BEAMS
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0x4a2e18, 0x1a0f08, 1.0), dithering: true, side: THREE.DoubleSide }),
+        // 4: MAT_DOOR
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xb87838, 0x3e1e0a, 1.0), dithering: true, side: THREE.DoubleSide }),
+        // 5: MAT_WINDOW_GLASS
+        new THREE.MeshLambertMaterial({ color: 0x64c8ff, dithering: true, side: THREE.DoubleSide }),
+        // 6: MAT_BRICK_CHIMNEY
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_C.png", 0xb44a2c, 0x4a180c, 1.0), dithering: true, side: THREE.DoubleSide }),
+        // 7: MAT_ROOF_CLAY
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_C.png", 0xdb5832, 0x6a1c0c, 1.0), dithering: true, side: THREE.DoubleSide }),
+        // 8: MAT_ROOF_THATCH
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Grass.png", 0xd4a044, 0x583e10, 1.0), dithering: true, side: THREE.DoubleSide }),
+        // 9: MAT_ROOF_SLATE
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_A.png", 0x4a5568, 0x1a202c, 1.0), dithering: true, side: THREE.DoubleSide }),
+        // 10: MAT_ADOBE
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_B.png", 0xd49b6a, 0x4a2e1a, 1.0), dithering: true, side: THREE.DoubleSide }),
+        // 11: MAT_DRAGON_PROW
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xd4a040, 0x44260a, 1.0), dithering: true, side: THREE.DoubleSide }),
+        // 12: MAT_BASALT_BONE
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Stone_C.png", 0x383842, 0x141418, 1.0), dithering: true, side: THREE.DoubleSide })
+      ],
       houseWallVariants: [
         // 0: Wood Cabin Wall (Standard Wood)
         new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xd4a373, 0x4a3525, 1.0), dithering: true, side: THREE.DoubleSide }),
@@ -1754,30 +1895,58 @@ export class RCT3DRenderer {
         new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xd4a373, 0x4a3525, 1.0), dithering: true, side: THREE.DoubleSide }),
         // 8: Bone Ossuary Wall (Standard Stone)
         new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }),
-        // 9: Watchtower Villa Wall (Standard Stone)
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide })
+        // 9: Manor Villa Wall (Standard Stone)
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }),
+        // 10: Slender Timber Tower Wall
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xd4a373, 0x4a3525, 1.0), dithering: true, side: THREE.DoubleSide }),
+        // 11: Slender Stone Townhouse Wall
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }),
+        // 12: Stilt Watch-Shack Wall
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xa67c52, 0x3b271a, 1.0), dithering: true, side: THREE.DoubleSide }),
+        // 13: Plaster Steeple Townhouse Wall
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_B.png", 0xfffaea, 0x8a6242, 1.0), dithering: true, side: THREE.DoubleSide })
       ],
       houseRoofVariants: [
-        // 0: Wood Cabin Roof (Standard Terracotta Clay Roof)
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_C.png", 0xff6238, 0x941e0a, 1.0), dithering: true, side: THREE.DoubleSide }),
-        // 1: Stone Cottage Roof (Standard Terracotta Clay Roof)
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_C.png", 0xff6238, 0x941e0a, 1.0), dithering: true, side: THREE.DoubleSide }),
-        // 2: Thatched Hut Roof (Standard Wood Roof)
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xd4a373, 0x4a3525, 1.0), dithering: true, side: THREE.DoubleSide }),
-        // 3: Log Lodge Roof (Standard Terracotta Clay Roof)
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_C.png", 0xff6238, 0x941e0a, 1.0), dithering: true, side: THREE.DoubleSide }),
-        // 4: Half-Timbered Roof (Standard Wood Roof)
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xa67c52, 0x3b271a, 1.0), dithering: true, side: THREE.DoubleSide }),
-        // 5: Mud-Brick Adobe Roof (Standard Terracotta Cap)
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_C.png", 0xff6238, 0x941e0a, 1.0), dithering: true, side: THREE.DoubleSide }),
-        // 6: Mountain Stilt Roof (Standard Terracotta Clay Roof)
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_C.png", 0xff6238, 0x941e0a, 1.0), dithering: true, side: THREE.DoubleSide }),
-        // 7: Nordic Longhouse Roof (Standard Wood Roof)
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xa67c52, 0x3b271a, 1.0), dithering: true, side: THREE.DoubleSide }),
-        // 8: Bone Ossuary Roof (Standard Stone Slate Roof)
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_A.png", 0x9098a8, 0x2d3748, 1.0), dithering: true, side: THREE.DoubleSide }),
-        // 9: Watchtower Villa Roof (Standard Terracotta Clay Roof)
-        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_C.png", 0xff6238, 0x941e0a, 1.0), dithering: true, side: THREE.DoubleSide })
+        // Clan-tintable roofs with high dynamic range base texture
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_A.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_A.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide })
+      ],
+      leaderWallVariants: [
+        // 0: Citadel (Stone)
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }),
+        // 1: Jarl High Hall (Dark Wood)
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xb87a40, 0x3a2214, 1.0), dithering: true, side: THREE.DoubleSide }),
+        // 2: Ziggurat (Sandstone)
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_B.png", 0xdfd0b0, 0x3d3024, 1.0), dithering: true, side: THREE.DoubleSide }),
+        // 3: Chieftain Pagoda (Lacquered Timber)
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xc89858, 0x482c18, 1.0), dithering: true, side: THREE.DoubleSide }),
+        // 4: Sanctuary Keep (Plaster / White Stone)
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_B.png", 0xfffaea, 0x8a6242, 1.0), dithering: true, side: THREE.DoubleSide }),
+        // 5: Basalt Monolith Castle (Dark Basalt)
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Stone_C.png", 0x383842, 0x141418, 1.0), dithering: true, side: THREE.DoubleSide }),
+        // 6: Imperial Pavilion (Imperial Stone & Wood)
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide })
+      ],
+      leaderRoofVariants: [
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_B.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_A.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }),
+        new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide })
       ],
       boneHouseWall: new THREE.MeshLambertMaterial({
         map: createTintedTexture("Feature_Stone_B.png", 0xf5f3ea, 0x5a554a, 1.0),
@@ -1931,7 +2100,7 @@ export class RCT3DRenderer {
     this.instGatesStage1.castShadow = true;
     this.instGatesStage1.receiveShadow = true;
 
-    // 10 Distinct House Variations InstancedMeshes (Separate Walls & Roofs)
+    // 14 Distinct House Variations InstancedMeshes (Separate Walls & Roofs)
     const houseWallGeos = [
       createWoodCabinWallGeo(),
       createStoneCottageWallGeo(),
@@ -1942,7 +2111,11 @@ export class RCT3DRenderer {
       createMountainStiltWallGeo(),
       createLonghouseWallGeo(),
       createBoneOssuaryWallGeo(),
-      createWatchtowerVillaWallGeo()
+      createWatchtowerVillaWallGeo(),
+      createTimberTowerWallGeo(),
+      createStoneTownhouseWallGeo(),
+      createStiltWatchShackWallGeo(),
+      createPlasterSteepleWallGeo()
     ];
     const houseRoofGeos = [
       createWoodCabinRoofGeo(),
@@ -1954,7 +2127,11 @@ export class RCT3DRenderer {
       createMountainStiltRoofGeo(),
       createLonghouseRoofGeo(),
       createBoneOssuaryRoofGeo(),
-      createWatchtowerVillaRoofGeo()
+      createWatchtowerVillaRoofGeo(),
+      createTimberTowerRoofGeo(),
+      createStoneTownhouseRoofGeo(),
+      createStiltWatchShackRoofGeo(),
+      createPlasterSteepleRoofGeo()
     ];
 
     this.instHouseWallVariants = houseWallGeos.map((geo, idx) => {
@@ -1967,6 +2144,42 @@ export class RCT3DRenderer {
 
     this.instHouseRoofVariants = houseRoofGeos.map((geo, idx) => {
       const mesh = new THREE.InstancedMesh(geo, this.materials.houseRoofVariants[idx], 200);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      mesh.frustumCulled = false;
+      return mesh;
+    });
+
+    // 7 Distinct Leader House / Chieftain Palace Variations (3x3 Footprint, 7 Stories)
+    const leaderWallGeos = [
+      createLeaderCitadelWallGeo(),
+      createLeaderJarlHallWallGeo(),
+      createLeaderZigguratWallGeo(),
+      createLeaderPagodaWallGeo(),
+      createLeaderSanctuaryWallGeo(),
+      createLeaderMonolithWallGeo(),
+      createLeaderImperialWallGeo()
+    ];
+    const leaderRoofGeos = [
+      createLeaderCitadelRoofGeo(),
+      createLeaderJarlHallRoofGeo(),
+      createLeaderZigguratRoofGeo(),
+      createLeaderPagodaRoofGeo(),
+      createLeaderSanctuaryRoofGeo(),
+      createLeaderMonolithRoofGeo(),
+      createLeaderImperialRoofGeo()
+    ];
+
+    this.instLeaderHouseWallVariants = leaderWallGeos.map((geo, idx) => {
+      const mesh = new THREE.InstancedMesh(geo, this.materials.leaderWallVariants[idx], 50);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      mesh.frustumCulled = false;
+      return mesh;
+    });
+
+    this.instLeaderHouseRoofVariants = leaderRoofGeos.map((geo, idx) => {
+      const mesh = new THREE.InstancedMesh(geo, this.materials.leaderRoofVariants[idx], 50);
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       mesh.frustumCulled = false;
@@ -2145,6 +2358,8 @@ export class RCT3DRenderer {
     this.instHouseStage1.frustumCulled = false;
     this.instHouseStage2.frustumCulled = false;
     this.instHouseStage3.frustumCulled = false;
+    for (const hw of this.instLeaderHouseWallVariants) hw.frustumCulled = false;
+    for (const hr of this.instLeaderHouseRoofVariants) hr.frustumCulled = false;
     this.instGrassTufts.frustumCulled = false;
     this.instWoodLogs.frustumCulled = false;
     this.instStoneItems.frustumCulled = false;
@@ -2170,6 +2385,8 @@ export class RCT3DRenderer {
       this.instWaterWellBase, this.instWaterWellWood, this.instWaterWellRoof,
       ...this.instHouseWallVariants,
       ...this.instHouseRoofVariants,
+      ...this.instLeaderHouseWallVariants,
+      ...this.instLeaderHouseRoofVariants,
       this.instHouseWalls, this.instHouseRoofs,
       this.instHousePegs, this.instHouseStage1,
       this.instHouseStage2, this.instHouseStage3,
@@ -2197,7 +2414,7 @@ export class RCT3DRenderer {
     this.flagGeo.translate(0.35, 0.25, 0);
 
     this.floatingUiGroup = new THREE.Group();
-    this.floatingUiGroup.visible = false; // Rendered in 100% native resolution via 2D Canvas overlay
+    this.floatingUiGroup.visible = true; // Rendered directly in 3D scene (scaled with resolution scale)
     this.scene.add(this.floatingUiGroup);
     this.floatingUiSprites = new Map();
 
@@ -2276,15 +2493,28 @@ export class RCT3DRenderer {
     this.raycaster = new THREE.Raycaster();
     this.groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 
-    // 3D Dithered Stratosphere Cloud Deck (Visible only from zoom 0.0 to 0.4)
-    const cloudGeo = new THREE.PlaneGeometry(1200, 1200, 32, 32);
+    // Persistent reusable collections to eliminate per-frame GC allocations
+    this._activeIds = new Set();
+    this._activeUiIds = new Set();
+    this._occupiedHouseTiles = new Set();
+    this._clanGroups = new Map();
+    this._knownZones = new Set();
+    this._visibleEntitiesArray = [];
+    this._mMatrix = new THREE.Matrix4();
+    this._scaleMatrix = new THREE.Matrix4();
+    this._platMat = new THREE.Matrix4();
+    this.tempColor1 = new THREE.Color();
+
+    // 3D Dithered Outer Stratosphere Cloud Canopy (Visible strictly outside map boundaries)
+    const cloudGeo = new THREE.PlaneGeometry(2400, 2400, 32, 32);
     cloudGeo.rotateX(-Math.PI / 2);
     this.cloudMat = new THREE.ShaderMaterial({
       uniforms: {
         uTime: { value: 0.0 },
         uFade: { value: 0.0 },
         uSunColor: { value: new THREE.Color(1.0, 1.0, 1.0) },
-        uAmbColor: { value: new THREE.Color(0.6, 0.7, 0.8) }
+        uAmbColor: { value: new THREE.Color(0.6, 0.7, 0.8) },
+        uMapBounds: { value: new THREE.Vector4(0.0, 0.0, 1024.0, 1024.0) }
       },
       vertexShader: `
         varying vec2 vUv;
@@ -2301,10 +2531,10 @@ export class RCT3DRenderer {
         uniform float uFade;
         uniform vec3 uSunColor;
         uniform vec3 uAmbColor;
+        uniform vec4 uMapBounds;
         varying vec2 vUv;
         varying vec3 vWorldPos;
 
-        // Procedural FBM Perlin-like Noise
         float hash(vec2 p) {
           return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
         }
@@ -2326,7 +2556,6 @@ export class RCT3DRenderer {
           return v;
         }
 
-        // Ordered 4x4 Bayer Dithering Matrix
         const mat4 bayerMatrix = mat4(
           0.0/16.0,  8.0/16.0,  2.0/16.0, 10.0/16.0,
           12.0/16.0, 4.0/16.0, 14.0/16.0,  6.0/16.0,
@@ -2337,24 +2566,33 @@ export class RCT3DRenderer {
         void main() {
           if (uFade <= 0.001) discard;
 
-          vec2 cloudUv = (vWorldPos.xz * 0.006) + vec2(uTime * 0.003, uTime * 0.0018);
+          // Compute distance outside map boundaries [minX, minY, maxX, maxY]
+          float distOutX = max(0.0, max(uMapBounds.x - vWorldPos.x, vWorldPos.x - uMapBounds.z));
+          float distOutZ = max(0.0, max(uMapBounds.y - vWorldPos.z, vWorldPos.z - uMapBounds.w));
+          float distOutside = max(distOutX, distOutZ);
+
+          // Zero clouds over land/inside the map!
+          if (distOutside <= 0.0) discard;
+
+          // Smooth boundary fog edge + dense cloud bank outside
+          float edgeDensity = smoothstep(0.0, 10.0, distOutside);
+
+          vec2 cloudUv = (vWorldPos.xz * 0.005) + vec2(uTime * 0.002, uTime * 0.0012);
           float n = fbm(cloudUv * 3.5);
           float n2 = fbm((cloudUv + vec2(5.2, 1.3)) * 6.0);
-          float density = smoothstep(0.38, 0.72, n * 0.7 + n2 * 0.3);
+          float density = smoothstep(0.25, 0.70, n * 0.7 + n2 * 0.3) * edgeDensity;
 
-          // Bayer 4x4 Dither Threshold
           ivec2 pixelCoord = ivec2(mod(gl_FragCoord.xy, 4.0));
           float ditherThreshold = bayerMatrix[pixelCoord.x][pixelCoord.y];
-
-          // Effective alpha combined with zoom fade
           float effectiveAlpha = density * uFade;
 
-          // As camera approaches (uFade decreases), dithering expands and dissolves clouds
           if (effectiveAlpha < ditherThreshold) {
             discard;
           }
 
-          vec3 cloudCol = mix(uAmbColor, uSunColor * 1.25, density * 0.7);
+          vec3 baseFog = uAmbColor * 0.85;
+          vec3 sunCloud = uSunColor * 1.20;
+          vec3 cloudCol = mix(baseFog, sunCloud, density * 0.75);
           gl_FragColor = vec4(cloudCol, 1.0);
         }
       `,
@@ -2363,21 +2601,10 @@ export class RCT3DRenderer {
       side: THREE.DoubleSide
     });
     this.cloudMesh = new THREE.Mesh(cloudGeo, this.cloudMat);
-    this.cloudMesh.position.set(512, 18.0, 512); // High altitude stratosphere deck
+    this.cloudMesh.position.set(512, 14.0, 512);
     this.cloudMesh.renderOrder = 500;
     this.cloudMesh.frustumCulled = false;
     this.scene.add(this.cloudMesh);
-
-    // Persistent reusable collections to eliminate per-frame GC allocations
-    this._activeIds = new Set();
-    this._activeUiIds = new Set();
-    this._occupiedHouseTiles = new Set();
-    this._clanGroups = new Map();
-    this._knownZones = new Set();
-    this._visibleEntitiesArray = [];
-    this._mMatrix = new THREE.Matrix4();
-    this._scaleMatrix = new THREE.Matrix4();
-    this._platMat = new THREE.Matrix4();
   }
 
   // ---------------------------------------------------------------------------
@@ -2465,6 +2692,22 @@ export class RCT3DRenderer {
 
   getShadowsModeName() {
     return this.shadowsEnabled ? "ON" : "OFF";
+  }
+
+  setShadowQuality(res = 2048) {
+    if (!this.sunLight || !this.sunLight.shadow) return;
+    this.sunLight.shadow.mapSize.width = res;
+    this.sunLight.shadow.mapSize.height = res;
+    if (this.sunLight.shadow.map) {
+      this.sunLight.shadow.map.dispose();
+      this.sunLight.shadow.map = null;
+    }
+  }
+
+  setOverheadBadgesVisible(visible = true) {
+    if (this.floatingUiGroup) {
+      this.floatingUiGroup.visible = !!visible;
+    }
   }
 
   isShadowsActive() {
@@ -2649,16 +2892,17 @@ export class RCT3DRenderer {
       const isSlaughterhouse = !e.properties.brain && !isRoad && !isWarehouse && (!!e.properties.slaughterhouse || e.properties.name?.includes("Abatedouro"));
       const isKitchen = !e.properties.brain && !isRoad && !isWarehouse && !isSlaughterhouse && (!!e.properties.kitchen || e.properties.name?.includes("Cozinha"));
       const isWell = !e.properties.brain && !isRoad && !isWarehouse && !isSlaughterhouse && !isKitchen && (!!e.properties.well || !!e.properties.isWell || e.properties.name?.includes("Poço") || e.properties.name?.includes("Well"));
-      const isDoor = !e.properties.brain && !isWarehouse && !isSlaughterhouse && !isKitchen && !isWell && !isTorch && !isCampfire && !isRoad && !!e.properties.door;
+      const isArtisanHut = !e.properties.brain && !isRoad && !isWarehouse && !isSlaughterhouse && !isKitchen && !isWell && (!!e.properties.artisan_hut || e.properties.name?.includes("Artesão") || e.properties.name?.includes("Cabana do Construtor"));
+      const isDoor = !e.properties.brain && !isWarehouse && !isSlaughterhouse && !isKitchen && !isWell && !isArtisanHut && !isTorch && !isCampfire && !isRoad && !!e.properties.door;
 
       const isCactus = e.properties.species === "cactus" || e.properties.name?.toLowerCase().includes("cactus") || e.properties.name?.toLowerCase().includes("cacto");
       const isTree = !isCactus && (e.properties.species === "oak" || e.properties.species === "pine" || e.properties.species === "willow" || e.properties.species === "tree" || !!e.properties.tree || (r.skin && r.skin.toLowerCase().includes("tree")));
-      const isWoodLog = !e.properties.brain && !isDoor && !isWarehouse && !isSlaughterhouse && !isKitchen && !isTorch && !isCampfire && !isRoad && (e.properties.resourceType === "wood" || e.properties.name?.includes("Wood Log") || e.properties.name?.includes("Madeira") || r.skin === "Item_Wood.png");
-      const isStoneItem = !e.properties.brain && !isDoor && !isWarehouse && !isSlaughterhouse && !isKitchen && !isTorch && !isCampfire && !isRoad && (e.properties.resourceType === "stone" || e.properties.name?.includes("Stone Block") || e.properties.name?.includes("Pedra"));
-      const isHouse = !e.properties.brain && !isWoodLog && !isStoneItem && !isTree && !isCactus && !isWarehouse && !isSlaughterhouse && !isKitchen && !isWell && !isTorch && !isCampfire && !isRoad && (!!e.properties.house || (e.properties.species === "structure" && (r.skin === "Overworld_House.png" || e.properties.name?.includes("Casa") || e.properties.name?.includes("Ossuário") || e.properties.name?.includes("Castelo") || e.properties.name?.includes("Cabana"))));
-      const isWall = !e.properties.brain && !isDoor && !isHouse && !isWarehouse && !isSlaughterhouse && !isKitchen && !isWell && !isTorch && !isCampfire && !isRoad && !isWoodLog && !isStoneItem && !isTree && !isCactus && (r.skin?.startsWith("Wall_") || e.properties.name?.includes("Muralha") || e.properties.name?.includes("Paliçada") || e.properties.name?.includes("Muro") || (e.properties.structure && !e.properties.edible && !e.properties.resourceType));
+      const isWoodLog = !e.properties.brain && !isDoor && !isWarehouse && !isSlaughterhouse && !isKitchen && !isArtisanHut && !isTorch && !isCampfire && !isRoad && (e.properties.resourceType === "wood" || e.properties.name?.includes("Wood Log") || e.properties.name?.includes("Madeira") || r.skin === "Item_Wood.png");
+      const isStoneItem = !e.properties.brain && !isDoor && !isWarehouse && !isSlaughterhouse && !isKitchen && !isArtisanHut && !isTorch && !isCampfire && !isRoad && (e.properties.resourceType === "stone" || e.properties.name?.includes("Stone Block") || e.properties.name?.includes("Pedra"));
+      const isHouse = !e.properties.brain && !isWoodLog && !isStoneItem && !isTree && !isCactus && !isWarehouse && !isSlaughterhouse && !isKitchen && !isWell && !isArtisanHut && !isTorch && !isCampfire && !isRoad && (!!e.properties.house || (e.properties.species === "structure" && (r.skin === "Overworld_House.png" || e.properties.name?.includes("Casa") || e.properties.name?.includes("Ossuário") || e.properties.name?.includes("Castelo"))));
+      const isWall = !e.properties.brain && !isDoor && !isHouse && !isWarehouse && !isSlaughterhouse && !isKitchen && !isWell && !isArtisanHut && !isTorch && !isCampfire && !isRoad && !isWoodLog && !isStoneItem && !isTree && !isCactus && (r.skin?.startsWith("Wall_") || e.properties.name?.includes("Muralha") || e.properties.name?.includes("Paliçada") || e.properties.name?.includes("Muro") || (e.properties.structure && !e.properties.edible && !e.properties.resourceType));
 
-      const isBuilding = isHouse || isWall || isDoor || isWarehouse || isSlaughterhouse || isKitchen || isWell;
+      const isBuilding = isHouse || isWall || isDoor || isWarehouse || isSlaughterhouse || isKitchen || isWell || isArtisanHut;
       const isPlantOrItem = isTree || isCactus || isWoodLog || isStoneItem || isTorch || isCampfire || isRoad;
 
       const isItem = !e.properties.brain && !isBuilding && !isTree && !isCactus && !isWoodLog && !isStoneItem && !isTorch && !isCampfire && !isRoad;
@@ -2923,8 +3167,16 @@ export class RCT3DRenderer {
     this.tempColor1.lerp(this.tempColor2, sAlpha);
     this.ambientLight.color.copy(this.tempColor1);
 
-    // Keep the background void pure black
-    this.scene.background.setHex(0x000000);
+    // Atmospheric sky background & ambient fog (eliminates black void outside map)
+    this.tempColor1.setHex(k1.bg);
+    this.tempColor2.setHex(k2.bg);
+    this.tempColor1.lerp(this.tempColor2, sAlpha);
+    this.scene.background.copy(this.tempColor1);
+    if (!this.scene.fog) {
+      this.scene.fog = new THREE.FogExp2(this.tempColor1.getHex(), 0.0018);
+    } else {
+      this.scene.fog.color.copy(this.tempColor1);
+    }
 
     const sunIntensity = k1.sunI + (k2.sunI - k1.sunI) * sAlpha;
     const ambIntensity = k1.ambI + (k2.ambI - k1.ambI) * sAlpha;
@@ -3518,7 +3770,8 @@ export class RCT3DRenderer {
     const warehouseCounts = [0, 0];
     const slaughterhouseCounts = [0, 0];
     const kitchenCounts = [0, 0];
-    const houseVariantCounts = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    const houseVariantCounts = new Array(14).fill(0);
+    const leaderVariantCounts = new Array(7).fill(0);
     let warehouseCount = 0;
     let waterWellCount = 0;
     let houseCount = 0;
@@ -3580,18 +3833,19 @@ export class RCT3DRenderer {
       const isSlaughterhouse = !e.properties.brain && !isRoad && !isWarehouse && (!!e.properties.slaughterhouse || e.properties.name?.includes("Abatedouro"));
       const isKitchen = !e.properties.brain && !isRoad && !isWarehouse && !isSlaughterhouse && (!!e.properties.kitchen || e.properties.name?.includes("Cozinha"));
       const isWell = !e.properties.brain && !isRoad && !isWarehouse && !isSlaughterhouse && !isKitchen && (!!e.properties.well || !!e.properties.isWell || e.properties.name?.includes("Poço") || e.properties.name?.includes("Well"));
-      const isDoor = !e.properties.brain && !isWarehouse && !isSlaughterhouse && !isKitchen && !isWell && !isTorch && !isCampfire && !isRoad && !!e.properties.door;
+      const isArtisanHut = !e.properties.brain && !isRoad && !isWarehouse && !isSlaughterhouse && !isKitchen && !isWell && (!!e.properties.artisan_hut || e.properties.name?.includes("Artesão") || e.properties.name?.includes("Cabana do Construtor"));
+      const isDoor = !e.properties.brain && !isWarehouse && !isSlaughterhouse && !isKitchen && !isWell && !isArtisanHut && !isTorch && !isCampfire && !isRoad && !!e.properties.door;
 
       const isCactus = e.properties.species === "cactus" || e.properties.name?.toLowerCase().includes("cactus") || e.properties.name?.toLowerCase().includes("cacto");
       const isTree = !isCactus && (e.properties.species === "oak" || e.properties.species === "pine" || e.properties.species === "willow" || e.properties.species === "tree" || !!e.properties.tree || (r.skin && r.skin.toLowerCase().includes("tree")));
       const isPine = isTree && (e.properties.species === "pine" || (r.skin && r.skin.toLowerCase().includes("pine")));
 
-      const isWoodLog = !e.properties.brain && !isDoor && !isWarehouse && !isSlaughterhouse && !isKitchen && !isTorch && !isCampfire && !isRoad && (e.properties.resourceType === "wood" || e.properties.name?.includes("Wood Log") || e.properties.name?.includes("Madeira") || r.skin === "Item_Wood.png");
-      const isStoneItem = !e.properties.brain && !isDoor && !isWarehouse && !isSlaughterhouse && !isKitchen && !isTorch && !isCampfire && !isRoad && (e.properties.resourceType === "stone" || e.properties.name?.includes("Stone Block") || e.properties.name?.includes("Pedra"));
-      const isHouse = !e.properties.brain && !isWoodLog && !isStoneItem && !isTree && !isCactus && !isWarehouse && !isSlaughterhouse && !isKitchen && !isWell && !isTorch && !isCampfire && !isRoad && (!!e.properties.house || (e.properties.species === "structure" && (r.skin === "Overworld_House.png" || e.properties.name?.includes("Casa") || e.properties.name?.includes("Ossuário") || e.properties.name?.includes("Castelo") || e.properties.name?.includes("Cabana"))));
-      const isWall = !e.properties.brain && !isDoor && !isHouse && !isWarehouse && !isSlaughterhouse && !isKitchen && !isWell && !isTorch && !isCampfire && !isRoad && !isWoodLog && !isStoneItem && !isTree && !isCactus && (r.skin?.startsWith("Wall_") || e.properties.name?.includes("Muralha") || e.properties.name?.includes("Paliçada") || e.properties.name?.includes("Muro") || (e.properties.structure && !e.properties.edible && !e.properties.resourceType));
+      const isWoodLog = !e.properties.brain && !isDoor && !isWarehouse && !isSlaughterhouse && !isKitchen && !isArtisanHut && !isTorch && !isCampfire && !isRoad && (e.properties.resourceType === "wood" || e.properties.name?.includes("Wood Log") || e.properties.name?.includes("Madeira") || r.skin === "Item_Wood.png");
+      const isStoneItem = !e.properties.brain && !isDoor && !isWarehouse && !isSlaughterhouse && !isKitchen && !isArtisanHut && !isTorch && !isCampfire && !isRoad && (e.properties.resourceType === "stone" || e.properties.name?.includes("Stone Block") || e.properties.name?.includes("Pedra"));
+      const isHouse = !e.properties.brain && !isWoodLog && !isStoneItem && !isTree && !isCactus && !isWarehouse && !isSlaughterhouse && !isKitchen && !isWell && !isArtisanHut && !isTorch && !isCampfire && !isRoad && (!!e.properties.house || (e.properties.species === "structure" && (r.skin === "Overworld_House.png" || e.properties.name?.includes("Casa") || e.properties.name?.includes("Ossuário") || e.properties.name?.includes("Castelo"))));
+      const isWall = !e.properties.brain && !isDoor && !isHouse && !isWarehouse && !isSlaughterhouse && !isKitchen && !isWell && !isArtisanHut && !isTorch && !isCampfire && !isRoad && !isWoodLog && !isStoneItem && !isTree && !isCactus && (r.skin?.startsWith("Wall_") || e.properties.name?.includes("Muralha") || e.properties.name?.includes("Paliçada") || e.properties.name?.includes("Muro") || (e.properties.structure && !e.properties.edible && !e.properties.resourceType));
 
-      const isBuilding = isHouse || isWall || isDoor || isWarehouse || isSlaughterhouse || isKitchen || isWell;
+      const isBuilding = isHouse || isWall || isDoor || isWarehouse || isSlaughterhouse || isKitchen || isWell || isArtisanHut;
       const isPlantOrItem = isTree || isCactus || isWoodLog || isStoneItem || isTorch || isCampfire || isRoad;
 
       const isItem = !e.properties.brain && !isBuilding && !isTree && !isCactus && !isWoodLog && !isStoneItem && !isTorch && !isCampfire && !isRoad;
@@ -3785,6 +4039,19 @@ export class RCT3DRenderer {
           this.instHouseStage1.setMatrixAt(stage1Count++, mMatrix);
         }
       }
+      // --- 3D ARTISAN & BUILDER WORKSHOP HUT (Strict 1x1 Footprint) ---
+      else if (isArtisanHut) {
+        occupiedHouseTiles.add(`${Math.floor(e.x)}_${Math.floor(e.y)}`);
+        const isCompleted = e.properties?.artisan_hut ? (e.properties.artisan_hut.isCompleted !== false) : true;
+        mMatrix.identity();
+        mMatrix.setPosition(e.x + 0.5, surfaceH, e.y + 0.5);
+
+        if (isCompleted && warehouseCounts[0] < 100) {
+          this.instWarehouses[0].setMatrixAt(warehouseCounts[0]++, mMatrix);
+        } else if (!isCompleted && stage2Count < 400) {
+          this.instHouseStage2.setMatrixAt(stage2Count++, mMatrix);
+        }
+      }
       // --- 3D FORTIFIED GATES (Wood & Iron Archway + Open/Closed States) ---
       else if (isDoor) {
         const isCompleted = e.isConstructed !== false;
@@ -3817,11 +4084,12 @@ export class RCT3DRenderer {
           gateClosedCount++;
         }
       }
-      // --- 3D HOUSES & 10 ARCHITECTURAL VARIATIONS ---
+      // --- 3D HOUSES, LEADER PALACES & 14 ARCHITECTURAL VARIATIONS ---
       else if (isHouse) {
         const h = e.properties.house;
-        const fpW = h?.footprintW || (h?.footprint ? Number(h.footprint.split("x")[0]) : 1) || 1;
-        const fpH = h?.footprintH || (h?.footprint ? Number(h.footprint.split("x")[1]) : 1) || 1;
+        const isLeaderHouse = !!e.properties.leaderHouse || !!h?.isLeaderHouse;
+        const fpW = h?.footprintW || (isLeaderHouse ? 3 : (h?.footprint ? Number(h.footprint.split("x")[0]) : 1)) || 1;
+        const fpH = h?.footprintH || (isLeaderHouse ? 3 : (h?.footprint ? Number(h.footprint.split("x")[1]) : 1)) || 1;
         for (let fx = 0; fx < fpW; fx++) {
           for (let fy = 0; fy < fpH; fy++) {
             occupiedHouseTiles.add(`${Math.floor(e.x + fx)}_${Math.floor(e.y + fy)}`);
@@ -3833,9 +4101,22 @@ export class RCT3DRenderer {
         const curMaterials = (h?.woodCurrent || 0) + (h?.stoneCurrent || 0) + (h?.boneCurrent || 0);
         const progress = isCompleted ? 1.0 : (curMaterials / Math.max(1, totalCost));
 
-        // Non-square houses (2x1, 3x2) maintain fixed footprint alignment so they never clip into roads or neighbors
+        // 90° Cardinal Rotation (0 = 0°, 1 = 90°, 2 = 180°, 3 = 270°)
+        const rot = h?.rotation || 0;
+        const rotAngle = rot * (Math.PI / 2);
+
         mMatrix.identity();
-        mMatrix.setPosition(e.x, surfaceH, e.y);
+        if (rot === 0) {
+          mMatrix.setPosition(e.x, surfaceH, e.y);
+        } else {
+          mMatrix.makeRotationY(rotAngle);
+          let offX = 0, offZ = 0;
+          if (rot === 1) { offX = fpW; offZ = 0; }
+          else if (rot === 2) { offX = fpW; offZ = fpH; }
+          else if (rot === 3) { offX = 0; offZ = fpH; }
+          const posMat = new THREE.Matrix4().setPosition(e.x + offX, surfaceH, e.y + offZ);
+          mMatrix.premultiply(posMat);
+        }
 
         const htx = Math.floor(e.x);
         const hty = Math.floor(e.y);
@@ -3847,22 +4128,6 @@ export class RCT3DRenderer {
         }
 
         if (isCompleted) {
-          let hVar = 0;
-          if (h && h.houseVariant !== undefined) {
-            hVar = Math.abs(h.houseVariant) % 10;
-          } else {
-            hVar = (Math.abs(htx * 7 + hty * 13)) % 10;
-          }
-
-          const wallMesh = this.instHouseWallVariants[hVar] || this.instHouseWallVariants[0];
-          const roofMesh = this.instHouseRoofVariants[hVar] || this.instHouseRoofVariants[0];
-          if (houseVariantCounts[hVar] < 200) {
-            wallMesh.setMatrixAt(houseVariantCounts[hVar], mMatrix);
-            roofMesh.setMatrixAt(houseVariantCounts[hVar], mMatrix);
-            houseVariantCounts[hVar]++;
-          }
-
-          // Hoist Clan Flag Banner atop the Roof Apex
           let houseClan = e.properties.group;
           if (!houseClan && h?.ownerId) {
             for (const g of clanGroups.values()) {
@@ -3872,11 +4137,50 @@ export class RCT3DRenderer {
               }
             }
           }
+          const clanColor = (houseClan && houseClan.color !== undefined ? houseClan.color : (e.properties.render?.color || 0xffd700)) & 0xffffff;
+
+          if (isLeaderHouse) {
+            let lVar = 0;
+            if (h && h.houseVariant !== undefined) {
+              lVar = Math.abs(h.houseVariant) % 7;
+            } else if (e.properties.leaderHouse?.variant !== undefined) {
+              lVar = Math.abs(e.properties.leaderHouse.variant) % 7;
+            } else {
+              lVar = Math.abs(htx * 5 + hty * 11) % 7;
+            }
+
+            const wallMesh = this.instLeaderHouseWallVariants[lVar] || this.instLeaderHouseWallVariants[0];
+            const roofMesh = this.instLeaderHouseRoofVariants[lVar] || this.instLeaderHouseRoofVariants[0];
+            if (leaderVariantCounts[lVar] < 50) {
+              wallMesh.setMatrixAt(leaderVariantCounts[lVar], mMatrix);
+              roofMesh.setMatrixAt(leaderVariantCounts[lVar], mMatrix);
+              roofMesh.setColorAt(leaderVariantCounts[lVar], this.tempColor1.setHex(clanColor));
+              leaderVariantCounts[lVar]++;
+            }
+          } else {
+            let hVar = 0;
+            if (h && h.houseVariant !== undefined) {
+              hVar = Math.abs(h.houseVariant) % 14;
+            } else {
+              hVar = (Math.abs(htx * 7 + hty * 13)) % 14;
+            }
+
+            const wallMesh = this.instHouseWallVariants[hVar] || this.instHouseWallVariants[0];
+            const roofMesh = this.instHouseRoofVariants[hVar] || this.instHouseRoofVariants[0];
+            if (houseVariantCounts[hVar] < 200) {
+              wallMesh.setMatrixAt(houseVariantCounts[hVar], mMatrix);
+              roofMesh.setMatrixAt(houseVariantCounts[hVar], mMatrix);
+              roofMesh.setColorAt(houseVariantCounts[hVar], this.tempColor1.setHex(clanColor));
+              houseVariantCounts[hVar]++;
+            }
+          }
+
+          // Hoist Clan Flag Banner atop the Roof Apex
           const flagKey = `${e.id}_house_flag`;
           activeUiIds.add(flagKey);
 
           const flagSkin = houseClan?.flagSkin || "Feature_Flower.png";
-          const fgHex = (houseClan && houseClan.color !== undefined ? houseClan.color : 0xffd700) & 0xffffff;
+          const fgHex = clanColor;
           const bgHex = (houseClan && houseClan.backcolor !== undefined ? houseClan.backcolor : 0x1e1e28) & 0xffffff;
           const flagTex = createTintedTexture(flagSkin, fgHex, bgHex, 1.0);
           const flagMatKey = flagTex.uuid;
@@ -3913,7 +4217,7 @@ export class RCT3DRenderer {
             flagMesh.material = flagMat;
           }
 
-          const numFloors = h?.maxFloors || h?.floors?.length || 2;
+          const numFloors = h?.maxFloors || h?.floors?.length || (isLeaderHouse ? 7 : 2);
           const peakY = surfaceH + (1.20 + numFloors * 1.15) + 0.25;
           flagMesh.position.set(e.x + fpW * 0.5, peakY, e.y + fpH * 0.5);
           flagMesh.rotation.y = this.fixedRotationY;
@@ -4406,11 +4710,24 @@ export class RCT3DRenderer {
     this.instWaterWellRoof.count = waterWellCount;
     this.instWaterWellRoof.instanceMatrix.needsUpdate = true;
 
-    for (let h = 0; h < 10; h++) {
+    for (let h = 0; h < 14; h++) {
       this.instHouseWallVariants[h].count = houseVariantCounts[h];
       this.instHouseWallVariants[h].instanceMatrix.needsUpdate = true;
       this.instHouseRoofVariants[h].count = houseVariantCounts[h];
       this.instHouseRoofVariants[h].instanceMatrix.needsUpdate = true;
+      if (this.instHouseRoofVariants[h].instanceColor) {
+        this.instHouseRoofVariants[h].instanceColor.needsUpdate = true;
+      }
+    }
+
+    for (let l = 0; l < 7; l++) {
+      this.instLeaderHouseWallVariants[l].count = leaderVariantCounts[l];
+      this.instLeaderHouseWallVariants[l].instanceMatrix.needsUpdate = true;
+      this.instLeaderHouseRoofVariants[l].count = leaderVariantCounts[l];
+      this.instLeaderHouseRoofVariants[l].instanceMatrix.needsUpdate = true;
+      if (this.instLeaderHouseRoofVariants[l].instanceColor) {
+        this.instLeaderHouseRoofVariants[l].instanceColor.needsUpdate = true;
+      }
     }
 
     this.instHouseWalls.count = houseCount;
@@ -4479,21 +4796,25 @@ export class RCT3DRenderer {
       this.reticleMesh.visible = false;
     }
 
-    // Update 3D Dithered Cloud Deck
+    // Update 3D Outer Perimeter Clouds (Strictly outside map boundaries [0..MAP_WIDTH, 0..MAP_HEIGHT])
     if (this.cloudMesh && this.cloudMat) {
-      // NormZoom: 0.0 (high sky) to 1.0 (ground)
-      const normZoom = Math.max(0.0, Math.min(1.0, (this.zoom - 0.25) / (4.0 - 0.25)));
-      // Clouds appear strictly from 0.00 to 0.10 zoom (high stratosphere).
-      // At zoom 0.0, uFade = 1.0 (dense full clouds).
-      // As zoom approaches 0.10, uFade decreases and dithering dissolves them away.
-      // Any zoom > 0.10 is completely free of clouds.
-      const cloudFade = normZoom <= 0.10 ? Math.max(0.0, 1.0 - (normZoom / 0.10)) : 0.0;
+      const aspect = this.width / this.height;
+      const viewSize = 28 / this.zoom;
+      const halfX = viewSize * aspect;
+      const halfZ = viewSize;
+      const minCamX = this.camX - halfX;
+      const maxCamX = this.camX + halfX;
+      const minCamZ = this.camY - halfZ;
+      const maxCamZ = this.camY + halfZ;
 
-      if (cloudFade > 0.001) {
+      const seesOutside = (minCamX < 0 || maxCamX > MAP_WIDTH || minCamZ < 0 || maxCamZ > MAP_HEIGHT);
+
+      if (seesOutside) {
         this.cloudMesh.visible = true;
-        this.cloudMesh.position.set(this.camX, 16.0, this.camY);
+        this.cloudMesh.position.set(512, 14.0, 512);
         this.cloudMat.uniforms.uTime.value = performance.now() * 0.001;
-        this.cloudMat.uniforms.uFade.value = cloudFade;
+        this.cloudMat.uniforms.uFade.value = 1.0;
+        this.cloudMat.uniforms.uMapBounds.value.set(0.0, 0.0, MAP_WIDTH, MAP_HEIGHT);
         this.cloudMat.uniforms.uSunColor.value.copy(this.sunLight.color);
         this.cloudMat.uniforms.uAmbColor.value.copy(this.ambientLight.color);
       } else {

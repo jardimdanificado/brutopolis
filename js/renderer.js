@@ -359,11 +359,23 @@ export class Renderer {
     const fx = this.camX + (screenX - centerX) / tileSize;
     const fy = this.camY + (screenY - centerY) / tileSize;
 
-    // Pass 1: exact tile hit (including multi-tile structures like houses and warehouses)
+    function getFootprint(e) {
+      if (!e || !e.properties) return [1, 1];
+      const p = e.properties;
+      if (p.house) {
+        const w = p.house.footprintW || (p.house.footprint ? Number(p.house.footprint.split("x")[0]) : 1) || 1;
+        const h = p.house.footprintH || (p.house.footprint ? Number(p.house.footprint.split("x")[1]) : 1) || 1;
+        return [w, h];
+      }
+      if (p.leaderHouse) return [3, 3];
+      if (p.warehouse || p.slaughterhouse || p.kitchen || p.artisan_hut) return [2, 2];
+      return [1, 1];
+    }
+
+    // Pass 1: exact tile hit (including multi-tile structures like houses, warehouses, leader palaces)
     for (const e of entities) {
       if (e.destroyed || !e.properties?.render) continue;
-      const fpW = e.properties?.house?.footprintW || (e.properties?.house?.footprint ? Number(e.properties.house.footprint.split("x")[0]) : 1) || 1;
-      const fpH = e.properties?.house?.footprintH || (e.properties?.house?.footprint ? Number(e.properties.house.footprint.split("x")[1]) : 1) || 1;
+      const [fpW, fpH] = getFootprint(e);
       if (fx >= e.x && fx < e.x + fpW && fy >= e.y && fy < e.y + fpH) {
         this.selectedEntityId = e.id;
         return e.id;
@@ -375,8 +387,7 @@ export class Renderer {
     let foundId = -1;
     for (const e of entities) {
       if (e.destroyed || !e.properties?.render) continue;
-      const fpW = e.properties?.house?.footprintW || (e.properties?.house?.footprint ? Number(e.properties.house.footprint.split("x")[0]) : 1) || 1;
-      const fpH = e.properties?.house?.footprintH || (e.properties?.house?.footprint ? Number(e.properties.house.footprint.split("x")[1]) : 1) || 1;
+      const [fpW, fpH] = getFootprint(e);
       const dx = (e.x + fpW * 0.5) - fx;
       const dy = (e.y + fpH * 0.5) - fy;
       const d = Math.abs(dx) + Math.abs(dy);
@@ -809,8 +820,20 @@ export class Renderer {
           const sx = centerScreenX + Math.floor((e.x - this.camX) * tileSize);
           const sy = centerScreenY + Math.floor((e.y - this.camY) * tileSize);
           const selectColor = rgba32(255, 215, 0);
-          drawBoxOutline32(buf32, width, height, sx - 2, sy - 2, tileSize + 4, tileSize + 4, selectColor);
-          drawBoxOutline32(buf32, width, height, sx - 3, sy - 3, tileSize + 6, tileSize + 6, selectColor);
+          const p = e.properties || {};
+          let fpW = 1, fpH = 1;
+          if (p.house) {
+            fpW = p.house.footprintW || (p.house.footprint ? Number(p.house.footprint.split("x")[0]) : 1) || 1;
+            fpH = p.house.footprintH || (p.house.footprint ? Number(p.house.footprint.split("x")[1]) : 1) || 1;
+          } else if (p.leaderHouse) {
+            fpW = 3; fpH = 3;
+          } else if (p.warehouse || p.slaughterhouse || p.kitchen || p.artisan_hut) {
+            fpW = 2; fpH = 2;
+          }
+          const selW = fpW * tileSize;
+          const selH = fpH * tileSize;
+          drawBoxOutline32(buf32, width, height, sx - 2, sy - 2, selW + 4, selH + 4, selectColor);
+          drawBoxOutline32(buf32, width, height, sx - 3, sy - 3, selW + 6, selH + 6, selectColor);
           break;
         }
       }

@@ -1,6 +1,9 @@
 // =============================================================================
-// Brutopolis — Pure Canvas Simulation Engine (Embedded 8x8 Engine Font)
+// Brutopolis
 // =============================================================================
+
+const BrutopolisVersion = "0.118.1";
+const BrutopolisVersionName = "Heaven Sees You";
 
 // WASM replaced by Pure JS Renderer
 import { World } from "./js/world.js";
@@ -42,6 +45,8 @@ import {
   restoreWorldEvents,
   appendWorldEvents,
   recordWorldEvent,
+  setEventLogConfig,
+  eventLogConfig,
   OP_RELATION,
   allEvents,
   eventsById
@@ -301,11 +306,11 @@ function updateLocalEntities(entitiesData, registryData) {
     const zSize = getZoneSize();
     _receivedIdsCache.clear();
     const receivedIds = _receivedIdsCache;
-    
+
     for (const entData of entitiesData) {
       if (!entData) continue;
       receivedIds.add(entData.id);
-      
+
       let ent = entityRegistry.get(entData.id);
       const isNew = !ent;
       if (isNew) {
@@ -344,7 +349,7 @@ function updateLocalEntities(entitiesData, registryData) {
         curEntities.push(ent);
       }
     }
-    
+
     // Clean up ghosts that the worker stopped sending (because they died)
     if (entities && entities.length > 0) {
       for (let i = 0; i < entities.length; i++) {
@@ -1899,11 +1904,12 @@ window.addEventListener("keydown", (e) => {
         currentMode = "MAP";
       }
       audio.stopInstance("menuTheme", false);
-    } else if (currentMode === "GENERATOR" || currentMode === "SCENARIOS") {
+    } else if (currentMode === "GENERATOR" || currentMode === "SCENARIOS" || currentMode === "OPTIONS") {
       currentMode = hasActiveGame ? "MAP" : "TITLE";
       if (hasActiveGame) audio.stopInstance("menuTheme", false);
     } else {
       currentMode = "MAP";
+      if (hasActiveGame) audio.stopInstance("menuTheme", false);
     }
   } else if (e.code === "Equal" || e.code === "NumpadAdd" || e.code === "BracketRight") {
     increaseSimSpeed();
@@ -2038,44 +2044,27 @@ function renderTopHudBar() {
 
     const timeStr = `D${String(clock.day).padStart(2, "0")} ${String(clock.hour).padStart(2, "0")}:${String(clock.minute).padStart(2, "0")}`;
     drawText8x8(timeStr, 188, 13, "#ffffff", 1);
-    drawText8x8(`SUN:${Math.round(clock.globalLight * 100)}%`, 276, 13, "#3cbcfc", 1);
 
-    drawText8x8(`${currentFps}FPS ${measuredTps}TPS`, 330, 13, "#bcbcbc", 1);
+    drawText8x8(`${currentFps}FPS ${measuredTps}TPS`, 276, 13, "#bcbcbc", 1);
 
     // MENU / TITLE Button
     drawNESButton(CANVAS_WIDTH - 64, 5, 56, 24, "MENU", false, false);
     registerClickableRegion(CANVAS_WIDTH - 64, 5, 56, 24, returnToTitleScreen);
 
-    // NEW WORLD Generator Button
-    const isGenAct = currentMode === "GENERATOR";
-    drawNESButton(CANVAS_WIDTH - 164, 5, 94, 24, "NEW WORLD", isGenAct, false);
-    registerClickableRegion(CANVAS_WIDTH - 164, 5, 94, 24, () => {
-      currentMode = currentMode === "GENERATOR" ? "MAP" : "GENERATOR";
+    // OPTIONS Button
+    const isOptAct = currentMode === "OPTIONS";
+    drawNESButton(CANVAS_WIDTH - 150, 5, 80, 24, "OPTIONS", isOptAct, false);
+    registerClickableRegion(CANVAS_WIDTH - 150, 5, 80, 24, () => {
+      currentMode = currentMode === "OPTIONS" ? "MAP" : "OPTIONS";
       modalScroll = 0;
     });
 
     if (is3DMode && rctRenderer) {
-      const fullWorldActive = rctRenderer.isFullWorldMode ? rctRenderer.isFullWorldMode() : false;
-      const fullTxt = fullWorldActive ? "FULL 3D" : "CHUNK 3D";
-      drawNESButton(CANVAS_WIDTH - 476, 5, 78, 24, fullTxt, fullWorldActive, false);
-      registerClickableRegion(CANVAS_WIDTH - 476, 5, 78, 24, () => rctRenderer.toggleFullWorld());
-
-      const shdMode = rctRenderer.getShadowsModeName ? rctRenderer.getShadowsModeName() : (rctRenderer.shadowsEnabled ? "ON" : "OFF");
-      const shdTxt = "SHD:" + shdMode;
-      const isShdActive = shdMode === "ON";
-      drawNESButton(CANVAS_WIDTH - 392, 5, 68, 24, shdTxt, isShdActive, false);
-      registerClickableRegion(CANVAS_WIDTH - 392, 5, 68, 24, () => rctRenderer.toggleShadows());
-
-      const resMode = rctRenderer.getResolutionName ? rctRenderer.getResolutionName() : "100%";
-      const resTxt = "RES:" + resMode;
-      drawNESButton(CANVAS_WIDTH - 320, 5, 72, 24, resTxt, resMode !== "100%", false);
-      registerClickableRegion(CANVAS_WIDTH - 320, 5, 72, 24, () => rctRenderer.toggleResolution());
-
       const wireMode = rctRenderer.getWireframeModeName ? rctRenderer.getWireframeModeName() : (rctRenderer.isWireframe ? "ON" : "OFF");
       const wireTxt = "WIRE:" + wireMode;
       const isWireActive = wireMode !== "OFF";
-      drawNESButton(CANVAS_WIDTH - 242, 5, 72, 24, wireTxt, isWireActive, false);
-      registerClickableRegion(CANVAS_WIDTH - 242, 5, 72, 24, () => rctRenderer.toggleWireframe());
+      drawNESButton(CANVAS_WIDTH - 230, 5, 74, 24, wireTxt, isWireActive, false);
+      registerClickableRegion(CANVAS_WIDTH - 230, 5, 74, 24, () => rctRenderer.toggleWireframe());
     }
   } else {
     // Mobile responsive top bar
@@ -2098,10 +2087,10 @@ function renderTopHudBar() {
     registerClickableRegion(topBtnX, 5, 38, 24, toggle3DMode);
     topBtnX -= 42;
 
-    const isGenAct = currentMode === "GENERATOR";
-    drawNESButton(topBtnX, 5, 38, 24, "GEN", isGenAct, false);
+    const isOptAct = currentMode === "OPTIONS";
+    drawNESButton(topBtnX, 5, 38, 24, "OPT", isOptAct, false);
     registerClickableRegion(topBtnX, 5, 38, 24, () => {
-      currentMode = currentMode === "GENERATOR" ? "MAP" : "GENERATOR";
+      currentMode = currentMode === "OPTIONS" ? "MAP" : "OPTIONS";
       modalScroll = 0;
     });
     topBtnX -= 46;
@@ -2568,7 +2557,7 @@ function renderGraphicalFamilyTreeTab(mx, my, mw, mh, target) {
     if (!ent) return;
 
     const isAlive = !ent.destroyed && ent.properties?.life?.energy > 0;
-    
+
     // Transform coordinates back to screen space for hover and clicking
     const scrX = (centerX + familyTreePanX) + (cx - centerX) * familyTreeZoom;
     const scrY = (contentY + 40 + familyTreePanY) + (cy - (contentY + 40)) * familyTreeZoom;
@@ -5272,175 +5261,336 @@ function renderCreatureEventLogPanel() {
   }
 }
 
-/**
- * Renders 100% native full-resolution 2D badges, emoticons, held item icons, and clan flags
- * projected from 3D/2D world coordinates directly onto the 2D UI Canvas overlay.
- */
-function renderHighDefOverheadBadges() {
-  if (currentMode !== "MAP" || !renderer || !entities || entities.length === 0) return;
+// ---------------------------------------------------------------------------
+// 7. Options & Optimization Settings Modal
+// ---------------------------------------------------------------------------
+
+let optionsTab = "OPTIMIZATION"; // "OPTIMIZATION" | "GRAPHICS" | "SIMULATION"
+
+const gameOptions = {
+  maxWorldEvents: 0,        // 0 = Unlimited, 1000, 5000, 10000, 25000, 50000
+  maxCreatureEvents: 0,     // 0 = Unlimited, 50, 100, 150, 250, 500
+  max3DRenderDistance: 64,  // 0 = Full World, 24, 36, 48, 64, 96, 128
+  targetFps: 60,            // 30, 60, 120, 0
+  shadowQuality: 2048,      // 1024, 2048, 4096
+  showBadges: true,
+  showClanFlags: true,
+};
+
+function loadGameOptions() {
+  try {
+    const s = localStorage.getItem("brutopolis_options");
+    if (s) {
+      Object.assign(gameOptions, JSON.parse(s));
+    }
+  } catch (e) { }
+  applyGameOptions();
+}
+
+function saveGameOptions() {
+  try {
+    localStorage.setItem("brutopolis_options", JSON.stringify(gameOptions));
+  } catch (e) { }
+  applyGameOptions();
+}
+
+function applyGameOptions() {
+  setEventLogConfig({
+    maxWorldEvents: gameOptions.maxWorldEvents,
+    maxCreatureEvents: gameOptions.maxCreatureEvents
+  });
+  if (rctRenderer) {
+    if (rctRenderer.setShadowQuality) rctRenderer.setShadowQuality(gameOptions.shadowQuality);
+    if (rctRenderer.setOverheadBadgesVisible) rctRenderer.setOverheadBadgesVisible(gameOptions.showBadges);
+  }
+}
+
+loadGameOptions();
+
+function renderOptionsModal() {
+  const isMobile = CANVAS_WIDTH <= 680;
+  const mx = isMobile ? 6 : 30;
+  const my = 36;
+  const mw = isMobile ? CANVAS_WIDTH - 12 : CANVAS_WIDTH - 60;
+  const mh = isMobile ? CANVAS_HEIGHT - 44 : CANVAS_HEIGHT - 72;
 
   ctx.save();
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
+  ctx.fillStyle = "rgba(0, 0, 0, 0.94)";
+  ctx.fillRect(0, 32, CANVAS_WIDTH, CANVAS_HEIGHT - 68);
 
-  for (let i = 0; i < entities.length; i++) {
-    const e = entities[i];
-    if (!e || e.destroyed) continue;
+  drawNESBox(mx, my, mw, mh);
 
-    const props = e.properties || {};
-    const isCreature = !props.house && (!!props.brain || !!props.life);
-    const isHouse = !!props.house;
-
-    // 1. High-Def Clan Flag atop House
-    if (isHouse && props.house?.isCompleted) {
-      let houseClan = props.group;
-      if (!houseClan && props.house?.ownerId) {
-        for (const g of clanGroups.values()) {
-          if (g.id === props.groupId || g.members?.includes(props.house.ownerId) || g.members?.includes(Number(props.house.ownerId))) {
-            houseClan = g;
-            break;
-          }
-        }
-      }
-      if (houseClan) {
-        const floors = props.house?.maxFloors || props.house?.floors?.length || 2;
-        const flagElev = is3DMode ? (1.6 + floors * 1.25) : 1.0;
-        const fpW = props.house?.footprintW || 1;
-        const fpH = props.house?.footprintH || 1;
-        const pos = renderer.projectWorldToScreen(e.x + fpW * 0.5, e.y + fpH * 0.5, flagElev);
-        if (pos && pos.visible) {
-          const fx = Math.round(pos.x);
-          const fy = Math.round(pos.y);
-          // Draw crisp 2D Banner Flag
-          const clanCol = houseClan.color !== undefined ? `#${(houseClan.color & 0xffffff).toString(16).padStart(6, "0")}` : "#ffd700";
-          const flagW = 22;
-          const flagH = 14;
-          // Pole
-          ctx.fillStyle = "#ffffff";
-          ctx.fillRect(fx - 1, fy - flagH - 5, 2, flagH + 5);
-          // Banner
-          ctx.fillStyle = clanCol;
-          ctx.fillRect(fx + 1, fy - flagH - 5, flagW, flagH);
-          ctx.strokeStyle = "#000000";
-          ctx.lineWidth = 1.5;
-          ctx.strokeRect(fx + 1, fy - flagH - 5, flagW, flagH);
-          // Emblem initial
-          const initial = (houseClan.name || "C")[0].toUpperCase();
-          ctx.font = "bold 9px monospace";
-          ctx.fillStyle = "#ffffff";
-          ctx.fillText(initial, fx + 1 + flagW / 2, fy - flagH - 5 + flagH / 2);
-        }
-      }
-      continue;
+  // Close Button
+  drawNESButton(mx + mw - 32, my + 6, 26, 24, "X", false, true);
+  registerClickableRegion(mx + mw - 32, my + 6, 26, 24, () => {
+    if (hasActiveGame) {
+      currentMode = "MAP";
+      audio.stopInstance("menuTheme", false);
+    } else {
+      currentMode = "TITLE";
     }
+  });
 
-    if (!isCreature) continue;
+  drawText8x8("GAME SETTINGS & PERFORMANCE OPTIONS", mx + 16, my + 12, "#f8b800", 1);
 
-    // Detect Emotes / Status
-    let emoteEmoji = null;
-    let emoteBg = "#1e1e28";
-    let emoteBorder = "#ffd700";
-
-    if (props.life?.energy <= 0) {
-      emoteEmoji = "💀";
-      emoteBg = "#300808";
-      emoteBorder = "#f83800";
-    } else if (props.life?.isSleeping || e.motor === 4) {
-      emoteEmoji = "💤";
-      emoteBg = "#0e1e38";
-      emoteBorder = "#3cbcfc";
-    } else if (e.emote === 12) { // Love / Hearts
-      emoteEmoji = "❤️";
-      emoteBg = "#380e20";
-      emoteBorder = "#ff60a0";
-    } else if (e.emote === 13) { // Exclamation / Alert / Angry
-      emoteEmoji = "💢";
-      emoteBg = "#380e0e";
-      emoteBorder = "#f83800";
-    } else if (e.motor === 5) { // Combat Attack
-      emoteEmoji = "⚔️";
-      emoteBg = "#380e0e";
-      emoteBorder = "#f83800";
-    } else if (e.motor === 6) { // Flee / Panic
-      emoteEmoji = "⚡";
-      emoteBg = "#38300e";
-      emoteBorder = "#ffd700";
-    } else if (e.motor === 7) { // Socialize
-      emoteEmoji = "💬";
-      emoteBg = "#0e2e38";
-      emoteBorder = "#58d854";
-    } else if (props.stomach && props.stomach.energy < 20) {
-      emoteEmoji = "🍖";
-      emoteBg = "#38200e";
-      emoteBorder = "#f8b800";
-    }
-
-    // Detect Held Items
-    const heldList = [];
-    if (props.backpack) {
-      heldList.push({ resourceType: "backpack", name: "Backpack" });
-    }
-    for (const [k, p] of Object.entries(props)) {
-      if ((k.toLowerCase().includes("arm") || k.toLowerCase().includes("hand")) && p && p.heldItem) {
-        heldList.push(p.heldItem);
-      }
-    }
-    if (props.heldItem) heldList.push(props.heldItem);
-    if (props.equipment?.mainHand) heldList.push(props.equipment.mainHand);
-    if (props.equipment?.offHand) heldList.push(props.equipment.offHand);
-
-    if (!emoteEmoji && heldList.length === 0) continue;
-
-    const headElev = is3DMode ? 0.95 : 0.65;
-    const pos = renderer.projectWorldToScreen(e.x + 0.5, e.y + 0.5, headElev);
-    if (!pos || !pos.visible) continue;
-
-    const px = Math.round(pos.x);
-    const py = Math.round(pos.y);
-
-    let badgeOffset = 0;
-    const totalBadges = (emoteEmoji ? 1 : 0) + heldList.length;
-    const startX = px - ((totalBadges - 1) * 20) / 2;
-
-    if (emoteEmoji) {
-      const bx = startX + badgeOffset * 20;
-      const by = py - 12;
-      // Draw 100% native crisp NES badge
-      ctx.fillStyle = emoteBg;
-      ctx.fillRect(bx - 9, by - 9, 18, 18);
-      ctx.strokeStyle = emoteBorder;
-      ctx.lineWidth = 1.5;
-      ctx.strokeRect(bx - 9, by - 9, 18, 18);
-
-      ctx.font = "12px sans-serif";
-      ctx.fillText(emoteEmoji, bx, by);
-      badgeOffset++;
-    }
-
-    for (let h = 0; h < heldList.length; h++) {
-      const it = heldList[h];
-      const bx = startX + badgeOffset * 20;
-      const by = py - 12;
-
-      let itemIcon = "📦";
-      const itType = (it.resourceType || it.name || "").toLowerCase();
-      if (itType.includes("wood") || itType.includes("log") || itType.includes("madeira")) itemIcon = "🪵";
-      else if (itType.includes("stone") || itType.includes("pedra") || itType.includes("boulder")) itemIcon = "🪨";
-      else if (itType.includes("meat") || itType.includes("steak") || itType.includes("carne")) itemIcon = "🥩";
-      else if (itType.includes("food") || itType.includes("veg") || itType.includes("cenoura") || itType.includes("comida")) itemIcon = "🥕";
-      else if (itType.includes("bag") || itType.includes("basket") || itType.includes("mochila") || itType.includes("cesto") || itType.includes("backpack")) itemIcon = "🎒";
-
-      ctx.fillStyle = "#181824";
-      ctx.fillRect(bx - 9, by - 9, 18, 18);
-      ctx.strokeStyle = "#e4c858";
-      ctx.lineWidth = 1.5;
-      ctx.strokeRect(bx - 9, by - 9, 18, 18);
-
-      ctx.font = "11px sans-serif";
-      ctx.fillText(itemIcon, bx, by);
-      badgeOffset++;
-    }
+  // Tabs
+  let tabX = mx + 16;
+  const tabY = my + 30;
+  const tabs = [
+    { id: "OPTIMIZATION", label: "OPTIMIZATION" },
+    { id: "GRAPHICS", label: "GRAPHICS & 3D" },
+    { id: "SIMULATION", label: "SIMULATION" }
+  ];
+  for (const t of tabs) {
+    const isSel = optionsTab === t.id;
+    const tw = isMobile ? 88 : 130;
+    drawNESButton(tabX, tabY, tw, 22, t.label, isSel, false);
+    const tid = t.id;
+    registerClickableRegion(tabX, tabY, tw, 22, () => {
+      optionsTab = tid;
+    });
+    tabX += tw + 6;
   }
+
+  let curY = tabY + 34;
+
+  if (optionsTab === "OPTIMIZATION") {
+    // 1. Max World Chronicles / Events
+    const curWorldLbl = gameOptions.maxWorldEvents === 0 ? "UNLIMITED" : `${gameOptions.maxWorldEvents.toLocaleString()}`;
+    drawText8x8(`MAX WORLD CHRONICLES: [ ${curWorldLbl} ]`, mx + 16, curY, "#3cbcfc", 1);
+    const worldLimits = [
+      { val: 1000, label: "1,000" },
+      { val: 5000, label: "5,000" },
+      { val: 10000, label: "10,000" },
+      { val: 25000, label: "25,000" },
+      { val: 50000, label: "50,000" },
+      { val: 0, label: "UNLIMITED" }
+    ];
+    let bx = mx + 16;
+    for (const opt of worldLimits) {
+      const isSel = gameOptions.maxWorldEvents === opt.val;
+      const bw = isMobile ? 54 : 70;
+      drawNESButton(bx, curY + 10, bw, 22, opt.label, isSel, false);
+      const v = opt.val;
+      registerClickableRegion(bx, curY + 10, bw, 22, () => {
+        gameOptions.maxWorldEvents = v;
+        saveGameOptions();
+      });
+      bx += bw + 4;
+    }
+    curY += 40;
+
+    // 2. Max Chronicles Per Creature
+    const curCreatureLbl = gameOptions.maxCreatureEvents === 0 ? "UNLIMITED" : `${gameOptions.maxCreatureEvents}`;
+    drawText8x8(`MAX CHRONICLES PER CREATURE: [ ${curCreatureLbl} ]`, mx + 16, curY, "#3cbcfc", 1);
+    const creatureLimits = [
+      { val: 50, label: "50" },
+      { val: 100, label: "100" },
+      { val: 150, label: "150" },
+      { val: 250, label: "250" },
+      { val: 500, label: "500" },
+      { val: 0, label: "UNLIMITED" }
+    ];
+    bx = mx + 16;
+    for (const opt of creatureLimits) {
+      const isSel = gameOptions.maxCreatureEvents === opt.val;
+      const bw = isMobile ? 54 : 70;
+      drawNESButton(bx, curY + 10, bw, 22, opt.label, isSel, false);
+      const v = opt.val;
+      registerClickableRegion(bx, curY + 10, bw, 22, () => {
+        gameOptions.maxCreatureEvents = v;
+        saveGameOptions();
+      });
+      bx += bw + 4;
+    }
+    curY += 40;
+
+    // 3. 3D Render Distance (Chunk Radius in Tiles)
+    const curDistLbl = gameOptions.max3DRenderDistance === 0 ? "FULL WORLD" : `${gameOptions.max3DRenderDistance} TILES`;
+    drawText8x8(`3D CHUNK RENDER DISTANCE: [ ${curDistLbl} ]`, mx + 16, curY, "#3cbcfc", 1);
+    const distOptions = [
+      { val: 24, label: "24 T" },
+      { val: 36, label: "36 T" },
+      { val: 48, label: "48 T" },
+      { val: 64, label: "64 T" },
+      { val: 96, label: "96 T" },
+      { val: 0, label: "FULL" }
+    ];
+    bx = mx + 16;
+    for (const opt of distOptions) {
+      const isSel = gameOptions.max3DRenderDistance === opt.val;
+      const bw = isMobile ? 54 : 70;
+      drawNESButton(bx, curY + 10, bw, 22, opt.label, isSel, false);
+      const v = opt.val;
+      registerClickableRegion(bx, curY + 10, bw, 22, () => {
+        gameOptions.max3DRenderDistance = v;
+        if (rctRenderer && rctRenderer.setFullWorld) {
+          rctRenderer.setFullWorld(v === 0);
+        }
+        saveGameOptions();
+      });
+      bx += bw + 4;
+    }
+    curY += 40;
+
+    // 4. Target Framerate (FPS Cap)
+    const curFpsLbl = gameOptions.targetFps === 0 ? "UNLIMITED" : `${gameOptions.targetFps} FPS`;
+    drawText8x8(`TARGET FRAMERATE (FPS CAP): [ ${curFpsLbl} ]`, mx + 16, curY, "#3cbcfc", 1);
+    const fpsOptions = [
+      { val: 30, label: "30 FPS" },
+      { val: 60, label: "60 FPS" },
+      { val: 120, label: "120 FPS" },
+      { val: 0, label: "MAX" }
+    ];
+    bx = mx + 16;
+    for (const opt of fpsOptions) {
+      const isSel = gameOptions.targetFps === opt.val;
+      const bw = isMobile ? 64 : 80;
+      drawNESButton(bx, curY + 10, bw, 22, opt.label, isSel, false);
+      const v = opt.val;
+      registerClickableRegion(bx, curY + 10, bw, 22, () => {
+        gameOptions.targetFps = v;
+        saveGameOptions();
+      });
+      bx += bw + 6;
+    }
+  } else if (optionsTab === "GRAPHICS") {
+    // 1. Wireframe Mode
+    const wireMode = rctRenderer?.getWireframeModeName ? rctRenderer.getWireframeModeName() : "OFF";
+    drawText8x8(`WIREFRAME MODE: [ ${wireMode} ]`, mx + 16, curY, "#3cbcfc", 1);
+    const wireOptions = [
+      { id: 0, label: "OFF" },
+      { id: 1, label: "GRID" },
+      { id: 2, label: "FULL" }
+    ];
+    let bx = mx + 16;
+    for (const wOpt of wireOptions) {
+      const isSel = (rctRenderer?.wireframeMode || 0) === wOpt.id;
+      const bw = isMobile ? 64 : 80;
+      drawNESButton(bx, curY + 10, bw, 22, wOpt.label, isSel, false);
+      const wid = wOpt.id;
+      registerClickableRegion(bx, curY + 10, bw, 22, () => {
+        if (rctRenderer) {
+          rctRenderer.wireframeMode = wid;
+          rctRenderer.applyWireframe();
+        }
+      });
+      bx += bw + 6;
+    }
+    curY += 40;
+
+    // 2. Resolution Scale
+    const curRes = rctRenderer?.getResolutionName ? rctRenderer.getResolutionName() : "100%";
+    drawText8x8(`RESOLUTION SCALE: [ ${curRes} ]`, mx + 16, curY, "#3cbcfc", 1);
+    const resOptions = [
+      { val: 0.25, label: "25%" },
+      { val: 0.50, label: "50%" },
+      { val: 0.75, label: "75%" },
+      { val: 1.00, label: "100%" }
+    ];
+    bx = mx + 16;
+    for (const opt of resOptions) {
+      const isSel = (rctRenderer?.resolutionScale || 1.0) === opt.val;
+      const bw = isMobile ? 54 : 70;
+      drawNESButton(bx, curY + 10, bw, 22, opt.label, isSel, false);
+      const v = opt.val;
+      registerClickableRegion(bx, curY + 10, bw, 22, () => {
+        if (rctRenderer?.setResolutionScale) rctRenderer.setResolutionScale(v);
+        saveGameOptions();
+      });
+      bx += bw + 6;
+    }
+    curY += 40;
+
+    // 3. Shadow Map & Quality
+    const shdActive = rctRenderer?.isShadowsActive ? rctRenderer.isShadowsActive() : true;
+    drawText8x8(`DIRECTIONAL SHADOWS: [ ${shdActive ? "ENABLED" : "DISABLED"} | ${gameOptions.shadowQuality}x${gameOptions.shadowQuality} ]`, mx + 16, curY, "#3cbcfc", 1);
+    bx = mx + 16;
+    drawNESButton(bx, curY + 10, 80, 22, shdActive ? "ON" : "OFF", shdActive, false);
+    registerClickableRegion(bx, curY + 10, 80, 22, () => {
+      if (rctRenderer?.toggleShadows) rctRenderer.toggleShadows();
+    });
+    bx += 88;
+
+    const shdQualities = [
+      { val: 1024, label: "1K (FAST)" },
+      { val: 2048, label: "2K (HIGH)" },
+      { val: 4096, label: "4K (ULTRA)" }
+    ];
+    for (const sq of shdQualities) {
+      const isSel = gameOptions.shadowQuality === sq.val;
+      const bw = 90;
+      drawNESButton(bx, curY + 10, bw, 22, sq.label, isSel, false);
+      const v = sq.val;
+      registerClickableRegion(bx, curY + 10, bw, 22, () => {
+        gameOptions.shadowQuality = v;
+        if (rctRenderer?.setShadowQuality) rctRenderer.setShadowQuality(v);
+        saveGameOptions();
+      });
+      bx += bw + 4;
+    }
+    curY += 40;
+
+    // 4. Overhead Badges & Clan Flags
+    drawText8x8(`OVERHEAD BILLBOARDS & BADGES:`, mx + 16, curY, "#3cbcfc", 1);
+    bx = mx + 16;
+    drawNESButton(bx, curY + 10, 130, 22, `BADGES: ${gameOptions.showBadges ? "ON" : "OFF"}`, gameOptions.showBadges, false);
+    registerClickableRegion(bx, curY + 10, 130, 22, () => {
+      gameOptions.showBadges = !gameOptions.showBadges;
+      applyGameOptions();
+      saveGameOptions();
+    });
+    bx += 138;
+    drawNESButton(bx, curY + 10, 130, 22, `FLAGS: ${gameOptions.showClanFlags ? "ON" : "OFF"}`, gameOptions.showClanFlags, false);
+    registerClickableRegion(bx, curY + 10, 130, 22, () => {
+      gameOptions.showClanFlags = !gameOptions.showClanFlags;
+      applyGameOptions();
+      saveGameOptions();
+    });
+  } else if (optionsTab === "SIMULATION") {
+    // 1. Simulation Target TPS
+    const curTps = renderer ? renderer.getTps() : 60;
+    drawText8x8(`SIMULATION SPEED (TPS): [ ${curTps} TPS ]`, mx + 16, curY, "#3cbcfc", 1);
+    const tpsOptions = [
+      { val: 15, label: "15 TPS" },
+      { val: 30, label: "30 TPS" },
+      { val: 60, label: "60 TPS" },
+      { val: 90, label: "90 TPS" },
+      { val: 120, label: "120 TPS" }
+    ];
+    let bx = mx + 16;
+    for (const opt of tpsOptions) {
+      const isSel = curTps === opt.val;
+      const bw = isMobile ? 54 : 70;
+      drawNESButton(bx, curY + 10, bw, 22, opt.label, isSel, false);
+      const v = opt.val;
+      registerClickableRegion(bx, curY + 10, bw, 22, () => {
+        if (renderer) renderer.setTps(v);
+        if (rctRenderer) rctRenderer.setTps(v);
+        if (simWorker) simWorker.postMessage({ type: "SET_TPS", tps: v });
+      });
+      bx += bw + 4;
+    }
+    curY += 40;
+
+    // 2. Audio & Sound FX
+    drawText8x8(`AUDIO & SOUND FX: [ ${isAudioMuted ? "MUTED" : "ENABLED"} ]`, mx + 16, curY, "#3cbcfc", 1);
+    bx = mx + 16;
+    drawNESButton(bx, curY + 10, 120, 22, isAudioMuted ? "UNMUTE" : "MUTE AUDIO", !isAudioMuted, false);
+    registerClickableRegion(bx, curY + 10, 120, 22, toggleAudio);
+  }
+
+  // Footer: Back / Apply button
+  const backLabel = hasActiveGame ? "BACK TO GAME" : "BACK TO MENU";
+  drawNESButton(mx + mw - 140, my + mh - 30, 124, 24, backLabel, true, false);
+  registerClickableRegion(mx + mw - 140, my + mh - 30, 124, 24, () => {
+    if (hasActiveGame) {
+      currentMode = "MAP";
+      audio.stopInstance("menuTheme", false);
+    } else {
+      currentMode = "TITLE";
+    }
+  });
 
   ctx.restore();
 }
@@ -5609,22 +5759,37 @@ function renderGeneratorModal() {
 
   curY += 38;
 
-  // 7. Founding Pioneer Clans / Embarks
-  drawText8x8(`7. EMBARKS / FOUNDING CLANS: [ ${genSpawnPioneers ? genEmbarkCount + " CLANS" : "NONE"} ]`, mx + 16, curY, "#3cbcfc", 1);
-  const embarkOptions = [
-    { count: 0, label: "NONE" },
-    { count: 1, label: "1 CLAN" },
-    { count: 2, label: "2 CLANS" },
-    { count: 3, label: "3 CLANS (DEF)" },
-    { count: 4, label: "4 CLANS" },
-    { count: 5, label: "5 CLANS" }
-  ];
+  // 7. Founding Pioneer Clans / Embarks (Freely selectable from 0 to 128+)
+  drawText8x8(`7. EMBARKS / FOUNDING CLANS: [ ${genSpawnPioneers && genEmbarkCount > 0 ? genEmbarkCount + " CLANS" : "NONE"} ]`, mx + 16, curY, "#3cbcfc", 1);
   let ebx = mx + 16;
-  for (const opt of embarkOptions) {
-    const isSel = genSpawnPioneers ? (genEmbarkCount === opt.count) : (opt.count === 0);
-    const bw = opt.count === 3 ? 128 : 88;
-    drawNESButton(ebx, curY + 10, bw, 22, opt.label, isSel, false);
-    const cnt = opt.count;
+
+  // Stepper buttons [-10], [-1], [+1], [+10]
+  const steppers = [
+    { label: "-10", delta: -10 },
+    { label: "-1", delta: -1 },
+    { label: "+1", delta: 1 },
+    { label: "+10", delta: 10 }
+  ];
+  for (const st of steppers) {
+    const bw = 38;
+    drawNESButton(ebx, curY + 10, bw, 22, st.label, false, false);
+    const d = st.delta;
+    registerClickableRegion(ebx, curY + 10, bw, 22, () => {
+      let next = Math.max(0, Math.min(256, (genEmbarkCount || 0) + d));
+      genEmbarkCount = next;
+      genSpawnPioneers = next > 0;
+    });
+    ebx += bw + 4;
+  }
+  ebx += 8;
+
+  // Quick Preset Buttons
+  const presetEmbarks = [0, 1, 2, 3, 5, 8, 12, 16, 24, 32, 64];
+  for (const cnt of presetEmbarks) {
+    const isSel = genSpawnPioneers ? (genEmbarkCount === cnt) : (cnt === 0);
+    const bw = cnt === 0 ? 56 : 30;
+    const label = cnt === 0 ? "NONE" : String(cnt);
+    drawNESButton(ebx, curY + 10, bw, 22, label, isSel, false);
     registerClickableRegion(ebx, curY + 10, bw, 22, () => {
       if (cnt === 0) {
         genSpawnPioneers = false;
@@ -5634,7 +5799,7 @@ function renderGeneratorModal() {
         genEmbarkCount = cnt;
       }
     });
-    ebx += bw + 6;
+    ebx += bw + 4;
   }
 
   // Return to Title Button
@@ -5694,7 +5859,7 @@ function renderTitleScreen() {
 
   // 3. Subtitle / Tagline
   const subY = chronY + (chronScale * 8) + (isMobile ? 8 : 12);
-  const subText = "Chronicles of Brutopolis";
+  const subText = BrutopolisVersion + ": " + BrutopolisVersionName;
   drawText8x8Centered(subText, subY, "#3cbcfc", 1, "#000000", 1);
 
   const curScen = PREFAB_SCENARIOS[selectedScenarioIdx] || PREFAB_SCENARIOS[0];
@@ -5729,7 +5894,15 @@ function renderTitleScreen() {
   });
   menuY += 34;
 
-  // Button 3: Quick Settings Row (2D/3D & Audio)
+  // Button 3: OPTIONS & SETTINGS
+  drawNESButton(menuBoxX, menuY, menuBoxW, 28, "OPTIONS & SETTINGS", false, false);
+  registerClickableRegion(menuBoxX, menuY, menuBoxW, 28, () => {
+    currentMode = "OPTIONS";
+    modalScroll = 0;
+  });
+  menuY += 34;
+
+  // Button 4: Quick Settings Row (2D/3D & Audio)
   const halfW = Math.floor((menuBoxW - 8) / 2);
   const view3DLabel = is3DMode ? "VIEW: 3D ISO" : "VIEW: 2D MAP";
   drawNESButton(menuBoxX, menuY, halfW, 28, view3DLabel, is3DMode, false);
@@ -5865,6 +6038,8 @@ function frame(time) {
     // 3. Mode-specific UI Overlay Rendering
     if (currentMode === "TITLE") {
       renderTitleScreen();
+    } else if (currentMode === "OPTIONS" && !hasActiveGame) {
+      renderOptionsModal();
     } else {
       if (currentMode !== "MAP") {
         // Full-screen modal rendering
@@ -5891,10 +6066,10 @@ function frame(time) {
         else if (currentMode === "GROUPS") renderGroupsModal();
         else if (currentMode === "LOGS") renderLogsModal();
         else if (currentMode === "GENERATOR") renderGeneratorModal();
+        else if (currentMode === "OPTIONS") renderOptionsModal();
       } else {
         renderCreatureVisionOverlay();
         renderTerritoryOverlay();
-        renderHighDefOverheadBadges();
         renderHoverTooltip();
         renderCreatureSummaryBox();
         renderCreatureEventLogPanel();

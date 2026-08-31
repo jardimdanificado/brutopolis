@@ -85,6 +85,15 @@ export const TYPE_TO_OPCODE = {
   "FORGET": OP_FORGET
 };
 
+export let eventLogConfig = {
+  maxWorldEvents: 0, // 0 = Unlimited
+  maxCreatureEvents: 0 // 0 = Unlimited
+};
+
+export function setEventLogConfig(cfg) {
+  if (cfg) Object.assign(eventLogConfig, cfg);
+}
+
 let nextEventId = 1;
 export const allEvents = [];
 export const eventsById = new Map();
@@ -97,7 +106,11 @@ export function indexEntityEvent(entId, eventId) {
   const n = Number(entId);
   if (!isNaN(n)) {
     if (!eventsByEntity.has(n)) eventsByEntity.set(n, []);
-    eventsByEntity.get(n).push(eventId);
+    const list = eventsByEntity.get(n);
+    list.push(eventId);
+    if (eventLogConfig.maxCreatureEvents > 0 && list.length > eventLogConfig.maxCreatureEvents * 1.5) {
+      list.splice(0, list.length - eventLogConfig.maxCreatureEvents);
+    }
   }
   const s = String(entId);
   if (s !== String(n) || isNaN(n)) {
@@ -858,5 +871,12 @@ export function appendWorldEvents(eventsList = []) {
       eventsByCitedEvent.get(citedId).push(ev.id);
     }
     if (ev.id >= nextEventId) nextEventId = ev.id + 1;
+  }
+
+  if (eventLogConfig.maxWorldEvents > 0 && allEvents.length > eventLogConfig.maxWorldEvents * 1.2) {
+    const toRemove = allEvents.splice(0, allEvents.length - eventLogConfig.maxWorldEvents);
+    for (let i = 0; i < toRemove.length; i++) {
+      eventsById.delete(toRemove[i].id);
+    }
   }
 }
