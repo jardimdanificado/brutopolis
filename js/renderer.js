@@ -359,10 +359,12 @@ export class Renderer {
     const fx = this.camX + (screenX - centerX) / tileSize;
     const fy = this.camY + (screenY - centerY) / tileSize;
 
-    // Pass 1: exact tile hit
+    // Pass 1: exact tile hit (including multi-tile structures like houses and warehouses)
     for (const e of entities) {
       if (e.destroyed || !e.properties?.render) continue;
-      if (fx >= e.x && fx < e.x + 1 && fy >= e.y && fy < e.y + 1) {
+      const fpW = e.properties?.house?.footprintW || (e.properties?.house?.footprint ? Number(e.properties.house.footprint.split("x")[0]) : 1) || 1;
+      const fpH = e.properties?.house?.footprintH || (e.properties?.house?.footprint ? Number(e.properties.house.footprint.split("x")[1]) : 1) || 1;
+      if (fx >= e.x && fx < e.x + fpW && fy >= e.y && fy < e.y + fpH) {
         this.selectedEntityId = e.id;
         return e.id;
       }
@@ -373,8 +375,10 @@ export class Renderer {
     let foundId = -1;
     for (const e of entities) {
       if (e.destroyed || !e.properties?.render) continue;
-      const dx = (e.x + 0.5) - fx;
-      const dy = (e.y + 0.5) - fy;
+      const fpW = e.properties?.house?.footprintW || (e.properties?.house?.footprint ? Number(e.properties.house.footprint.split("x")[0]) : 1) || 1;
+      const fpH = e.properties?.house?.footprintH || (e.properties?.house?.footprint ? Number(e.properties.house.footprint.split("x")[1]) : 1) || 1;
+      const dx = (e.x + fpW * 0.5) - fx;
+      const dy = (e.y + fpH * 0.5) - fy;
       const d = Math.abs(dx) + Math.abs(dy);
       if (d < closestDist) {
         closestDist = d;
@@ -403,25 +407,21 @@ export class Renderer {
     }
 
     const buf32 = this.buf32;
-    const totalPixels = width * height;
-
-    // 1. Clear background (pure black void)
-    const bgColor = rgba32(0, 0, 0, 255);
-    buf32.fill(bgColor);
-
-    const tileSize = Math.max(1, Math.floor(16 * this.zoom));
+    const tileSize = Math.max(1, 16 * this.zoom);
     const centerScreenX = Math.floor(width / 2);
     const centerScreenY = Math.floor(height / 2);
 
-    const halfVisW = Math.ceil(centerScreenX / tileSize) + 2;
-    const halfVisH = Math.ceil(centerScreenY / tileSize) + 2;
+    // 1. Visible map boundaries
+    const halfVisW = (width / tileSize) * 0.5 + 2;
+    const halfVisH = (height / tileSize) * 0.5 + 2;
 
     const minTx = Math.max(0, Math.floor(this.camX - halfVisW));
     const maxTx = Math.min(MAP_WIDTH - 1, Math.ceil(this.camX + halfVisW));
     const minTy = Math.max(0, Math.floor(this.camY - halfVisH));
     const maxTy = Math.min(MAP_HEIGHT - 1, Math.ceil(this.camY + halfVisH));
 
-    const globalLight = world?.clock?.globalLight !== undefined ? world.clock.globalLight : 1.0;
+    // 2D Mode is always 100% brightly lit and visible 24/7 (no night darkening)
+    const globalLight = 1.0;
 
     // 2. Cached tile textures
     const texFloor = findTexture("Feature_Grass.png");
@@ -680,10 +680,15 @@ export class Renderer {
           }
         }
         const entTex = findTexture(entSkin);
+        const fpW = isHouse ? (e.properties.house?.footprintW || (e.properties.house?.footprint ? Number(e.properties.house.footprint.split("x")[0]) : 1) || 1) : 1;
+        const fpH = isHouse ? (e.properties.house?.footprintH || (e.properties.house?.footprint ? Number(e.properties.house.footprint.split("x")[1]) : 1) || 1) : 1;
+        const renderW = fpW * tileSize;
+        const renderH = fpH * tileSize;
+
         if (entTex) {
-          drawSpriteTinted32(buf32, width, height, entTex, sx, sy, tileSize, tileSize, entFg, entBg, globalLight);
+          drawSpriteTinted32(buf32, width, height, entTex, sx, sy, renderW, renderH, entFg, entBg, globalLight);
         } else {
-          drawBox32(buf32, width, height, sx + 2, sy + 2, tileSize - 4, tileSize - 4, entFg);
+          drawBox32(buf32, width, height, sx + 2, sy + 2, renderW - 4, renderH - 4, entFg);
         }
 
         // Health bar (HP = Brain Condition for conscious creatures; health/energy for flora/inanimate)
@@ -813,5 +818,17 @@ export class Renderer {
 
     // 6. Blit final 32-bit buffer straight to Canvas in 1 call (60 FPS even on Zoomout)
     this.ctx.putImageData(this.imageData, 0, 0);
+  }
+
+  projectWorldToScreen(worldX, worldY, elevation = 0) {
+    const centerScreenX = Math.floor(this.width / 2);
+    const centerScreenY = Math.floor(this.height / 2);
+    const sx = centerScreenX + Math.floor((worldX - this.camX) * this.tileSize);
+    const sy = centerScreenY + Math.floor((worldY - this.camY) * this.tileSize) - Math.floor(elevation * this.tileSize);
+    return {
+      x: sx,
+      y: sy,
+      visible: sx >= -80 && sx <= this.width + 80 && sy >= -80 && sy <= this.height + 80
+    };
   }
 }

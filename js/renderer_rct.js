@@ -106,7 +106,10 @@ function getEntityBounds(e) {
   const isTree = !isCactus && (e.properties?.species === "oak" || e.properties?.species === "pine" || e.properties?.species === "willow" || e.properties?.species === "tree" || !!e.properties?.tree || (r?.skin && r?.skin.toLowerCase().includes("tree")));
 
   if (isTree) return { radius: 1.1, h: 2.6, yBottom: 0.0 };
-  if (isHouse) return { radius: 1.3, h: 2.4, yBottom: 0.0 };
+  if (isHouse) {
+    const floors = e.properties?.house?.maxFloors || e.properties?.house?.floors?.length || 2;
+    return { radius: 1.8 + floors * 0.3, h: 1.6 + floors * 1.25, yBottom: 0.0 };
+  }
   if (isCactus) return { radius: 0.9, h: 2.0, yBottom: 0.0 };
   if (isWall) return { radius: 0.75, h: 1.5, yBottom: 0.0 };
   if (isItem) return { radius: 0.65, h: 0.9, yBottom: 0.0 }; // Generous 3D clickable radius for ground items
@@ -623,147 +626,286 @@ function createStoneCastleRoofGeometry() {
 // 10 Unique Residential Architectural Styles (Separate Wall & Roof Geometries)
 // -----------------------------------------------------------------------------
 
-// 0. Rustic Wood Cabin
+// -----------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
+// 10 Unique Multi-Story Residential Architectural Styles (True-Scale Geometries)
+// -----------------------------------------------------------------------------
+
+function createCleanPitchedRoof(w, d, h) {
+  return createPitchedRoofGeometry(w, d, h);
+}
+
+// 0. Timber Cabin (2-Story, 2x1 Footprint: X [0.05..1.95], Z [0.05..0.95])
 function createWoodCabinWallGeo() {
   const parts = [];
-  const body = new THREE.BoxGeometry(1.48, 1.05, 1.38); body.translate(0, 0.525, 0); parts.push(body);
-  const p1 = new THREE.CylinderGeometry(0.08, 0.09, 1.05, 6); p1.translate(-0.65, 0.525, 0.85); parts.push(p1);
-  const p2 = new THREE.CylinderGeometry(0.08, 0.09, 1.05, 6); p2.translate( 0.65, 0.525, 0.85); parts.push(p2);
-  const chimney = new THREE.BoxGeometry(0.32, 1.55, 0.32); chimney.translate(0.78, 0.775, -0.20); parts.push(chimney);
+  const cx = 1.0, cz = 0.5;
+  // Plinth: Rustic stone foundation plinth
+  const plinth = new THREE.BoxGeometry(1.90, 0.20, 0.90); plinth.translate(cx, 0.10, cz); parts.push(plinth);
+
+  // 1st Floor: Log timber walls (Height 1.10)
+  const f1 = new THREE.BoxGeometry(1.85, 1.10, 0.85); f1.translate(cx, 0.20 + 0.55, cz); parts.push(f1);
+  // Front Entrance Door & Lintel
+  const door = new THREE.BoxGeometry(0.35, 0.75, 0.08); door.translate(cx - 0.35, 0.20 + 0.375, cz + 0.44); parts.push(door);
+  const lintel = new THREE.BoxGeometry(0.42, 0.10, 0.10); lintel.translate(cx - 0.35, 0.20 + 0.78, cz + 0.44); parts.push(lintel);
+  // Framed Window with Sill
+  const sill = new THREE.BoxGeometry(0.38, 0.08, 0.10); sill.translate(cx + 0.35, 0.20 + 0.40, cz + 0.44); parts.push(sill);
+  const win = new THREE.BoxGeometry(0.32, 0.35, 0.06); win.translate(cx + 0.35, 0.20 + 0.60, cz + 0.44); parts.push(win);
+
+  // 2nd Floor: Overhanging Loft with Balcony Railing (Height 1.0)
+  const f2 = new THREE.BoxGeometry(1.90, 1.00, 0.90); f2.translate(cx, 1.30 + 0.50, cz); parts.push(f2);
+  const balustrade = new THREE.BoxGeometry(1.90, 0.30, 0.06); balustrade.translate(cx, 1.30 + 0.15, cz + 0.46); parts.push(balustrade);
+
+  // Stone Hearth Masonry Chimney
+  const chimney = new THREE.BoxGeometry(0.35, 2.80, 0.35); chimney.translate(cx + 0.75, 1.40, cz - 0.25); parts.push(chimney);
+
   return mergeBufferGeometries(parts);
 }
 function createWoodCabinRoofGeo() {
-  const roof = createPitchedRoofGeometry(1.72, 1.88, 0.75); roof.translate(0, 1.05, 0.10);
+  const roof = createCleanPitchedRoof(1.92, 0.92, 0.85);
+  roof.translate(1.0, 2.30, 0.5);
   return roof;
 }
 
-// 1. Stone Masonry Cottage
+// 1. Stone Masonry Cottage (2-Story, 2x2 Footprint: X [0.05..1.95], Z [0.05..1.95])
 function createStoneCottageWallGeo() {
   const parts = [];
-  const body = new THREE.BoxGeometry(1.55, 1.15, 1.45); body.translate(0, 0.575, 0); parts.push(body);
-  const chimney = new THREE.BoxGeometry(0.38, 1.85, 0.38); chimney.translate(-0.80, 0.925, 0.30); parts.push(chimney);
-  const sill1 = new THREE.BoxGeometry(0.35, 0.08, 0.12); sill1.translate(-0.45, 0.55, 0.74); parts.push(sill1);
-  const sill2 = new THREE.BoxGeometry(0.35, 0.08, 0.12); sill2.translate( 0.45, 0.55, 0.74); parts.push(sill2);
+  const cx = 1.0, cz = 1.0;
+  // Foundation Stone Plinth
+  const plinth = new THREE.BoxGeometry(1.90, 0.22, 1.90); plinth.translate(cx, 0.11, cz); parts.push(plinth);
+
+  // 1st Floor: Ground Chiseled Stone Base (Height 1.10)
+  const f1 = new THREE.BoxGeometry(1.85, 1.10, 1.85); f1.translate(cx, 0.22 + 0.55, cz); parts.push(f1);
+  // Arched Stone Entrance with Keystone
+  const door = new THREE.BoxGeometry(0.38, 0.75, 0.08); door.translate(cx, 0.22 + 0.375, cz + 0.94); parts.push(door);
+  const arch = new THREE.BoxGeometry(0.50, 0.12, 0.10); arch.translate(cx, 0.22 + 0.80, cz + 0.94); parts.push(arch);
+
+  // 2nd Floor: Upper Stone Apartment (Height 1.0)
+  const f2 = new THREE.BoxGeometry(1.80, 1.00, 1.80); f2.translate(cx, 1.32 + 0.50, cz); parts.push(f2);
+  // Windows with Chiseled Sills
+  const sill1 = new THREE.BoxGeometry(0.36, 0.08, 0.10); sill1.translate(cx - 0.45, 1.32 + 0.40, cz + 0.91); parts.push(sill1);
+  const sill2 = new THREE.BoxGeometry(0.36, 0.08, 0.10); sill2.translate(cx + 0.45, 1.32 + 0.40, cz + 0.91); parts.push(sill2);
+
+  // Ashlar Hearth Chimney
+  const chimney = new THREE.BoxGeometry(0.40, 2.90, 0.40); chimney.translate(cx - 0.70, 1.45, cz + 0.65); parts.push(chimney);
   return mergeBufferGeometries(parts);
 }
 function createStoneCottageRoofGeo() {
-  const roof = createPitchedRoofGeometry(1.78, 1.68, 0.95); roof.translate(0, 1.15, 0);
+  const roof = createCleanPitchedRoof(1.92, 1.92, 0.95, false);
+  roof.translate(1.0, 2.32, 1.0);
   return roof;
 }
 
-// 2. Thatched Hut / Roundhouse
+// 2. Thatched Hut / Roundhouse (2-Story, 1x1x2 Footprint: X [0.05..0.95], Z [0.05..0.95])
 function createThatchedHutWallGeo() {
-  const body = new THREE.CylinderGeometry(0.85, 0.92, 1.05, 12); body.translate(0, 0.525, 0);
-  return body;
+  const parts = [];
+  const cx = 0.5, cz = 0.5;
+  // Low Stone Ring Footing
+  const footing = new THREE.CylinderGeometry(0.44, 0.46, 0.15, 16); footing.translate(cx, 0.075, cz); parts.push(footing);
+  // 1st Floor: Ground Drum (Height 0.95)
+  const f1 = new THREE.CylinderGeometry(0.42, 0.44, 0.95, 16); f1.translate(cx, 0.15 + 0.475, cz); parts.push(f1);
+  // 2nd Floor: Upper Loft Drum (Height 0.90)
+  const f2 = new THREE.CylinderGeometry(0.40, 0.42, 0.90, 16); f2.translate(cx, 1.10 + 0.45, cz); parts.push(f2);
+  // Timber Porch Canopy
+  const porch = new THREE.BoxGeometry(0.28, 0.65, 0.18); porch.translate(cx, 0.15 + 0.325, cz + 0.44); parts.push(porch);
+  return mergeBufferGeometries(parts);
 }
 function createThatchedHutRoofGeo() {
   const parts = [];
-  const roof = new THREE.ConeGeometry(1.22, 1.15, 12); roof.translate(0, 1.05 + 0.575, 0); parts.push(roof);
-  const mast = new THREE.CylinderGeometry(0.04, 0.04, 0.50, 6); mast.translate(0, 1.05 + 1.15 + 0.20, 0); parts.push(mast);
+  const cx = 0.5, cz = 0.5;
+  const roof = new THREE.ConeGeometry(0.55, 0.85, 16); roof.translate(cx, 2.00 + 0.425, cz); parts.push(roof);
+  const finial = new THREE.CylinderGeometry(0.03, 0.03, 0.40, 6); finial.translate(cx, 2.00 + 0.85 + 0.15, cz); parts.push(finial);
   return mergeBufferGeometries(parts);
 }
 
-// 3. Heavy Log Lodge
+// 3. Heavy Log Lodge (3-Story, 2x2x3 Footprint: X [0.05..1.95], Z [0.05..1.95])
 function createLogLodgeWallGeo() {
   const parts = [];
-  const body = new THREE.BoxGeometry(1.68, 1.10, 1.50); body.translate(0, 0.55, 0); parts.push(body);
-  const dormer = new THREE.BoxGeometry(0.60, 0.55, 0.50); dormer.translate(0, 1.25, 0.45); parts.push(dormer);
+  const cx = 1.0, cz = 1.0;
+  // Boulder Stone Footing
+  const stoneBase = new THREE.BoxGeometry(1.90, 0.22, 1.90); stoneBase.translate(cx, 0.11, cz); parts.push(stoneBase);
+
+  // 1st Floor: Interlocking Pine Logs (Height 1.0)
+  const f1 = new THREE.BoxGeometry(1.85, 1.00, 1.85); f1.translate(cx, 0.22 + 0.50, cz); parts.push(f1);
+
+  // 2nd Floor: Mid Floor with Side Balconies (Height 1.0)
+  const f2 = new THREE.BoxGeometry(1.88, 1.00, 1.88); f2.translate(cx, 1.22 + 0.50, cz); parts.push(f2);
+  const balR = new THREE.BoxGeometry(0.18, 0.30, 1.60); balR.translate(cx + 0.95, 1.22 + 0.15, cz); parts.push(balR);
+  const balL = new THREE.BoxGeometry(0.18, 0.30, 1.60); balL.translate(cx - 0.95, 1.22 + 0.15, cz); parts.push(balL);
+
+  // 3rd Floor: Peaked Attic Loft (Height 0.90)
+  const f3 = new THREE.BoxGeometry(1.70, 0.90, 1.70); f3.translate(cx, 2.22 + 0.45, cz); parts.push(f3);
+
+  // Dual Stone Hearth Chimneys
+  const chim1 = new THREE.BoxGeometry(0.35, 3.80, 0.35); chim1.translate(cx + 0.70, 1.90, cz - 0.45); parts.push(chim1);
   return mergeBufferGeometries(parts);
 }
 function createLogLodgeRoofGeo() {
-  const parts = [];
-  const dormerRoof = createPitchedRoofGeometry(0.75, 0.60, 0.35); dormerRoof.translate(0, 1.55, 0.45); parts.push(dormerRoof);
-  const roof = createPitchedRoofGeometry(1.88, 1.70, 0.85); roof.translate(0, 1.10, 0); parts.push(roof);
-  return mergeBufferGeometries(parts);
+  const roof = createCleanPitchedRoof(1.92, 1.92, 0.95, false);
+  roof.translate(1.0, 3.12, 1.0);
+  return roof;
 }
 
-// 4. Half-Timbered Tudor House
+// 4. Half-Timbered Tudor House (2-Story, 2x1x2 Footprint: X [0.05..1.95], Z [0.05..0.95])
 function createHalfTimberedWallGeo() {
   const parts = [];
-  const floor1 = new THREE.BoxGeometry(1.40, 0.70, 1.40); floor1.translate(0, 0.35, 0); parts.push(floor1);
-  const floor2 = new THREE.BoxGeometry(1.60, 0.75, 1.60); floor2.translate(0, 0.70 + 0.375, 0); parts.push(floor2);
+  const cx = 1.0, cz = 0.5;
+  // Stone Foundation
+  const plinth = new THREE.BoxGeometry(1.90, 0.18, 0.90); plinth.translate(cx, 0.09, cz); parts.push(plinth);
+
+  // 1st Floor: Plaster & Timber Base (Height 1.10)
+  const f1 = new THREE.BoxGeometry(1.85, 1.10, 0.85); f1.translate(cx, 0.18 + 0.55, cz); parts.push(f1);
+
+  // 2nd Floor: Jettied Floor (Height 1.0)
+  const f2 = new THREE.BoxGeometry(1.90, 1.00, 0.90); f2.translate(cx, 1.28 + 0.50, cz); parts.push(f2);
+  // Black Timber Diagonal Cross-Bracing
+  const braceL = new THREE.BoxGeometry(0.05, 0.85, 0.04); braceL.rotateZ(0.65); braceL.translate(cx - 0.45, 1.28 + 0.50, cz + 0.46); parts.push(braceL);
+  const braceR = new THREE.BoxGeometry(0.05, 0.85, 0.04); braceR.rotateZ(-0.65); braceR.translate(cx + 0.45, 1.28 + 0.50, cz + 0.46); parts.push(braceR);
+
+  // Red Brick Chimney Stack
+  const chimney = new THREE.BoxGeometry(0.35, 2.90, 0.35); chimney.translate(cx + 0.75, 1.45, cz); parts.push(chimney);
   return mergeBufferGeometries(parts);
 }
 function createHalfTimberedRoofGeo() {
-  const roof = createPitchedRoofGeometry(1.78, 1.78, 0.88); roof.translate(0, 1.45, 0);
+  const roof = createCleanPitchedRoof(1.92, 0.92, 0.90);
+  roof.translate(1.0, 2.28, 0.5);
   return roof;
 }
 
-// 5. Mud-Brick Adobe / Pueblo
+// 5. Mud-Brick Adobe / Pueblo (2-Story, 2x2x2 Footprint: X [0.05..1.95], Z [0.05..1.95])
 function createMudBrickAdobeWallGeo() {
   const parts = [];
-  const body = new THREE.BoxGeometry(1.50, 1.10, 1.50); body.translate(0, 0.55, 0); parts.push(body);
-  const parapet = new THREE.BoxGeometry(1.56, 0.18, 1.56); parapet.translate(0, 1.15, 0); parts.push(parapet);
-  for (let i = -0.5; i <= 0.5; i += 0.33) {
-    const viga = new THREE.CylinderGeometry(0.04, 0.04, 1.74, 5);
+  const cx = 1.0, cz = 1.0;
+  // 1st Floor: Ground Mud Brick Block (Height 1.15)
+  const f1 = new THREE.BoxGeometry(1.90, 1.15, 1.90); f1.translate(cx, 0.575, cz); parts.push(f1);
+
+  // Protruding Horizontal Cedar Vigas Logs
+  for (let i = -0.60; i <= 0.60; i += 0.30) {
+    const viga = new THREE.CylinderGeometry(0.04, 0.04, 1.96, 8);
     viga.rotateZ(Math.PI / 2);
-    viga.translate(0, 1.02, i);
+    viga.translate(cx, 1.10, cz + i);
     parts.push(viga);
   }
+
+  // 2nd Floor: Stepped Setback Terrace Room (Height 1.0)
+  const f2 = new THREE.BoxGeometry(1.30, 1.00, 1.30); f2.translate(cx - 0.25, 1.15 + 0.50, cz - 0.25); parts.push(f2);
+  // Roof Terrace Access Timber Ladder
+  const ladder = new THREE.BoxGeometry(0.20, 1.45, 0.06); ladder.rotateX(-0.25); ladder.translate(cx + 0.60, 0.75, cz + 0.60); parts.push(ladder);
+
   return mergeBufferGeometries(parts);
 }
 function createMudBrickAdobeRoofGeo() {
-  const roof = new THREE.BoxGeometry(1.42, 0.06, 1.42); roof.translate(0, 1.10, 0);
-  return roof;
+  const parts = [];
+  const cx = 1.0, cz = 1.0;
+  // 1st Floor Parapet Roof Slab
+  const p1 = new THREE.BoxGeometry(1.92, 0.12, 1.92); p1.translate(cx, 1.15 + 0.06, cz); parts.push(p1);
+  // 2nd Floor Roof Parapet Slab
+  const p2 = new THREE.BoxGeometry(1.34, 0.12, 1.34); p2.translate(cx - 0.25, 2.15 + 0.06, cz - 0.25); parts.push(p2);
+  return mergeBufferGeometries(parts);
 }
 
-// 6. Mountain Stilt Cabin
+// 6. Alpine Stilt House (3-Story, 2x2x3 Footprint: X [0.05..1.95], Z [0.05..1.95])
 function createMountainStiltWallGeo() {
   const parts = [];
-  const stilt = new THREE.BoxGeometry(0.18, 0.50, 0.18);
-  const s1 = stilt.clone(); s1.translate(-0.65, 0.25, -0.65); parts.push(s1);
-  const s2 = stilt.clone(); s2.translate( 0.65, 0.25, -0.65); parts.push(s2);
-  const s3 = stilt.clone(); s3.translate(-0.65, 0.25,  0.65); parts.push(s3);
-  const s4 = stilt.clone(); s4.translate( 0.65, 0.25,  0.65); parts.push(s4);
-  const deck = new THREE.BoxGeometry(1.65, 0.12, 1.65); deck.translate(0, 0.56, 0); parts.push(deck);
-  const body = new THREE.BoxGeometry(1.35, 0.95, 1.35); body.translate(0, 0.62 + 0.475, 0); parts.push(body);
+  const cx = 1.0, cz = 1.0;
+  // 1st Floor: 4 Heavy Timber Pilings (Height 1.25) leaving ground open
+  const stilt = new THREE.BoxGeometry(0.18, 1.25, 0.18);
+  const s1 = stilt.clone(); s1.translate(cx - 0.80, 0.625, cz - 0.80); parts.push(s1);
+  const s2 = stilt.clone(); s2.translate(cx + 0.80, 0.625, cz - 0.80); parts.push(s2);
+  const s3 = stilt.clone(); s3.translate(cx - 0.80, 0.625, cz + 0.80); parts.push(s3);
+  const s4 = stilt.clone(); s4.translate(cx + 0.80, 0.625, cz + 0.80); parts.push(s4);
+
+  // 2nd Floor: Main Living Platform Deck & Room (Height 1.10)
+  const deck = new THREE.BoxGeometry(1.90, 0.14, 1.90); deck.translate(cx, 1.25 + 0.07, cz); parts.push(deck);
+  const balustrade = new THREE.BoxGeometry(1.90, 0.30, 0.06); balustrade.translate(cx, 1.25 + 0.25, cz + 0.92); parts.push(balustrade);
+  const f2 = new THREE.BoxGeometry(1.70, 1.10, 1.70); f2.translate(cx, 1.39 + 0.55, cz); parts.push(f2);
+
+  // 3rd Floor: Upper Loft (Height 1.0)
+  const f3 = new THREE.BoxGeometry(1.80, 1.00, 1.80); f3.translate(cx, 2.49 + 0.50, cz); parts.push(f3);
   return mergeBufferGeometries(parts);
 }
 function createMountainStiltRoofGeo() {
-  const roof = createPitchedRoofGeometry(1.60, 1.60, 0.85); roof.translate(0, 1.57, 0);
+  const roof = createCleanPitchedRoof(1.92, 1.92, 1.00, false);
+  roof.translate(1.0, 3.49, 1.0);
   return roof;
 }
 
-// 7. Nordic Viking Longhouse
+// 7. Nordic Viking Longhouse (3-Story, 3x2x3 Footprint: X [0.05..2.95], Z [0.05..1.95])
 function createLonghouseWallGeo() {
   const parts = [];
-  const body = new THREE.BoxGeometry(1.85, 0.90, 1.30); body.translate(0, 0.45, 0); parts.push(body);
-  const prow1 = new THREE.BoxGeometry(0.08, 0.45, 0.08); prow1.translate(-0.95, 1.70, 0); prow1.rotateZ(0.2); parts.push(prow1);
-  const prow2 = new THREE.BoxGeometry(0.08, 0.45, 0.08); prow2.translate( 0.95, 1.70, 0); prow2.rotateZ(-0.2); parts.push(prow2);
+  const cx = 1.5, cz = 1.0;
+  // Fieldstone Foundation Skirting
+  const skirt = new THREE.BoxGeometry(2.90, 0.25, 1.90); skirt.translate(cx, 0.125, cz); parts.push(skirt);
+
+  // 1st, 2nd & 3rd Floor: Curved Stave-Wood Bowed Hull Body (Height 2.10)
+  const body = new THREE.BoxGeometry(2.85, 2.10, 1.85); body.translate(cx, 0.25 + 1.05, cz); parts.push(body);
+
+  // Dragon Prows at Gables
+  const prow1 = new THREE.BoxGeometry(0.10, 0.75, 0.10); prow1.translate(cx - 1.40, 3.00, cz); prow1.rotateZ(0.25); parts.push(prow1);
+  const prow2 = new THREE.BoxGeometry(0.10, 0.75, 0.10); prow2.translate(cx + 1.40, 3.00, cz); prow2.rotateZ(-0.25); parts.push(prow2);
   return mergeBufferGeometries(parts);
 }
 function createLonghouseRoofGeo() {
-  const roof = createPitchedRoofGeometry(2.05, 1.55, 0.80); roof.translate(0, 0.90, 0);
+  const roof = createCleanPitchedRoof(2.92, 1.92, 1.10);
+  roof.translate(1.5, 2.35, 1.0);
   return roof;
 }
 
-// 8. Bone Ossuary Shelter
+// 8. Ancient Bone Ossuary (3-Story, 2x2x3 Footprint: X [0.05..1.95], Z [0.05..1.95])
 function createBoneOssuaryWallGeo() {
   const parts = [];
-  const body = new THREE.BoxGeometry(1.40, 1.00, 1.40); body.translate(0, 0.50, 0); parts.push(body);
-  const skull = new THREE.SphereGeometry(0.14, 6, 5);
-  const sk1 = skull.clone(); sk1.translate(-0.70, 1.05, -0.70); parts.push(sk1);
-  const sk2 = skull.clone(); sk2.translate( 0.70, 1.05, -0.70); parts.push(sk2);
-  const sk3 = skull.clone(); sk3.translate(-0.70, 1.05,  0.70); parts.push(sk3);
-  const sk4 = skull.clone(); sk4.translate( 0.70, 1.05,  0.70); parts.push(sk4);
+  const cx = 1.0, cz = 1.0;
+  // Basalt Ashlar Foundation
+  const f1 = new THREE.BoxGeometry(1.90, 1.10, 1.90); f1.translate(cx, 0.55, cz); parts.push(f1);
+
+  // 2nd Floor: Crypt Sanctuary Level (Height 1.10)
+  const f2 = new THREE.BoxGeometry(1.75, 1.10, 1.75); f2.translate(cx, 1.10 + 0.55, cz); parts.push(f2);
+
+  // 3rd Floor: Spired Reliquary Turret (Height 1.0)
+  const f3 = new THREE.BoxGeometry(1.10, 1.00, 1.10); f3.translate(cx, 2.20 + 0.50, cz); parts.push(f3);
+
+  // Corner Skull Ornaments
+  const skull = new THREE.SphereGeometry(0.14, 6, 6);
+  const sk1 = skull.clone(); sk1.translate(cx - 0.85, 2.20, cz - 0.85); parts.push(sk1);
+  const sk2 = skull.clone(); sk2.translate(cx + 0.85, 2.20, cz - 0.85); parts.push(sk2);
+  const sk3 = skull.clone(); sk3.translate(cx - 0.85, 2.20, cz + 0.85); parts.push(sk3);
+  const sk4 = skull.clone(); sk4.translate(cx + 0.85, 2.20, cz + 0.85); parts.push(sk4);
   return mergeBufferGeometries(parts);
 }
 function createBoneOssuaryRoofGeo() {
-  const roof = createPitchedRoofGeometry(1.60, 1.60, 0.90); roof.translate(0, 1.00, 0);
-  return roof;
+  const parts = [];
+  const cx = 1.0, cz = 1.0;
+  const r1 = createCleanPitchedRoof(1.92, 1.92, 0.70, false); r1.translate(cx, 2.20, cz); parts.push(r1);
+  const spire = new THREE.ConeGeometry(0.60, 1.20, 8); spire.translate(cx, 3.20 + 0.60, cz); parts.push(spire);
+  return mergeBufferGeometries(parts);
 }
 
-// 9. Watchtower Villa
+// 9. Turreted Villa / Manor Keep (4-Story, 3x3x4 Footprint: X [0.05..2.95], Z [0.05..2.95])
 function createWatchtowerVillaWallGeo() {
   const parts = [];
-  const body = new THREE.BoxGeometry(1.35, 1.05, 1.35); body.translate(-0.15, 0.525, -0.15); parts.push(body);
-  const turret = new THREE.BoxGeometry(0.65, 1.85, 0.65); turret.translate(0.55, 0.925, 0.55); parts.push(turret);
-  const battlement = new THREE.BoxGeometry(0.72, 0.22, 0.72); battlement.translate(0.55, 1.85 + 0.11, 0.55); parts.push(battlement);
+  const cx = 1.5, cz = 1.5;
+  // 1st Floor: Rusticated Stone Ashlar Base (Height 1.15)
+  const f1 = new THREE.BoxGeometry(2.85, 1.15, 2.85); f1.translate(cx - 0.05, 0.575, cz - 0.05); parts.push(f1);
+
+  // 2nd Floor: Main Residential Floor (Height 1.10) with Balcony
+  const f2 = new THREE.BoxGeometry(2.65, 1.10, 2.65); f2.translate(cx - 0.05, 1.15 + 0.55, cz - 0.05); parts.push(f2);
+  const balc = new THREE.BoxGeometry(0.80, 0.22, 0.15); balc.translate(cx - 0.05, 1.15 + 0.12, cz + 1.30); parts.push(balc);
+
+  // 3rd Floor: Upper Suites (Height 1.0)
+  const f3 = new THREE.BoxGeometry(2.45, 1.00, 2.45); f3.translate(cx - 0.05, 2.25 + 0.50, cz - 0.05); parts.push(f3);
+
+  // 4th Floor: Fortified Corner Turret (Height 4.40)
+  const turret = new THREE.BoxGeometry(0.90, 4.40, 0.90); turret.translate(cx + 0.90, 2.20, cz + 0.90); parts.push(turret);
+  // Crenellated Turret Battlements
+  const battlement = new THREE.BoxGeometry(1.05, 0.30, 1.05); battlement.translate(cx + 0.90, 4.40 + 0.15, cz + 0.90); parts.push(battlement);
+
   return mergeBufferGeometries(parts);
 }
 function createWatchtowerVillaRoofGeo() {
-  const roof = createPitchedRoofGeometry(1.50, 1.50, 0.70); roof.translate(-0.15, 1.05, -0.15);
-  return roof;
+  const parts = [];
+  const cx = 1.5, cz = 1.5;
+  const mainRoof = createCleanPitchedRoof(2.50, 2.50, 1.00, false); mainRoof.translate(cx - 0.05, 3.25, cz - 0.05); parts.push(mainRoof);
+  const turretSpire = new THREE.ConeGeometry(0.65, 1.00, 8); turretSpire.translate(cx + 0.90, 4.55 + 0.50, cz + 0.90); parts.push(turretSpire);
+  return mergeBufferGeometries(parts);
 }
 
 // -----------------------------------------------------------------------------
@@ -1346,7 +1488,7 @@ export class RCT3DRenderer {
     // 3. WebGL Renderer with Optional Downscaling
     this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
     this.renderer.shadowMap.enabled = this.shadowsEnabled;
-    this.renderer.shadowMap.type = THREE.BasicShadowMap; // Pixel-crisp hard unfiltered retro shadows
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap; // High quality smooth shadows
     this.renderer.setClearColor(0x000000, 1.0);
     this.updateRendererResolution();
 
@@ -1362,8 +1504,8 @@ export class RCT3DRenderer {
     this.sunLight = new THREE.DirectionalLight(0xfffaea, 1.4);
     this.sunLight.position.set(40, 80, 50);
     this.sunLight.castShadow = true;
-    this.sunLight.shadow.mapSize.width = 512;
-    this.sunLight.shadow.mapSize.height = 512;
+    this.sunLight.shadow.mapSize.width = 2048;
+    this.sunLight.shadow.mapSize.height = 2048;
     this.sunLight.shadow.camera.near = 1;
     this.sunLight.shadow.camera.far = 350;
     const sd = 60;
@@ -2055,6 +2197,7 @@ export class RCT3DRenderer {
     this.flagGeo.translate(0.35, 0.25, 0);
 
     this.floatingUiGroup = new THREE.Group();
+    this.floatingUiGroup.visible = false; // Rendered in 100% native resolution via 2D Canvas overlay
     this.scene.add(this.floatingUiGroup);
     this.floatingUiSprites = new Map();
 
@@ -3676,29 +3819,30 @@ export class RCT3DRenderer {
       }
       // --- 3D HOUSES & 10 ARCHITECTURAL VARIATIONS ---
       else if (isHouse) {
-        occupiedHouseTiles.add(`${Math.floor(e.x)}_${Math.floor(e.y)}`);
         const h = e.properties.house;
+        const fpW = h?.footprintW || (h?.footprint ? Number(h.footprint.split("x")[0]) : 1) || 1;
+        const fpH = h?.footprintH || (h?.footprint ? Number(h.footprint.split("x")[1]) : 1) || 1;
+        for (let fx = 0; fx < fpW; fx++) {
+          for (let fy = 0; fy < fpH; fy++) {
+            occupiedHouseTiles.add(`${Math.floor(e.x + fx)}_${Math.floor(e.y + fy)}`);
+          }
+        }
+
         const isCompleted = h ? (h.isCompleted !== false) : true;
         const totalCost = (h?.woodCost || 3) + (h?.stoneCost || 2) + (h?.boneCost || 0);
         const curMaterials = (h?.woodCurrent || 0) + (h?.stoneCurrent || 0) + (h?.boneCurrent || 0);
         const progress = isCompleted ? 1.0 : (curMaterials / Math.max(1, totalCost));
 
-        // Deterministic Cardinal Rotation per House (0, 90, 180, 270 deg)
-        const houseRot = (((Math.imul(Math.floor(e.x) ^ Math.imul(Math.floor(e.y), 32452843), 8253729) >>> 0) % 4)) * (Math.PI / 2);
-        // Random Height Variation per House (0.85x to 1.25x height)
-        const heightScale = 0.85 + (((Math.imul(Math.floor(e.x) ^ Math.imul(Math.floor(e.y), 198491317), 445582319) >>> 0) % 100) / 100.0) * 0.40;
-
-        mMatrix.makeRotationY(houseRot);
-        scaleMatrix.makeScale(1.0, heightScale, 1.0);
-        mMatrix.multiply(scaleMatrix);
-        mMatrix.setPosition(e.x + 0.5, surfaceH, e.y + 0.5);
+        // Non-square houses (2x1, 3x2) maintain fixed footprint alignment so they never clip into roads or neighbors
+        mMatrix.identity();
+        mMatrix.setPosition(e.x, surfaceH, e.y);
 
         const htx = Math.floor(e.x);
         const hty = Math.floor(e.y);
         const isHouseOverWater = (map?.getTile ? map.getTile(htx, hty) === 2 : false) || (!!h?.isPlatform);
         if (isHouseOverWater && waterPlatformCount < 800) {
           const platMat = new THREE.Matrix4();
-          platMat.setPosition(e.x + 0.5, 0.08, e.y + 0.5);
+          platMat.setPosition(e.x + fpW * 0.5, 0.08, e.y + fpH * 0.5);
           this.instWaterPlatforms.setMatrixAt(waterPlatformCount++, platMat);
         }
 
@@ -3769,8 +3913,9 @@ export class RCT3DRenderer {
             flagMesh.material = flagMat;
           }
 
-          const peakY = surfaceH + (1.20 + 0.78) * heightScale + 0.25;
-          flagMesh.position.set(e.x + 0.5, peakY, e.y + 0.5);
+          const numFloors = h?.maxFloors || h?.floors?.length || 2;
+          const peakY = surfaceH + (1.20 + numFloors * 1.15) + 0.25;
+          flagMesh.position.set(e.x + fpW * 0.5, peakY, e.y + fpH * 0.5);
           flagMesh.rotation.y = this.fixedRotationY;
         } else if (!isCompleted) {
           if (progress < 0.32 && stage1Count < 400) {
@@ -4358,6 +4503,21 @@ export class RCT3DRenderer {
 
     // Draw WebGL Frame
     this.renderer.render(this.scene, this.camera);
+  }
+
+  projectWorldToScreen(worldX, worldY, elevation = 0) {
+    if (!this.camera) return null;
+    const v = new THREE.Vector3(worldX, elevation, worldY);
+    v.project(this.camera);
+    const sw = (typeof CANVAS_WIDTH !== "undefined" && CANVAS_WIDTH > 0) ? CANVAS_WIDTH : (this.width || 800);
+    const sh = (typeof CANVAS_HEIGHT !== "undefined" && CANVAS_HEIGHT > 0) ? CANVAS_HEIGHT : (this.height || 600);
+    const sx = (v.x * 0.5 + 0.5) * sw;
+    const sy = (-(v.y * 0.5) + 0.5) * sh;
+    return {
+      x: sx,
+      y: sy,
+      visible: v.z < 1.0 && sx >= -100 && sx <= sw + 100 && sy >= -100 && sy <= sh + 100
+    };
   }
 
   resize(w, h) {

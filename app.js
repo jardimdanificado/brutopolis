@@ -969,6 +969,9 @@ let inspectingRelationship = null; // Currently inspected two-character relation
 let inspectingGroup = null; // Currently inspected clan for full dossier/stockpile view
 let groupDetailTab = "ZONES"; // Active tab in clan dossier: "ZONES", "STOCKPILE", "MEMBERS", "HISTORY"
 let dossierTab = "OVERVIEW"; // Active tab in creature dossier: "OVERVIEW", "AFFINITIES", "OFFSPRING", "CHRONICLE"
+let familyTreeZoom = 1.0; // Zoom factor for graphical family tree
+let familyTreePanX = 0; // Pan offset X for family tree
+let familyTreePanY = 0; // Pan offset Y for family tree
 let inspectingFromCreature = false;
 let visualizedGroupId = null; // ID of clan whose claimed territory is being highlighted on map
 let isFollowMode = false; // Camera automatically follows and locks onto selected creature
@@ -2385,7 +2388,7 @@ function getFamilyTreeData(targetId) {
   };
 }
 
-function renderFamilyTreeTab(mx, my, mw, mh, target) {
+function renderFamilyTab(mx, my, mw, mh, target) {
   const treeData = getFamilyTreeData(target.id);
   if (!treeData) return;
 
@@ -2512,6 +2515,302 @@ function renderFamilyTreeTab(mx, my, mw, mh, target) {
   }
 }
 
+/**
+ * Graphical, interactive, visual family tree with hierarchical generational nodes and connectors
+ */
+function renderGraphicalFamilyTreeTab(mx, my, mw, mh, target) {
+  const treeData = getFamilyTreeData(target.id);
+  if (!treeData) return;
+
+  const contentY = my + 62;
+  const contentH = (my + mh - 12) - contentY;
+  drawNESBox(mx + 10, contentY, mw - 20, contentH);
+
+  drawText8x8("FAMILY PEDIGREE (CLICK NODE TO RE-CENTER):", mx + 20, contentY + 10, "#ffd700", 1);
+
+  // Zoom Controls Bar at Top Right of Box
+  const zoomPct = Math.round(familyTreeZoom * 100);
+  drawNESButton(mx + mw - 235, contentY + 6, 36, 20, "[-]", false, false);
+  registerClickableRegion(mx + mw - 235, contentY + 6, 36, 20, () => {
+    familyTreeZoom = Math.max(0.4, Number((familyTreeZoom - 0.15).toFixed(2)));
+  });
+
+  drawNESButton(mx + mw - 195, contentY + 6, 36, 20, "[+]", false, false);
+  registerClickableRegion(mx + mw - 195, contentY + 6, 36, 20, () => {
+    familyTreeZoom = Math.min(2.5, Number((familyTreeZoom + 0.15).toFixed(2)));
+  });
+
+  drawNESButton(mx + mw - 155, contentY + 6, 125, 20, `RESET (${zoomPct}%)`, false, false);
+  registerClickableRegion(mx + mw - 155, contentY + 6, 125, 20, () => {
+    familyTreeZoom = 1.0;
+    familyTreePanX = 0;
+    familyTreePanY = 0;
+  });
+
+  const cardW = 160;
+  const cardH = 50;
+  const tierGap = 75;
+  const startTierY = contentY + 45 - modalScroll * 25;
+  const centerX = mx + mw / 2;
+
+  // Clip view to inner box
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(mx + 12, contentY + 28, mw - 24, contentH - 32);
+  ctx.clip();
+
+  // Apply Panning and Zooming Transform centered on the tree
+  ctx.translate(centerX + familyTreePanX, contentY + 40 + familyTreePanY);
+  ctx.scale(familyTreeZoom, familyTreeZoom);
+  ctx.translate(-centerX, -(contentY + 40));
+
+  const drawNodeCard = (cx, cy, ent, role, isTarget = false, isPartner = false) => {
+    if (!ent) return;
+
+    const isAlive = !ent.destroyed && ent.properties?.life?.energy > 0;
+    
+    // Transform coordinates back to screen space for hover and clicking
+    const scrX = (centerX + familyTreePanX) + (cx - centerX) * familyTreeZoom;
+    const scrY = (contentY + 40 + familyTreePanY) + (cy - (contentY + 40)) * familyTreeZoom;
+    const scrW = cardW * familyTreeZoom;
+    const scrH = cardH * familyTreeZoom;
+
+    const isHover = mouseX >= scrX && mouseX <= scrX + scrW && mouseY >= scrY && mouseY <= scrY + scrH;
+
+    ctx.save();
+    ctx.fillStyle = isTarget ? "#1e1e38" : (isHover ? "#242440" : "#121220");
+    ctx.fillRect(cx, cy, cardW, cardH);
+
+    ctx.strokeStyle = isTarget ? "#ffd700" : (isPartner ? "#ff60a0" : (isHover ? "#3cbcfc" : (isAlive ? "#58d854" : "#9c5050")));
+    ctx.lineWidth = isTarget || isHover ? 2 : 1;
+    ctx.strokeRect(cx, cy, cardW, cardH);
+
+    // Role Tag
+    drawText8x8(`[${role}]`, cx + 6, cy + 6, isTarget ? "#ffd700" : (isPartner ? "#ff60a0" : "#3cbcfc"), 1);
+
+    // Name (Red if deceased, White/Gold if alive)
+    const nameCol = isTarget ? "#ffd700" : (isAlive ? "#ffffff" : "#9c5050");
+    const nameStr = (ent.properties?.name || `CREATURE #${ent.id}`).toUpperCase();
+    const maxChars = Math.floor((cardW - 12) / 8);
+    drawText8x8(nameStr.slice(0, maxChars), cx + 6, cy + 20, nameCol, 1);
+
+    // Clan & Status
+    const statusBadge = isAlive ? "[ALIVE]" : "[DEAD]";
+    const statusCol = isAlive ? "#58d854" : "#9c5050";
+    drawText8x8(statusBadge, cx + 6, cy + 34, statusCol, 1);
+
+    const clanStr = (ent.properties?.group?.name || "SOLITARY").slice(0, 8).toUpperCase();
+    drawText8x8(`CLAN:${clanStr}`, cx + 58, cy + 34, "#bcbcbc", 1);
+
+    ctx.restore();
+
+    const curId = ent.id;
+    // Register transformed clickable region on screen
+    registerClickableRegion(scrX, scrY, scrW, scrH, () => {
+      lastSelectedId = curId;
+      modalScroll = 0;
+    });
+  };
+
+  const drawConnectorLine = (x1, y1, x2, y2, color = "#606080") => {
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    const midY = (y1 + y2) / 2;
+    ctx.lineTo(x1, midY);
+    ctx.lineTo(x2, midY);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+    ctx.restore();
+  };
+
+  // 1. Tier -2: Grandparents
+  const tierGPY = startTierY;
+  const gpSlots = [
+    { ent: treeData.patGrandpa, role: "PAT. GRANDFATHER" },
+    { ent: treeData.patGrandma, role: "PAT. GRANDMOTHER" },
+    { ent: treeData.matGrandpa, role: "MAT. GRANDFATHER" },
+    { ent: treeData.matGrandma, role: "MAT. GRANDMOTHER" }
+  ].filter(g => !!g.ent);
+
+  if (gpSlots.length > 0) {
+    const totalGPW = gpSlots.length * (cardW + 16) - 16;
+    let curX = centerX - totalGPW / 2;
+    for (const g of gpSlots) {
+      drawNodeCard(curX, tierGPY, g.ent, g.role);
+      curX += cardW + 16;
+    }
+  }
+
+  // 2. Tier -1: Parents
+  const tierParentsY = tierGPY + (gpSlots.length > 0 ? tierGap : 0);
+  const pSlots = [
+    { ent: treeData.father, role: "FATHER" },
+    { ent: treeData.mother, role: "MOTHER" }
+  ].filter(p => !!p.ent);
+
+  const parentX1 = centerX - cardW - 16;
+  const parentX2 = centerX + 16;
+
+  if (treeData.father) {
+    drawNodeCard(parentX1, tierParentsY, treeData.father, "FATHER");
+  }
+  if (treeData.mother) {
+    drawNodeCard(parentX2, tierParentsY, treeData.mother, "MOTHER");
+  }
+  if (treeData.father && treeData.mother) {
+    // Connector line between parents
+    ctx.save();
+    ctx.strokeStyle = "#ffd700";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(parentX1 + cardW, tierParentsY + cardH / 2);
+    ctx.lineTo(parentX2, tierParentsY + cardH / 2);
+    ctx.stroke();
+    drawText8x8("❤️", centerX - 6, tierParentsY + cardH / 2 - 4, "#ff60a0", 1);
+    ctx.restore();
+  }
+
+  // 3. Tier 0: Subject Generation (Subject, Spouse, Siblings)
+  const tierSubjectY = tierParentsY + (pSlots.length > 0 ? tierGap : 0);
+
+  // Line from parents down to Subject
+  if (pSlots.length > 0) {
+    drawConnectorLine(centerX, tierParentsY + cardH, centerX, tierSubjectY, "#ffd700");
+  }
+
+  const subjCards = [];
+  subjCards.push({ ent: treeData.target, role: "SUBJECT", isTarget: true });
+  if (treeData.partner) subjCards.push({ ent: treeData.partner, role: "SPOUSE", isPartner: true });
+  for (const sib of treeData.siblings) {
+    subjCards.push({ ent: sib, role: "SIBLING" });
+  }
+
+  const totalSubjW = subjCards.length * (cardW + 16) - 16;
+  let curSubjX = centerX - totalSubjW / 2;
+  for (const sc of subjCards) {
+    drawNodeCard(curSubjX, tierSubjectY, sc.ent, sc.role, sc.isTarget, sc.isPartner);
+    if (sc.isTarget && treeData.partner) {
+      // Spouse link
+      drawText8x8("💍", curSubjX + cardW + 2, tierSubjectY + cardH / 2 - 4, "#ffd700", 1);
+    }
+    curSubjX += cardW + 16;
+  }
+
+  // 4. Tier +1: Children
+  if (treeData.children.length > 0) {
+    const tierChildrenY = tierSubjectY + tierGap;
+    const totalChildW = treeData.children.length * (cardW + 14) - 14;
+    let curChildX = centerX - totalChildW / 2;
+
+    drawConnectorLine(centerX, tierSubjectY + cardH, centerX, tierChildrenY, "#58d854");
+
+    for (const c of treeData.children) {
+      drawNodeCard(curChildX, tierChildrenY, c, "CHILD");
+      curChildX += cardW + 14;
+    }
+
+    // 5. Tier +2: Grandchildren
+    if (treeData.grandchildren.length > 0) {
+      const tierGCY = tierChildrenY + tierGap;
+      const totalGCW = treeData.grandchildren.length * (cardW + 12) - 12;
+      let curGCX = centerX - totalGCW / 2;
+
+      drawConnectorLine(centerX, tierChildrenY + cardH, centerX, tierGCY, "#3cbcfc");
+
+      for (const gc of treeData.grandchildren) {
+        drawNodeCard(curGCX, tierGCY, gc.entity, "GRANDCHILD");
+        curGCX += cardW + 12;
+      }
+    }
+  }
+
+  ctx.restore();
+}
+
+/**
+ * Dedicated Past Owners & Structure History Tab for Houses
+ */
+function renderPastOwnersTab(mx, my, mw, mh, target) {
+  const props = target.properties || {};
+  const house = props.house;
+  if (!house) return;
+
+  const contentY = my + 62;
+  const contentH = (my + mh - 12) - contentY;
+  drawNESBox(mx + 10, contentY, mw - 20, contentH);
+
+  drawText8x8("PAST RESIDENTS & TENANCY CHRONICLE FOR THIS STRUCTURE:", mx + 20, contentY + 12, "#ffd700", 1);
+
+  // Top Section: Current Floor Occupants
+  const floors = house.floors || [];
+  let curY = contentY + 32;
+
+  drawText8x8("CURRENT RESIDENT FAMILIES (BY FLOOR):", mx + 20, curY, "#3cbcfc", 1);
+  curY += 16;
+
+  for (const fl of floors) {
+    const flOwner = fl.ownerId ? (getEntityById(fl.ownerId) || entityRegistry?.get(fl.ownerId)) : null;
+    const flPartner = fl.partnerId ? (getEntityById(fl.partnerId) || entityRegistry?.get(fl.partnerId)) : null;
+    const oName = flOwner?.properties?.name ? flOwner.properties.name.toUpperCase() : (fl.ownerId ? `#${fl.ownerId}` : "VACANT");
+    const pName = flPartner?.properties?.name ? ` & ${flPartner.properties.name.toUpperCase()}` : "";
+
+    const flBadge = `[${fl.label || `FLOOR ${fl.floorNumber}`}]`;
+    drawText8x8(`${flBadge}: ${oName}${pName}`, mx + 24, curY + 4, flOwner ? "#ffffff" : "#888888", 1);
+
+    if (flOwner) {
+      const oId = fl.ownerId;
+      drawNESButton(mx + mw - 100, curY, 80, 18, "INSPECT", false, false);
+      registerClickableRegion(mx + mw - 100, curY, 80, 18, () => {
+        lastSelectedId = oId;
+        dossierTab = "OVERVIEW";
+        modalScroll = 0;
+      });
+    }
+
+    curY += 22;
+  }
+
+  curY += 12;
+  drawText8x8("HISTORICAL PAST OWNERS & FORMER RESIDENTS:", mx + 20, curY, "#ffd700", 1);
+  curY += 16;
+
+  const pastOwners = house.pastOwners || [];
+  if (pastOwners.length === 0) {
+    drawText8x8("NO FORMER RESIDENTS RECORDED. FOUNDED BY CURRENT OCCUPANTS.", mx + 24, curY + 10, "#bcbcbc", 1);
+  } else {
+    for (let i = modalScroll; i < pastOwners.length; i++) {
+      if (curY > contentY + contentH - 24) break;
+      const po = pastOwners[i];
+      const pEnt = entityRegistry?.get(po.ownerId) || getEntityById(po.ownerId);
+      const isAlive = pEnt && !pEnt.destroyed && pEnt.properties?.life?.energy > 0;
+      const statusCol = isAlive ? "#58d854" : "#9c5050";
+
+      const timeStr = `[D${po.startDay || 0} - D${po.endDay || "NOW"}]`;
+      const nameStr = (po.ownerName || `OWNER #${po.ownerId}`).toUpperCase();
+      const reasonStr = `(${po.reason || "DECEASED"})`;
+
+      drawText8x8(timeStr, mx + 24, curY + 4, "#bcbcbc", 1);
+      drawText8x8(nameStr, mx + 160, curY + 4, statusCol, 1);
+      drawText8x8(reasonStr, mx + 380, curY + 4, "#d3869b", 1);
+
+      if (po.ownerId) {
+        const pId = po.ownerId;
+        drawNESButton(mx + mw - 100, curY, 80, 18, "INSPECT", false, false);
+        registerClickableRegion(mx + mw - 100, curY, 80, 18, () => {
+          lastSelectedId = pId;
+          dossierTab = "OVERVIEW";
+          modalScroll = 0;
+        });
+      }
+
+      curY += 22;
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // 2. In-Engine Modal 1: Biological Dossier Screen ([I])
 // ---------------------------------------------------------------------------
@@ -2579,14 +2878,16 @@ function renderDossierModal() {
   }
 
   // Calculate Tab Counts
+  const isHouse = !!props.house;
+  const isCreature = !!props.life || !!props.brain;
   const knownAffinities = Object.entries(props.brain?.affinities || {});
   const creatureEvents = getFullHistoryForEntity(target.id);
-  const isCreature = !!props.life || !!props.brain;
 
   // Modal Tabs Bar
   const tabs = [
     { id: "OVERVIEW", label: "OVERVIEW" },
-    ...(isCreature ? [{ id: "TREE", label: "FAMILY TREE" }, { id: "AFFINITIES", label: `AFFINITIES (${knownAffinities.length})` }] : []),
+    ...(isHouse ? [{ id: "PAST_OWNERS", label: `PAST OWNERS (${props.house.pastOwners?.length || 0})` }] : []),
+    ...(isCreature ? [{ id: "FAMILY", label: "FAMILY" }, { id: "TREE", label: "FAMILY TREE" }, { id: "AFFINITIES", label: `AFFINITIES (${knownAffinities.length})` }] : []),
     { id: "CHRONICLE", label: `CHRONICLE (${creatureEvents.length})` }
   ];
 
@@ -2606,8 +2907,9 @@ function renderDossierModal() {
   // TAB 1: OVERVIEW
   // ---------------------------------------------------------------------------
   if (dossierTab === "OVERVIEW") {
-    // 1. Top Summary Info Box (Expanded to 66px to fit Residence / Ownership links)
-    drawNESBox(mx + 10, my + 62, mw - 20, 66);
+    // 1. Top Summary Info Box
+    const topBoxH = isHouse ? 86 : 66;
+    drawNESBox(mx + 10, my + 62, mw - 20, topBoxH);
 
     // Interactive Clickable Species Link
     const speciesLabel = `SPECIES: [${species}]`;
@@ -2637,8 +2939,8 @@ function renderDossierModal() {
     drawText8x8(`POS: [${Math.floor(target.x)},${Math.floor(target.y)}]`, mx + 490, my + 70, "#f8b800", 1);
 
     const isAlive = !target.destroyed && props.life && props.life.energy > 0;
-    const statusTxt = isAlive ? "STATUS: LIVE" : "STATUS: DECEASED";
-    const statusCol = isAlive ? "#58d854" : "#f83800";
+    const statusTxt = isHouse ? (props.house.isCompleted ? "STATUS: BUILT" : "STATUS: UNDER CONSTRUCTION") : (isAlive ? "STATUS: LIVE" : "STATUS: DECEASED");
+    const statusCol = isHouse ? "#3cbcfc" : (isAlive ? "#58d854" : "#f83800");
     drawText8x8(statusTxt, mx + 20, my + 86, statusCol, 1);
     drawText8x8(`PROPERTIES: ${Object.keys(props).length}`, mx + 240, my + 86, "#bcbcbc", 1);
 
@@ -2646,39 +2948,43 @@ function renderDossierModal() {
     if (props.terrestrial) domains.push("TERRESTRIAL");
     if (props.aquatic) domains.push("AQUATIC");
     if (props.flying) domains.push("FLYING");
-    const domainStr = domains.length > 0 ? domains.join("+") : "STATIC";
+    const domainStr = domains.length > 0 ? domains.join("+") : (isHouse ? "STRUCTURE" : "STATIC");
     drawText8x8(`DOMAIN: ${domainStr}`, mx + 440, my + 86, "#58d854", 1);
 
-    // Row 3: House Link (for creatures) OR Owner(s) Link (for houses/structures)
-    if (props.house) {
-      // Inspecting a House / Structure: Display Owner and Partner Links
-      const hOwner = props.house.ownerId ? (getEntityById(props.house.ownerId) || entityRegistry?.get(props.house.ownerId)) : null;
-      const hPartner = props.house.partnerId ? (getEntityById(props.house.partnerId) || entityRegistry?.get(props.house.partnerId)) : null;
-      const oName = hOwner?.properties?.name ? `${hOwner.properties.name.toUpperCase()} (OWNER)` : (props.house.ownerId ? `#${props.house.ownerId}` : "NONE");
-      const pName = hPartner?.properties?.name ? `${hPartner.properties.name.toUpperCase()} (PARTNER)` : (props.house.partnerId ? `#${props.house.partnerId}` : null);
+    // Row 3: House Link (for creatures) OR Architecture & Floor Summary (for houses/structures)
+    if (isHouse) {
+      const hFootprint = props.house.footprint || "2x1";
+      const hFloorsCount = props.house.maxFloors || props.house.floors?.length || 2;
+      const hYard = props.house.yard?.type || "Courtyard & Garden";
+      drawText8x8(`ARCH: ${hFloorsCount}-STORY (${hFootprint}) | YARD: ${hYard.toUpperCase()}`, mx + 20, my + 102, "#ffd700", 1);
 
-      const ownerLabel = `OWNER: [${oName}]`;
-      const isOHover = hOwner && mouseX >= mx + 20 && mouseX <= mx + 20 + ownerLabel.length * 8 && mouseY >= my + 100 && mouseY <= my + 116;
-      drawText8x8(ownerLabel, mx + 20, my + 102, isOHover ? "#ffd700" : "#58d854", 1);
-      if (hOwner) {
-        const oId = props.house.ownerId;
-        registerClickableRegion(mx + 20, my + 100, ownerLabel.length * 8, 16, () => {
-          lastSelectedId = oId;
+      // Floor 1 & 2 quick inspection tags
+      const f1 = props.house.floors?.[0];
+      const f2 = props.house.floors?.[1];
+      const f1Owner = f1?.ownerId ? (getEntityById(f1.ownerId) || entityRegistry?.get(f1.ownerId)) : null;
+      const f2Owner = f2?.ownerId ? (getEntityById(f2.ownerId) || entityRegistry?.get(f2.ownerId)) : null;
+
+      const f1Name = f1Owner?.properties?.name ? `1F: ${f1Owner.properties.name.toUpperCase()}` : "1F: VACANT";
+      const f2Name = f2Owner?.properties?.name ? `2F: ${f2Owner.properties.name.toUpperCase()}` : (hFloorsCount >= 2 ? "2F: VACANT" : "");
+
+      drawText8x8(f1Name, mx + 20, my + 118, f1Owner ? "#58d854" : "#888888", 1);
+      if (f1Owner) {
+        registerClickableRegion(mx + 20, my + 116, f1Name.length * 8, 14, () => {
+          lastSelectedId = f1.ownerId;
           dossierTab = "OVERVIEW";
           modalScroll = 0;
         });
       }
 
-      if (pName && hPartner) {
-        const partnerLabel = `PARTNER: [${pName}]`;
-        const isPHover = mouseX >= mx + 340 && mouseX <= mx + 340 + partnerLabel.length * 8 && mouseY >= my + 100 && mouseY <= my + 116;
-        drawText8x8(partnerLabel, mx + 340, my + 102, isPHover ? "#ffd700" : "#3cbcfc", 1);
-        const pId = props.house.partnerId;
-        registerClickableRegion(mx + 340, my + 100, partnerLabel.length * 8, 16, () => {
-          lastSelectedId = pId;
-          dossierTab = "OVERVIEW";
-          modalScroll = 0;
-        });
+      if (f2Name) {
+        drawText8x8(f2Name, mx + 240, my + 118, f2Owner ? "#58d854" : "#888888", 1);
+        if (f2Owner) {
+          registerClickableRegion(mx + 240, my + 116, f2Name.length * 8, 14, () => {
+            lastSelectedId = f2.ownerId;
+            dossierTab = "OVERVIEW";
+            modalScroll = 0;
+          });
+        }
       }
     } else {
       // Inspecting a Creature: Look up Assigned Private House
@@ -2703,68 +3009,76 @@ function renderDossierModal() {
       }
     }
 
-    const lineageY = my + 132;
+    const lineageY = isHouse ? my + 154 : my + 132;
     drawNESBox(mx + 10, lineageY, mw - 20, 56);
 
-    // Perks & Traits
-    const perks = [];
-    if (props.skeptic) perks.push("SKEPTIC");
-    if (props.gullible) perks.push("GULLIBLE");
-    if (props.schizophrenic) perks.push("SCHIZOPHRENIC");
-    if (props.liar) perks.push(props.liar.type === "believer" ? "BELIEVER" : "LIAR");
-
-    const orientStr = props.homosexual ? "HOMOSEXUAL" : props.bisexual ? "BISEXUAL" : "HETEROSEXUAL";
-    const orientCol = props.homosexual ? "#ff60a0" : props.bisexual ? "#d3869b" : "#3cbcfc";
-
-    drawText8x8("FAMILY & LINEAGE:", mx + 20, lineageY + 8, "#f8b800", 1);
-    drawText8x8(`ORIENTATION: ${orientStr}`, mx + 180, lineageY + 8, orientCol, 1);
-    if (perks.length > 0) {
-      drawText8x8(`PERKS: [${perks.join(" | ")}]`, mx + 420, lineageY + 8, "#ffd700", 1);
-    }
-
-    // Father
-    const fatherId = props.fatherId !== undefined ? props.fatherId : props.life?.fatherId;
-    if (fatherId !== null && fatherId !== undefined) {
-      const father = entityRegistry.get(fatherId);
-      const fName = (father?.properties?.name || `Entity #${fatherId}`).toUpperCase().slice(0, 14);
-      drawText8x8("FATHER:", mx + 20, lineageY + 30, "#bcbcbc", 1);
-      drawNESButton(mx + 80, lineageY + 24, 130, 22, fName, false, false);
-      registerClickableRegion(mx + 80, lineageY + 24, 130, 22, () => {
-        lastSelectedId = fatherId;
-        modalScroll = 0;
-      });
+    // Perks & Traits / Structure stats
+    if (isHouse) {
+      const struct = props.structure || {};
+      drawText8x8("STRUCTURE METRICS & MATERIALS:", mx + 20, lineageY + 8, "#f8b800", 1);
+      drawText8x8(`CONDITION: ${struct.condition || 0}/${struct.maxCondition || 10000}`, mx + 20, lineageY + 30, "#58d854", 1);
+      drawText8x8(`DEFENSE: ${struct.defense || 80}`, mx + 260, lineageY + 30, "#3cbcfc", 1);
+      drawText8x8(`STORAGE: ${props.house.foodStorage?.length || 0} FOOD ITEMS`, mx + 460, lineageY + 30, "#ffd700", 1);
     } else {
-      drawText8x8("FATHER: Deus ex machina", mx + 20, lineageY + 30, "#7c7c7c", 1);
-    }
+      const perks = [];
+      if (props.skeptic) perks.push("SKEPTIC");
+      if (props.gullible) perks.push("GULLIBLE");
+      if (props.schizophrenic) perks.push("SCHIZOPHRENIC");
+      if (props.liar) perks.push(props.liar.type === "believer" ? "BELIEVER" : "LIAR");
 
-    // Mother
-    const motherId = props.motherId !== undefined ? props.motherId : props.life?.motherId;
-    if (motherId !== null && motherId !== undefined) {
-      const mother = entityRegistry.get(motherId);
-      const mName = (mother?.properties?.name || `Entity #${motherId}`).toUpperCase().slice(0, 14);
-      drawText8x8("MOTHER:", mx + 230, lineageY + 30, "#bcbcbc", 1);
-      drawNESButton(mx + 290, lineageY + 24, 130, 22, mName, false, false);
-      registerClickableRegion(mx + 290, lineageY + 24, 130, 22, () => {
-        lastSelectedId = motherId;
-        modalScroll = 0;
-      });
-    } else {
-      drawText8x8("MOTHER: Deus ex machina", mx + 230, lineageY + 30, "#7c7c7c", 1);
-    }
+      const orientStr = props.homosexual ? "HOMOSEXUAL" : props.bisexual ? "BISEXUAL" : "HETEROSEXUAL";
+      const orientCol = props.homosexual ? "#ff60a0" : props.bisexual ? "#d3869b" : "#3cbcfc";
 
-    // Partner
-    const partnerId = props.monogamy?.partnerId;
-    if (partnerId) {
-      const partner = entityRegistry.get(partnerId);
-      const pName = (partner?.properties?.name || `Entity #${partnerId}`).toUpperCase().slice(0, 14);
-      drawText8x8("PARTNER:", mx + 440, lineageY + 30, "#bcbcbc", 1);
-      drawNESButton(mx + 510, lineageY + 24, 140, 22, `${pName} [PARTNER]`, false, false);
-      registerClickableRegion(mx + 510, lineageY + 24, 140, 22, () => {
-        lastSelectedId = partnerId;
-        modalScroll = 0;
-      });
-    } else {
-      drawText8x8("PARTNER: Single", mx + 440, lineageY + 30, "#7c7c7c", 1);
+      drawText8x8("FAMILY & LINEAGE:", mx + 20, lineageY + 8, "#f8b800", 1);
+      drawText8x8(`ORIENTATION: ${orientStr}`, mx + 180, lineageY + 8, orientCol, 1);
+      if (perks.length > 0) {
+        drawText8x8(`PERKS: [${perks.join(" | ")}]`, mx + 420, lineageY + 8, "#ffd700", 1);
+      }
+
+      // Father
+      const fatherId = props.fatherId !== undefined ? props.fatherId : props.life?.fatherId;
+      if (fatherId !== null && fatherId !== undefined) {
+        const father = entityRegistry.get(fatherId);
+        const fName = (father?.properties?.name || `Entity #${fatherId}`).toUpperCase().slice(0, 14);
+        drawText8x8("FATHER:", mx + 20, lineageY + 30, "#bcbcbc", 1);
+        drawNESButton(mx + 80, lineageY + 24, 130, 22, fName, false, false);
+        registerClickableRegion(mx + 80, lineageY + 24, 130, 22, () => {
+          lastSelectedId = fatherId;
+          modalScroll = 0;
+        });
+      } else {
+        drawText8x8("FATHER: Deus ex machina", mx + 20, lineageY + 30, "#7c7c7c", 1);
+      }
+
+      // Mother
+      const motherId = props.motherId !== undefined ? props.motherId : props.life?.motherId;
+      if (motherId !== null && motherId !== undefined) {
+        const mother = entityRegistry.get(motherId);
+        const mName = (mother?.properties?.name || `Entity #${motherId}`).toUpperCase().slice(0, 14);
+        drawText8x8("MOTHER:", mx + 230, lineageY + 30, "#bcbcbc", 1);
+        drawNESButton(mx + 290, lineageY + 24, 130, 22, mName, false, false);
+        registerClickableRegion(mx + 290, lineageY + 24, 130, 22, () => {
+          lastSelectedId = motherId;
+          modalScroll = 0;
+        });
+      } else {
+        drawText8x8("MOTHER: Deus ex machina", mx + 230, lineageY + 30, "#7c7c7c", 1);
+      }
+
+      // Partner
+      const partnerId = props.monogamy?.partnerId;
+      if (partnerId) {
+        const partner = entityRegistry.get(partnerId);
+        const pName = (partner?.properties?.name || `Entity #${partnerId}`).toUpperCase().slice(0, 14);
+        drawText8x8("PARTNER:", mx + 440, lineageY + 30, "#bcbcbc", 1);
+        drawNESButton(mx + 510, lineageY + 24, 140, 22, `${pName} [PARTNER]`, false, false);
+        registerClickableRegion(mx + 510, lineageY + 24, 140, 22, () => {
+          lastSelectedId = partnerId;
+          modalScroll = 0;
+        });
+      } else {
+        drawText8x8("PARTNER: Single", mx + 440, lineageY + 30, "#7c7c7c", 1);
+      }
     }
 
     // 3. Vital Gauges
@@ -2847,14 +3161,28 @@ function renderDossierModal() {
   }
 
   // ---------------------------------------------------------------------------
-  // TAB 2: FAMILY TREE (Full Multigenerational Pedigree & Lineage Tree)
+  // TAB 2: PAST OWNERS (For Structure / House)
   // ---------------------------------------------------------------------------
-  else if (dossierTab === "TREE") {
-    renderFamilyTreeTab(mx, my, mw, mh, target);
+  else if (dossierTab === "PAST_OWNERS") {
+    renderPastOwnersTab(mx, my, mw, mh, target);
   }
 
   // ---------------------------------------------------------------------------
-  // TAB 3: AFFINITIES (Known living & deceased creatures)
+  // TAB 3: FAMILY (Pedigree List)
+  // ---------------------------------------------------------------------------
+  else if (dossierTab === "FAMILY") {
+    renderFamilyTab(mx, my, mw, mh, target);
+  }
+
+  // ---------------------------------------------------------------------------
+  // TAB 4: FAMILY TREE (Graphical Visual Tree)
+  // ---------------------------------------------------------------------------
+  else if (dossierTab === "TREE") {
+    renderGraphicalFamilyTreeTab(mx, my, mw, mh, target);
+  }
+
+  // ---------------------------------------------------------------------------
+  // TAB 5: AFFINITIES (Known living & deceased creatures)
   // ---------------------------------------------------------------------------
   else if (dossierTab === "AFFINITIES") {
     const listY = my + 62;
@@ -2887,7 +3215,7 @@ function renderDossierModal() {
         drawText8x8(statusBadge, mx + 20, curY + 6, statusCol, 1);
 
         const oName = (other?.properties?.name || `Entity #${otherId}`).slice(0, 20);
-        drawText8x8(oName, mx + 85, curY + 6, "#ffffff", 1);
+        drawText8x8(oName, mx + 85, curY + 6, isOtherAlive ? "#ffffff" : "#9c5050", 1);
 
         // Relationship badge
         const isPartner = props.monogamy?.partnerId === otherId;
@@ -2902,6 +3230,14 @@ function renderDossierModal() {
         drawNESButton(mx + mw - 95, curY + 2, 75, 20, "INSPECT", false, false);
         registerClickableRegion(mx + mw - 95, curY + 2, 75, 20, () => {
           lastSelectedId = otherId;
+          dossierTab = "OVERVIEW";
+          modalScroll = 0;
+        });
+
+        // Click whole row to inspect target directly
+        registerClickableRegion(mx + 12, curY, mw - 100, rowH, () => {
+          lastSelectedId = otherId;
+          dossierTab = "OVERVIEW";
           modalScroll = 0;
         });
 
@@ -2911,62 +3247,7 @@ function renderDossierModal() {
   }
 
   // ---------------------------------------------------------------------------
-  // TAB 4: OFFSPRING (Children lineage)
-  // ---------------------------------------------------------------------------
-  else if (dossierTab === "OFFSPRING") {
-    const listY = my + 62;
-    const listH = mh - 72;
-    drawNESBox(mx + 10, listY, mw - 20, listH);
-
-    const offspringList = props.life?.childrenIds || [];
-
-    if (offspringList.length === 0) {
-      drawText8x8("NO OFFSPRING RECORDED FOR THIS CREATURE.", mx + 24, listY + 24, "#bcbcbc", 1);
-    } else {
-      const rowH = 26;
-      const visibleRows = Math.floor((listH - 20) / rowH);
-      const maxScroll = Math.max(0, offspringList.length - visibleRows);
-      modalScroll = Math.max(0, Math.min(maxScroll, modalScroll));
-
-      let curY = listY + 12;
-      for (let i = modalScroll; i < Math.min(offspringList.length, modalScroll + visibleRows); i++) {
-        const childId = offspringList[i];
-        const child = entityRegistry.get(childId);
-
-        const isHover = mouseX >= mx + 12 && mouseX <= mx + mw - 12 && mouseY >= curY && mouseY <= curY + rowH;
-        if (isHover) {
-          ctx.fillStyle = "#181828";
-          ctx.fillRect(mx + 12, curY, mw - 24, rowH);
-        }
-
-        const isChildAlive = child && !child.destroyed && child.properties?.life?.energy > 0;
-        const statusBadge = isChildAlive ? "[ALIVE]" : "[DEAD]";
-        const statusCol = isChildAlive ? "#58d854" : "#9c5050";
-        drawText8x8(statusBadge, mx + 20, curY + 6, statusCol, 1);
-
-        const cName = (child?.properties?.name || `Child #${childId}`).slice(0, 24);
-        drawText8x8(cName, mx + 85, curY + 6, "#ffffff", 1);
-
-        const gender = child?.properties?.genitalia?.type === "vagina" || child?.properties?.genitalia?.type === "female" ? "FEMALE" : "MALE";
-        drawText8x8(`[${gender}]`, mx + 310, curY + 6, gender === "FEMALE" ? "#ffb4c8" : "#3cbcfc", 1);
-
-        const clanStr = (child?.properties?.group?.name || "SOLITARY").slice(0, 14);
-        drawText8x8(`CLAN: ${clanStr}`, mx + 410, curY + 6, "#d3869b", 1);
-
-        // Inspect Button
-        drawNESButton(mx + mw - 95, curY + 2, 75, 20, "INSPECT", false, false);
-        registerClickableRegion(mx + mw - 95, curY + 2, 75, 20, () => {
-          lastSelectedId = childId;
-          modalScroll = 0;
-        });
-
-        curY += rowH;
-      }
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // TAB 4: CHRONICLE (Creature Life Chronicle)
+  // TAB 6: CHRONICLE (Creature Life Chronicle - Full Long Descriptions)
   // ---------------------------------------------------------------------------
   else if (dossierTab === "CHRONICLE") {
     const listY = my + 62;
@@ -2976,12 +3257,12 @@ function renderDossierModal() {
     if (creatureEvents.length === 0) {
       drawText8x8("NO WORLD EVENTS RECORDED INVOLVING THIS CREATURE.", mx + 24, listY + 24, "#bcbcbc", 1);
     } else {
-      const rowH = 26;
+      const rowH = 34; // Expanded row height for multi-line readable long descriptions
       const visibleRows = Math.floor((listH - 20) / rowH);
       const maxScroll = Math.max(0, creatureEvents.length - visibleRows);
       modalScroll = Math.max(0, Math.min(maxScroll, modalScroll));
 
-      let curY = listY + 12;
+      let curY = listY + 10;
       for (let i = modalScroll; i < Math.min(creatureEvents.length, modalScroll + visibleRows); i++) {
         const ev = creatureEvents[i];
         const isHover = mouseX >= mx + 12 && mouseX <= mx + mw - 12 && mouseY >= curY && mouseY <= curY + rowH;
@@ -2990,12 +3271,17 @@ function renderDossierModal() {
           ctx.fillStyle = "#181828";
           ctx.fillRect(mx + 12, curY, mw - 24, rowH);
 
+          const actorId = ev.primaryEntityId !== null && ev.primaryEntityId !== undefined ? ev.primaryEntityId : (ev.metadata?.attackerId || ev.metadata?.killerId || ev.metadata?.primaryId);
+          const targetId = ev.secondaryEntityId !== null && ev.secondaryEntityId !== undefined ? ev.secondaryEntityId : (ev.metadata?.targetId || ev.metadata?.victimId || ev.metadata?.secondaryId);
+          const actorName = ev.metadata?.attackerName || ev.metadata?.primaryName || (actorId ? (entityRegistry?.get(actorId)?.properties?.name || `Entity #${actorId}`) : null);
+          const targetName = ev.metadata?.targetName || ev.metadata?.victimName || ev.metadata?.secondaryName || (targetId ? (entityRegistry?.get(targetId)?.properties?.name || `Entity #${targetId}`) : null);
+
           const tipLines = [
-            `Type: [${ev.type}]`,
+            `Type: [${ev.type}] (Event #${ev.id})`,
             `Time: Day ${ev.timestamp?.day || 0} at ${String(ev.timestamp?.hour || 0).padStart(2, "0")}:${String(ev.timestamp?.minute || 0).padStart(2, "0")} (Tick ${ev.tick})`,
-            ev.location ? `Coordinates: [X: ${ev.location.x}, Y: ${ev.location.y}]` : "Coordinates: Global / Ambient",
-            ev.metadata?.attackerName ? `Attacker: ${ev.metadata.attackerName}` : null,
-            ev.metadata?.targetName ? `Target: ${ev.metadata.targetName}` : null,
+            ev.location ? `Coordinates: [X: ${Math.floor(ev.location.x)}, Y: ${Math.floor(ev.location.y)}]` : "Coordinates: Global / Ambient",
+            actorName ? `Actor/Attacker: ${actorName}${actorId !== null && actorId !== undefined ? ` (ID: #${actorId})` : ""}` : (actorId !== null && actorId !== undefined ? `Actor ID: #${actorId}` : null),
+            targetName ? `Target/Victim: ${targetName}${targetId !== null && targetId !== undefined ? ` (ID: #${targetId})` : ""}` : (targetId !== null && targetId !== undefined ? `Target ID: #${targetId}` : null),
             ev.metadata?.hitPartName ? `Hit: ${ev.metadata.hitPartName} (${Math.round(ev.metadata.totalDamage || ev.metadata.netDamage || 0)} DMG)` : null,
             ev.metadata?.causedByBattleId ? `Succumbed to Battle #${ev.metadata.causedByBattleId} Wounds` : null
           ].filter(Boolean);
@@ -3003,13 +3289,22 @@ function renderDossierModal() {
         }
 
         const ts = ev.timestamp ? `D${ev.timestamp.day} ${String(ev.timestamp.hour).padStart(2, "0")}:${String(ev.timestamp.minute).padStart(2, "0")}` : `T${ev.tick}`;
-        drawText8x8(ts, mx + 18, curY + 7, "#bcbcbc", 1);
+        drawText8x8(ts, mx + 18, curY + 6, "#bcbcbc", 1);
 
         const typeColor = ev.type === "KILL" ? "#ff2040" : ev.type === "DEATH" ? "#9c5050" : ev.type === "ATTACK" ? "#f8b800" : ev.type === "AMPUTATION" ? "#e40058" : ev.type === "RELATION" ? "#d3869b" : ev.type === "DIALOGUE" ? "#3cbcfc" : ev.type === "BIRTH" ? "#f8b800" : ev.type === "SPROUT" ? "#58d854" : "#ffffff";
-        drawText8x8(`[${ev.type}]`, mx + 110, curY + 7, typeColor, 1);
+        drawText8x8(`[${ev.type}]`, mx + 105, curY + 6, typeColor, 1);
 
-        const desc = (ev.description || "Event").slice(0, 48);
-        drawText8x8(desc, mx + 225, curY + 7, "#ffffff", 1);
+        // Full Long Description without truncation
+        const fullDesc = ev.description || "Event";
+        const maxCharsPerLine = Math.floor((mw - 380) / 8);
+        if (fullDesc.length <= maxCharsPerLine) {
+          drawText8x8(fullDesc, mx + 200, curY + 11, "#ffffff", 1);
+        } else {
+          const line1 = fullDesc.slice(0, maxCharsPerLine);
+          const line2 = fullDesc.slice(maxCharsPerLine, maxCharsPerLine * 2 + 10);
+          drawText8x8(line1, mx + 200, curY + 4, "#ffffff", 1);
+          drawText8x8(line2, mx + 200, curY + 17, "#d0d0e0", 1);
+        }
 
         // Click row to inspect
         const curEv = ev;
@@ -3020,8 +3315,8 @@ function renderDossierModal() {
 
         // MAP Jump
         if (ev.location) {
-          drawNESButton(mx + mw - 165, curY + 2, 45, 20, "MAP", false, false);
-          registerClickableRegion(mx + mw - 165, curY + 2, 45, 20, () => {
+          drawNESButton(mx + mw - 165, curY + 6, 45, 20, "MAP", false, false);
+          registerClickableRegion(mx + mw - 165, curY + 6, 45, 20, () => {
             if (renderer) {
               renderer.setCamera(ev.location.x, ev.location.y, renderer.getCameraZoom());
               currentMode = "MAP";
@@ -3030,8 +3325,8 @@ function renderDossierModal() {
         }
 
         // INSPECT Detail
-        drawNESButton(mx + mw - 110, curY + 2, 90, 20, "INSPECT", false, false);
-        registerClickableRegion(mx + mw - 110, curY + 2, 90, 20, () => {
+        drawNESButton(mx + mw - 110, curY + 6, 90, 20, "INSPECT", false, false);
+        registerClickableRegion(mx + mw - 110, curY + 6, 90, 20, () => {
           inspectingLogEvent = curEv;
           inspectingFromCreature = true;
         });
@@ -3708,12 +4003,17 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
           ctx.fillStyle = "#181828";
           ctx.fillRect(mx + 16, logY - 2, mw - 186, 24);
 
+          const actorId = ev.primaryEntityId !== null && ev.primaryEntityId !== undefined ? ev.primaryEntityId : (ev.metadata?.attackerId || ev.metadata?.killerId || ev.metadata?.primaryId);
+          const targetId = ev.secondaryEntityId !== null && ev.secondaryEntityId !== undefined ? ev.secondaryEntityId : (ev.metadata?.targetId || ev.metadata?.victimId || ev.metadata?.secondaryId);
+          const actorName = ev.metadata?.attackerName || ev.metadata?.primaryName || (actorId ? (entityRegistry?.get(actorId)?.properties?.name || `Entity #${actorId}`) : null);
+          const targetName = ev.metadata?.targetName || ev.metadata?.victimName || ev.metadata?.secondaryName || (targetId ? (entityRegistry?.get(targetId)?.properties?.name || `Entity #${targetId}`) : null);
+
           const tipLines = [
-            `Type: [${ev.type}]`,
+            `Type: [${ev.type}] (Event #${ev.id})`,
             `Time: Day ${ev.timestamp?.day || 0} at ${String(ev.timestamp?.hour || 0).padStart(2, "0")}:${String(ev.timestamp?.minute || 0).padStart(2, "0")} (Tick ${ev.tick})`,
-            ev.location ? `Coordinates: [X: ${ev.location.x}, Y: ${ev.location.y}]` : "Coordinates: Global / Ambient",
-            ev.metadata?.attackerName ? `Attacker: ${ev.metadata.attackerName}` : null,
-            ev.metadata?.targetName ? `Target: ${ev.metadata.targetName}` : null,
+            ev.location ? `Coordinates: [X: ${Math.floor(ev.location.x)}, Y: ${Math.floor(ev.location.y)}]` : "Coordinates: Global / Ambient",
+            actorName ? `Actor/Attacker: ${actorName}${actorId !== null && actorId !== undefined ? ` (ID: #${actorId})` : ""}` : (actorId !== null && actorId !== undefined ? `Actor ID: #${actorId}` : null),
+            targetName ? `Target/Victim: ${targetName}${targetId !== null && targetId !== undefined ? ` (ID: #${targetId})` : ""}` : (targetId !== null && targetId !== undefined ? `Target ID: #${targetId}` : null),
             ev.metadata?.hitPartName ? `Hit: ${ev.metadata.hitPartName} (${Math.round(ev.metadata.totalDamage || ev.metadata.netDamage || 0)} DMG)` : null,
             ev.metadata?.causedByBattleId ? `Succumbed to Battle #${ev.metadata.causedByBattleId} Wounds` : null
           ].filter(Boolean);
@@ -4047,12 +4347,17 @@ function renderLogsModal() {
         ctx.fillStyle = "#181828";
         ctx.fillRect(mx + 12, rowY - 2, mw - 24, rowH);
 
+        const actorId = ev.primaryEntityId !== null && ev.primaryEntityId !== undefined ? ev.primaryEntityId : (ev.metadata?.attackerId || ev.metadata?.killerId || ev.metadata?.primaryId);
+        const targetId = ev.secondaryEntityId !== null && ev.secondaryEntityId !== undefined ? ev.secondaryEntityId : (ev.metadata?.targetId || ev.metadata?.victimId || ev.metadata?.secondaryId);
+        const actorName = ev.metadata?.attackerName || ev.metadata?.primaryName || (actorId ? (entityRegistry?.get(actorId)?.properties?.name || `Entity #${actorId}`) : null);
+        const targetName = ev.metadata?.targetName || ev.metadata?.victimName || ev.metadata?.secondaryName || (targetId ? (entityRegistry?.get(targetId)?.properties?.name || `Entity #${targetId}`) : null);
+
         const tipLines = [
-          `Type: [${ev.type}]`,
+          `Type: [${ev.type}] (Event #${ev.id})`,
           `Time: Day ${ev.timestamp?.day || 0} at ${String(ev.timestamp?.hour || 0).padStart(2, "0")}:${String(ev.timestamp?.minute || 0).padStart(2, "0")} (Tick ${ev.tick})`,
-          ev.location ? `Coordinates: [X: ${ev.location.x}, Y: ${ev.location.y}]` : "Coordinates: Global / Ambient",
-          ev.metadata?.attackerName ? `Attacker: ${ev.metadata.attackerName} (${ev.metadata.attackerClan || "Solitary"})` : null,
-          ev.metadata?.targetName ? `Target: ${ev.metadata.targetName} (${ev.metadata.targetClan || "Solitary"})` : null,
+          ev.location ? `Coordinates: [X: ${Math.floor(ev.location.x)}, Y: ${Math.floor(ev.location.y)}]` : "Coordinates: Global / Ambient",
+          actorName ? `Actor/Attacker: ${actorName}${actorId !== null && actorId !== undefined ? ` (ID: #${actorId})` : ""}` : (actorId !== null && actorId !== undefined ? `Actor ID: #${actorId}` : null),
+          targetName ? `Target/Victim: ${targetName}${targetId !== null && targetId !== undefined ? ` (ID: #${targetId})` : ""}` : (targetId !== null && targetId !== undefined ? `Target ID: #${targetId}` : null),
           ev.metadata?.hitPartName ? `Hit: ${ev.metadata.hitPartName} (${Math.round(ev.metadata.totalDamage || ev.metadata.netDamage || 0)} DMG)` : null,
           ev.metadata?.causedByBattleId ? `Succumbed to Battle #${ev.metadata.causedByBattleId} Wounds` : null
         ].filter(Boolean);
@@ -4243,6 +4548,11 @@ function renderRelationshipModal(mx, my, mw, mh, rel) {
       const curEv = ev;
       drawNESButton(mx + mw - 70, curY + 1, 48, 18, "INSPECT", false, false);
       registerClickableRegion(mx + mw - 70, curY + 1, 48, 18, () => {
+        inspectingLogEvent = curEv;
+      });
+
+      // Click row to inspect
+      registerClickableRegion(mx + 20, curY, mw - 100, 20, () => {
         inspectingLogEvent = curEv;
       });
 
@@ -4962,6 +5272,179 @@ function renderCreatureEventLogPanel() {
   }
 }
 
+/**
+ * Renders 100% native full-resolution 2D badges, emoticons, held item icons, and clan flags
+ * projected from 3D/2D world coordinates directly onto the 2D UI Canvas overlay.
+ */
+function renderHighDefOverheadBadges() {
+  if (currentMode !== "MAP" || !renderer || !entities || entities.length === 0) return;
+
+  ctx.save();
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  for (let i = 0; i < entities.length; i++) {
+    const e = entities[i];
+    if (!e || e.destroyed) continue;
+
+    const props = e.properties || {};
+    const isCreature = !props.house && (!!props.brain || !!props.life);
+    const isHouse = !!props.house;
+
+    // 1. High-Def Clan Flag atop House
+    if (isHouse && props.house?.isCompleted) {
+      let houseClan = props.group;
+      if (!houseClan && props.house?.ownerId) {
+        for (const g of clanGroups.values()) {
+          if (g.id === props.groupId || g.members?.includes(props.house.ownerId) || g.members?.includes(Number(props.house.ownerId))) {
+            houseClan = g;
+            break;
+          }
+        }
+      }
+      if (houseClan) {
+        const floors = props.house?.maxFloors || props.house?.floors?.length || 2;
+        const flagElev = is3DMode ? (1.6 + floors * 1.25) : 1.0;
+        const fpW = props.house?.footprintW || 1;
+        const fpH = props.house?.footprintH || 1;
+        const pos = renderer.projectWorldToScreen(e.x + fpW * 0.5, e.y + fpH * 0.5, flagElev);
+        if (pos && pos.visible) {
+          const fx = Math.round(pos.x);
+          const fy = Math.round(pos.y);
+          // Draw crisp 2D Banner Flag
+          const clanCol = houseClan.color !== undefined ? `#${(houseClan.color & 0xffffff).toString(16).padStart(6, "0")}` : "#ffd700";
+          const flagW = 22;
+          const flagH = 14;
+          // Pole
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(fx - 1, fy - flagH - 5, 2, flagH + 5);
+          // Banner
+          ctx.fillStyle = clanCol;
+          ctx.fillRect(fx + 1, fy - flagH - 5, flagW, flagH);
+          ctx.strokeStyle = "#000000";
+          ctx.lineWidth = 1.5;
+          ctx.strokeRect(fx + 1, fy - flagH - 5, flagW, flagH);
+          // Emblem initial
+          const initial = (houseClan.name || "C")[0].toUpperCase();
+          ctx.font = "bold 9px monospace";
+          ctx.fillStyle = "#ffffff";
+          ctx.fillText(initial, fx + 1 + flagW / 2, fy - flagH - 5 + flagH / 2);
+        }
+      }
+      continue;
+    }
+
+    if (!isCreature) continue;
+
+    // Detect Emotes / Status
+    let emoteEmoji = null;
+    let emoteBg = "#1e1e28";
+    let emoteBorder = "#ffd700";
+
+    if (props.life?.energy <= 0) {
+      emoteEmoji = "💀";
+      emoteBg = "#300808";
+      emoteBorder = "#f83800";
+    } else if (props.life?.isSleeping || e.motor === 4) {
+      emoteEmoji = "💤";
+      emoteBg = "#0e1e38";
+      emoteBorder = "#3cbcfc";
+    } else if (e.emote === 12) { // Love / Hearts
+      emoteEmoji = "❤️";
+      emoteBg = "#380e20";
+      emoteBorder = "#ff60a0";
+    } else if (e.emote === 13) { // Exclamation / Alert / Angry
+      emoteEmoji = "💢";
+      emoteBg = "#380e0e";
+      emoteBorder = "#f83800";
+    } else if (e.motor === 5) { // Combat Attack
+      emoteEmoji = "⚔️";
+      emoteBg = "#380e0e";
+      emoteBorder = "#f83800";
+    } else if (e.motor === 6) { // Flee / Panic
+      emoteEmoji = "⚡";
+      emoteBg = "#38300e";
+      emoteBorder = "#ffd700";
+    } else if (e.motor === 7) { // Socialize
+      emoteEmoji = "💬";
+      emoteBg = "#0e2e38";
+      emoteBorder = "#58d854";
+    } else if (props.stomach && props.stomach.energy < 20) {
+      emoteEmoji = "🍖";
+      emoteBg = "#38200e";
+      emoteBorder = "#f8b800";
+    }
+
+    // Detect Held Items
+    const heldList = [];
+    if (props.backpack) {
+      heldList.push({ resourceType: "backpack", name: "Backpack" });
+    }
+    for (const [k, p] of Object.entries(props)) {
+      if ((k.toLowerCase().includes("arm") || k.toLowerCase().includes("hand")) && p && p.heldItem) {
+        heldList.push(p.heldItem);
+      }
+    }
+    if (props.heldItem) heldList.push(props.heldItem);
+    if (props.equipment?.mainHand) heldList.push(props.equipment.mainHand);
+    if (props.equipment?.offHand) heldList.push(props.equipment.offHand);
+
+    if (!emoteEmoji && heldList.length === 0) continue;
+
+    const headElev = is3DMode ? 0.95 : 0.65;
+    const pos = renderer.projectWorldToScreen(e.x + 0.5, e.y + 0.5, headElev);
+    if (!pos || !pos.visible) continue;
+
+    const px = Math.round(pos.x);
+    const py = Math.round(pos.y);
+
+    let badgeOffset = 0;
+    const totalBadges = (emoteEmoji ? 1 : 0) + heldList.length;
+    const startX = px - ((totalBadges - 1) * 20) / 2;
+
+    if (emoteEmoji) {
+      const bx = startX + badgeOffset * 20;
+      const by = py - 12;
+      // Draw 100% native crisp NES badge
+      ctx.fillStyle = emoteBg;
+      ctx.fillRect(bx - 9, by - 9, 18, 18);
+      ctx.strokeStyle = emoteBorder;
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(bx - 9, by - 9, 18, 18);
+
+      ctx.font = "12px sans-serif";
+      ctx.fillText(emoteEmoji, bx, by);
+      badgeOffset++;
+    }
+
+    for (let h = 0; h < heldList.length; h++) {
+      const it = heldList[h];
+      const bx = startX + badgeOffset * 20;
+      const by = py - 12;
+
+      let itemIcon = "📦";
+      const itType = (it.resourceType || it.name || "").toLowerCase();
+      if (itType.includes("wood") || itType.includes("log") || itType.includes("madeira")) itemIcon = "🪵";
+      else if (itType.includes("stone") || itType.includes("pedra") || itType.includes("boulder")) itemIcon = "🪨";
+      else if (itType.includes("meat") || itType.includes("steak") || itType.includes("carne")) itemIcon = "🥩";
+      else if (itType.includes("food") || itType.includes("veg") || itType.includes("cenoura") || itType.includes("comida")) itemIcon = "🥕";
+      else if (itType.includes("bag") || itType.includes("basket") || itType.includes("mochila") || itType.includes("cesto") || itType.includes("backpack")) itemIcon = "🎒";
+
+      ctx.fillStyle = "#181824";
+      ctx.fillRect(bx - 9, by - 9, 18, 18);
+      ctx.strokeStyle = "#e4c858";
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(bx - 9, by - 9, 18, 18);
+
+      ctx.font = "11px sans-serif";
+      ctx.fillText(itemIcon, bx, by);
+      badgeOffset++;
+    }
+  }
+
+  ctx.restore();
+}
+
 // ---------------------------------------------------------------------------
 // 8. World Generator & Map Configurator Modal
 // ---------------------------------------------------------------------------
@@ -5385,7 +5868,13 @@ function frame(time) {
     } else {
       if (currentMode !== "MAP") {
         // Full-screen modal rendering
-        if (inspectingBattle) {
+        if (inspectingLogEvent) {
+          const mx = 30;
+          const my = 36;
+          const mw = CANVAS_WIDTH - 60;
+          const mh = CANVAS_HEIGHT - 72;
+          renderLogDetailView(mx, my, mw, mh, inspectingLogEvent);
+        } else if (inspectingBattle) {
           const mx = 30;
           const my = 36;
           const mw = CANVAS_WIDTH - 60;
@@ -5397,12 +5886,6 @@ function frame(time) {
           const mw = CANVAS_WIDTH - 60;
           const mh = CANVAS_HEIGHT - 72;
           renderRelationshipModal(mx, my, mw, mh, inspectingRelationship);
-        } else if (inspectingLogEvent) {
-          const mx = 30;
-          const my = 36;
-          const mw = CANVAS_WIDTH - 60;
-          const mh = CANVAS_HEIGHT - 72;
-          renderLogDetailView(mx, my, mw, mh, inspectingLogEvent);
         } else if (currentMode === "INSPECT") renderDossierModal();
         else if (currentMode === "ENTITIES") renderEntitiesModal();
         else if (currentMode === "GROUPS") renderGroupsModal();
@@ -5411,13 +5894,20 @@ function frame(time) {
       } else {
         renderCreatureVisionOverlay();
         renderTerritoryOverlay();
+        renderHighDefOverheadBadges();
         renderHoverTooltip();
         renderCreatureSummaryBox();
         renderCreatureEventLogPanel();
         renderMapEditorOverlay();
         renderCompactEditorPanel();
 
-        if (inspectingBattle) {
+        if (inspectingLogEvent) {
+          const mx = 30;
+          const my = 36;
+          const mw = CANVAS_WIDTH - 60;
+          const mh = CANVAS_HEIGHT - 72;
+          renderLogDetailView(mx, my, mw, mh, inspectingLogEvent);
+        } else if (inspectingBattle) {
           const mx = 30;
           const my = 36;
           const mw = CANVAS_WIDTH - 60;
@@ -5429,12 +5919,6 @@ function frame(time) {
           const mw = CANVAS_WIDTH - 60;
           const mh = CANVAS_HEIGHT - 72;
           renderRelationshipModal(mx, my, mw, mh, inspectingRelationship);
-        } else if (inspectingLogEvent) {
-          const mx = 30;
-          const my = 36;
-          const mw = CANVAS_WIDTH - 60;
-          const mh = CANVAS_HEIGHT - 72;
-          renderLogDetailView(mx, my, mw, mh, inspectingLogEvent);
         }
       }
 

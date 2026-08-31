@@ -92,6 +92,20 @@ export const eventsByEntity = new Map();
 export const eventsByType = new Map();
 export const eventsByCitedEvent = new Map();
 
+export function indexEntityEvent(entId, eventId) {
+  if (entId === null || entId === undefined) return;
+  const n = Number(entId);
+  if (!isNaN(n)) {
+    if (!eventsByEntity.has(n)) eventsByEntity.set(n, []);
+    eventsByEntity.get(n).push(eventId);
+  }
+  const s = String(entId);
+  if (s !== String(n) || isNaN(n)) {
+    if (!eventsByEntity.has(s)) eventsByEntity.set(s, []);
+    eventsByEntity.get(s).push(eventId);
+  }
+}
+
 /**
  * Formats a human-readable event description dynamically from its bytecode / opcode payload
  */
@@ -288,42 +302,11 @@ export function recordWorldEvent({
   allEvents.push(event);
   eventsById.set(event.id, event);
 
-  if (allEvents.length > 1500) {
-    const removed = allEvents.shift();
-    if (removed) {
-      eventsById.delete(removed.id);
-      
-      const pArr = eventsByEntity.get(removed.primaryEntityId);
-      if (pArr && pArr[0] === removed.id) pArr.shift();
-      
-      const sArr = eventsByEntity.get(removed.secondaryEntityId);
-      if (sArr && sArr[0] === removed.id) sArr.shift();
-      
-      const tArr = eventsByType.get(removed.type);
-      if (tArr && tArr[0] === removed.id) tArr.shift();
-      
-      if (removed.metadata?.citedEventId) {
-        const cArr = eventsByCitedEvent.get(removed.metadata.citedEventId);
-        if (cArr && cArr[0] === removed.id) cArr.shift();
-      }
-    }
-  }
-
   // 1. Index by Primary Entity
-  if (primaryEntityId !== null && primaryEntityId !== undefined) {
-    if (!eventsByEntity.has(primaryEntityId)) {
-      eventsByEntity.set(primaryEntityId, []);
-    }
-    eventsByEntity.get(primaryEntityId).push(event.id);
-  }
+  indexEntityEvent(primaryEntityId, event.id);
 
   // 2. Index by Secondary Entity
-  if (secondaryEntityId !== null && secondaryEntityId !== undefined) {
-    if (!eventsByEntity.has(secondaryEntityId)) {
-      eventsByEntity.set(secondaryEntityId, []);
-    }
-    eventsByEntity.get(secondaryEntityId).push(event.id);
-  }
+  indexEntityEvent(secondaryEntityId, event.id);
 
   // 3. Index by Event Type
   if (!eventsByType.has(resolvedType)) {
@@ -354,10 +337,8 @@ export function getEventById(id) {
  * Retrieves all events involving a specific entity (living or deceased)
  */
 export function getEventsForEntity(entityId, limit = 50) {
-  const ids = eventsByEntity.get(entityId);
-  if (!ids || ids.length === 0) return [];
-  const start = Math.max(0, ids.length - limit);
-  return ids.slice(start).map(id => eventsById.get(id)).filter(Boolean).reverse();
+  const full = getFullHistoryForEntity(entityId);
+  return full.slice(0, limit);
 }
 
 /**
@@ -398,7 +379,7 @@ export function getEventsForGroup(group, limit = 50) {
 
   // 1. Events directly referencing the group ID (e.g. founding, joining, expulsion)
   if (groupId !== undefined && groupId !== null) {
-    const gEvents = eventsByEntity.get(groupId);
+    const gEvents = eventsByEntity.get(groupId) || eventsByEntity.get(Number(groupId));
     if (gEvents) {
       for (const id of gEvents) eventIdSet.add(id);
     }
@@ -406,7 +387,7 @@ export function getEventsForGroup(group, limit = 50) {
 
   // 2. Events involving any member of the group (living or deceased)
   for (const mid of memberSet) {
-    const mEvents = eventsByEntity.get(mid);
+    const mEvents = eventsByEntity.get(mid) || eventsByEntity.get(Number(mid));
     if (mEvents) {
       for (const id of mEvents) eventIdSet.add(id);
     }
@@ -416,10 +397,9 @@ export function getEventsForGroup(group, limit = 50) {
   const matched = Array.from(eventIdSet)
     .map(id => eventsById.get(id))
     .filter(Boolean)
-    .sort((a, b) => a.id - b.id);
+    .sort((a, b) => b.id - a.id);
 
-  const start = Math.max(0, matched.length - limit);
-  return matched.slice(start);
+  return matched.slice(0, limit);
 }
 
 /**
@@ -434,9 +414,38 @@ export function getRecentWorldEvents(limit = 25) {
  * Retrieves the full chronological events list involving an entity without truncation
  */
 export function getFullHistoryForEntity(entityId) {
-  const ids = eventsByEntity.get(entityId);
-  if (!ids || ids.length === 0) return [];
-  return ids.map(id => eventsById.get(id)).filter(Boolean).reverse();
+  if (entityId === null || entityId === undefined) return [];
+  const numId = Number(entityId);
+  const strId = String(entityId);
+
+  const resultSet = new Set();
+  const numEvents = !isNaN(numId) ? eventsByEntity.get(numId) : null;
+  if (numEvents) {
+    for (const id of numEvents) resultSet.add(id);
+  }
+  const strEvents = eventsByEntity.get(strId);
+  if (strEvents) {
+    for (const id of strEvents) resultSet.add(id);
+  }
+
+  // Fallback comprehensive scan across allEvents to catch any missed metadata or un-indexed links
+  if (resultSet.size === 0) {
+    for (let i = 0; i < allEvents.length; i++) {
+      const ev = allEvents[i];
+      if (ev.primaryEntityId == numId || ev.secondaryEntityId == numId ||
+          ev.primaryEntityId == strId || ev.secondaryEntityId == strId ||
+          ev.metadata?.killerId == numId || ev.metadata?.victimId == numId ||
+          ev.metadata?.targetId == numId || ev.metadata?.attackerId == numId ||
+          ev.metadata?.ownerId == numId || ev.metadata?.partnerId == numId) {
+        resultSet.add(ev.id);
+      }
+    }
+  }
+
+  return Array.from(resultSet)
+    .map(id => eventsById.get(id))
+    .filter(Boolean)
+    .sort((a, b) => b.id - a.id);
 }
 
 /**
@@ -769,14 +778,9 @@ export function restoreWorldEvents(eventsList = []) {
     allEvents.push(ev);
     eventsById.set(ev.id, ev);
 
-    if (ev.primaryEntityId !== null && ev.primaryEntityId !== undefined) {
-      if (!eventsByEntity.has(ev.primaryEntityId)) eventsByEntity.set(ev.primaryEntityId, []);
-      eventsByEntity.get(ev.primaryEntityId).push(ev.id);
-    }
-    if (ev.secondaryEntityId !== null && ev.secondaryEntityId !== undefined) {
-      if (!eventsByEntity.has(ev.secondaryEntityId)) eventsByEntity.set(ev.secondaryEntityId, []);
-      eventsByEntity.get(ev.secondaryEntityId).push(ev.id);
-    }
+    indexEntityEvent(ev.primaryEntityId, ev.id);
+    indexEntityEvent(ev.secondaryEntityId, ev.id);
+
     if (ev.type) {
       if (!eventsByType.has(ev.type)) eventsByType.set(ev.type, []);
       eventsByType.get(ev.type).push(ev.id);
@@ -837,31 +841,9 @@ export function appendWorldEvents(eventsList = []) {
     allEvents.push(ev);
     eventsById.set(ev.id, ev);
 
-    if (allEvents.length > 5000) {
-      const removed = allEvents.shift();
-      if (removed) {
-        eventsById.delete(removed.id);
-        const pArr = eventsByEntity.get(removed.primaryEntityId);
-        if (pArr && pArr[0] === removed.id) pArr.shift();
-        const sArr = eventsByEntity.get(removed.secondaryEntityId);
-        if (sArr && sArr[0] === removed.id) sArr.shift();
-        const tArr = eventsByType.get(removed.type);
-        if (tArr && tArr[0] === removed.id) tArr.shift();
-        if (removed.metadata?.citedEventId) {
-          const cArr = eventsByCitedEvent.get(removed.metadata.citedEventId);
-          if (cArr && cArr[0] === removed.id) cArr.shift();
-        }
-      }
-    }
+    indexEntityEvent(ev.primaryEntityId, ev.id);
+    indexEntityEvent(ev.secondaryEntityId, ev.id);
 
-    if (ev.primaryEntityId !== null && ev.primaryEntityId !== undefined) {
-      if (!eventsByEntity.has(ev.primaryEntityId)) eventsByEntity.set(ev.primaryEntityId, []);
-      eventsByEntity.get(ev.primaryEntityId).push(ev.id);
-    }
-    if (ev.secondaryEntityId !== null && ev.secondaryEntityId !== undefined) {
-      if (!eventsByEntity.has(ev.secondaryEntityId)) eventsByEntity.set(ev.secondaryEntityId, []);
-      eventsByEntity.get(ev.secondaryEntityId).push(ev.id);
-    }
     if (ev.type) {
       if (!eventsByType.has(ev.type)) eventsByType.set(ev.type, []);
       eventsByType.get(ev.type).push(ev.id);

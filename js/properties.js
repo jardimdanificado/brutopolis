@@ -710,21 +710,20 @@ export function createCampfireEntity(x, y, ownerId = null) {
 }
 
 
-const HOUSE_STYLES = [
-  { id: "wood_cabin", label: "Timber Cabin", skin: "Overworld_House.png", color: 0xffd4a373, woodCost: 4, stoneCost: 2, condition: 10000 },
-  { id: "stone_cottage", label: "Stone Cottage", skin: "Overworld_House.png", color: 0xffc8c8c8, woodCost: 2, stoneCost: 5, condition: 16000 },
-  { id: "thatched_hut", label: "Thatched Hut", skin: "Overworld_House.png", color: 0xffe6c86e, woodCost: 3, stoneCost: 1, condition: 7500 },
-  { id: "log_lodge", label: "Log Lodge", skin: "Overworld_House.png", color: 0xff8b5a2b, woodCost: 6, stoneCost: 2, condition: 12000 },
-  { id: "half_timbered", label: "Half-Timbered House", skin: "Overworld_House.png", color: 0xfff0e6d2, woodCost: 4, stoneCost: 4, condition: 14000 },
-  { id: "mud_brick_adobe", label: "Adobe Dwelling", skin: "Overworld_House.png", color: 0xffd2965a, woodCost: 2, stoneCost: 4, condition: 11000 },
-  { id: "mountain_stilt", label: "Alpine Stilt House", skin: "Overworld_House.png", color: 0xff968278, woodCost: 5, stoneCost: 3, condition: 11500 },
-  { id: "longhouse", label: "Nordic Longhouse", skin: "Overworld_House.png", color: 0xffa06432, woodCost: 7, stoneCost: 2, condition: 15000 },
-  { id: "bone_ossuary", label: "Ancient Ossuary", skin: "Overworld_House.png", color: 0xfff5f5dc, woodCost: 2, stoneCost: 2, boneCost: 4, condition: 13000 },
-  { id: "watchtower_villa", label: "Turreted Villa", skin: "Overworld_House.png", color: 0xffb47850, woodCost: 3, stoneCost: 6, condition: 18000 }
+export const HOUSE_STYLES = [
+  { id: "timber_cabin", label: "Timber Cabin", skin: "Overworld_House.png", color: 0xffcd853f, woodCost: 4, stoneCost: 1, condition: 10000, floorsCount: 2, footprint: "2x1", yardType: "Vegetable Garden & Tool Shed" },
+  { id: "stone_cottage", label: "Stone Cottage", skin: "Overworld_House.png", color: 0xffc8c8c8, woodCost: 2, stoneCost: 5, condition: 16000, floorsCount: 2, footprint: "2x2", yardType: "Cobblestone Patio & Flowerbeds" },
+  { id: "thatched_hut", label: "Thatched Hut", skin: "Overworld_House.png", color: 0xffe6c86e, woodCost: 3, stoneCost: 1, condition: 7500, floorsCount: 2, footprint: "1x1", yardType: "Rustic Herb Garden & Loft" },
+  { id: "log_lodge", label: "Log Lodge", skin: "Overworld_House.png", color: 0xff8b5a2b, woodCost: 6, stoneCost: 2, condition: 12000, floorsCount: 3, footprint: "2x2", yardType: "Timber Yard & Smoker" },
+  { id: "half_timbered", label: "Half-Timbered House", skin: "Overworld_House.png", color: 0xfff0e6d2, woodCost: 4, stoneCost: 4, condition: 14000, floorsCount: 2, footprint: "2x1", yardType: "Paved Courtyard & Well" },
+  { id: "mud_brick_adobe", label: "Adobe Dwelling", skin: "Overworld_House.png", color: 0xffd2965a, woodCost: 2, stoneCost: 4, condition: 11000, floorsCount: 2, footprint: "2x2", yardType: "Clay Terrace & Grain Store" },
+  { id: "mountain_stilt", label: "Alpine Stilt House", skin: "Overworld_House.png", color: 0xff968278, woodCost: 5, stoneCost: 3, condition: 11500, floorsCount: 3, footprint: "2x2", yardType: "Stilt Deck & Goat Corral" },
+  { id: "longhouse", label: "Nordic Longhouse", skin: "Overworld_House.png", color: 0xffa06432, woodCost: 7, stoneCost: 2, condition: 15000, floorsCount: 3, footprint: "3x2", yardType: "Great Hall Yard & Hearth" },
+  { id: "bone_ossuary", label: "Ancient Ossuary", skin: "Overworld_House.png", color: 0xfff5f5dc, woodCost: 2, stoneCost: 2, boneCost: 4, condition: 13000, floorsCount: 3, footprint: "2x2", yardType: "Sacred Bone Shrine & Garden" },
+  { id: "watchtower_villa", label: "Turreted Villa", skin: "Overworld_House.png", color: 0xffb47850, woodCost: 5, stoneCost: 7, condition: 22000, floorsCount: 4, footprint: "3x3", yardType: "Manor Courtyard & Estate Garden" }
 ];
 
 export function createHouseEntity(x, y, style = "mixed", ownerId = null, ownerName = null, supportMaterial = "wood", forcedVariant = null) {
-  if (isRoadTile(x, y)) return null;
   const curW = getSimWorld();
   const isOverWater = curW ? (curW.getTile ? curW.getTile(x, y) === 2 : false) : false;
 
@@ -738,13 +737,39 @@ export function createHouseEntity(x, y, style = "mixed", ownerId = null, ownerNa
     variantIdx = (Math.abs(x * 17 + y * 31)) % 10;
   }
 
-  const hDef = HOUSE_STYLES[variantIdx] || HOUSE_STYLES[0];
+  let hDef = HOUSE_STYLES[variantIdx] || HOUSE_STYLES[0];
+  const [fpW, fpH] = (hDef.footprint || "2x1").split("x").map(Number);
+  const footprintW = fpW || 1;
+  const footprintH = fpH || 1;
+
+  // Check if footprint touches road tiles.
+  // ONLY Alpine Stilt House (variant 6: "mountain_stilt" / Suspended House) is allowed over roads!
+  let touchesRoad = false;
+  for (let fx = 0; fx < footprintW; fx++) {
+    for (let fy = 0; fy < footprintH; fy++) {
+      if (isRoadTile(x + fx, y + fy)) {
+        touchesRoad = true;
+        break;
+      }
+    }
+    if (touchesRoad) break;
+  }
+
+  if (touchesRoad) {
+    if (variantIdx !== 6 && forcedVariant === null) {
+      variantIdx = 6; // Automatically select Suspended Stilt House when over road
+      hDef = HOUSE_STYLES[6];
+    } else if (variantIdx !== 6) {
+      return null; // Reject all other house styles over roads
+    }
+  }
+
   let woodCost = hDef.woodCost;
   let stoneCost = hDef.stoneCost;
   let boneCost = hDef.boneCost || 0;
   let condition = hDef.condition;
   let defense = 80 + variantIdx * 5;
-  let houseTypeLabel = isOverWater ? "Palafita / Plataforma" : hDef.label;
+  let houseTypeLabel = isOverWater ? "Palafita / Plataforma" : (touchesRoad ? "Casa Suspensa sobre Rua" : hDef.label);
 
   if (isOverWater) {
     if (supportMaterial === "stone") {
@@ -759,6 +784,17 @@ export function createHouseEntity(x, y, style = "mixed", ownerId = null, ownerNa
       houseTypeLabel = "Palafita de Madeira";
     }
   }
+
+  const numFloors = hDef.floorsCount || 2;
+  const floorsList = Array.from({ length: numFloors }, (_, i) => ({
+    floorNumber: i + 1,
+    label: i === 0 ? "1ST FLOOR (GROUND SUITE)" : i === 1 ? "2ND FLOOR (UPPER APARTMENT)" : i === 2 ? "3RD FLOOR (LOFT SUITE)" : "4TH FLOOR (TURRET / PENTHOUSE)",
+    ownerId: i === 0 ? ownerId : null,
+    ownerName: i === 0 ? ownerName : null,
+    partnerId: null,
+    partnerName: null,
+    childrenIds: []
+  }));
 
   const houseTitle = ownerName ? `${houseTypeLabel} de ${ownerName}` : houseTypeLabel;
   return createEntity({
@@ -776,6 +812,18 @@ export function createHouseEntity(x, y, style = "mixed", ownerId = null, ownerNa
       ownerName: ownerName,
       partnerId: null,
       partnerName: null,
+      maxFloors: numFloors,
+      footprint: hDef.footprint || "2x1",
+      footprintW: footprintW,
+      footprintH: footprintH,
+      floors: floorsList,
+      yard: {
+        hasYard: true,
+        type: hDef.yardType || "Courtyard & Garden",
+        fenced: true,
+        amenities: ["Flowerbeds", "Tool Storage", "Bench", "Stone Patio"]
+      },
+      pastOwners: [],
       woodCost: woodCost,
       stoneCost: stoneCost,
       boneCost: boneCost,
@@ -3650,11 +3698,15 @@ export function getClanBlueprintTiles(group) {
   if (!group._housePlots) group._housePlots = {};
   const memberSet = new Set(members);
 
-  function isFarEnoughFromBuildings(x, y, currentTiles, minDist = 2) {
+  function isFarEnoughFromBuildings(x, y, currentTiles, minDist = 2, newW = 2, newH = 2) {
     for (const t of currentTiles) {
       if (t.type === "house" || t.type === "warehouse" || t.type === "campfire" || t.type === "well") {
-        const chebDist = Math.max(Math.abs(x - t.x), Math.abs(y - t.y));
-        if (chebDist < minDist) return false;
+        const tW = t.footprintW || (t.type === "warehouse" ? 2 : 2);
+        const tH = t.footprintH || (t.type === "warehouse" ? 2 : 2);
+        const xDist = Math.max(0, Math.max(t.x - (x + newW - 1), x - (t.x + tW - 1)));
+        const yDist = Math.max(0, Math.max(t.y - (y + newH - 1), y - (t.y + tH - 1)));
+        const boxDist = Math.max(xDist, yDist);
+        if (boxDist < minDist) return false;
       }
     }
     return true;
@@ -3670,11 +3722,28 @@ export function getClanBlueprintTiles(group) {
         continue;
       }
 
+      // Determine expected house footprint for this owner
+      const variantIdx = (Math.abs(ownerId) + Math.abs(mIdx * 7)) % 10;
+      const hDef = HOUSE_STYLES[variantIdx] || HOUSE_STYLES[0];
+      const [pW, pH] = (hDef.footprint || "2x1").split("x").map(Number);
+      const houseFpW = pW || 1;
+      const houseFpH = pH || 1;
+
       let chosenPlot = null;
       if (group._housePlots[ownerId]) {
         const p = group._housePlots[ownerId];
-        const tk = `${p.x}_${p.y}`;
-        if (!occupiedTiles.has(tk) && isLandTile(p.x, p.y) && !isRoadTile(p.x, p.y) && isTileInClaimedZones(p.x, p.y, group.claimedZones) && isFarEnoughFromBuildings(p.x, p.y, tiles, 2)) {
+        let validSaved = true;
+        for (let fx = 0; fx < houseFpW; fx++) {
+          for (let fy = 0; fy < houseFpH; fy++) {
+            const tk = `${p.x + fx}_${p.y + fy}`;
+            if (occupiedTiles.has(tk) || !isLandTile(p.x + fx, p.y + fy) || isRoadTile(p.x + fx, p.y + fy) || !isTileInClaimedZones(p.x + fx, p.y + fy, group.claimedZones)) {
+              validSaved = false;
+              break;
+            }
+          }
+          if (!validSaved) break;
+        }
+        if (validSaved && isFarEnoughFromBuildings(p.x, p.y, tiles, 2, houseFpW, houseFpH)) {
           chosenPlot = p;
         }
       }
@@ -3682,20 +3751,30 @@ export function getClanBlueprintTiles(group) {
       if (!chosenPlot) {
         let bestCandidate = null;
 
-        // Spread houses across the entire claimed territory rather than cramming them within a tight radius around the plaza.
-        // We pick the best candidate plot with optimal building separation (at least 2 tiles) and proximity to roads.
         if (candidatePlots.length > 0) {
-          // Sort candidate plots by a balanced score: prefer plots that maintain good spacing between existing buildings
-          // and spread evenly across claimed zones
           let bestPlotIdx = -1;
           let bestScore = -99999;
 
           for (let i = 0; i < candidatePlots.length; i++) {
             const cp = candidatePlots[i];
-            const tk = `${cp.x}_${cp.y}`;
-            if (occupiedTiles.has(tk) || plannedRoadSet.has(tk) || !isLandTile(cp.x, cp.y) || isRoadTile(cp.x, cp.y)) continue;
-            if (!isTileInClaimedZones(cp.x, cp.y, group.claimedZones)) continue;
-            if (!isFarEnoughFromBuildings(cp.x, cp.y, tiles, 2)) continue;
+            let allTilesFree = true;
+            for (let fx = 0; fx < houseFpW; fx++) {
+              for (let fy = 0; fy < houseFpH; fy++) {
+                const tk = `${cp.x + fx}_${cp.y + fy}`;
+                if (occupiedTiles.has(tk) || plannedRoadSet.has(tk) || !isLandTile(cp.x + fx, cp.y + fy) || isRoadTile(cp.x + fx, cp.y + fy)) {
+                  allTilesFree = false;
+                  break;
+                }
+                if (!isTileInClaimedZones(cp.x + fx, cp.y + fy, group.claimedZones)) {
+                  allTilesFree = false;
+                  break;
+                }
+              }
+              if (!allTilesFree) break;
+            }
+
+            if (!allTilesFree) continue;
+            if (!isFarEnoughFromBuildings(cp.x, cp.y, tiles, 2, houseFpW, houseFpH)) continue;
 
             // Calculate min distance to any other existing building
             let minBuildingDist = 999;
@@ -3706,8 +3785,6 @@ export function getClanBlueprintTiles(group) {
               }
             }
 
-            // Prefer plots with comfortable open breathing room (distance between 2.5 and 8 from neighbor buildings)
-            // while not straying infinitely far into untamed wilderness
             const distToPlaza = Math.hypot(cp.x - whX, cp.y - whY);
             const score = (minBuildingDist >= 2.5 ? 20 : 5) + Math.min(10, minBuildingDist) - (distToPlaza * 0.25);
 
@@ -3731,20 +3808,26 @@ export function getClanBlueprintTiles(group) {
             const zx = parseInt(zp[0], 10);
             const zy = parseInt(zp[1], 10);
 
-            for (let ox = 1; ox < sz - 1; ox++) {
+            for (let ox = 1; ox < sz - houseFpW; ox++) {
               if (bestCandidate) break;
-              for (let oy = 1; oy < sz - 1; oy++) {
+              for (let oy = 1; oy < sz - houseFpH; oy++) {
                 const px = zx * sz + ox;
                 const py = zy * sz + oy;
-                const tk = `${px}_${py}`;
 
-                if (!isLandTile(px, py) || isRoadTile(px, py) || plannedRoadSet.has(tk) || occupiedTiles.has(tk)) continue;
-                if (!isFarEnoughFromBuildings(px, py, tiles, 2)) continue;
-
-                const curW = getSimWorld();
-                if (curW && curW.getTile) {
-                  if (curW.getTile(px, py) === 2 || curW.getTile(px, py) === 5) continue;
+                let allFree = true;
+                for (let fx = 0; fx < houseFpW; fx++) {
+                  for (let fy = 0; fy < houseFpH; fy++) {
+                    const tk = `${px + fx}_${py + fy}`;
+                    if (!isLandTile(px + fx, py + fy) || isRoadTile(px + fx, py + fy) || plannedRoadSet.has(tk) || occupiedTiles.has(tk)) {
+                      allFree = false;
+                      break;
+                    }
+                  }
+                  if (!allFree) break;
                 }
+
+                if (!allFree) continue;
+                if (!isFarEnoughFromBuildings(px, py, tiles, 2, houseFpW, houseFpH)) continue;
 
                 bestCandidate = { x: px, y: py };
                 break;
@@ -3760,8 +3843,12 @@ export function getClanBlueprintTiles(group) {
       }
 
       if (chosenPlot) {
-        tiles.push({ x: chosenPlot.x, y: chosenPlot.y, type: "house", ownerId });
-        occupiedTiles.add(`${chosenPlot.x}_${chosenPlot.y}`);
+        tiles.push({ x: chosenPlot.x, y: chosenPlot.y, type: "house", ownerId, footprintW: houseFpW, footprintH: houseFpH });
+        for (let fx = 0; fx < houseFpW; fx++) {
+          for (let fy = 0; fy < houseFpH; fy++) {
+            occupiedTiles.add(`${chosenPlot.x + fx}_${chosenPlot.y + fy}`);
+          }
+        }
 
         // Connect house doorstep to nearest street with a short direct spur
         if (group._plannedRoads && group._plannedRoads.length > 0) {
