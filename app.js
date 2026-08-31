@@ -1026,7 +1026,9 @@ const _dossierCache = {
   battles: null,
   familyTree: null,
   house: null,
-  lastEventCount: -1
+  lastEventCount: -1,
+  lastBattlesCount: 0,
+  lastEventsCount: 0
 };
 
 const _clanDossierCache = {
@@ -2932,6 +2934,19 @@ function renderDossierModal() {
     inspectingFromCreature = false;
   });
 
+  // Modal Sub-Views
+  if (inspectingBattle) {
+    renderBattleDetailView(mx, my, mw, mh, inspectingBattle);
+    ctx.restore();
+    return;
+  }
+
+  if (inspectingRelationship) {
+    renderRelationshipModal(mx, my, mw, mh, inspectingRelationship);
+    ctx.restore();
+    return;
+  }
+
   // If viewing a specific event detail from creature chronicle:
   if (inspectingLogEvent) {
     renderLogDetailView(mx, my, mw, mh, inspectingLogEvent);
@@ -2980,6 +2995,8 @@ function renderDossierModal() {
     _dossierCache.familyTree = null;
     _dossierCache.house = null;
     _dossierCache.lastEventCount = allEvents.length;
+    _dossierCache.lastBattlesCount = 0;
+    _dossierCache.lastEventsCount = 0;
   } else if (allEvents.length - _dossierCache.lastEventCount >= 100) {
     // Throttled refresh: only re-query battles/events every 100+ new world events
     _dossierCache.events = null;
@@ -3000,9 +3017,9 @@ function renderDossierModal() {
       { id: "FAMILY", label: "FAMILY" },
       { id: "TREE", label: "FAMILY TREE" },
       { id: "AFFINITIES", label: `AFFINITIES (${knownAffinities.length})` },
-      { id: "BATTLES", label: `BATTLES${_dossierCache.battles ? ` (${_dossierCache.battles.length})` : ""}` }
+      { id: "BATTLES", label: `BATTLES${_dossierCache.lastBattlesCount ? ` (${_dossierCache.lastBattlesCount})` : ""}` }
     ] : []),
-    { id: "CHRONICLE", label: `CHRONICLE${_dossierCache.events ? ` (${_dossierCache.events.length})` : ""}` }
+    { id: "CHRONICLE", label: `CHRONICLE${_dossierCache.lastEventsCount ? ` (${_dossierCache.lastEventsCount})` : ""}` }
   ];
 
   let tabX = mx + 16;
@@ -3382,6 +3399,7 @@ function renderDossierModal() {
   else if (dossierTab === "BATTLES") {
     if (!_dossierCache.battles) {
       _dossierCache.battles = isCreature ? getClusteredBattles({ entityId: target.id, limit: 100 }) : [];
+      _dossierCache.lastBattlesCount = _dossierCache.battles.length;
     }
     const creatureBattles = _dossierCache.battles;
 
@@ -3437,6 +3455,7 @@ function renderDossierModal() {
   else if (dossierTab === "CHRONICLE") {
     if (!_dossierCache.events) {
       _dossierCache.events = getFullHistoryForEntity(target.id);
+      _dossierCache.lastEventsCount = _dossierCache.events.length;
     }
     const creatureEvents = _dossierCache.events;
 
@@ -3784,6 +3803,19 @@ function renderGroupsModal() {
     inspectingGroup = null;
     inspectingFromCreature = false;
   });
+
+  // Modal Sub-Views
+  if (inspectingBattle) {
+    renderBattleDetailView(mx, my, mw, mh, inspectingBattle);
+    ctx.restore();
+    return;
+  }
+
+  if (inspectingRelationship) {
+    renderRelationshipModal(mx, my, mw, mh, inspectingRelationship);
+    ctx.restore();
+    return;
+  }
 
   // If viewing a specific event detail from clan history:
   if (inspectingLogEvent) {
@@ -5842,10 +5874,10 @@ function renderGeneratorModal() {
 
   drawNESBox(mx, my, mw, mh);
 
-  // Close Button
-  drawNESButton(mx + mw - 32, my + 6, 26, 24, "X", false, true);
-  registerClickableRegion(mx + mw - 32, my + 6, 26, 24, () => {
-    currentMode = "MAP";
+  // Back to Title Menu
+  drawNESButton(mx + mw - 145, my + 6, 138, 24, "BACK TO MENU", false, true);
+  registerClickableRegion(mx + mw - 145, my + 6, 138, 24, () => {
+    currentMode = hasActiveGame ? "MAP" : "TITLE";
   });
 
   drawText8x8("WORLD GENERATOR & CUSTOM CONFIGURATOR", mx + 16, my + 12, "#f8b800", 1);
@@ -6194,15 +6226,8 @@ function frame(time) {
     }
   }
 
-  // Title Screen: Scenario auto-cycle every 15 seconds (only when no active game is in progress)
-  if (currentMode === "TITLE" && !hasActiveGame) {
-    titleAutoCycleTimer += dt;
-    if (titleAutoCycleTimer >= 15.0) {
-      titleAutoCycleTimer = 0;
-      selectedScenarioIdx = (selectedScenarioIdx + 1) % PREFAB_SCENARIOS.length;
-      initTitleWorld(selectedScenarioIdx);
-    }
-  }
+  // Title Screen auto-cycle removed as per user request to fix light flashing
+
 
   if (renderer && world) {
     // 1. Main-thread entity position lerp for 60 FPS smooth rendering independent of worker tick rate
@@ -6285,28 +6310,6 @@ function frame(time) {
         else if (currentMode === "GENERATOR") renderGeneratorModal();
         else if (currentMode === "OPTIONS") renderOptionsModal();
 
-        // Full-screen modal overlays (drawn in sequence to allow stacking)
-        if (inspectingLogEvent) {
-          const mx = 30;
-          const my = 36;
-          const mw = CANVAS_WIDTH - 60;
-          const mh = CANVAS_HEIGHT - 72;
-          renderLogDetailView(mx, my, mw, mh, inspectingLogEvent);
-        }
-        if (inspectingBattle) {
-          const mx = 30;
-          const my = 36;
-          const mw = CANVAS_WIDTH - 60;
-          const mh = CANVAS_HEIGHT - 72;
-          renderBattleDetailView(mx, my, mw, mh, inspectingBattle);
-        }
-        if (inspectingRelationship) {
-          const mx = 30;
-          const my = 36;
-          const mw = CANVAS_WIDTH - 60;
-          const mh = CANVAS_HEIGHT - 72;
-          renderRelationshipModal(mx, my, mw, mh, inspectingRelationship);
-        }
       } else {
         renderCreatureVisionOverlay();
         renderTerritoryOverlay();
