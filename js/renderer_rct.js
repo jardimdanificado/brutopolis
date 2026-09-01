@@ -855,7 +855,7 @@ function createWoodCabinWallGeo() {
 }
 function createWoodCabinRoofGeo() {
   const roof = createCleanPitchedRoof(1.94, 0.94, 1.45);
-  roof.translate(0, 4.00, 0);
+  roof.translate(0, 3.90, 0);
   return roof;
 }
 
@@ -871,7 +871,7 @@ function createStoneCottageWallGeo() {
 }
 function createStoneCottageRoofGeo() {
   const roof = createCleanPitchedRoof(1.94, 1.94, 1.55, false);
-  roof.translate(0, 4.00, 0);
+  roof.translate(0, 3.95, 0);
   return roof;
 }
 
@@ -885,7 +885,7 @@ function createThatchedHutWallGeo() {
   return mergeBufferGeometries(parts);
 }
 function createThatchedHutRoofGeo() {
-  const roof = new THREE.ConeGeometry(0.58, 1.65, 16); roof.translate(0, 4.725, 0);
+  const roof = new THREE.ConeGeometry(0.58, 1.65, 16); roof.translate(0, 4.60, 0);
   return roof;
 }
 
@@ -903,7 +903,7 @@ function createLogLodgeWallGeo() {
 }
 function createLogLodgeRoofGeo() {
   const roof = createCleanPitchedRoof(1.94, 1.94, 1.75, false);
-  roof.translate(0, 5.80, 0);
+  roof.translate(0, 5.70, 0);
   return roof;
 }
 
@@ -919,7 +919,7 @@ function createHalfTimberedWallGeo() {
 }
 function createHalfTimberedRoofGeo() {
   const roof = createCleanPitchedRoof(1.95, 0.95, 1.50);
-  roof.translate(0, 4.10, 0);
+  roof.translate(0, 3.98, 0);
   return roof;
 }
 
@@ -938,8 +938,8 @@ function createMudBrickAdobeWallGeo() {
 }
 function createMudBrickAdobeRoofGeo() {
   const parts = [];
-  const p1 = new THREE.BoxGeometry(1.94, 0.16, 1.94); p1.translate(0, 2.10 + 0.08, 0); parts.push(p1);
-  const p2 = new THREE.BoxGeometry(1.34, 0.16, 1.34); p2.translate(-0.25, 3.95 + 0.08, -0.25); parts.push(p2);
+  const p1 = new THREE.BoxGeometry(1.94, 0.16, 1.94); p1.translate(0, 2.08, 0); parts.push(p1);
+  const p2 = new THREE.BoxGeometry(1.34, 0.16, 1.34); p2.translate(-0.25, 3.90, -0.25); parts.push(p2);
   return mergeBufferGeometries(parts);
 }
 
@@ -959,7 +959,7 @@ function createMountainStiltWallGeo() {
 }
 function createMountainStiltRoofGeo() {
   const roof = createCleanPitchedRoof(1.95, 1.95, 1.75, false);
-  roof.translate(0, 6.00, 0);
+  roof.translate(0, 5.88, 0);
   return roof;
 }
 
@@ -973,7 +973,7 @@ function createLonghouseWallGeo() {
 }
 function createLonghouseRoofGeo() {
   const roof = createCleanPitchedRoof(2.94, 1.94, 1.85);
-  roof.translate(0, 4.00, 0);
+  roof.translate(0, 3.92, 0);
   return roof;
 }
 
@@ -989,8 +989,8 @@ function createBoneOssuaryWallGeo() {
 }
 function createBoneOssuaryRoofGeo() {
   const parts = [];
-  const r1 = createCleanPitchedRoof(1.94, 1.94, 1.25, false); r1.translate(0, 3.90, 0); parts.push(r1);
-  const spire = new THREE.ConeGeometry(0.60, 2.20, 8); spire.translate(0, 6.80, 0); parts.push(spire);
+  const r1 = createCleanPitchedRoof(1.94, 1.94, 1.25, false); r1.translate(0, 3.86, 0); parts.push(r1);
+  const spire = new THREE.ConeGeometry(0.60, 2.20, 8); spire.translate(0, 6.65, 0); parts.push(spire);
   return mergeBufferGeometries(parts);
 }
 
@@ -1009,7 +1009,7 @@ function createWatchtowerVillaWallGeo() {
 }
 function createWatchtowerVillaRoofGeo() {
   const mainRoof = createCleanPitchedRoof(2.25, 2.25, 1.85, false);
-  mainRoof.translate(0, 7.85, 0);
+  mainRoof.translate(0, 7.76, 0);
   return mainRoof;
 }
 
@@ -1026,7 +1026,7 @@ function createTimberTowerWallGeo() {
 }
 function createTimberTowerRoofGeo() {
   const roof = createCleanPitchedRoof(0.94, 0.94, 1.45, false);
-  roof.translate(0, 5.60, 0);
+  roof.translate(0, 5.48, 0);
   return roof;
 }
 
@@ -1044,7 +1044,7 @@ function createStoneTownhouseWallGeo() {
 function createStoneTownhouseRoofGeo() {
   const spire = new THREE.ConeGeometry(0.52, 1.85, 4);
   spire.rotateY(Math.PI / 4);
-  spire.translate(0, 6.525, 0);
+  spire.translate(0, 6.40, 0);
   return spire;
 }
 
@@ -1062,7 +1062,7 @@ function createStiltWatchShackWallGeo() {
 }
 function createStiltWatchShackRoofGeo() {
   const roof = createCleanPitchedRoof(0.95, 0.95, 1.25, false);
-  roof.translate(0, 3.95, 0);
+  roof.translate(0, 3.85, 0);
   return roof;
 }
 
@@ -1081,7 +1081,7 @@ function createPlasterSteepleWallGeo() {
 }
 function createPlasterSteepleRoofGeo() {
   const spire = new THREE.ConeGeometry(0.48, 2.20, 8);
-  spire.translate(0, 8.10, 0);
+  spire.translate(0, 7.95, 0);
   return spire;
 }
 
@@ -1097,7 +1097,7 @@ function createSingleCabinWallGeo() {
 }
 function createSingleCabinRoofGeo() {
   const roof = createCleanPitchedRoof(1.94, 0.94, 1.15);
-  roof.translate(0, 2.15, 0);
+  roof.translate(0, 2.05, 0);
   return roof;
 }
 
@@ -1111,7 +1111,7 @@ function createSingleStoneCottageWallGeo() {
 }
 function createSingleStoneCottageRoofGeo() {
   const roof = createCleanPitchedRoof(1.94, 1.94, 1.25, false);
-  roof.translate(0, 2.15, 0);
+  roof.translate(0, 2.05, 0);
   return roof;
 }
 
@@ -1129,8 +1129,8 @@ function createFencedRanchWallGeo() {
 }
 function createFencedRanchRoofGeo() {
   const parts = [];
-  const rBack = createCleanPitchedRoof(2.85, 1.30, 1.15); rBack.translate(0, 1.85, -0.65); parts.push(rBack);
-  const rSide = createCleanPitchedRoof(1.25, 1.50, 1.10); rSide.translate(0.65, 1.80, 0.65); parts.push(rSide);
+  const rBack = createCleanPitchedRoof(2.85, 1.30, 1.15); rBack.translate(0, 1.76, -0.65); parts.push(rBack);
+  const rSide = createCleanPitchedRoof(1.25, 1.50, 1.10); rSide.translate(0.65, 1.72, 0.65); parts.push(rSide);
   return mergeBufferGeometries(parts);
 }
 
@@ -1147,10 +1147,10 @@ function createCourtyardHaciendaWallGeo() {
 }
 function createCourtyardHaciendaRoofGeo() {
   const parts = []; 
-  const rN = createCleanPitchedRoof(3.90, 1.10, 1.10); rN.translate(0, 1.85, -1.40); parts.push(rN);
-  const rS = createCleanPitchedRoof(3.90, 1.10, 1.10); rS.translate(0, 1.85, 1.40); parts.push(rS);
-  const rE = createCleanPitchedRoof(1.10, 1.80, 1.10); rE.translate(1.40, 1.85, 0); parts.push(rE);
-  const rW = createCleanPitchedRoof(1.10, 1.80, 1.10); rW.translate(-1.40, 1.85, 0); parts.push(rW);
+  const rN = createCleanPitchedRoof(3.90, 1.10, 1.10); rN.translate(0, 1.76, -1.40); parts.push(rN);
+  const rS = createCleanPitchedRoof(3.90, 1.10, 1.10); rS.translate(0, 1.76, 1.40); parts.push(rS);
+  const rE = createCleanPitchedRoof(1.10, 1.80, 1.10); rE.translate(1.40, 1.76, 0); parts.push(rE);
+  const rW = createCleanPitchedRoof(1.10, 1.80, 1.10); rW.translate(-1.40, 1.76, 0); parts.push(rW);
   return mergeBufferGeometries(parts);
 }
 
@@ -1170,7 +1170,7 @@ function createAdobeRanchoWallGeo() {
 }
 function createAdobeRanchoRoofGeo() {
   const coping = new THREE.BoxGeometry(1.75, 0.12, 1.75);
-  coping.translate(0, 2.15, 0);
+  coping.translate(0, 2.10, 0);
   return coping;
 }
 
@@ -1182,7 +1182,7 @@ function createGroundCroftWallGeo() {
 }
 function createGroundCroftRoofGeo() {
   const roof = createCleanPitchedRoof(0.94, 0.94, 1.20);
-  roof.translate(0, 1.80, 0);
+  roof.translate(0, 1.72, 0);
   return roof;
 }
 
@@ -3003,15 +3003,15 @@ export class RCT3DRenderer {
     // 4.6 Texture-Derived & Procedural Normal Maps
     const normGrass = generateProceduralTerrainNormalMap("grass", 0.45);
     const normSand = generateProceduralTerrainNormalMap("sand", 0.40);
-    const normOak = generateProceduralFoliageNormalMap("oak", 1.3);
-    const normPine = generateProceduralFoliageNormalMap("pine", 1.3);
-    const normCactus = generateProceduralFoliageNormalMap("cactus", 1.4);
+    const normOak = generateProceduralFoliageNormalMap("oak", 1.0);
+    const normPine = generateProceduralFoliageNormalMap("pine", 1.0);
+    const normCactus = generateProceduralFoliageNormalMap("cactus", 1.0);
     const normStoneB = createNormalMapFromTexture("Feature_Stone_B.png", 2.6);
     const normStoneC = createNormalMapFromTexture("Feature_Stone_C.png", 2.8);
     const normBrickA = createNormalMapFromTexture("Feature_Brick_A.png", 1.2);
     const normBrickB = createNormalMapFromTexture("Feature_Brick_B.png", 1.0);
     const normBrickC = createNormalMapFromTexture("Feature_Brick_C.png", 1.2);
-    const normWaves = generateWaterNormalMap(1.6);
+    const normWaves = generateWaterNormalMap(0.9);
 
     const makeMat = (isPersp, baseParams, normalMap = null, normalScale = 1.0, roughness = 0.65, metalness = 0.05) => {
       // Normals/depth strictly active in 1P and 3P perspective mode!
@@ -3038,7 +3038,7 @@ export class RCT3DRenderer {
       [TILE_WATER]: isPersp ? new THREE.MeshStandardMaterial({
         color: 0x1668a8,
         normalMap: normWaves,
-        normalScale: new THREE.Vector2(1.8, 1.8),
+        normalScale: new THREE.Vector2(0.85, 0.85),
         roughness: 0.15,
         metalness: 0.15,
         transparent: false,
@@ -3063,18 +3063,18 @@ export class RCT3DRenderer {
       cliff: makeMat(isPersp, { map: createTintedTexture("Feature_Stone_C.png", 0x887a6a, 0x2b2218, 1.0), dithering: true, vertexColors: true, side: THREE.DoubleSide }, normStoneC, 1.1, 0.72, 0.05),
       grassFoliage: makeMat(isPersp, { map: createTintedTexture("Feature_Grass.png", 0x3c7228, 0x000000, 0.0), dithering: true, transparent: false, alphaTest: 0.5, depthWrite: true, depthTest: true, side: THREE.DoubleSide }, normGrass, 0.25, 0.85, 0.02),
       treeTrunk: makeMat(isPersp, { color: 0x583c1e, dithering: true }, null),
-      oakLeaves: makeMat(isPersp, { color: 0x3e8226, dithering: true }, normOak, 2.4, 0.65, 0.02),
-      pineLeaves: makeMat(isPersp, { color: 0x205222, dithering: true }, normPine, 2.4, 0.65, 0.02),
-      cactus: makeMat(isPersp, { color: 0x3c7c2c, dithering: true }, normCactus, 2.2, 0.75, 0.02),
+      oakLeaves: makeMat(isPersp, { color: 0x3e8226, dithering: true }, normOak, 1.2, 0.65, 0.02),
+      pineLeaves: makeMat(isPersp, { color: 0x205222, dithering: true }, normPine, 1.2, 0.65, 0.02),
+      cactus: makeMat(isPersp, { color: 0x3c7c2c, dithering: true }, normCactus, 1.2, 0.75, 0.02),
       cherryTrunk: makeMat(isPersp, { color: 0x3e2418, dithering: true }, null),
-      cherryLeaves: makeMat(isPersp, { color: 0xffb7c5, dithering: true }, normOak, 2.4, 0.60, 0.01),
+      cherryLeaves: makeMat(isPersp, { color: 0xffb7c5, dithering: true }, normOak, 1.2, 0.60, 0.01),
       birchTrunk: makeMat(isPersp, { color: 0xeae6dc, dithering: true }, null),
-      birchLeaves: makeMat(isPersp, { color: 0xb5dc42, dithering: true }, normOak, 2.4, 0.65, 0.02),
+      birchLeaves: makeMat(isPersp, { color: 0xb5dc42, dithering: true }, normOak, 1.2, 0.65, 0.02),
       mapleTrunk: makeMat(isPersp, { color: 0x482c16, dithering: true }, null),
-      mapleLeaves: makeMat(isPersp, { color: 0xdc4820, dithering: true }, normOak, 2.4, 0.65, 0.02),
-      bushLeaves: makeMat(isPersp, { color: 0x2e6c26, dithering: true }, normOak, 2.4, 0.65, 0.02),
-      bushBerries: makeMat(isPersp, { color: 0xd62246, dithering: true }, normOak, 1.8, 0.50, 0.02),
-      roseFlowers: makeMat(isPersp, { color: 0xff3366, dithering: true }, normOak, 1.8, 0.50, 0.02),
+      mapleLeaves: makeMat(isPersp, { color: 0xdc4820, dithering: true }, normOak, 1.2, 0.65, 0.02),
+      bushLeaves: makeMat(isPersp, { color: 0x2e6c26, dithering: true }, normOak, 1.2, 0.65, 0.02),
+      bushBerries: makeMat(isPersp, { color: 0xd62246, dithering: true }, normOak, 1.0, 0.50, 0.02),
+      roseFlowers: makeMat(isPersp, { color: 0xff3366, dithering: true }, normOak, 1.0, 0.50, 0.02),
       houseWall: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_B.png", 0xfffaea, 0x8a6242, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickB, 1.0, 0.60, 0.05),
       houseRoof: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xff6238, 0x941e0a, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 1.2, 0.45, 0.08),
       woodHouseWall: makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xd4a373, 0x4a3525, 1.0), dithering: true, side: THREE.DoubleSide }, null),
