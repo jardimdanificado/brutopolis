@@ -9440,6 +9440,81 @@ export function createLocomotionProp() {
             }
           }
 
+          // --- 5.25 Stone Street Paving Projects (Diplomat of the Interior Public Works) ---
+          const hasInteriorDiplomat = group?.diplomats?.[3] !== null || (group?.members || []).some(id => getEntityById(id)?.properties?.diplomatRole === "Interior");
+          if (!hasIntention && hasInteriorDiplomat && group._plannedStoneRoads && group._plannedStoneRoads.length > 0 && energyRatio > 0.35 && waterRatio > 0.35 && !ent.properties.injured) {
+            const hasHeldStone = (ent.properties.arm_left?.heldItem?.resourceType === "stone" || ent.properties.arm_right?.heldItem?.resourceType === "stone" || ent.properties.heldItem?.resourceType === "stone");
+            const hasBackpackStone = (ent.properties.backpack?.items || []).some(it => it.resourceType === "stone" || it.name?.includes("Pedra") || it.name?.includes("Stone"));
+
+            if (hasHeldStone || hasBackpackStone) {
+              let targetStoneRoad = null;
+              let minDist = 9999;
+              for (let sIdx = 0; sIdx < group._plannedStoneRoads.length; sIdx++) {
+                const sr = group._plannedStoneRoads[sIdx];
+                const curT = curW ? (curW.getTile ? curW.getTile(sr.x, sr.y) : (curW.map ? curW.map[sr.y * (curW.width || MAP_WIDTH) + sr.x] : 0)) : 0;
+                if (!isDirtRoadTile(curT)) {
+                  group._plannedStoneRoads.splice(sIdx, 1);
+                  sIdx--;
+                  continue;
+                }
+                const d = Math.abs(sr.x - ent.x) + Math.abs(sr.y - ent.y);
+                if (d < minDist) {
+                  minDist = d;
+                  targetStoneRoad = sr;
+                }
+              }
+
+              if (targetStoneRoad) {
+                if (minDist <= 1) {
+                  // Consume 1 stone and pave the road
+                  if (hasHeldStone) {
+                    if (ent.properties.arm_left?.heldItem?.resourceType === "stone") ent.properties.arm_left.heldItem = null;
+                    else if (ent.properties.arm_right?.heldItem?.resourceType === "stone") ent.properties.arm_right.heldItem = null;
+                    else if (ent.properties.heldItem?.resourceType === "stone") ent.properties.heldItem = null;
+                  } else if (hasBackpackStone && ent.properties.backpack?.items) {
+                    const idx = ent.properties.backpack.items.findIndex(it => it.resourceType === "stone" || it.name?.includes("Pedra"));
+                    if (idx !== -1) ent.properties.backpack.items.splice(idx, 1);
+                  }
+
+                  const curT = curW ? (curW.getTile ? curW.getTile(targetStoneRoad.x, targetStoneRoad.y) : (curW.map ? curW.map[targetStoneRoad.y * (curW.width || MAP_WIDTH) + targetStoneRoad.x] : 0)) : 0;
+                  const stoneTile = getStoneRoadTileForTerrain(curT);
+                  if (stoneTile) {
+                    if (curW.setTile) curW.setTile(targetStoneRoad.x, targetStoneRoad.y, stoneTile);
+                    else if (curW.map) curW.map[targetStoneRoad.y * (curW.width || MAP_WIDTH) + targetStoneRoad.x] = stoneTile;
+                  }
+                  ent.emote = 2; // Happy
+                  chosenDx = 0;
+                  chosenDy = 0;
+                  hasIntention = true;
+                } else {
+                  chosenDx = Math.sign(targetStoneRoad.x - ent.x);
+                  chosenDy = Math.sign(targetStoneRoad.y - ent.y);
+                  hasIntention = true;
+                }
+              }
+            } else {
+              // Find loose stone or warehouse stone in claimed territory
+              const closestStone = findClosestEntityInRadius(ent.x, ent.y, 25, e =>
+                !e.destroyed && e.properties?.resourceType === "stone" && isTileInClaimedZones(e.x, e.y, group.claimedZones)
+              );
+              if (closestStone) {
+                const d = Math.abs(closestStone.x - ent.x) + Math.abs(closestStone.y - ent.y);
+                if (d <= 1) {
+                  closestStone.destroyed = true;
+                  if (!ent.properties.arm_left) ent.properties.arm_left = createArmProp("Braço Esquerdo", "left");
+                  ent.properties.arm_left.heldItem = { name: "Pedra de Pavimentação", resourceType: "stone", weight: 2.0 };
+                  chosenDx = 0;
+                  chosenDy = 0;
+                  hasIntention = true;
+                } else {
+                  chosenDx = Math.sign(closestStone.x - ent.x);
+                  chosenDy = Math.sign(closestStone.y - ent.y);
+                  hasIntention = true;
+                }
+              }
+            }
+          }
+
           // --- 5.3 Territory Ground Cleaning & Hauling to Warehouse/Stockpile ---
           if (!hasIntention) {
             const closestItem = findClosestEntityInRadius(ent.x, ent.y, 20, e =>
@@ -9825,89 +9900,6 @@ export function createLocomotionProp() {
             chosenDx = Math.sign(targetX - ent.x);
             chosenDy = Math.sign(targetY - ent.y);
             hasIntention = true;
-          }
-        }
-      }
-
-      // -----------------------------------------------------------------------
-      // Priority 7.5: Minimal Priority Stone Street Paving (Diplomat of the Interior)
-      // Citizens only haul stone and pave stone streets when they have NO urgent needs.
-      // -----------------------------------------------------------------------
-      if (!hasIntention && ent.properties.group) {
-        const group = ent.properties.group;
-        const curW = world || getSimWorld();
-        const hasInteriorDiplomat = group.diplomats?.[3] !== null || (group.members || []).some(id => getEntityById(id)?.properties?.diplomatRole === "Interior");
-
-        if (hasInteriorDiplomat && group._plannedStoneRoads && group._plannedStoneRoads.length > 0 && energyRatio > 0.60 && waterRatio > 0.60 && !ent.properties.injured) {
-          const hasHeldStone = (ent.properties.arm_left?.heldItem?.resourceType === "stone" || ent.properties.arm_right?.heldItem?.resourceType === "stone" || ent.properties.heldItem?.resourceType === "stone");
-          const hasBackpackStone = (ent.properties.backpack?.items || []).some(it => it.resourceType === "stone" || it.name?.includes("Pedra") || it.name?.includes("Stone"));
-
-          if (hasHeldStone || hasBackpackStone) {
-            let targetStoneRoad = null;
-            let minDist = 9999;
-            for (let sIdx = 0; sIdx < group._plannedStoneRoads.length; sIdx++) {
-              const sr = group._plannedStoneRoads[sIdx];
-              const curT = curW ? (curW.getTile ? curW.getTile(sr.x, sr.y) : (curW.map ? curW.map[sr.y * (curW.width || MAP_WIDTH) + sr.x] : 0)) : 0;
-              if (!isDirtRoadTile(curT)) {
-                group._plannedStoneRoads.splice(sIdx, 1);
-                sIdx--;
-                continue;
-              }
-              const d = Math.abs(sr.x - ent.x) + Math.abs(sr.y - ent.y);
-              if (d < minDist) {
-                minDist = d;
-                targetStoneRoad = sr;
-              }
-            }
-
-            if (targetStoneRoad) {
-              if (minDist <= 1) {
-                // Consume 1 stone and pave the road
-                if (hasHeldStone) {
-                  if (ent.properties.arm_left?.heldItem?.resourceType === "stone") ent.properties.arm_left.heldItem = null;
-                  else if (ent.properties.arm_right?.heldItem?.resourceType === "stone") ent.properties.arm_right.heldItem = null;
-                  else if (ent.properties.heldItem?.resourceType === "stone") ent.properties.heldItem = null;
-                } else if (hasBackpackStone && ent.properties.backpack?.items) {
-                  const idx = ent.properties.backpack.items.findIndex(it => it.resourceType === "stone" || it.name?.includes("Pedra"));
-                  if (idx !== -1) ent.properties.backpack.items.splice(idx, 1);
-                }
-
-                const curT = curW ? (curW.getTile ? curW.getTile(targetStoneRoad.x, targetStoneRoad.y) : (curW.map ? curW.map[targetStoneRoad.y * (curW.width || MAP_WIDTH) + targetStoneRoad.x] : 0)) : 0;
-                const stoneTile = getStoneRoadTileForTerrain(curT);
-                if (stoneTile) {
-                  if (curW.setTile) curW.setTile(targetStoneRoad.x, targetStoneRoad.y, stoneTile);
-                  else if (curW.map) curW.map[targetStoneRoad.y * (curW.width || MAP_WIDTH) + targetStoneRoad.x] = stoneTile;
-                }
-                ent.emote = 2; // Happy
-                chosenDx = 0;
-                chosenDy = 0;
-                hasIntention = true;
-              } else {
-                chosenDx = Math.sign(targetStoneRoad.x - ent.x);
-                chosenDy = Math.sign(targetStoneRoad.y - ent.y);
-                hasIntention = true;
-              }
-            }
-          } else {
-            // Find loose stone or warehouse stone in claimed territory
-            const closestStone = findClosestEntityInRadius(ent.x, ent.y, 25, e =>
-              !e.destroyed && e.properties?.resourceType === "stone" && isTileInClaimedZones(e.x, e.y, group.claimedZones)
-            );
-            if (closestStone) {
-              const d = Math.abs(closestStone.x - ent.x) + Math.abs(closestStone.y - ent.y);
-              if (d <= 1) {
-                closestStone.destroyed = true;
-                if (!ent.properties.arm_left) ent.properties.arm_left = createArmProp("Braço Esquerdo", "left");
-                ent.properties.arm_left.heldItem = { name: "Pedra de Pavimentação", resourceType: "stone", weight: 2.0 };
-                chosenDx = 0;
-                chosenDy = 0;
-                hasIntention = true;
-              } else {
-                chosenDx = Math.sign(closestStone.x - ent.x);
-                chosenDy = Math.sign(closestStone.y - ent.y);
-                hasIntention = true;
-              }
-            }
           }
         }
       }
