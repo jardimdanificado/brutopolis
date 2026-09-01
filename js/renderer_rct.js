@@ -4,7 +4,24 @@
 
 import * as THREE from "https://esm.sh/three@0.160.0";
 import { ASSET_DATA } from "./assets_data.js";
-import { MAP_WIDTH, MAP_HEIGHT, TILE_FLOOR, TILE_MOUNTAIN, TILE_WATER, TILE_SAND, TILE_STONE, TILE_VOID, TILE_ROAD_GRASS, TILE_ROAD_SAND, TILE_ROAD_STONE } from "./world_gen.js";
+import {
+  MAP_WIDTH,
+  MAP_HEIGHT,
+  TILE_FLOOR,
+  TILE_MOUNTAIN,
+  TILE_WATER,
+  TILE_SAND,
+  TILE_STONE,
+  TILE_VOID,
+  TILE_ROAD_GRASS,
+  TILE_ROAD_SAND,
+  TILE_ROAD_GRASS_STONE,
+  TILE_HILL,
+  TILE_PEAK,
+  TILE_ROAD_SAND_STONE,
+  TILE_ROAD_HILL,
+  TILE_ROAD_HILL_STONE
+} from "./world_gen.js";
 import { globalWallCoords, resolveWallSkin, getEntitiesInViewport, getEntityById } from "./engine.js";
 import { getClanBlueprintTiles, currentZoneSize } from "./properties.js";
 
@@ -459,6 +476,155 @@ function createSaguaroCactusGeometry() {
   // Rotate +45 degrees so arms spread horizontally across isometric view
   merged.rotateY(Math.PI / 4);
   return merged;
+}
+
+function createCherryBlossomTrunkGeometry() {
+  const geos = [];
+  const trunk = new THREE.CylinderGeometry(0.15, 0.25, 1.4, 6);
+  trunk.translate(0, 0.50, 0);
+  geos.push(trunk);
+
+  const branchL = new THREE.CylinderGeometry(0.09, 0.12, 0.65, 5);
+  branchL.rotateZ(Math.PI / 4.5);
+  branchL.translate(-0.25, 1.15, 0);
+  geos.push(branchL);
+
+  const branchR = new THREE.CylinderGeometry(0.09, 0.12, 0.60, 5);
+  branchR.rotateZ(-Math.PI / 4.5);
+  branchR.translate(0.25, 1.10, 0);
+  geos.push(branchR);
+
+  return mergeBufferGeometries(geos);
+}
+
+function createCherryBlossomLeavesGeometry() {
+  const geos = [];
+  const c1 = new THREE.DodecahedronGeometry(0.70);
+  c1.scale(1.2, 0.8, 1.2);
+  c1.translate(0, 1.70, 0);
+  geos.push(c1);
+
+  const c2 = new THREE.DodecahedronGeometry(0.55);
+  c2.scale(1.1, 0.75, 1.1);
+  c2.translate(-0.45, 1.45, 0.1);
+  geos.push(c2);
+
+  const c3 = new THREE.DodecahedronGeometry(0.55);
+  c3.scale(1.1, 0.75, 1.1);
+  c3.translate(0.45, 1.40, -0.1);
+  geos.push(c3);
+
+  return mergeBufferGeometries(geos);
+}
+
+function createBirchTrunkGeometry() {
+  const trunk = new THREE.CylinderGeometry(0.11, 0.17, 1.6, 6);
+  trunk.translate(0, 0.60, 0);
+  return trunk;
+}
+
+function createBirchLeavesGeometry() {
+  const leaves = new THREE.DodecahedronGeometry(0.70);
+  leaves.scale(0.85, 1.45, 0.85);
+  leaves.translate(0, 1.70, 0);
+  return leaves;
+}
+
+function createMapleTrunkGeometry() {
+  const geos = [];
+  const trunk = new THREE.CylinderGeometry(0.18, 0.28, 1.5, 6);
+  trunk.translate(0, 0.55, 0);
+  geos.push(trunk);
+
+  const root1 = new THREE.CylinderGeometry(0.08, 0.14, 0.45, 4);
+  root1.rotateZ(Math.PI / 4);
+  root1.translate(-0.20, 0.15, 0);
+  geos.push(root1);
+
+  const root2 = new THREE.CylinderGeometry(0.08, 0.14, 0.45, 4);
+  root2.rotateZ(-Math.PI / 4);
+  root2.translate(0.20, 0.15, 0);
+  geos.push(root2);
+
+  return mergeBufferGeometries(geos);
+}
+
+function createMapleLeavesGeometry() {
+  const geos = [];
+  const topLobe = new THREE.DodecahedronGeometry(0.80);
+  topLobe.scale(1.3, 0.9, 1.3);
+  topLobe.translate(0, 1.75, 0);
+  geos.push(topLobe);
+
+  const leftLobe = new THREE.DodecahedronGeometry(0.60);
+  leftLobe.translate(-0.45, 1.40, 0.2);
+  geos.push(leftLobe);
+
+  const rightLobe = new THREE.DodecahedronGeometry(0.60);
+  rightLobe.translate(0.45, 1.40, -0.2);
+  geos.push(rightLobe);
+
+  return mergeBufferGeometries(geos);
+}
+
+function createBerryBushLeavesGeometry() {
+  const geos = [];
+  const d1 = new THREE.DodecahedronGeometry(0.38);
+  d1.scale(1.2, 0.9, 1.2);
+  d1.translate(0, 0.30, 0);
+  geos.push(d1);
+
+  const d2 = new THREE.DodecahedronGeometry(0.28);
+  d2.translate(-0.22, 0.24, 0.12);
+  geos.push(d2);
+
+  const d3 = new THREE.DodecahedronGeometry(0.28);
+  d3.translate(0.22, 0.24, -0.12);
+  geos.push(d3);
+
+  return mergeBufferGeometries(geos);
+}
+
+function createBerryBushOrnamentsGeometry() {
+  const geos = [];
+  const berryPositions = [
+    [-0.20, 0.42, 0.15],
+    [0.18, 0.45, -0.12],
+    [-0.05, 0.50, 0.22],
+    [0.10, 0.52, 0.18],
+    [-0.25, 0.32, -0.15],
+    [0.26, 0.35, 0.10]
+  ];
+  for (const [bx, by, bz] of berryPositions) {
+    const s = new THREE.SphereGeometry(0.06, 4, 4);
+    s.translate(bx, by, bz);
+    geos.push(s);
+  }
+  return mergeBufferGeometries(geos);
+}
+
+function createRoseBushLeavesGeometry() {
+  const d = new THREE.DodecahedronGeometry(0.42);
+  d.scale(1.15, 0.95, 1.15);
+  d.translate(0, 0.32, 0);
+  return d;
+}
+
+function createRoseBushFlowersGeometry() {
+  const geos = [];
+  const flowerPositions = [
+    [-0.15, 0.48, 0.12],
+    [0.15, 0.52, -0.08],
+    [0.0, 0.58, 0.10],
+    [-0.22, 0.38, -0.12],
+    [0.20, 0.40, 0.15]
+  ];
+  for (const [fx, fy, fz] of flowerPositions) {
+    const f = new THREE.DodecahedronGeometry(0.08);
+    f.translate(fx, fy, fz);
+    geos.push(f);
+  }
+  return mergeBufferGeometries(geos);
 }
 
 function createNaturalGrassGeometry(w = 0.44, h = 0.38) {
@@ -2782,21 +2948,35 @@ export class RCT3DRenderer {
     };
 
     const buildDict = (isPersp) => ({
-      [TILE_FLOOR]: makeMat(isPersp, { color: 0x2e5424, dithering: true, vertexColors: true, side: THREE.DoubleSide }, normGrass, 0.28, 0.85, 0.02),
+      [TILE_FLOOR]: makeMat(isPersp, { color: 0x3d742c, dithering: true, vertexColors: true, side: THREE.DoubleSide }, normGrass, 0.28, 0.85, 0.02),
       sandClean: makeMat(isPersp, { color: 0xdec078, dithering: true, vertexColors: true, side: THREE.DoubleSide }, normSand, 0.22, 0.90, 0.01),
       [TILE_SAND]: makeMat(isPersp, { map: createTintedTexture("Feature_Pebbles.png", 0x6e5228, 0xdec078, 1.0), dithering: true, vertexColors: true, side: THREE.DoubleSide }, normSand, 0.25, 0.88, 0.02),
+      [TILE_HILL]: makeMat(isPersp, { color: 0x486c28, dithering: true, vertexColors: true, side: THREE.DoubleSide }, normGrass, 0.35, 0.82, 0.02),
       [TILE_STONE]: makeMat(isPersp, { map: createTintedTexture("Feature_Stone_B.png", 0xa5a5af, 0x3a3a44, 1.0), dithering: true, vertexColors: true, side: THREE.DoubleSide }, normStoneB, 1.1, 0.70, 0.08),
       [TILE_MOUNTAIN]: makeMat(isPersp, { map: createTintedTexture("Feature_Stone_C.png", 0xb4afaa, 0x484242, 1.0), dithering: true, vertexColors: true, side: THREE.DoubleSide }, normStoneC, 1.25, 0.65, 0.10),
+      [TILE_PEAK]: makeMat(isPersp, { map: createTintedTexture("Feature_Stone_C.png", 0xd8d8de, 0x686874, 1.0), dithering: true, vertexColors: true, side: THREE.DoubleSide }, normStoneC, 1.35, 0.60, 0.12),
       [TILE_WATER]: makeMat(isPersp, { color: isPersp ? 0x1668b8 : 0xffffff, map: createTintedTexture("Feature_Waves.png", 0x64b4ff, 0x143764, 1.0), dithering: true, vertexColors: true, transparent: false, opacity: 1.0, side: THREE.DoubleSide }, normWaves, 0.9, 0.18, 0.14),
       [TILE_ROAD_GRASS]: makeMat(isPersp, { map: createTintedTexture("Feature_Stone_B.png", 0xa67c52, 0x3d2816, 1.0), dithering: true, vertexColors: true, side: THREE.DoubleSide }, normStoneB, 0.9, 0.75, 0.05),
-      [TILE_ROAD_SAND]: makeMat(isPersp, { map: createTintedTexture("Feature_Pebbles.png", 0xc8a060, 0x5c4220, 1.0), dithering: true, vertexColors: true, side: THREE.DoubleSide }, normSand, 0.25, 0.85, 0.02),
-      [TILE_ROAD_STONE]: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0x909098, 0x383842, 1.0), dithering: true, vertexColors: true, side: THREE.DoubleSide }, normBrickA, 1.1, 0.65, 0.08),
+      [TILE_ROAD_SAND]: makeMat(isPersp, { map: createTintedTexture("Feature_Stone_B.png", 0xa67c52, 0x3d2816, 1.0), dithering: true, vertexColors: true, side: THREE.DoubleSide }, normStoneB, 0.9, 0.75, 0.05),
+      [TILE_ROAD_HILL]: makeMat(isPersp, { map: createTintedTexture("Feature_Stone_B.png", 0xa67c52, 0x3d2816, 1.0), dithering: true, vertexColors: true, side: THREE.DoubleSide }, normStoneB, 0.9, 0.75, 0.05),
+      [TILE_ROAD_GRASS_STONE]: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0x909098, 0x383842, 1.0), dithering: true, vertexColors: true, side: THREE.DoubleSide }, normBrickA, 1.1, 0.65, 0.08),
+      [TILE_ROAD_SAND_STONE]: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0x909098, 0x383842, 1.0), dithering: true, vertexColors: true, side: THREE.DoubleSide }, normBrickA, 1.1, 0.65, 0.08),
+      [TILE_ROAD_HILL_STONE]: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0x909098, 0x383842, 1.0), dithering: true, vertexColors: true, side: THREE.DoubleSide }, normBrickA, 1.1, 0.65, 0.08),
       cliff: makeMat(isPersp, { map: createTintedTexture("Feature_Stone_C.png", 0x887a6a, 0x2b2218, 1.0), dithering: true, vertexColors: true, side: THREE.DoubleSide }, normStoneC, 1.1, 0.72, 0.05),
       grassFoliage: makeMat(isPersp, { map: createTintedTexture("Feature_Grass.png", 0x3c7228, 0x000000, 0.0), dithering: true, transparent: false, alphaTest: 0.5, depthWrite: true, depthTest: true, side: THREE.DoubleSide }, normGrass, 0.25, 0.85, 0.02),
       treeTrunk: makeMat(isPersp, { color: 0x583c1e, dithering: true }, normWood, 0.9, 0.75, 0.02),
       oakLeaves: makeMat(isPersp, { color: 0x3e8226, dithering: true }, normOak, 1.2, 0.70, 0.02),
       pineLeaves: makeMat(isPersp, { color: 0x205222, dithering: true }, normPine, 1.2, 0.70, 0.02),
       cactus: makeMat(isPersp, { color: 0x3c7c2c, dithering: true }, normCactus, 1.3, 0.75, 0.02),
+      cherryTrunk: makeMat(isPersp, { color: 0x3e2418, dithering: true }, normWood, 0.9, 0.75, 0.02),
+      cherryLeaves: makeMat(isPersp, { color: 0xffb7c5, dithering: true }, normOak, 1.2, 0.65, 0.01),
+      birchTrunk: makeMat(isPersp, { color: 0xeae6dc, dithering: true }, normWood, 0.8, 0.60, 0.02),
+      birchLeaves: makeMat(isPersp, { color: 0xb5dc42, dithering: true }, normOak, 1.2, 0.68, 0.02),
+      mapleTrunk: makeMat(isPersp, { color: 0x482c16, dithering: true }, normWood, 0.9, 0.75, 0.02),
+      mapleLeaves: makeMat(isPersp, { color: 0xdc4820, dithering: true }, normOak, 1.2, 0.70, 0.02),
+      bushLeaves: makeMat(isPersp, { color: 0x2e6c26, dithering: true }, normGrass, 0.40, 0.80, 0.02),
+      bushBerries: makeMat(isPersp, { color: 0xd62246, dithering: true }, null),
+      roseFlowers: makeMat(isPersp, { color: 0xff3366, dithering: true }, null),
       houseWall: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_B.png", 0xfffaea, 0x8a6242, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickB, 1.0, 0.60, 0.05),
       houseRoof: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xff6238, 0x941e0a, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 1.2, 0.45, 0.08),
       woodHouseWall: makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xd4a373, 0x4a3525, 1.0), dithering: true, side: THREE.DoubleSide }, normWood, 0.9, 0.65, 0.04),
@@ -2989,6 +3169,61 @@ export class RCT3DRenderer {
     this.instPineLeaves = new THREE.InstancedMesh(pineLeafGeo, this.materials.pineLeaves, this.maxInstances);
     this.instPineLeaves.castShadow = true;
     this.instPineLeaves.receiveShadow = true;
+
+    // Cherry Blossom Trees (Sakura)
+    const cherryTrunkGeo = createCherryBlossomTrunkGeometry();
+    this.instCherryTrunks = new THREE.InstancedMesh(cherryTrunkGeo, this.materials.cherryTrunk, this.maxInstances);
+    this.instCherryTrunks.castShadow = true;
+    this.instCherryTrunks.receiveShadow = true;
+
+    const cherryLeavesGeo = createCherryBlossomLeavesGeometry();
+    this.instCherryLeaves = new THREE.InstancedMesh(cherryLeavesGeo, this.materials.cherryLeaves, this.maxInstances);
+    this.instCherryLeaves.castShadow = true;
+    this.instCherryLeaves.receiveShadow = true;
+
+    // Birch Trees (Bétula Dourada)
+    const birchTrunkGeo = createBirchTrunkGeometry();
+    this.instBirchTrunks = new THREE.InstancedMesh(birchTrunkGeo, this.materials.birchTrunk, this.maxInstances);
+    this.instBirchTrunks.castShadow = true;
+    this.instBirchTrunks.receiveShadow = true;
+
+    const birchLeavesGeo = createBirchLeavesGeometry();
+    this.instBirchLeaves = new THREE.InstancedMesh(birchLeavesGeo, this.materials.birchLeaves, this.maxInstances);
+    this.instBirchLeaves.castShadow = true;
+    this.instBirchLeaves.receiveShadow = true;
+
+    // Maple Trees (Bordo Carmesim)
+    const mapleTrunkGeo = createMapleTrunkGeometry();
+    this.instMapleTrunks = new THREE.InstancedMesh(mapleTrunkGeo, this.materials.mapleTrunk, this.maxInstances);
+    this.instMapleTrunks.castShadow = true;
+    this.instMapleTrunks.receiveShadow = true;
+
+    const mapleLeavesGeo = createMapleLeavesGeometry();
+    this.instMapleLeaves = new THREE.InstancedMesh(mapleLeavesGeo, this.materials.mapleLeaves, this.maxInstances);
+    this.instMapleLeaves.castShadow = true;
+    this.instMapleLeaves.receiveShadow = true;
+
+    // Berry Bushes (Arbusto de Amoras Silvestres)
+    const berryBushGeo = createBerryBushLeavesGeometry();
+    this.instBerryBushes = new THREE.InstancedMesh(berryBushGeo, this.materials.bushLeaves, this.maxInstances);
+    this.instBerryBushes.castShadow = true;
+    this.instBerryBushes.receiveShadow = true;
+
+    const berryOrnamentsGeo = createBerryBushOrnamentsGeometry();
+    this.instBerryOrnaments = new THREE.InstancedMesh(berryOrnamentsGeo, this.materials.bushBerries, this.maxInstances);
+    this.instBerryOrnaments.castShadow = true;
+    this.instBerryOrnaments.receiveShadow = true;
+
+    // Rose Bushes (Arbusto Florido)
+    const roseBushGeo = createRoseBushLeavesGeometry();
+    this.instRoseBushes = new THREE.InstancedMesh(roseBushGeo, this.materials.bushLeaves, this.maxInstances);
+    this.instRoseBushes.castShadow = true;
+    this.instRoseBushes.receiveShadow = true;
+
+    const roseFlowersGeo = createRoseBushFlowersGeometry();
+    this.instRoseFlowers = new THREE.InstancedMesh(roseFlowersGeo, this.materials.roseFlowers, this.maxInstances);
+    this.instRoseFlowers.castShadow = true;
+    this.instRoseFlowers.receiveShadow = true;
 
     // Saguaro Cacti (Oriented +45° for perfect silhouette)
     const cactusGeo = createSaguaroCactusGeometry();
@@ -3322,6 +3557,41 @@ export class RCT3DRenderer {
     for (const hw of this.instHouseWallVariants) hw.frustumCulled = false;
     for (const hr of this.instHouseRoofVariants) hr.frustumCulled = false;
     this.instHouseWalls.frustumCulled = false;
+    this.instOakTrunks.frustumCulled = false;
+    this.instOakLeaves.frustumCulled = false;
+    this.instPineTrunks.frustumCulled = false;
+    this.instPineLeaves.frustumCulled = false;
+    this.instCherryTrunks.frustumCulled = false;
+    this.instCherryLeaves.frustumCulled = false;
+    this.instBirchTrunks.frustumCulled = false;
+    this.instBirchLeaves.frustumCulled = false;
+    this.instMapleTrunks.frustumCulled = false;
+    this.instMapleLeaves.frustumCulled = false;
+    this.instBerryBushes.frustumCulled = false;
+    this.instBerryOrnaments.frustumCulled = false;
+    this.instRoseBushes.frustumCulled = false;
+    this.instRoseFlowers.frustumCulled = false;
+    this.instCacti.frustumCulled = false;
+    this.instWalls.frustumCulled = false;
+    this.instWoodWalls.frustumCulled = false;
+    this.instMixedWalls.frustumCulled = false;
+    this.instBoneWalls.frustumCulled = false;
+    this.instWallsStage1.frustumCulled = false;
+    this.instGatesClosed.frustumCulled = false;
+    this.instGatesOpen.frustumCulled = false;
+    this.instGatesStage1.frustumCulled = false;
+    for (const ww of this.instWarehouseWalls) ww.frustumCulled = false;
+    for (const wr of this.instWarehouseRoofs) wr.frustumCulled = false;
+    for (const sw of this.instSlaughterhouseWalls) sw.frustumCulled = false;
+    for (const sr of this.instSlaughterhouseRoofs) sr.frustumCulled = false;
+    for (const kw of this.instKitchenWalls) kw.frustumCulled = false;
+    for (const kr of this.instKitchenRoofs) kr.frustumCulled = false;
+    this.instWaterWellBase.frustumCulled = false;
+    this.instWaterWellWood.frustumCulled = false;
+    this.instWaterWellRoof.frustumCulled = false;
+    for (const hw of this.instHouseWallVariants) hw.frustumCulled = false;
+    for (const hr of this.instHouseRoofVariants) hr.frustumCulled = false;
+    this.instHouseWalls.frustumCulled = false;
     this.instHouseRoofs.frustumCulled = false;
     this.instHousePegs.frustumCulled = false;
     this.instHouseStage1.frustumCulled = false;
@@ -3347,6 +3617,11 @@ export class RCT3DRenderer {
     this.instancedGroup.add(
       this.instOakTrunks, this.instOakLeaves,
       this.instPineTrunks, this.instPineLeaves,
+      this.instCherryTrunks, this.instCherryLeaves,
+      this.instBirchTrunks, this.instBirchLeaves,
+      this.instMapleTrunks, this.instMapleLeaves,
+      this.instBerryBushes, this.instBerryOrnaments,
+      this.instRoseBushes, this.instRoseFlowers,
       this.instCacti, this.instWalls, this.instWoodWalls, this.instMixedWalls, this.instBoneWalls, this.instWallsStage1,
       this.instGatesClosed, this.instGatesOpen, this.instGatesStage1,
       ...this.instWarehouseWalls, ...this.instWarehouseRoofs,
@@ -4054,12 +4329,17 @@ export class RCT3DRenderer {
     switch (tileType) {
       case TILE_WATER: return 0.0;
       case TILE_SAND:
-      case TILE_ROAD_SAND: return 0.38;
+      case TILE_ROAD_SAND:
+      case TILE_ROAD_SAND_STONE: return 0.40;
       case TILE_FLOOR:
-      case TILE_ROAD_GRASS: return 1.0;
-      case TILE_STONE:
-      case TILE_ROAD_STONE: return 2.1;
-      case TILE_MOUNTAIN: return 3.6;
+      case TILE_ROAD_GRASS:
+      case TILE_ROAD_GRASS_STONE: return 1.10;
+      case TILE_HILL:
+      case TILE_ROAD_HILL:
+      case TILE_ROAD_HILL_STONE: return 2.30;
+      case TILE_STONE: return 3.80;
+      case TILE_MOUNTAIN: return 5.50;
+      case TILE_PEAK: return 7.50;
       default: return 0.0;
     }
   }
@@ -4070,20 +4350,15 @@ export class RCT3DRenderer {
     const t01 = this.getTileTypeAt(map, vx - 1, vy);
     const t11 = this.getTileTypeAt(map, vx, vy);
 
-    const h00 = this.getTileBaseHeight(t00);
-    const h10 = this.getTileBaseHeight(t10);
-    const h01 = this.getTileBaseHeight(t01);
-    const h11 = this.getTileBaseHeight(t11);
-
     if (t00 === TILE_WATER && t10 === TILE_WATER && t01 === TILE_WATER && t11 === TILE_WATER) {
       return 0.0;
     }
 
     const validHeights = [];
-    if (t00 !== TILE_WATER && t00 !== TILE_VOID) validHeights.push(h00);
-    if (t10 !== TILE_WATER && t10 !== TILE_VOID) validHeights.push(h10);
-    if (t01 !== TILE_WATER && t01 !== TILE_VOID) validHeights.push(h01);
-    if (t11 !== TILE_WATER && t11 !== TILE_VOID) validHeights.push(h11);
+    if (t00 !== TILE_WATER && t00 !== TILE_VOID) validHeights.push(this.getTileBaseHeight(t00));
+    if (t10 !== TILE_WATER && t10 !== TILE_VOID) validHeights.push(this.getTileBaseHeight(t10));
+    if (t01 !== TILE_WATER && t01 !== TILE_VOID) validHeights.push(this.getTileBaseHeight(t01));
+    if (t11 !== TILE_WATER && t11 !== TILE_VOID) validHeights.push(this.getTileBaseHeight(t11));
 
     if (validHeights.length === 0) return 0.0;
     return (validHeights.reduce((a, b) => a + b, 0)) / validHeights.length;
@@ -4099,16 +4374,18 @@ export class RCT3DRenderer {
     const t01 = this.getTileTypeAt(map, vx - 1, vy);
     const t11 = this.getTileTypeAt(map, vx, vy);
 
+    const isHighElev = (t) => (t === TILE_MOUNTAIN || t === TILE_PEAK || t === TILE_STONE || t === TILE_HILL);
+
     let higherNeighbors = 0;
-    if (t00 === TILE_MOUNTAIN || t00 === TILE_STONE) higherNeighbors++;
-    if (t10 === TILE_MOUNTAIN || t10 === TILE_STONE) higherNeighbors++;
-    if (t01 === TILE_MOUNTAIN || t01 === TILE_STONE) higherNeighbors++;
-    if (t11 === TILE_MOUNTAIN || t11 === TILE_STONE) higherNeighbors++;
+    if (isHighElev(t00)) higherNeighbors++;
+    if (isHighElev(t10)) higherNeighbors++;
+    if (isHighElev(t01)) higherNeighbors++;
+    if (isHighElev(t11)) higherNeighbors++;
 
     // Inward crevice / base of cliff receives natural ambient occlusion shading
-    if (higherNeighbors >= 3) return 0.72;
-    if (higherNeighbors === 2) return 0.82;
-    if (higherNeighbors === 1) return 0.91;
+    if (higherNeighbors >= 3) return 0.70;
+    if (higherNeighbors === 2) return 0.80;
+    if (higherNeighbors === 1) return 0.90;
     return 1.0;
   }
 
@@ -4797,12 +5074,17 @@ export class RCT3DRenderer {
       [TILE_FLOOR]: { pos: [], uvs: [], colors: [] },
       [TILE_SAND]: { pos: [], uvs: [], colors: [] },
       sandClean: { pos: [], uvs: [], colors: [] },
+      [TILE_HILL]: { pos: [], uvs: [], colors: [] },
       [TILE_STONE]: { pos: [], uvs: [], colors: [] },
       [TILE_MOUNTAIN]: { pos: [], uvs: [], colors: [] },
+      [TILE_PEAK]: { pos: [], uvs: [], colors: [] },
       [TILE_WATER]: { pos: [], uvs: [], colors: [] },
       [TILE_ROAD_GRASS]: { pos: [], uvs: [], colors: [] },
       [TILE_ROAD_SAND]: { pos: [], uvs: [], colors: [] },
-      [TILE_ROAD_STONE]: { pos: [], uvs: [], colors: [] }
+      [TILE_ROAD_HILL]: { pos: [], uvs: [], colors: [] },
+      [TILE_ROAD_GRASS_STONE]: { pos: [], uvs: [], colors: [] },
+      [TILE_ROAD_SAND_STONE]: { pos: [], uvs: [], colors: [] },
+      [TILE_ROAD_HILL_STONE]: { pos: [], uvs: [], colors: [] }
     };
 
     const gridLinePositions = [];
@@ -4821,6 +5103,11 @@ export class RCT3DRenderer {
     this.renderedMaxTy = clampedMaxTy;
 
     const lineElevOffset = 0.006;
+
+    const isWaterAt = (tx, ty) => {
+      if (tx < 0 || tx >= MAP_WIDTH || ty < 0 || ty >= MAP_HEIGHT) return true;
+      return map[ty * MAP_WIDTH + tx] === TILE_WATER;
+    };
 
     for (let ty = clampedMinTy; ty <= clampedMaxTy; ty++) {
       const yOffset = ty * MAP_WIDTH;
@@ -4916,7 +5203,7 @@ export class RCT3DRenderer {
         }
 
         // 3D Natural Grass Tufts (Clean, small, fine tufts with dense placement in 1P/3P)
-        if (tType === TILE_FLOOR) {
+        if (tType === TILE_FLOOR || tType === TILE_HILL) {
           if (!isPersp) {
             // Isometric view: classic 8% density
             if (shouldSpawnGrassTuft(tx, ty) && foliageCount < 1200) {
@@ -4931,7 +5218,7 @@ export class RCT3DRenderer {
             tHash = Math.imul(tHash ^ (tHash >>> 11), 892341233) >>> 0;
             const spawnChance = tHash % 100;
 
-            if (spawnChance < 75) {
+            if (spawnChance < (tType === TILE_HILL ? 70 : 80)) {
               const numTufts = (spawnChance < 30) ? 3 : ((spawnChance < 60) ? 2 : 1);
               for (let k = 0; k < numTufts; k++) {
                 if (foliageCount >= 5000) break;
@@ -4964,12 +5251,12 @@ export class RCT3DRenderer {
         }
 
         // 4-Sided Cliff Drop-walls (South, East, North, West) for full 360-degree visibility
-        const baseH = (tType === TILE_WATER) ? -0.4 : 0.0;
+        const baseH = (tType === TILE_WATER) ? -0.5 : 0.0;
         const cliffBaseAO = 0.65 * zoneMult;
         const cliffTopAO = 0.95 * zoneMult;
 
         // 1. South Face (+Y, at ty + 1, facing +Z)
-        if (ty === clampedMaxTy || map[(ty + 1) * MAP_WIDTH + tx] === TILE_WATER) {
+        if (ty === clampedMaxTy || isWaterAt(tx, ty + 1)) {
           bucket.pos.push(
             tx, baseH, ty + 1,
             tx + 1, baseH, ty + 1,
@@ -4991,7 +5278,7 @@ export class RCT3DRenderer {
         }
 
         // 2. East Face (+X, at tx + 1, facing +X)
-        if (tx === clampedMaxTx || map[yOffset + tx + 1] === TILE_WATER) {
+        if (tx === clampedMaxTx || isWaterAt(tx + 1, ty)) {
           bucket.pos.push(
             tx + 1, baseH, ty + 1,
             tx + 1, baseH, ty,
@@ -5013,7 +5300,7 @@ export class RCT3DRenderer {
         }
 
         // 3. North Face (-Y, at ty, facing -Z)
-        if (ty === clampedMinTy || map[(ty - 1) * MAP_WIDTH + tx] === TILE_WATER) {
+        if (ty === clampedMinTy || isWaterAt(tx, ty - 1)) {
           bucket.pos.push(
             tx + 1, baseH, ty,
             tx, baseH, ty,
@@ -5035,7 +5322,7 @@ export class RCT3DRenderer {
         }
 
         // 4. West Face (-X, at tx, facing -X)
-        if (tx === clampedMinTx || map[yOffset + tx - 1] === TILE_WATER) {
+        if (tx === clampedMinTx || isWaterAt(tx - 1, ty)) {
           bucket.pos.push(
             tx, baseH, ty,
             tx, baseH, ty + 1,
@@ -5072,7 +5359,7 @@ export class RCT3DRenderer {
       const mat = this.materials[matKey] || this.materials[TILE_FLOOR];
       const mesh = new THREE.Mesh(geom, mat);
       mesh.receiveShadow = true;
-      mesh.castShadow = false; // Ground plane receives shadows from creatures/buildings, avoiding duplicate shadow pass
+      mesh.castShadow = false;
 
       if (matKey === String(TILE_WATER)) {
         this.waterGroup.add(mesh);
@@ -5343,6 +5630,11 @@ export class RCT3DRenderer {
 
     let oakCount = 0;
     let pineCount = 0;
+    let cherryCount = 0;
+    let birchCount = 0;
+    let mapleCount = 0;
+    let berryBushCount = 0;
+    let roseBushCount = 0;
     let cactusCount = 0;
     let woodLogCount = 0;
     let stoneItemCount = 0;
@@ -5425,19 +5717,24 @@ export class RCT3DRenderer {
       const isDoor = !e.properties.brain && !isWarehouse && !isSlaughterhouse && !isKitchen && !isWell && !isArtisanHut && !isTorch && !isCampfire && !isRoad && !!e.properties.door;
 
       const isCactus = e.properties.species === "cactus" || e.properties.name?.toLowerCase().includes("cactus") || e.properties.name?.toLowerCase().includes("cacto");
-      const isTree = !isCactus && (e.properties.species === "oak" || e.properties.species === "pine" || e.properties.species === "willow" || e.properties.species === "tree" || !!e.properties.tree || (r.skin && r.skin.toLowerCase().includes("tree")));
+      const isCherry = e.properties.species === "cherry_blossom" || e.properties.name?.toLowerCase().includes("cerejeira") || e.properties.name?.toLowerCase().includes("sakura");
+      const isBirch = e.properties.species === "birch" || e.properties.name?.toLowerCase().includes("bétula") || e.properties.name?.toLowerCase().includes("betula");
+      const isMaple = e.properties.species === "maple" || e.properties.name?.toLowerCase().includes("bordo") || e.properties.name?.toLowerCase().includes("maple");
+      const isBerryBush = e.properties.species === "berry" || e.properties.name?.toLowerCase().includes("amora") || (e.properties.species === "bush" && !e.properties.name?.toLowerCase().includes("florido"));
+      const isRoseBush = e.properties.species === "rose_bush" || e.properties.name?.toLowerCase().includes("florido") || e.properties.name?.toLowerCase().includes("rose");
+      const isTree = !isCactus && !isBerryBush && !isRoseBush && (isCherry || isBirch || isMaple || e.properties.species === "oak" || e.properties.species === "pine" || e.properties.species === "willow" || e.properties.species === "tree" || !!e.properties.tree || (r.skin && r.skin.toLowerCase().includes("tree")));
       const isPine = isTree && (e.properties.species === "pine" || (r.skin && r.skin.toLowerCase().includes("pine")));
 
       const isWoodLog = !e.properties.brain && !isDoor && !isWarehouse && !isSlaughterhouse && !isKitchen && !isArtisanHut && !isTorch && !isCampfire && !isRoad && (e.properties.resourceType === "wood" || e.properties.name?.includes("Wood Log") || e.properties.name?.includes("Madeira") || r.skin === "Item_Wood.png");
       const isStoneItem = !e.properties.brain && !isDoor && !isWarehouse && !isSlaughterhouse && !isKitchen && !isArtisanHut && !isTorch && !isCampfire && !isRoad && (e.properties.resourceType === "stone" || e.properties.name?.includes("Stone Block") || e.properties.name?.includes("Pedra"));
-      const isHouse = !e.properties.brain && !isWoodLog && !isStoneItem && !isTree && !isCactus && !isWarehouse && !isSlaughterhouse && !isKitchen && !isWell && !isArtisanHut && !isTorch && !isCampfire && !isRoad && (!!e.properties.house || !!e.properties.leaderHouse || (e.properties.species === "structure" && (r.skin === "Overworld_House.png" || e.properties.name?.includes("Casa") || e.properties.name?.includes("Palácio") || e.properties.name?.includes("Ossuário") || e.properties.name?.includes("Castelo"))));
+      const isHouse = !e.properties.brain && !isWoodLog && !isStoneItem && !isTree && !isCactus && !isBerryBush && !isRoseBush && !isWarehouse && !isSlaughterhouse && !isKitchen && !isWell && !isArtisanHut && !isTorch && !isCampfire && !isRoad && (!!e.properties.house || !!e.properties.leaderHouse || (e.properties.species === "structure" && (r.skin === "Overworld_House.png" || e.properties.name?.includes("Casa") || e.properties.name?.includes("Palácio") || e.properties.name?.includes("Ossuário") || e.properties.name?.includes("Castelo"))));
       const isLeaderHouse = isHouse && (!!e.properties.leaderHouse || !!e.properties.house?.isLeaderHouse || e.properties.name?.includes("Palácio") || e.properties.name?.includes("Citadel"));
-      const isWall = !e.properties.brain && !isDoor && !isHouse && !isWarehouse && !isSlaughterhouse && !isKitchen && !isWell && !isArtisanHut && !isTorch && !isCampfire && !isRoad && !isWoodLog && !isStoneItem && !isTree && !isCactus && (r.skin?.startsWith("Wall_") || e.properties.name?.includes("Muralha") || e.properties.name?.includes("Paliçada") || e.properties.name?.includes("Muro") || (e.properties.structure && !e.properties.edible && !e.properties.resourceType));
+      const isWall = !e.properties.brain && !isDoor && !isHouse && !isWarehouse && !isSlaughterhouse && !isKitchen && !isWell && !isArtisanHut && !isTorch && !isCampfire && !isRoad && !isWoodLog && !isStoneItem && !isTree && !isCactus && !isBerryBush && !isRoseBush && (r.skin?.startsWith("Wall_") || e.properties.name?.includes("Muralha") || e.properties.name?.includes("Paliçada") || e.properties.name?.includes("Muro") || (e.properties.structure && !e.properties.edible && !e.properties.resourceType));
 
       const isBuilding = isHouse || isWall || isDoor || isWarehouse || isSlaughterhouse || isKitchen || isWell || isArtisanHut;
-      const isPlantOrItem = isTree || isCactus || isWoodLog || isStoneItem || isTorch || isCampfire || isRoad;
+      const isPlantOrItem = isTree || isCactus || isBerryBush || isRoseBush || isWoodLog || isStoneItem || isTorch || isCampfire || isRoad;
 
-      const isItem = !e.properties.brain && !isBuilding && !isTree && !isCactus && !isWoodLog && !isStoneItem && !isTorch && !isCampfire && !isRoad;
+      const isItem = !e.properties.brain && !isBuilding && !isTree && !isCactus && !isBerryBush && !isRoseBush && !isWoodLog && !isStoneItem && !isTorch && !isCampfire && !isRoad;
       let surfaceH;
       if (isHouse) {
         const h = e.properties?.house;
@@ -5466,6 +5763,51 @@ export class RCT3DRenderer {
         mMatrix.makeRotationY(rotY);
         mMatrix.setPosition(e.x + 0.5, surfaceH, e.y + 0.5);
         this.instStoneItems.setMatrixAt(stoneItemCount++, mMatrix);
+      }
+      // --- 3D CHERRY BLOSSOM TREES (Sakura) ---
+      else if (isCherry && cherryCount < this.maxInstances) {
+        const rotY = (((Math.imul(Math.floor(e.x) ^ Math.imul(Math.floor(e.y), 62917), 982451653) >>> 0) % 628) / 100.0);
+        mMatrix.makeRotationY(rotY);
+        mMatrix.setPosition(e.x + 0.5, surfaceH, e.y + 0.5);
+        this.instCherryTrunks.setMatrixAt(cherryCount, mMatrix);
+        this.instCherryLeaves.setMatrixAt(cherryCount, mMatrix);
+        cherryCount++;
+      }
+      // --- 3D BIRCH TREES (Bétula Dourada) ---
+      else if (isBirch && birchCount < this.maxInstances) {
+        const rotY = (((Math.imul(Math.floor(e.x) ^ Math.imul(Math.floor(e.y), 31849), 428931173) >>> 0) % 628) / 100.0);
+        mMatrix.makeRotationY(rotY);
+        mMatrix.setPosition(e.x + 0.5, surfaceH, e.y + 0.5);
+        this.instBirchTrunks.setMatrixAt(birchCount, mMatrix);
+        this.instBirchLeaves.setMatrixAt(birchCount, mMatrix);
+        birchCount++;
+      }
+      // --- 3D MAPLE TREES (Bordo Carmesim) ---
+      else if (isMaple && mapleCount < this.maxInstances) {
+        const rotY = (((Math.imul(Math.floor(e.x) ^ Math.imul(Math.floor(e.y), 82349), 619284711) >>> 0) % 628) / 100.0);
+        mMatrix.makeRotationY(rotY);
+        mMatrix.setPosition(e.x + 0.5, surfaceH, e.y + 0.5);
+        this.instMapleTrunks.setMatrixAt(mapleCount, mMatrix);
+        this.instMapleLeaves.setMatrixAt(mapleCount, mMatrix);
+        mapleCount++;
+      }
+      // --- 3D BERRY BUSHES ---
+      else if (isBerryBush && berryBushCount < this.maxInstances) {
+        const rotY = (((Math.imul(Math.floor(e.x) ^ Math.imul(Math.floor(e.y), 19849), 2654435761) >>> 0) % 628) / 100.0);
+        mMatrix.makeRotationY(rotY);
+        mMatrix.setPosition(e.x + 0.5, surfaceH, e.y + 0.5);
+        this.instBerryBushes.setMatrixAt(berryBushCount, mMatrix);
+        this.instBerryOrnaments.setMatrixAt(berryBushCount, mMatrix);
+        berryBushCount++;
+      }
+      // --- 3D ROSE BUSHES ---
+      else if (isRoseBush && roseBushCount < this.maxInstances) {
+        const rotY = (((Math.imul(Math.floor(e.x) ^ Math.imul(Math.floor(e.y), 44558), 198491317) >>> 0) % 628) / 100.0);
+        mMatrix.makeRotationY(rotY);
+        mMatrix.setPosition(e.x + 0.5, surfaceH, e.y + 0.5);
+        this.instRoseBushes.setMatrixAt(roseBushCount, mMatrix);
+        this.instRoseFlowers.setMatrixAt(roseBushCount, mMatrix);
+        roseBushCount++;
       }
       // --- 3D OAK TREES (Natural Random Rotation) ---
       else if (isTree && !isPine && oakCount < this.maxInstances) {
@@ -6317,6 +6659,31 @@ export class RCT3DRenderer {
     this.instPineTrunks.instanceMatrix.needsUpdate = true;
     this.instPineLeaves.count = pineCount;
     this.instPineLeaves.instanceMatrix.needsUpdate = true;
+
+    this.instCherryTrunks.count = cherryCount;
+    this.instCherryTrunks.instanceMatrix.needsUpdate = true;
+    this.instCherryLeaves.count = cherryCount;
+    this.instCherryLeaves.instanceMatrix.needsUpdate = true;
+
+    this.instBirchTrunks.count = birchCount;
+    this.instBirchTrunks.instanceMatrix.needsUpdate = true;
+    this.instBirchLeaves.count = birchCount;
+    this.instBirchLeaves.instanceMatrix.needsUpdate = true;
+
+    this.instMapleTrunks.count = mapleCount;
+    this.instMapleTrunks.instanceMatrix.needsUpdate = true;
+    this.instMapleLeaves.count = mapleCount;
+    this.instMapleLeaves.instanceMatrix.needsUpdate = true;
+
+    this.instBerryBushes.count = berryBushCount;
+    this.instBerryBushes.instanceMatrix.needsUpdate = true;
+    this.instBerryOrnaments.count = berryBushCount;
+    this.instBerryOrnaments.instanceMatrix.needsUpdate = true;
+
+    this.instRoseBushes.count = roseBushCount;
+    this.instRoseBushes.instanceMatrix.needsUpdate = true;
+    this.instRoseFlowers.count = roseBushCount;
+    this.instRoseFlowers.instanceMatrix.needsUpdate = true;
 
     this.instCacti.count = cactusCount;
     this.instCacti.instanceMatrix.needsUpdate = true;

@@ -2,7 +2,16 @@
 // Brutopolis - Web Worker Simulation Engine
 // =============================================================================
 
-import { World } from "./world.js";
+import {
+  World,
+  TILE_FLOOR,
+  TILE_MOUNTAIN,
+  TILE_WATER,
+  TILE_SAND,
+  TILE_STONE,
+  TILE_HILL,
+  TILE_PEAK
+} from "./world.js";
 import {
   createEntity,
   tickEntities,
@@ -64,6 +73,11 @@ import {
   createWoodItem,
   createStoneItem,
   createOakTree,
+  createCherryBlossomTree,
+  createBirchTree,
+  createMapleTree,
+  createBerryBush,
+  createRoseBush,
   createWillowTree,
   createPineTree,
   createCactus,
@@ -329,19 +343,24 @@ function generateConfiguredWorld(config) {
   }
 
   const floraCount = (base) => Math.max(1, Math.round(base * plantMult));
-  spawnRandomGlobal(floraCount(95), createOakTree, (x, y) => inBounds(x, y) && world.getTile(x, y) === 0 && !isRoadTile(x, y), spawnBounds);
-  spawnRandomGlobal(floraCount(75), createWillowTree, (x, y) => inBounds(x, y) && (world.getTile(x, y) === 0 || world.getTile(x, y) === 3) && !isRoadTile(x, y), spawnBounds);
-  spawnRandomGlobal(floraCount(70), createCactus, (x, y) => inBounds(x, y) && world.getTile(x, y) === 3 && !isRoadTile(x, y), spawnBounds);
-  spawnRandomGlobal(floraCount(60), createAlpineShrub, (x, y) => inBounds(x, y) && (world.getTile(x, y) === 4 || world.getTile(x, y) === 1) && !isRoadTile(x, y), spawnBounds);
-  spawnRandomGlobal(floraCount(65), createPineTree, (x, y) => inBounds(x, y) && (world.getTile(x, y) === 4 || world.getTile(x, y) === 0) && !isRoadTile(x, y), spawnBounds);
-  spawnRandomGlobal(floraCount(90), createWaterLily, (x, y) => inBounds(x, y) && world.getTile(x, y) === 2, spawnBounds);
-  spawnRandomGlobal(floraCount(110), createSeaweed, (x, y) => inBounds(x, y) && world.getTile(x, y) === 2, spawnBounds);
+  spawnRandomGlobal(floraCount(85), createOakTree, (x, y) => inBounds(x, y) && (world.getTile(x, y) === TILE_FLOOR || world.getTile(x, y) === TILE_HILL) && !isRoadTile(x, y), spawnBounds);
+  spawnRandomGlobal(floraCount(60), createCherryBlossomTree, (x, y) => inBounds(x, y) && (world.getTile(x, y) === TILE_FLOOR || world.getTile(x, y) === TILE_HILL) && !isRoadTile(x, y), spawnBounds);
+  spawnRandomGlobal(floraCount(65), createBirchTree, (x, y) => inBounds(x, y) && (world.getTile(x, y) === TILE_FLOOR || world.getTile(x, y) === TILE_HILL) && !isRoadTile(x, y), spawnBounds);
+  spawnRandomGlobal(floraCount(55), createMapleTree, (x, y) => inBounds(x, y) && (world.getTile(x, y) === TILE_HILL || world.getTile(x, y) === TILE_STONE) && !isRoadTile(x, y), spawnBounds);
+  spawnRandomGlobal(floraCount(50), createBerryBush, (x, y) => inBounds(x, y) && (world.getTile(x, y) === TILE_FLOOR || world.getTile(x, y) === TILE_HILL) && !isRoadTile(x, y), spawnBounds);
+  spawnRandomGlobal(floraCount(45), createRoseBush, (x, y) => inBounds(x, y) && (world.getTile(x, y) === TILE_FLOOR || world.getTile(x, y) === TILE_HILL) && !isRoadTile(x, y), spawnBounds);
+  spawnRandomGlobal(floraCount(65), createWillowTree, (x, y) => inBounds(x, y) && (world.getTile(x, y) === TILE_FLOOR || world.getTile(x, y) === TILE_SAND) && !isRoadTile(x, y), spawnBounds);
+  spawnRandomGlobal(floraCount(60), createCactus, (x, y) => inBounds(x, y) && world.getTile(x, y) === TILE_SAND && !isRoadTile(x, y), spawnBounds);
+  spawnRandomGlobal(floraCount(55), createAlpineShrub, (x, y) => inBounds(x, y) && (world.getTile(x, y) === TILE_STONE || world.getTile(x, y) === TILE_MOUNTAIN || world.getTile(x, y) === TILE_PEAK) && !isRoadTile(x, y), spawnBounds);
+  spawnRandomGlobal(floraCount(65), createPineTree, (x, y) => inBounds(x, y) && (world.getTile(x, y) === TILE_HILL || world.getTile(x, y) === TILE_STONE || world.getTile(x, y) === TILE_MOUNTAIN || world.getTile(x, y) === TILE_PEAK) && !isRoadTile(x, y), spawnBounds);
+  spawnRandomGlobal(floraCount(90), createWaterLily, (x, y) => inBounds(x, y) && world.getTile(x, y) === TILE_WATER, spawnBounds);
+  spawnRandomGlobal(floraCount(110), createSeaweed, (x, y) => inBounds(x, y) && world.getTile(x, y) === TILE_WATER, spawnBounds);
 
   if (!isTitleScreen) {
-    spawnRandomGlobal(floraCount(10), (x, y) => createSeedEntity(x, y, "large", "oak"), (x, y) => inBounds(x, y) && world.getTile(x, y) === 0 && !isRoadTile(x, y), spawnBounds);
+    spawnRandomGlobal(floraCount(10), (x, y) => createSeedEntity(x, y, "large", "oak"), (x, y) => inBounds(x, y) && (world.getTile(x, y) === TILE_FLOOR || world.getTile(x, y) === TILE_HILL) && !isRoadTile(x, y), spawnBounds);
     spawnRandomGlobal(floraCount(10), (x, y) => createFruit(x, y, "large", "oak"), (x, y) => inBounds(x, y) && world.isWalkable(x, y) && !isRoadTile(x, y), spawnBounds);
-    spawnRandomGlobal(floraCount(12), createWoodItem, (x, y) => inBounds(x, y) && world.getTile(x, y) === 0 && !isRoadTile(x, y), spawnBounds);
-    spawnRandomGlobal(floraCount(12), createStoneItem, (x, y) => inBounds(x, y) && (world.getTile(x, y) === 4 || world.getTile(x, y) === 1) && !isRoadTile(x, y), spawnBounds);
+    spawnRandomGlobal(floraCount(12), createWoodItem, (x, y) => inBounds(x, y) && (world.getTile(x, y) === TILE_FLOOR || world.getTile(x, y) === TILE_HILL) && !isRoadTile(x, y), spawnBounds);
+    spawnRandomGlobal(floraCount(12), createStoneItem, (x, y) => inBounds(x, y) && (world.getTile(x, y) === TILE_STONE || world.getTile(x, y) === TILE_MOUNTAIN || world.getTile(x, y) === TILE_PEAK) && !isRoadTile(x, y), spawnBounds);
   }
 
   let centerPlayX = minX + Math.floor(genWidth / 2);

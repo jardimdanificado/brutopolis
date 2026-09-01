@@ -3,7 +3,23 @@
 // =============================================================================
 
 import { ASSET_DATA } from "./assets_data.js";
-import { MAP_WIDTH, MAP_HEIGHT, TILE_FLOOR, TILE_MOUNTAIN, TILE_WATER, TILE_SAND, TILE_STONE, TILE_ROAD_GRASS, TILE_ROAD_SAND, TILE_ROAD_STONE } from "./world_gen.js";
+import {
+  MAP_WIDTH,
+  MAP_HEIGHT,
+  TILE_FLOOR,
+  TILE_MOUNTAIN,
+  TILE_WATER,
+  TILE_SAND,
+  TILE_STONE,
+  TILE_ROAD_GRASS,
+  TILE_ROAD_SAND,
+  TILE_ROAD_GRASS_STONE,
+  TILE_HILL,
+  TILE_PEAK,
+  TILE_ROAD_SAND_STONE,
+  TILE_ROAD_HILL,
+  TILE_ROAD_HILL_STONE
+} from "./world_gen.js";
 import { globalWallCoords, resolveWallSkin, getEntitiesInViewport } from "./engine.js";
 import { getClanBlueprintTiles } from "./properties.js";
 
@@ -472,50 +488,47 @@ export class Renderer {
 
           // Animacao de onda fluida independente da velocidade da simulacao
           const spatialFreq = 0.8;
-          
           const wave = Math.sin(this.waterTime * 2.0 + tx * spatialFreq + ty * (spatialFreq * 0.6)) * 0.1;
           const waveScale = Math.max(0.5, Math.min(1.5, 1.0 + wave));
 
-          fg = rgba32(
-            Math.round(80 * waveScale),
-            Math.round(150 * waveScale),
-            Math.round(240 * waveScale)
-          );
+          fg = rgba32(Math.round(80 * waveScale), Math.round(150 * waveScale), Math.round(240 * waveScale));
           bg = colWaterBg;
         } else if (t === TILE_FLOOR) {
-          // Grama sem efeito
           tex = texFloor;
           fg = colFloorFg;
           bg = colFloorBg;
+        } else if (t === TILE_HILL) {
+          tex = findTexture("Feature_Grass.png");
+          fg = rgba32(55, 95, 40);
+          bg = rgba32(35, 65, 25);
         } else if (t === TILE_SAND) {
           tex = texSand;
           fg = colSandFg;
           bg = colSandBg;
-        } else if (t === TILE_MOUNTAIN) {
-          tex = texMountain;
-          fg = colMountainFg;
-          bg = colMountainBg;
         } else if (t === TILE_STONE) {
           tex = texStone;
           fg = colStoneFg;
           bg = colStoneBg;
-        } else if (t === TILE_ROAD_GRASS) {
+        } else if (t === TILE_MOUNTAIN) {
+          tex = texMountain;
+          fg = colMountainFg;
+          bg = colMountainBg;
+        } else if (t === TILE_PEAK) {
+          tex = findTexture("Feature_Stone_C.png");
+          fg = rgba32(170, 170, 180);
+          bg = rgba32(95, 95, 105);
+        } else if (t === TILE_ROAD_GRASS || t === TILE_ROAD_SAND || t === TILE_ROAD_HILL) {
           tex = findTexture("Feature_Stone_B.png");
           fg = rgba32(155, 118, 83);
           bg = rgba32(100, 75, 48);
-        } else if (t === TILE_ROAD_SAND) {
-          tex = findTexture("Feature_Pebbles.png");
-          fg = rgba32(200, 160, 96);
-          bg = rgba32(140, 105, 55);
-        } else if (t === TILE_ROAD_STONE) {
+        } else if (t === TILE_ROAD_GRASS_STONE || t === TILE_ROAD_SAND_STONE || t === TILE_ROAD_HILL_STONE) {
           tex = findTexture("Feature_Brick_A.png");
           fg = rgba32(150, 150, 160);
           bg = rgba32(80, 80, 90);
         }
 
-        // Most grass and sand tiles are intentionally kept clean. A small,
-        // coordinate-stable portion keeps the full sprite for visual texture.
-        if ((t === TILE_FLOOR || t === TILE_SAND) && !shouldRenderTerrainSprite(tx, ty, t)) {
+        // Most grass and hill tiles are kept clean unless sampled
+        if ((t === TILE_FLOOR || t === TILE_HILL || t === TILE_SAND) && !shouldRenderTerrainSprite(tx, ty, t)) {
           tex = null;
           fg = bg;
         }

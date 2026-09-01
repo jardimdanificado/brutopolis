@@ -5,15 +5,20 @@
 export const MAP_WIDTH = 1024;
 export const MAP_HEIGHT = 1024;
 
-export const TILE_FLOOR = 0;       // Fertile Soil / Grassland
-export const TILE_MOUNTAIN = 1;    // Mountain Peak
-export const TILE_WATER = 2;       // Ocean Water / Lakes
-export const TILE_SAND = 3;        // Sand / Coastal Beach / Desert
-export const TILE_STONE = 4;       // Rocky Ground / Mountain Foothill
+export const TILE_FLOOR = 0;              // Fertile Grassland / Lowland Plains (h = 1.10)
+export const TILE_MOUNTAIN = 1;           // Mountain Massif (h = 5.50 - NO ROADS)
+export const TILE_WATER = 2;              // Single Water / Ocean / Lakes (h = 0.0 - NO ROADS)
+export const TILE_SAND = 3;               // Sand / Beach Dunes (h = 0.40)
+export const TILE_STONE = 4;              // Rocky Ground / Mountain Foothills (h = 3.80 - NO ROADS)
 export const TILE_VOID = 5;
-export const TILE_ROAD_GRASS = 6;  // Dirt Road / Packed Soil Track (Grassland)
-export const TILE_ROAD_SAND = 7;   // Sand Paved Track (Dunes / Beach)
-export const TILE_ROAD_STONE = 8;  // Cobblestone Highway (Rocky Foothills / Mountain)
+export const TILE_ROAD_GRASS = 6;         // Plains Dirt Road (h = 1.10)
+export const TILE_ROAD_SAND = 7;          // Sand Dirt Road (h = 0.40)
+export const TILE_ROAD_GRASS_STONE = 8;   // Plains Stone Brick Road (h = 1.10)
+export const TILE_HILL = 9;               // Highland Earth / Colinas / Montinhas (h = 2.30)
+export const TILE_PEAK = 10;              // High Mountain Peak / Cume (h = 7.50 - NO ROADS)
+export const TILE_ROAD_SAND_STONE = 11;   // Sand Stone Brick Road (h = 0.40)
+export const TILE_ROAD_HILL = 12;         // Hill Dirt Road (h = 2.30)
+export const TILE_ROAD_HILL_STONE = 13;   // Hill Stone Brick Road (h = 2.30)
 
 export const MAP_PRESET_ARCHIPELAGO = {
   seed: 0,
@@ -147,14 +152,16 @@ function ca_smooth(map, iterations) {
           for (let dx = -1; dx <= 1; dx++) {
             const nx = x + dx;
             if (nx < 0 || nx >= MAP_WIDTH) continue;
-            if (map[nyOffset + nx] !== TILE_WATER) land++;
+            const t = map[nyOffset + nx];
+            if (t !== TILE_WATER) land++;
           }
         }
         const idx = yOffset + x;
-        if (map[idx] !== TILE_WATER) {
-          tmp_ca[idx] = land >= 4 ? map[idx] : TILE_WATER;
+        const cur = map[idx];
+        if (cur !== TILE_WATER) {
+          tmp_ca[idx] = land >= 4 ? cur : TILE_WATER;
         } else {
-          tmp_ca[idx] = land >= 6 ? TILE_FLOOR : TILE_WATER;
+          tmp_ca[idx] = land >= 6 ? TILE_FLOOR : cur;
         }
       }
     }
@@ -168,7 +175,7 @@ export function world_gen_is_walkable(map, x, y, move_type = 1) {
   if (t === TILE_VOID) return false;
   if (move_type === 3) return true; // Fly
   if (move_type === 2) return t === TILE_WATER; // Aquatic
-  if (move_type === 1) return t === TILE_FLOOR || t === TILE_SAND || t === TILE_STONE || (t >= TILE_ROAD_GRASS && t <= TILE_ROAD_STONE); // Terrestrial (walks on land)
+  if (move_type === 1) return t !== TILE_WATER; // Terrestrial
   return false;
 }
 
@@ -217,14 +224,27 @@ export function world_gen_generate(map, config, outCenter = { x: 256, y: 256 }) 
     }
   }
 
+  // Broad grassland plains cover the majority of land, with gentle rolling hills,
+  // rocky foothills around mountain ranges, and high summits only at the peaks.
   for (let y = 0; y < MAP_HEIGHT; y++) {
     const yOffset = y * MAP_WIDTH;
     for (let x = 0; x < MAP_WIDTH; x++) {
       const h = s_hmap[yOffset + x];
       const idx = yOffset + x;
-      if (h > cfg.mountain_threshold) map[idx] = TILE_MOUNTAIN;
-      else if (h > cfg.water_threshold) map[idx] = TILE_FLOOR;
-      else map[idx] = TILE_WATER;
+
+      if (h < cfg.water_threshold) {
+        map[idx] = TILE_WATER;
+      } else if (h >= 0.88) {
+        map[idx] = TILE_PEAK;     // Rare High Mountain Peak (h = 7.50)
+      } else if (h >= 0.76) {
+        map[idx] = TILE_MOUNTAIN; // Mountain Massif (h = 5.50)
+      } else if (h >= 0.66) {
+        map[idx] = TILE_STONE;    // Rocky Foothills (h = 3.80)
+      } else if (h >= 0.50) {
+        map[idx] = TILE_HILL;     // Rolling Hills / Montinhas (h = 2.30)
+      } else {
+        map[idx] = TILE_FLOOR;    // Broad Fertile Grass Plains (h = 1.10)
+      }
     }
   }
 
@@ -232,25 +252,7 @@ export function world_gen_generate(map, config, outCenter = { x: 256, y: 256 }) 
     ca_smooth(map, cfg.ca_smooth_iterations);
   }
 
-  // 2. Generate Random Desert Sand Bands (arid regions)
-  for (let y = 0; y < MAP_HEIGHT; y++) {
-    const yOffset = y * MAP_WIDTH;
-    for (let x = 0; x < MAP_WIDTH; x++) {
-      const idx = yOffset + x;
-      if (map[idx] === TILE_FLOOR) {
-        const nx = x * 0.015 + 42.0;
-        const ny = y * 0.015 + 88.0;
-        const desert_noise = fbm(nx, ny, 3);
-        if (desert_noise > 0.62) {
-          map[idx] = TILE_SAND;
-        }
-      }
-    }
-  }
-
-  // 3. Post-process Biome Borders:
-  // - Water edges -> Beach SAND
-  // - Mountain edges -> Rocky STONE
+  // 2. Post-process Biome Borders: water edges receive natural beach sand
   tmp_ca.set(map);
 
   for (let y = 1; y < MAP_HEIGHT - 1; y++) {
@@ -258,7 +260,7 @@ export function world_gen_generate(map, config, outCenter = { x: 256, y: 256 }) 
     for (let x = 1; x < MAP_WIDTH - 1; x++) {
       const cur = tmp_ca[yOffset + x];
       const idx = yOffset + x;
-      if (cur === TILE_FLOOR || cur === TILE_STONE) {
+      if (cur === TILE_FLOOR || cur === TILE_HILL) {
         let near_water = false;
         for (let dy = -1; dy <= 1 && !near_water; dy++) {
           const nyOffset = (y + dy) * MAP_WIDTH;
@@ -271,23 +273,6 @@ export function world_gen_generate(map, config, outCenter = { x: 256, y: 256 }) 
         }
         if (near_water) {
           map[idx] = TILE_SAND;
-          continue;
-        }
-      }
-
-      if (cur === TILE_FLOOR) {
-        let near_mountain = false;
-        for (let dy = -1; dy <= 1 && !near_mountain; dy++) {
-          const nyOffset = (y + dy) * MAP_WIDTH;
-          for (let dx = -1; dx <= 1; dx++) {
-            if (tmp_ca[nyOffset + x + dx] === TILE_MOUNTAIN) {
-              near_mountain = true;
-              break;
-            }
-          }
-        }
-        if (near_mountain) {
-          map[idx] = TILE_STONE;
         }
       }
     }

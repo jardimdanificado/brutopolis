@@ -1,5 +1,5 @@
 import { createEntity, getEntityById, entityRegistry, currentTick, getEntitiesInRadius, findEntityInRadius, hasEntityInRadius, findClosestEntityInRadius, forEachEntityInRadius, countEntitiesInRadius, getEntityAtTile, getEntityAtTileByProp, setSpatialZoneSize, tileEntityMap, globalWallCoords, globalRoadCoords, getTileKey, registerEntitySpatial, dismemberCorpse, createCorpseEntity } from "./engine.js";
-import { MAP_WIDTH, MAP_HEIGHT, TILE_FLOOR, TILE_MOUNTAIN, TILE_WATER, TILE_SAND, TILE_STONE, TILE_VOID, TILE_ROAD_GRASS, TILE_ROAD_SAND, TILE_ROAD_STONE } from "./world_gen.js";
+import { MAP_WIDTH, MAP_HEIGHT, TILE_FLOOR, TILE_MOUNTAIN, TILE_WATER, TILE_SAND, TILE_STONE, TILE_VOID, TILE_ROAD_GRASS, TILE_ROAD_SAND, TILE_ROAD_GRASS_STONE, TILE_HILL, TILE_PEAK, TILE_ROAD_SAND_STONE, TILE_ROAD_HILL, TILE_ROAD_HILL_STONE } from "./world_gen.js";
 import {
   recordWorldEvent,
   allEvents,
@@ -52,7 +52,7 @@ export function isLandTile(x, y) {
   const h = curW.height || MAP_HEIGHT;
   if (x < 0 || x >= w || y < 0 || y >= h) return false;
   const t = curW.getTile ? curW.getTile(x, y) : (curW.map ? curW.map[y * w + x] : 0);
-  return t === 0 || t === 3 || t === 4 || (t >= TILE_ROAD_GRASS && t <= TILE_ROAD_STONE); // Fertile Floor, Sand, Stone, and all Road tiles
+  return t !== TILE_WATER && t !== TILE_VOID;
 }
 
 // Configurable macro-chunk zone size (tiles per zone side)
@@ -1307,18 +1307,61 @@ export function createWaterWellEntity(x, y, group = null) {
 
 /**
  * Road / Paved Street / Bridge Construction
- * Directly sets road terrain tiles into world.map without creating entity overhead.
+ */
+export function isDirtRoadTile(t) {
+  return t === TILE_ROAD_GRASS || t === TILE_ROAD_SAND || t === TILE_ROAD_HILL;
+}
+
+export function isStoneRoadTile(t) {
+  return t === TILE_ROAD_GRASS_STONE || t === TILE_ROAD_SAND_STONE || t === TILE_ROAD_HILL_STONE;
+}
+
+export function isRoadTile(x, y) {
+  const curW = getSimWorld();
+  if (curW) {
+    const t = curW.getTile ? curW.getTile(x, y) : (curW.map ? curW.map[y * (curW.width || MAP_WIDTH) + x] : 0);
+    if (isDirtRoadTile(t) || isStoneRoadTile(t)) return true;
+  }
+  return globalRoadCoords.has(getTileKey(x, y));
+}
+
+export function isRoadEligibleTerrain(t) {
+  return t === TILE_FLOOR || t === TILE_SAND || t === TILE_HILL ||
+         isDirtRoadTile(t) || isStoneRoadTile(t);
+}
+
+export function getDirtRoadTileForTerrain(t) {
+  if (t === TILE_SAND || t === TILE_ROAD_SAND || t === TILE_ROAD_SAND_STONE) return TILE_ROAD_SAND;
+  if (t === TILE_HILL || t === TILE_ROAD_HILL || t === TILE_ROAD_HILL_STONE) return TILE_ROAD_HILL;
+  if (t === TILE_FLOOR || t === TILE_ROAD_GRASS || t === TILE_ROAD_GRASS_STONE) return TILE_ROAD_GRASS;
+  return null; // Mountain, Stone, Peak, Water, Void do NOT support roads!
+}
+
+export function getStoneRoadTileForTerrain(t) {
+  if (t === TILE_SAND || t === TILE_ROAD_SAND || t === TILE_ROAD_SAND_STONE) return TILE_ROAD_SAND_STONE;
+  if (t === TILE_HILL || t === TILE_ROAD_HILL || t === TILE_ROAD_HILL_STONE) return TILE_ROAD_HILL_STONE;
+  if (t === TILE_FLOOR || t === TILE_ROAD_GRASS || t === TILE_ROAD_GRASS_STONE) return TILE_ROAD_GRASS_STONE;
+  return null;
+}
+
+export function getNaturalTileForRoad(t) {
+  if (t === TILE_ROAD_SAND || t === TILE_ROAD_SAND_STONE) return TILE_SAND;
+  if (t === TILE_ROAD_HILL || t === TILE_ROAD_HILL_STONE) return TILE_HILL;
+  if (t === TILE_ROAD_GRASS || t === TILE_ROAD_GRASS_STONE) return TILE_FLOOR;
+  return TILE_FLOOR;
+}
+
+/**
+ * Directly sets dirt road terrain tiles into world.map without creating entity overhead.
  */
 export function createRoadEntity(x, y, group = null) {
   const curW = getSimWorld();
   if (curW) {
     const curTile = curW.getTile ? curW.getTile(x, y) : (curW.map ? curW.map[y * (curW.width || MAP_WIDTH) + x] : 0);
-    if (curTile === 2 || curTile === 5) return null; // No roads on water or void
+    if (!isRoadEligibleTerrain(curTile)) return null;
 
-    let roadTile = TILE_ROAD_GRASS;
-    if (curTile === 3) roadTile = TILE_ROAD_SAND;
-    else if (curTile === 4 || curTile === 1) roadTile = TILE_ROAD_STONE;
-    else roadTile = TILE_ROAD_GRASS;
+    const roadTile = getDirtRoadTileForTerrain(curTile);
+    if (!roadTile) return null;
 
     if (curW.setTile) {
       curW.setTile(x, y, roadTile);
@@ -1338,15 +1381,6 @@ export function createRoadEntity(x, y, group = null) {
 
   globalRoadCoords.add(getTileKey(x, y));
   return null;
-}
-
-export function isRoadTile(x, y) {
-  const curW = getSimWorld();
-  if (curW) {
-    const t = curW.getTile ? curW.getTile(x, y) : (curW.map ? curW.map[y * (curW.width || MAP_WIDTH) + x] : 0);
-    if (t >= TILE_ROAD_GRASS && t <= TILE_ROAD_STONE) return true;
-  }
-  return globalRoadCoords.has(getTileKey(x, y));
 }
 
 /**
@@ -3010,15 +3044,10 @@ export function findOrganicLandPath(startX, startY, targetX, targetY, world, min
       if (closedSet.has(nKey)) continue;
 
       const t = world.getTile(nx, ny);
-      // Strictly avoid water and void! 100% dry land pathing
-      if (t === 2 || t === 5) continue;
+      // Strictly avoid water, void, mountain, peak, and stone! Roads only on Plains, Sand, Hills
+      if (t === 2 || t === 5 || t === 1 || t === 10 || t === 4) continue;
 
       let moveCost = 1.0;
-      if (t === 1) {
-        moveCost += 3.5;
-      } else if (t === 4) {
-        moveCost += 1.0;
-      }
 
       // Strong penalty for tiles touching or near water borders (steers roads far inland away from coasts/rivers)
       let waterDistPenalty = 0;
@@ -3107,7 +3136,7 @@ export function generateWorldRoadNetwork(world, minX, maxX, minY, maxY, sz = 8, 
             const hy = midY + dy;
             if (hx >= cellMinX + 2 && hx < cellMaxX - 2 && hy >= cellMinY + 2 && hy < cellMaxY - 2) {
               const t = world.getTile(hx, hy);
-              if (t === 0 || t === 3 || t === 4) { // Walkable dry land only
+              if (t === 0 || t === 3 || t === 9) { // Plains, Sand, Hills only
                 let tooClose = false;
                 for (const existing of hubNodes) {
                   if (Math.abs(existing.x - hx) + Math.abs(existing.y - hy) < minHubDist) {
@@ -3132,7 +3161,7 @@ export function generateWorldRoadNetwork(world, minX, maxX, minY, maxY, sz = 8, 
             const ty = bestHub.y + dy;
             if (tx >= minX && tx < maxX && ty >= minY && ty < maxY) {
               const t = world.getTile(tx, ty);
-              if (t === 0 || t === 3 || t === 4) landScore++;
+              if (t === 0 || t === 3 || t === 9) landScore++;
             }
           }
         }
@@ -3148,7 +3177,7 @@ export function generateWorldRoadNetwork(world, minX, maxX, minY, maxY, sz = 8, 
   function addRoadTile(x, y) {
     if (x < minX || x >= maxX || y < minY || y >= maxY) return;
     const t = world.getTile ? world.getTile(x, y) : (world.map ? world.map[y * (world.width || 1024) + x] : 0);
-    if (t === 2 || t === 5) return;
+    if (!isRoadEligibleTerrain(t)) return;
 
     if (entities && entities.length > 0) {
       for (let i = entities.length - 1; i >= 0; i--) {
@@ -3161,15 +3190,8 @@ export function generateWorldRoadNetwork(world, minX, maxX, minY, maxY, sz = 8, 
       }
     }
 
-    let roadTile = TILE_ROAD_GRASS;
-    if (t === 3) {
-      roadTile = TILE_ROAD_SAND;
-    } else if (t === 4 || t === 1) {
-      roadTile = TILE_ROAD_STONE;
-    } else {
-      roadTile = TILE_ROAD_GRASS;
-    }
-
+    const roadTile = getDirtRoadTileForTerrain(t);
+    if (!roadTile) return;
     world.setTile(x, y, roadTile);
     const tk = getTileKey(x, y);
     globalRoadCoords.add(tk);
@@ -3304,9 +3326,7 @@ export function generateWorldRoadNetwork(world, minX, maxX, minY, maxY, sz = 8, 
         if (!connected) {
           // Revert orphan road tile to natural ground
           const curT = world.getTile(r.x, r.y);
-          if (curT === TILE_ROAD_GRASS) world.setTile(r.x, r.y, 0);
-          else if (curT === TILE_ROAD_SAND) world.setTile(r.x, r.y, 3);
-          else if (curT === TILE_ROAD_STONE) world.setTile(r.x, r.y, 4);
+          world.setTile(r.x, r.y, getTerrainTileForRoad(curT));
           globalRoadCoords.delete(getTileKey(r.x, r.y));
           roadCoords.delete(rk);
         }
@@ -8306,6 +8326,74 @@ export function evaluateAndAssignClanRoles(group, entities, world) {
       m.properties.backpack = { type: "backpack", size: "medium", capacity: 12, items: [] };
     }
   }
+
+  // 5. Politics Cabinet & Diplomat Assignment (Floors 1-6 of Politics Tower)
+  if (!group.diplomats) group.diplomats = [null, null, null, null, null, null];
+  const candidates = livingMembers.filter(m => m.id !== group.leaderId);
+  for (let i = 0; i < 6; i++) {
+    const curDiplomatId = group.diplomats[i];
+    const curEnt = curDiplomatId ? getEntityById(curDiplomatId) : null;
+    if (!curEnt || curEnt.destroyed || curEnt.properties?.health <= 0) {
+      const available = candidates.find(c => !group.diplomats.includes(c.id));
+      if (available) {
+        group.diplomats[i] = available.id;
+        if (i === 3) available.properties.diplomatRole = "Interior";
+      } else {
+        group.diplomats[i] = null;
+      }
+    }
+  }
+
+  // 6. Diplomat of the Interior: Queue Stone Street Paving Projects in Claimed Zones
+  const interiorDiplomatId = group.diplomats[3];
+  const interiorEnt = interiorDiplomatId ? getEntityById(interiorDiplomatId) : null;
+  const hasInteriorDiplomat = (interiorEnt && !interiorEnt.destroyed && (interiorEnt.properties?.health ?? 1) > 0) ||
+    livingMembers.some(m => m.properties.diplomatRole === "Interior" || (m.properties.role === "Diplomat" && livingMembers.length >= 6));
+
+  if (hasInteriorDiplomat) {
+    const curW = world || getSimWorld();
+    if (curW && group.claimedZones && group.claimedZones.length > 0) {
+      const sz = currentZoneSize || 8;
+      if (!group._plannedStoneRoads) group._plannedStoneRoads = [];
+
+      // Clean invalid / already paved tiles from queue
+      group._plannedStoneRoads = group._plannedStoneRoads.filter(r => {
+        const curT = curW.getTile ? curW.getTile(r.x, r.y) : (curW.map ? curW.map[r.y * (curW.width || MAP_WIDTH) + r.x] : 0);
+        return isDirtRoadTile(curT);
+      });
+
+      // If queue needs candidates, scan claimed zones for dirt roads
+      if (group._plannedStoneRoads.length < 8) {
+        for (const zk of group.claimedZones) {
+          const zp = zk.includes("_") ? zk.split("_") : zk.split(",");
+          const zx = parseInt(zp[0], 10);
+          const zy = parseInt(zp[1], 10);
+          if (isNaN(zx) || isNaN(zy)) continue;
+
+          const startX = zx * sz;
+          const startY = zy * sz;
+
+          for (let dy = 0; dy < sz; dy++) {
+            for (let dx = 0; dx < sz; dx++) {
+              const tx = startX + dx;
+              const ty = startY + dy;
+              if (tx < 0 || tx >= (curW.width || MAP_WIDTH) || ty < 0 || ty >= (curW.height || MAP_HEIGHT)) continue;
+
+              const t = curW.getTile ? curW.getTile(tx, ty) : (curW.map ? curW.map[ty * (curW.width || MAP_WIDTH) + tx] : 0);
+              if (isDirtRoadTile(t)) {
+                if (!group._plannedStoneRoads.some(r => r.x === tx && r.y === ty)) {
+                  group._plannedStoneRoads.push({ x: tx, y: ty });
+                }
+              }
+              if (group._plannedStoneRoads.length >= 16) break;
+            }
+            if (group._plannedStoneRoads.length >= 16) break;
+          }
+          if (group._plannedStoneRoads.length >= 16) break;
+        }
+      }
+    }
+  }
 }
 
 /**
@@ -9741,6 +9829,89 @@ export function createLocomotionProp() {
         }
       }
 
+      // -----------------------------------------------------------------------
+      // Priority 7.5: Minimal Priority Stone Street Paving (Diplomat of the Interior)
+      // Citizens only haul stone and pave stone streets when they have NO urgent needs.
+      // -----------------------------------------------------------------------
+      if (!hasIntention && ent.properties.group) {
+        const group = ent.properties.group;
+        const curW = world || getSimWorld();
+        const hasInteriorDiplomat = group.diplomats?.[3] !== null || (group.members || []).some(id => getEntityById(id)?.properties?.diplomatRole === "Interior");
+
+        if (hasInteriorDiplomat && group._plannedStoneRoads && group._plannedStoneRoads.length > 0 && energyRatio > 0.60 && waterRatio > 0.60 && !ent.properties.injured) {
+          const hasHeldStone = (ent.properties.arm_left?.heldItem?.resourceType === "stone" || ent.properties.arm_right?.heldItem?.resourceType === "stone" || ent.properties.heldItem?.resourceType === "stone");
+          const hasBackpackStone = (ent.properties.backpack?.items || []).some(it => it.resourceType === "stone" || it.name?.includes("Pedra") || it.name?.includes("Stone"));
+
+          if (hasHeldStone || hasBackpackStone) {
+            let targetStoneRoad = null;
+            let minDist = 9999;
+            for (let sIdx = 0; sIdx < group._plannedStoneRoads.length; sIdx++) {
+              const sr = group._plannedStoneRoads[sIdx];
+              const curT = curW ? (curW.getTile ? curW.getTile(sr.x, sr.y) : (curW.map ? curW.map[sr.y * (curW.width || MAP_WIDTH) + sr.x] : 0)) : 0;
+              if (!isDirtRoadTile(curT)) {
+                group._plannedStoneRoads.splice(sIdx, 1);
+                sIdx--;
+                continue;
+              }
+              const d = Math.abs(sr.x - ent.x) + Math.abs(sr.y - ent.y);
+              if (d < minDist) {
+                minDist = d;
+                targetStoneRoad = sr;
+              }
+            }
+
+            if (targetStoneRoad) {
+              if (minDist <= 1) {
+                // Consume 1 stone and pave the road
+                if (hasHeldStone) {
+                  if (ent.properties.arm_left?.heldItem?.resourceType === "stone") ent.properties.arm_left.heldItem = null;
+                  else if (ent.properties.arm_right?.heldItem?.resourceType === "stone") ent.properties.arm_right.heldItem = null;
+                  else if (ent.properties.heldItem?.resourceType === "stone") ent.properties.heldItem = null;
+                } else if (hasBackpackStone && ent.properties.backpack?.items) {
+                  const idx = ent.properties.backpack.items.findIndex(it => it.resourceType === "stone" || it.name?.includes("Pedra"));
+                  if (idx !== -1) ent.properties.backpack.items.splice(idx, 1);
+                }
+
+                const curT = curW ? (curW.getTile ? curW.getTile(targetStoneRoad.x, targetStoneRoad.y) : (curW.map ? curW.map[targetStoneRoad.y * (curW.width || MAP_WIDTH) + targetStoneRoad.x] : 0)) : 0;
+                const stoneTile = getStoneRoadTileForTerrain(curT);
+                if (stoneTile) {
+                  if (curW.setTile) curW.setTile(targetStoneRoad.x, targetStoneRoad.y, stoneTile);
+                  else if (curW.map) curW.map[targetStoneRoad.y * (curW.width || MAP_WIDTH) + targetStoneRoad.x] = stoneTile;
+                }
+                ent.emote = 2; // Happy
+                chosenDx = 0;
+                chosenDy = 0;
+                hasIntention = true;
+              } else {
+                chosenDx = Math.sign(targetStoneRoad.x - ent.x);
+                chosenDy = Math.sign(targetStoneRoad.y - ent.y);
+                hasIntention = true;
+              }
+            }
+          } else {
+            // Find loose stone or warehouse stone in claimed territory
+            const closestStone = findClosestEntityInRadius(ent.x, ent.y, 25, e =>
+              !e.destroyed && e.properties?.resourceType === "stone" && isTileInClaimedZones(e.x, e.y, group.claimedZones)
+            );
+            if (closestStone) {
+              const d = Math.abs(closestStone.x - ent.x) + Math.abs(closestStone.y - ent.y);
+              if (d <= 1) {
+                closestStone.destroyed = true;
+                if (!ent.properties.arm_left) ent.properties.arm_left = createArmProp("Braço Esquerdo", "left");
+                ent.properties.arm_left.heldItem = { name: "Pedra de Pavimentação", resourceType: "stone", weight: 2.0 };
+                chosenDx = 0;
+                chosenDy = 0;
+                hasIntention = true;
+              } else {
+                chosenDx = Math.sign(closestStone.x - ent.x);
+                chosenDy = Math.sign(closestStone.y - ent.y);
+                hasIntention = true;
+              }
+            }
+          }
+        }
+      }
+
       if (!hasIntention) {
         // Wandering Momentum: commit to moving in the same direction for 8-16 steps
         if (!ent._wanderHeading || ent._wanderHeading.steps <= 0) {
@@ -9845,7 +10016,7 @@ export function createLocomotionProp() {
               if (isFlying) {
                 canTraverse = true;
               } else if (targetTile !== 2) {
-                // Valid Land Tile (0, 1, 3, 4)
+                // Valid Land Tile (0, 1, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13)
                 canTraverse = true;
                 if (isAquatic && !isTerrestrial) {
                   this.stepTimer = -moveInterval * 3.0; // penalty for aquatic on land
@@ -9880,9 +10051,14 @@ export function createLocomotionProp() {
                 if (ent._recentPositions.length > 6) ent._recentPositions.shift();
                 ent.x = tx;
                 ent.y = ty;
-                if (isRoadTile(tx, ty)) {
-                  this.stepTimer += moveInterval * 0.35; // +35% to +50% speed boost on roads
+
+                // Move speed buff: Stone brick roads give higher boost (+55%) than dirt roads (+25%)
+                if (isStoneRoadTile(targetTile)) {
+                  this.stepTimer += moveInterval * 0.55;
+                } else if (isDirtRoadTile(targetTile) || isRoadTile(tx, ty)) {
+                  this.stepTimer += moveInterval * 0.25;
                 }
+
                 moved = true;
                 break;
               }
@@ -11547,10 +11723,67 @@ export function createPineTree(x, y) {
   );
 }
 
+export function createCherryBlossomTree(x, y) {
+  return createEntity(
+    {
+      name: generateUniqueFloraName("Cerejeira Ancestral", "cherry_blossom"),
+      species: "cherry_blossom",
+      render: { skin: "Feature_Tree_Full.png", color: 0xffffb7c5, backcolor: 0xff3e1824 },
+      life: createLifeProp(11000, 11000, 0.08),
+      bladder: createBladderProp(5500, 5500),
+      deep_root: createDeepRootProp(18.0, 12.0),
+      photosynthesis: createPhotosynthesisProp(0.3, 34.0),
+      fruiting: createFruitingProp(34.0, "large", "cherry"),
+      terrain_pref: createTerrainPreferenceProp([0, 9], "Plains and Hills"),
+      wood: { nutrition: 1900, foodType: "plant" }
+    },
+    x,
+    y
+  );
+}
+
+export function createBirchTree(x, y) {
+  return createEntity(
+    {
+      name: generateUniqueFloraName("Bétula Dourada", "birch"),
+      species: "birch",
+      render: { skin: "Feature_Tree_Full.png", color: 0xffd4e668, backcolor: 0xff3a4812 },
+      life: createLifeProp(10000, 10000, 0.08),
+      bladder: createBladderProp(4800, 4800),
+      deep_root: createDeepRootProp(16.0, 10.0),
+      photosynthesis: createPhotosynthesisProp(0.3, 32.0),
+      fruiting: createFruitingProp(30.0, "large", "birch"),
+      terrain_pref: createTerrainPreferenceProp([0, 9], "Lowlands and Hills"),
+      wood: { nutrition: 1700, foodType: "plant" }
+    },
+    x,
+    y
+  );
+}
+
+export function createMapleTree(x, y) {
+  return createEntity(
+    {
+      name: generateUniqueFloraName("Bordo Carmesim", "maple"),
+      species: "maple",
+      render: { skin: "Feature_Tree_Full.png", color: 0xffe85226, backcolor: 0xff481608 },
+      life: createLifeProp(12500, 12500, 0.08),
+      bladder: createBladderProp(6000, 6000),
+      deep_root: createDeepRootProp(22.0, 14.0),
+      photosynthesis: createPhotosynthesisProp(0.3, 36.0),
+      fruiting: createFruitingProp(36.0, "large", "maple"),
+      terrain_pref: createTerrainPreferenceProp([0, 9, 4], "Hills and Foothills"),
+      wood: { nutrition: 2100, foodType: "plant" }
+    },
+    x,
+    y
+  );
+}
+
 export function createBerryBush(x, y) {
   return createEntity(
     {
-      name: generateUniqueFloraName("Berry Bush", "berry"),
+      name: generateUniqueFloraName("Arbusto de Amoras", "berry"),
       species: "berry",
       render: { skin: "Feature_Bush.png", color: 0xff48c85a, backcolor: 0xff143c14 },
       life: createLifeProp(5000, 5000, 0.08),
@@ -11558,8 +11791,27 @@ export function createBerryBush(x, y) {
       deep_root: createDeepRootProp(12.0, 8.0),
       photosynthesis: createPhotosynthesisProp(0.3, 28.0),
       fruiting: createFruitingProp(22.0, "small", "berry"),
-      terrain_pref: createTerrainPreferenceProp([0], "Fertile Soil"),
+      terrain_pref: createTerrainPreferenceProp([0, 9], "Fertile Soil and Hills"),
       wood: { nutrition: 800, foodType: "plant" }
+    },
+    x,
+    y
+  );
+}
+
+export function createRoseBush(x, y) {
+  return createEntity(
+    {
+      name: generateUniqueFloraName("Arbusto Florido", "rose_bush"),
+      species: "rose_bush",
+      render: { skin: "Feature_Bush.png", color: 0xffff4c70, backcolor: 0xff301018 },
+      life: createLifeProp(5500, 5500, 0.08),
+      bladder: createBladderProp(3200, 3200),
+      deep_root: createDeepRootProp(14.0, 8.0),
+      photosynthesis: createPhotosynthesisProp(0.3, 26.0),
+      fruiting: createFruitingProp(24.0, "small", "rose"),
+      terrain_pref: createTerrainPreferenceProp([0, 9], "Fertile Plains and Hills"),
+      plant_flesh: { nutrition: 750, foodType: "plant" }
     },
     x,
     y

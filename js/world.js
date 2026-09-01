@@ -13,7 +13,12 @@ import {
   TILE_VOID,
   TILE_ROAD_GRASS,
   TILE_ROAD_SAND,
-  TILE_ROAD_STONE,
+  TILE_ROAD_GRASS_STONE,
+  TILE_HILL,
+  TILE_PEAK,
+  TILE_ROAD_SAND_STONE,
+  TILE_ROAD_HILL,
+  TILE_ROAD_HILL_STONE,
   MAP_PRESET_ARCHIPELAGO,
   MAP_PRESET_CONTINENT,
   MAP_PRESET_HIGHLANDS,
@@ -32,7 +37,12 @@ export {
   TILE_VOID,
   TILE_ROAD_GRASS,
   TILE_ROAD_SAND,
-  TILE_ROAD_STONE
+  TILE_ROAD_GRASS_STONE,
+  TILE_HILL,
+  TILE_PEAK,
+  TILE_ROAD_SAND_STONE,
+  TILE_ROAD_HILL,
+  TILE_ROAD_HILL_STONE
 };
 
 export class WorldClock {
@@ -112,15 +122,20 @@ export class World {
 
   getTileName(t) {
     switch (t) {
-      case TILE_FLOOR: return "Fertile Soil / Forest";
-      case TILE_MOUNTAIN: return "Mountain Peak";
-      case TILE_WATER: return "Ocean Water";
-      case TILE_SAND: return "Sand Dunes / Desert";
-      case TILE_STONE: return "Rocky Foothills / Stone";
-      case TILE_ROAD_GRASS: return "Terra com Estrada";
-      case TILE_ROAD_SAND: return "Areia com Estrada";
-      case TILE_ROAD_STONE: return "Montanha com Estrada";
-      default: return "Void";
+      case TILE_FLOOR: return "Planície Fértil";
+      case TILE_MOUNTAIN: return "Montanha";
+      case TILE_WATER: return "Água";
+      case TILE_SAND: return "Areia / Praia";
+      case TILE_STONE: return "Pedra / Encosta";
+      case TILE_HILL: return "Colina";
+      case TILE_PEAK: return "Cume / Pico";
+      case TILE_ROAD_GRASS: return "Estrada de Barro (Planície)";
+      case TILE_ROAD_SAND: return "Estrada de Barro (Areia)";
+      case TILE_ROAD_HILL: return "Estrada de Barro (Colina)";
+      case TILE_ROAD_GRASS_STONE: return "Estrada de Pedra (Planície)";
+      case TILE_ROAD_SAND_STONE: return "Estrada de Pedra (Areia)";
+      case TILE_ROAD_HILL_STONE: return "Estrada de Pedra (Colina)";
+      default: return "Vazio";
     }
   }
 
