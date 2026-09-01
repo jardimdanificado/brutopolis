@@ -2080,9 +2080,9 @@ export function createNormalMapFromTexture(skinName, intensity = 1.6) {
 }
 
 // ---------------------------------------------------------------------------
-// Smooth Water Normal Map Generator (1P & 3P Aquatic Waves)
+// Non-Repetitive Pixelated Water Normal Map Generator (1P & 3P Aquatic Waves)
 // ---------------------------------------------------------------------------
-function generateWaterNormalMap(intensity = 1.0) {
+function generateWaterNormalMap(intensity = 1.6) {
   const size = 64;
   const canvas = document.createElement("canvas");
   canvas.width = size;
@@ -2091,12 +2091,41 @@ function generateWaterNormalMap(intensity = 1.0) {
   const imgData = ctx.createImageData(size, size);
   const data = imgData.data;
 
+  const heightMap = new Float32Array(size * size);
+
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
-      const u = (x / size) * Math.PI * 4;
-      const v = (y / size) * Math.PI * 4;
-      const dX = (Math.cos(u) * 0.45 + Math.cos(u * 2.3 + v * 1.7) * 0.25) * intensity;
-      const dY = (Math.sin(v) * 0.45 + Math.sin(v * 2.1 - u * 1.5) * 0.25) * intensity;
+      const u = (x / size) * Math.PI * 2;
+      const v = (y / size) * Math.PI * 2;
+
+      // Multi-octave prime wave harmonics for rich, non-repetitive organic water ripples
+      const w1 = Math.sin(u * 2.0 + v * 1.0);
+      const w2 = Math.cos(u * 3.0 - v * 2.0 + 1.2);
+      const w3 = Math.sin(u * 5.0 + v * 4.0 + 2.5);
+      const w4 = Math.cos(u * 7.0 - v * 5.0 + 0.8);
+      const w5 = Math.sin((u + v) * 4.0 + Math.sin(u * 3.0) * 1.5);
+
+      const h = 0.5 + 0.20 * w1 + 0.15 * w2 + 0.10 * w3 + 0.08 * w4 + 0.12 * w5;
+      heightMap[y * size + x] = h;
+    }
+  }
+
+  const bayer4x4 = [
+    [ 0,  8,  2, 10],
+    [12,  4, 14,  6],
+    [ 3, 11,  1,  9],
+    [15,  7, 13,  5]
+  ];
+
+  for (let y = 0; y < size; y++) {
+    const ym = (y - 1 + size) % size;
+    const yp = (y + 1) % size;
+    for (let x = 0; x < size; x++) {
+      const xm = (x - 1 + size) % size;
+      const xp = (x + 1) % size;
+
+      const dX = (heightMap[y * size + xp] - heightMap[y * size + xm]) * intensity;
+      const dY = (heightMap[yp * size + x] - heightMap[ym * size + x]) * intensity;
 
       let nx = -dX;
       let ny = -dY;
@@ -2106,20 +2135,27 @@ function generateWaterNormalMap(intensity = 1.0) {
       ny /= len;
       nz /= len;
 
+      // Pixelated discrete stepped quantization + dither for crisp retro pixel-art water normals
+      const dither = (bayer4x4[y % 4][x % 4] / 15.0 - 0.5) * 0.12;
+      const steps = 6.0;
+      const quantize = (val) => Math.min(255, Math.max(0, Math.round((Math.floor((val + dither) * steps) / steps) * 255)));
+
       const idx = (y * size + x) * 4;
-      data[idx + 0] = Math.round((nx * 0.5 + 0.5) * 255);
-      data[idx + 1] = Math.round((ny * 0.5 + 0.5) * 255);
-      data[idx + 2] = Math.round((nz * 0.5 + 0.5) * 255);
+      data[idx + 0] = quantize(nx * 0.5 + 0.5);
+      data[idx + 1] = quantize(ny * 0.5 + 0.5);
+      data[idx + 2] = quantize(nz * 0.5 + 0.5);
       data[idx + 3] = 255;
     }
   }
+
   ctx.putImageData(imgData, 0, 0);
   const tex = new THREE.CanvasTexture(canvas);
   tex.wrapS = THREE.RepeatWrapping;
   tex.wrapT = THREE.RepeatWrapping;
-  tex.magFilter = THREE.LinearFilter;
-  tex.minFilter = THREE.LinearMipmapLinearFilter;
-  tex.generateMipmaps = true;
+  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.NearestFilter;
+  tex.generateMipmaps = false;
+  applyTextureAnisotropy(tex);
   return tex;
 }
 
@@ -2653,6 +2689,7 @@ export class RCT3DRenderer {
     this.zoom = 1.2;
     this.selectedEntityId = -1;
     this.waterTime = 0;
+    this.flameTime = 0;
     this.isPaused = false;
     this.targetTps = 60;
 
@@ -2964,17 +3001,17 @@ export class RCT3DRenderer {
     };
     this._lastPerspState = null;
     // 4.6 Texture-Derived & Procedural Normal Maps
-    const normGrass = generateProceduralTerrainNormalMap("grass", 0.40);
-    const normSand = generateProceduralTerrainNormalMap("sand", 0.35);
+    const normGrass = generateProceduralTerrainNormalMap("grass", 0.45);
+    const normSand = generateProceduralTerrainNormalMap("sand", 0.40);
     const normOak = generateProceduralFoliageNormalMap("oak", 1.3);
     const normPine = generateProceduralFoliageNormalMap("pine", 1.3);
     const normCactus = generateProceduralFoliageNormalMap("cactus", 1.4);
     const normStoneB = createNormalMapFromTexture("Feature_Stone_B.png", 2.6);
     const normStoneC = createNormalMapFromTexture("Feature_Stone_C.png", 2.8);
-    const normBrickA = createNormalMapFromTexture("Feature_Brick_A.png", 2.8);
-    const normBrickB = createNormalMapFromTexture("Feature_Brick_B.png", 2.6);
-    const normBrickC = createNormalMapFromTexture("Feature_Brick_C.png", 2.8);
-    const normWaves = generateWaterNormalMap(1.2);
+    const normBrickA = createNormalMapFromTexture("Feature_Brick_A.png", 1.2);
+    const normBrickB = createNormalMapFromTexture("Feature_Brick_B.png", 1.0);
+    const normBrickC = createNormalMapFromTexture("Feature_Brick_C.png", 1.2);
+    const normWaves = generateWaterNormalMap(1.6);
 
     const makeMat = (isPersp, baseParams, normalMap = null, normalScale = 1.0, roughness = 0.65, metalness = 0.05) => {
       // Normals/depth strictly active in 1P and 3P perspective mode!
@@ -2991,18 +3028,18 @@ export class RCT3DRenderer {
     };
 
     const buildDict = (isPersp) => ({
-      [TILE_FLOOR]: makeMat(isPersp, { color: 0x3d742c, dithering: true, vertexColors: true, side: THREE.DoubleSide }, normGrass, 0.45, 0.85, 0.02),
-      sandClean: makeMat(isPersp, { color: 0xdec078, dithering: true, vertexColors: true, side: THREE.DoubleSide }, normSand, 0.35, 0.90, 0.01),
-      [TILE_SAND]: makeMat(isPersp, { map: createTintedTexture("Feature_Pebbles.png", 0x6e5228, 0xdec078, 1.0), dithering: true, vertexColors: true, side: THREE.DoubleSide }, normSand, 0.40, 0.88, 0.02),
-      [TILE_HILL]: makeMat(isPersp, { color: 0x486c28, dithering: true, vertexColors: true, side: THREE.DoubleSide }, normGrass, 0.50, 0.82, 0.02),
-      [TILE_STONE]: makeMat(isPersp, { map: createTintedTexture("Feature_Stone_B.png", 0xa5a5af, 0x3a3a44, 1.0), dithering: true, vertexColors: true, side: THREE.DoubleSide }, normStoneB, 1.8, 0.70, 0.08),
-      [TILE_MOUNTAIN]: makeMat(isPersp, { map: createTintedTexture("Feature_Stone_C.png", 0xb4afaa, 0x484242, 1.0), dithering: true, vertexColors: true, side: THREE.DoubleSide }, normStoneC, 2.0, 0.65, 0.10),
-      [TILE_PEAK]: makeMat(isPersp, { map: createTintedTexture("Feature_Stone_C.png", 0xd8d8de, 0x686874, 1.0), dithering: true, vertexColors: true, side: THREE.DoubleSide }, normStoneC, 2.2, 0.60, 0.12),
+      [TILE_FLOOR]: makeMat(isPersp, { color: 0x3d742c, dithering: true, vertexColors: true, side: THREE.DoubleSide }, normGrass, 0.28, 0.85, 0.02),
+      sandClean: makeMat(isPersp, { color: 0xdec078, dithering: true, vertexColors: true, side: THREE.DoubleSide }, normSand, 0.22, 0.90, 0.01),
+      [TILE_SAND]: makeMat(isPersp, { map: createTintedTexture("Feature_Pebbles.png", 0x6e5228, 0xdec078, 1.0), dithering: true, vertexColors: true, side: THREE.DoubleSide }, normSand, 0.25, 0.88, 0.02),
+      [TILE_HILL]: makeMat(isPersp, { color: 0x486c28, dithering: true, vertexColors: true, side: THREE.DoubleSide }, normGrass, 0.28, 0.82, 0.02),
+      [TILE_STONE]: makeMat(isPersp, { map: createTintedTexture("Feature_Stone_B.png", 0xa5a5af, 0x3a3a44, 1.0), dithering: true, vertexColors: true, side: THREE.DoubleSide }, normStoneB, 1.1, 0.70, 0.08),
+      [TILE_MOUNTAIN]: makeMat(isPersp, { map: createTintedTexture("Feature_Stone_C.png", 0xb4afaa, 0x484242, 1.0), dithering: true, vertexColors: true, side: THREE.DoubleSide }, normStoneC, 1.25, 0.65, 0.10),
+      [TILE_PEAK]: makeMat(isPersp, { map: createTintedTexture("Feature_Stone_C.png", 0xd8d8de, 0x686874, 1.0), dithering: true, vertexColors: true, side: THREE.DoubleSide }, normStoneC, 1.3, 0.60, 0.12),
       [TILE_WATER]: isPersp ? new THREE.MeshStandardMaterial({
         color: 0x1668a8,
         normalMap: normWaves,
-        normalScale: new THREE.Vector2(0.9, 0.9),
-        roughness: 0.12,
+        normalScale: new THREE.Vector2(1.8, 1.8),
+        roughness: 0.15,
         metalness: 0.15,
         transparent: false,
         depthWrite: true,
@@ -3017,162 +3054,162 @@ export class RCT3DRenderer {
         opacity: 1.0,
         side: THREE.DoubleSide
       }),
-      [TILE_ROAD_GRASS]: makeMat(isPersp, { map: createTintedTexture("Feature_Stone_B.png", 0xa67c52, 0x3d2816, 1.0), dithering: true, vertexColors: true, side: THREE.DoubleSide }, normStoneB, 2.2, 0.75, 0.05),
-      [TILE_ROAD_SAND]: makeMat(isPersp, { map: createTintedTexture("Feature_Stone_B.png", 0xa67c52, 0x3d2816, 1.0), dithering: true, vertexColors: true, side: THREE.DoubleSide }, normStoneB, 2.2, 0.75, 0.05),
-      [TILE_ROAD_HILL]: makeMat(isPersp, { map: createTintedTexture("Feature_Stone_B.png", 0xa67c52, 0x3d2816, 1.0), dithering: true, vertexColors: true, side: THREE.DoubleSide }, normStoneB, 2.2, 0.75, 0.05),
-      [TILE_ROAD_GRASS_STONE]: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0x909098, 0x383842, 1.0), dithering: true, vertexColors: true, side: THREE.DoubleSide }, normBrickA, 2.6, 0.65, 0.08),
-      [TILE_ROAD_SAND_STONE]: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0x909098, 0x383842, 1.0), dithering: true, vertexColors: true, side: THREE.DoubleSide }, normBrickA, 2.6, 0.65, 0.08),
-      [TILE_ROAD_HILL_STONE]: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0x909098, 0x383842, 1.0), dithering: true, vertexColors: true, side: THREE.DoubleSide }, normBrickA, 2.6, 0.65, 0.08),
-      cliff: makeMat(isPersp, { map: createTintedTexture("Feature_Stone_C.png", 0x887a6a, 0x2b2218, 1.0), dithering: true, vertexColors: true, side: THREE.DoubleSide }, normStoneC, 1.8, 0.72, 0.05),
-      grassFoliage: makeMat(isPersp, { map: createTintedTexture("Feature_Grass.png", 0x3c7228, 0x000000, 0.0), dithering: true, transparent: false, alphaTest: 0.5, depthWrite: true, depthTest: true, side: THREE.DoubleSide }, normGrass, 0.40, 0.85, 0.02),
+      [TILE_ROAD_GRASS]: makeMat(isPersp, { map: createTintedTexture("Feature_Stone_B.png", 0xa67c52, 0x3d2816, 1.0), dithering: true, vertexColors: true, side: THREE.DoubleSide }, normStoneB, 0.9, 0.75, 0.05),
+      [TILE_ROAD_SAND]: makeMat(isPersp, { map: createTintedTexture("Feature_Stone_B.png", 0xa67c52, 0x3d2816, 1.0), dithering: true, vertexColors: true, side: THREE.DoubleSide }, normStoneB, 0.9, 0.75, 0.05),
+      [TILE_ROAD_HILL]: makeMat(isPersp, { map: createTintedTexture("Feature_Stone_B.png", 0xa67c52, 0x3d2816, 1.0), dithering: true, vertexColors: true, side: THREE.DoubleSide }, normStoneB, 0.9, 0.75, 0.05),
+      [TILE_ROAD_GRASS_STONE]: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0x909098, 0x383842, 1.0), dithering: true, vertexColors: true, side: THREE.DoubleSide }, normBrickA, 1.1, 0.65, 0.08),
+      [TILE_ROAD_SAND_STONE]: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0x909098, 0x383842, 1.0), dithering: true, vertexColors: true, side: THREE.DoubleSide }, normBrickA, 1.1, 0.65, 0.08),
+      [TILE_ROAD_HILL_STONE]: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0x909098, 0x383842, 1.0), dithering: true, vertexColors: true, side: THREE.DoubleSide }, normBrickA, 1.1, 0.65, 0.08),
+      cliff: makeMat(isPersp, { map: createTintedTexture("Feature_Stone_C.png", 0x887a6a, 0x2b2218, 1.0), dithering: true, vertexColors: true, side: THREE.DoubleSide }, normStoneC, 1.1, 0.72, 0.05),
+      grassFoliage: makeMat(isPersp, { map: createTintedTexture("Feature_Grass.png", 0x3c7228, 0x000000, 0.0), dithering: true, transparent: false, alphaTest: 0.5, depthWrite: true, depthTest: true, side: THREE.DoubleSide }, normGrass, 0.25, 0.85, 0.02),
       treeTrunk: makeMat(isPersp, { color: 0x583c1e, dithering: true }, null),
-      oakLeaves: makeMat(isPersp, { color: 0x3e8226, dithering: true }, normOak, 1.3, 0.70, 0.02),
-      pineLeaves: makeMat(isPersp, { color: 0x205222, dithering: true }, normPine, 1.3, 0.70, 0.02),
-      cactus: makeMat(isPersp, { color: 0x3c7c2c, dithering: true }, normCactus, 1.4, 0.75, 0.02),
+      oakLeaves: makeMat(isPersp, { color: 0x3e8226, dithering: true }, normOak, 2.4, 0.65, 0.02),
+      pineLeaves: makeMat(isPersp, { color: 0x205222, dithering: true }, normPine, 2.4, 0.65, 0.02),
+      cactus: makeMat(isPersp, { color: 0x3c7c2c, dithering: true }, normCactus, 2.2, 0.75, 0.02),
       cherryTrunk: makeMat(isPersp, { color: 0x3e2418, dithering: true }, null),
-      cherryLeaves: makeMat(isPersp, { color: 0xffb7c5, dithering: true }, normOak, 1.3, 0.65, 0.01),
+      cherryLeaves: makeMat(isPersp, { color: 0xffb7c5, dithering: true }, normOak, 2.4, 0.60, 0.01),
       birchTrunk: makeMat(isPersp, { color: 0xeae6dc, dithering: true }, null),
-      birchLeaves: makeMat(isPersp, { color: 0xb5dc42, dithering: true }, normOak, 1.3, 0.68, 0.02),
+      birchLeaves: makeMat(isPersp, { color: 0xb5dc42, dithering: true }, normOak, 2.4, 0.65, 0.02),
       mapleTrunk: makeMat(isPersp, { color: 0x482c16, dithering: true }, null),
-      mapleLeaves: makeMat(isPersp, { color: 0xdc4820, dithering: true }, normOak, 1.3, 0.70, 0.02),
-      bushLeaves: makeMat(isPersp, { color: 0x2e6c26, dithering: true }, normGrass, 0.60, 0.80, 0.02),
-      bushBerries: makeMat(isPersp, { color: 0xd62246, dithering: true }, null),
-      roseFlowers: makeMat(isPersp, { color: 0xff3366, dithering: true }, null),
-      houseWall: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_B.png", 0xfffaea, 0x8a6242, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickB, 2.2, 0.60, 0.05),
-      houseRoof: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xff6238, 0x941e0a, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 2.4, 0.45, 0.08),
+      mapleLeaves: makeMat(isPersp, { color: 0xdc4820, dithering: true }, normOak, 2.4, 0.65, 0.02),
+      bushLeaves: makeMat(isPersp, { color: 0x2e6c26, dithering: true }, normOak, 2.4, 0.65, 0.02),
+      bushBerries: makeMat(isPersp, { color: 0xd62246, dithering: true }, normOak, 1.8, 0.50, 0.02),
+      roseFlowers: makeMat(isPersp, { color: 0xff3366, dithering: true }, normOak, 1.8, 0.50, 0.02),
+      houseWall: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_B.png", 0xfffaea, 0x8a6242, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickB, 1.0, 0.60, 0.05),
+      houseRoof: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xff6238, 0x941e0a, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 1.2, 0.45, 0.08),
       woodHouseWall: makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xd4a373, 0x4a3525, 1.0), dithering: true, side: THREE.DoubleSide }, null),
       woodHouseRoof: makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xa67c52, 0x3b271a, 1.0), dithering: true, side: THREE.DoubleSide }, null),
-      stoneHouseWall: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 2.4, 0.60, 0.06),
-      stoneHouseRoof: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0x9098a8, 0x2d3748, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 2.4, 0.50, 0.08),
+      stoneHouseWall: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 1.0, 0.60, 0.06),
+      stoneHouseRoof: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0x9098a8, 0x2d3748, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 1.0, 0.50, 0.08),
       houseBlueprint: new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xdfa052, 0x5a3418, 1.0), dithering: true, side: THREE.DoubleSide }),
-      wall: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 2.4, 0.60, 0.05),
+      wall: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 1.0, 0.60, 0.05),
       woodWall: makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xc89858, 0x482c18, 1.0), dithering: true, side: THREE.DoubleSide }, null),
-      mixedWall: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_B.png", 0xdfd0b0, 0x3d3024, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickB, 2.2, 0.60, 0.05),
+      mixedWall: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_B.png", 0xdfd0b0, 0x3d3024, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickB, 1.0, 0.60, 0.05),
       wallBlueprint: new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Brick_A.png", 0x9a8f82, 0x3d3024, 1.0), dithering: true, side: THREE.DoubleSide }),
       woodLog: makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xc89858, 0x3d2210, 1.0), dithering: true, side: THREE.DoubleSide }, null),
-      stoneItem: makeMat(isPersp, { map: createTintedTexture("Feature_Stone_B.png", 0xd8d8e6, 0x3c3c46, 1.0), dithering: true, side: THREE.DoubleSide }, normStoneB, 2.0, 0.65, 0.05),
+      stoneItem: makeMat(isPersp, { map: createTintedTexture("Feature_Stone_B.png", 0xd8d8e6, 0x3c3c46, 1.0), dithering: true, side: THREE.DoubleSide }, normStoneB, 1.0, 0.65, 0.05),
       gate: makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xad7842, 0x3a2214, 1.0), dithering: true, side: THREE.DoubleSide }, null),
       gateBlueprint: new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xc89858, 0x482c18, 1.0), dithering: true, side: THREE.DoubleSide }),
       torchFlames: createRealisticFlameMaterial(),
       campfireLogs: makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0x8a5228, 0x2e1a0a, 1.0), dithering: true, side: THREE.DoubleSide }, null),
       campfireFlames: createRealisticFlameMaterial(),
       warehouse: makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xd4a373, 0x4a3525, 1.0), dithering: true, side: THREE.DoubleSide }, null),
-      stoneWarehouse: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 2.4, 0.60, 0.05),
+      stoneWarehouse: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 1.0, 0.60, 0.05),
       slaughterhouseTimber: makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xc89858, 0x482c18, 1.0), dithering: true, side: THREE.DoubleSide }, null),
-      slaughterhouseStone: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 2.4, 0.60, 0.05),
-      kitchenBrick: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_B.png", 0xfffaea, 0x8a6242, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickB, 2.2, 0.60, 0.05),
+      slaughterhouseStone: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 1.0, 0.60, 0.05),
+      kitchenBrick: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_B.png", 0xfffaea, 0x8a6242, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickB, 1.0, 0.60, 0.05),
       kitchenTimber: makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xd4a373, 0x4a3525, 1.0), dithering: true, side: THREE.DoubleSide }, null),
       multiBuildingPalette: [
-        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 2.4, 0.60, 0.05),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 1.0, 0.60, 0.05),
         makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xc89858, 0x482c18, 1.0), dithering: true, side: THREE.DoubleSide }, null),
-        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_B.png", 0xfffaea, 0x8a6242, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickB, 2.2, 0.60, 0.05),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_B.png", 0xfffaea, 0x8a6242, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickB, 1.0, 0.60, 0.05),
         makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0x4a2e18, 0x1a0f08, 1.0), dithering: true, side: THREE.DoubleSide }, null),
         makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xb87838, 0x3e1e0a, 1.0), dithering: true, side: THREE.DoubleSide }, null),
         new THREE.MeshLambertMaterial({ color: 0x64c8ff, dithering: true, side: THREE.DoubleSide }),
-        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xb44a2c, 0x4a180c, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 2.4, 0.50, 0.08),
-        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xdb5832, 0x6a1c0c, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 2.4, 0.50, 0.08),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xb44a2c, 0x4a180c, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 1.2, 0.50, 0.08),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xdb5832, 0x6a1c0c, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 1.2, 0.50, 0.08),
         makeMat(isPersp, { map: createTintedTexture("Feature_Grass.png", 0xd4a044, 0x583e10, 1.0), dithering: true, side: THREE.DoubleSide }, null),
-        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0x4a5568, 0x1a202c, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 2.4, 0.55, 0.08),
-        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_B.png", 0xd49b6a, 0x4a2e1a, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickB, 2.2, 0.60, 0.05),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0x4a5568, 0x1a202c, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 1.0, 0.55, 0.08),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_B.png", 0xd49b6a, 0x4a2e1a, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickB, 1.0, 0.60, 0.05),
         makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xd4a040, 0x44260a, 1.0), dithering: true, side: THREE.DoubleSide }, null),
-        makeMat(isPersp, { map: createTintedTexture("Feature_Stone_C.png", 0x383842, 0x141418, 1.0), dithering: true, side: THREE.DoubleSide }, normStoneC, 2.2, 0.65, 0.08)
+        makeMat(isPersp, { map: createTintedTexture("Feature_Stone_C.png", 0x383842, 0x141418, 1.0), dithering: true, side: THREE.DoubleSide }, normStoneC, 1.1, 0.65, 0.08)
       ],
       warehouseWalls: [
         makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xd4a373, 0x4a3525, 1.0), dithering: true, side: THREE.DoubleSide }, null),
-        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 2.4, 0.60, 0.05)
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 1.0, 0.60, 0.05)
       ],
       warehouseRoofs: [
-        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 2.4, 0.45, 0.08),
-        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 2.4, 0.45, 0.08)
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 1.2, 0.45, 0.08),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 1.2, 0.45, 0.08)
       ],
       slaughterhouseWalls: [
         makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xc89858, 0x482c18, 1.0), dithering: true, side: THREE.DoubleSide }, null),
-        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 2.4, 0.60, 0.05)
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 1.0, 0.60, 0.05)
       ],
       slaughterhouseRoofs: [
-        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 2.4, 0.45, 0.08),
-        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 2.4, 0.45, 0.08)
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 1.2, 0.45, 0.08),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 1.2, 0.45, 0.08)
       ],
       kitchenWalls: [
-        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_B.png", 0xfffaea, 0x8a6242, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickB, 2.2, 0.60, 0.05),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_B.png", 0xfffaea, 0x8a6242, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickB, 1.0, 0.60, 0.05),
         makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xd4a373, 0x4a3525, 1.0), dithering: true, side: THREE.DoubleSide }, null)
       ],
       kitchenRoofs: [
-        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 2.4, 0.45, 0.08),
-        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 2.4, 0.45, 0.08)
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 1.2, 0.45, 0.08),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 1.2, 0.45, 0.08)
       ],
       houseWallVariants: [
         makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xd4a373, 0x4a3525, 1.0), dithering: true, side: THREE.DoubleSide }, null),
-        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 2.4, 0.60, 0.05),
-        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_B.png", 0xfffaea, 0x8a6242, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickB, 2.2, 0.60, 0.05),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 1.0, 0.60, 0.05),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_B.png", 0xfffaea, 0x8a6242, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickB, 1.0, 0.60, 0.05),
         makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xc89858, 0x482c18, 1.0), dithering: true, side: THREE.DoubleSide }, null),
-        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_B.png", 0xfffaea, 0x8a6242, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickB, 2.2, 0.60, 0.05),
-        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_B.png", 0xdfd0b0, 0x3d3024, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickB, 2.2, 0.60, 0.05),
-        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 2.4, 0.60, 0.05),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_B.png", 0xfffaea, 0x8a6242, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickB, 1.0, 0.60, 0.05),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_B.png", 0xdfd0b0, 0x3d3024, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickB, 1.0, 0.60, 0.05),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 1.0, 0.60, 0.05),
         makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xd4a373, 0x4a3525, 1.0), dithering: true, side: THREE.DoubleSide }, null),
-        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 2.4, 0.60, 0.05),
-        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 2.4, 0.60, 0.05),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 1.0, 0.60, 0.05),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 1.0, 0.60, 0.05),
         makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xd4a373, 0x4a3525, 1.0), dithering: true, side: THREE.DoubleSide }, null),
-        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 2.4, 0.60, 0.05),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 1.0, 0.60, 0.05),
         makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xa67c52, 0x3b271a, 1.0), dithering: true, side: THREE.DoubleSide }, null),
-        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_B.png", 0xfffaea, 0x8a6242, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickB, 2.2, 0.60, 0.05),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_B.png", 0xfffaea, 0x8a6242, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickB, 1.0, 0.60, 0.05),
         makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xd4a373, 0x4a3525, 1.0), dithering: true, side: THREE.DoubleSide }, null),
-        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 2.4, 0.60, 0.05),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 1.0, 0.60, 0.05),
         makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xba8048, 0x3d2412, 1.0), dithering: true, side: THREE.DoubleSide }, null),
-        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_B.png", 0xfffaea, 0x8a6242, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickB, 2.2, 0.60, 0.05),
-        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_B.png", 0xdfd0b0, 0x3d3024, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickB, 2.2, 0.60, 0.05),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_B.png", 0xfffaea, 0x8a6242, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickB, 1.0, 0.60, 0.05),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_B.png", 0xdfd0b0, 0x3d3024, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickB, 1.0, 0.60, 0.05),
         makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xba8048, 0x3d2412, 1.0), dithering: true, side: THREE.DoubleSide }, null)
       ],
       houseRoofVariants: [
-        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 2.4, 0.45, 0.08),
-        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 2.4, 0.45, 0.08),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 1.2, 0.45, 0.08),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 1.2, 0.45, 0.08),
         makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, null),
-        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 2.4, 0.45, 0.08),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 1.2, 0.45, 0.08),
         makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, null),
-        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 2.4, 0.45, 0.08),
-        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 2.4, 0.45, 0.08),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 1.2, 0.45, 0.08),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 1.2, 0.45, 0.08),
         makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, null),
-        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 2.4, 0.55, 0.08),
-        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 2.4, 0.45, 0.08),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 1.0, 0.55, 0.08),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 1.2, 0.45, 0.08),
         makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, null),
-        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 2.4, 0.55, 0.08),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 1.0, 0.55, 0.08),
         makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, null),
-        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 2.4, 0.45, 0.08),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 1.2, 0.45, 0.08),
         makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, null),
-        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 2.4, 0.45, 0.08),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 1.2, 0.45, 0.08),
         makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, null),
-        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 2.4, 0.45, 0.08),
-        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_B.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickB, 2.2, 0.55, 0.05),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 1.2, 0.45, 0.08),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_B.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickB, 1.0, 0.55, 0.05),
         makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, null)
       ],
       leaderWallVariants: [
-        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 2.4, 0.60, 0.05),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 1.0, 0.60, 0.05),
         makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xb87a40, 0x3a2214, 1.0), dithering: true, side: THREE.DoubleSide }, null),
-        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_B.png", 0xdfd0b0, 0x3d3024, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickB, 2.2, 0.60, 0.05),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_B.png", 0xdfd0b0, 0x3d3024, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickB, 1.0, 0.60, 0.05),
         makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xc89858, 0x482c18, 1.0), dithering: true, side: THREE.DoubleSide }, null),
-        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_B.png", 0xfffaea, 0x8a6242, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickB, 2.2, 0.60, 0.05),
-        makeMat(isPersp, { map: createTintedTexture("Feature_Stone_C.png", 0x383842, 0x141418, 1.0), dithering: true, side: THREE.DoubleSide }, normStoneC, 2.2, 0.65, 0.08),
-        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 2.4, 0.60, 0.05)
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_B.png", 0xfffaea, 0x8a6242, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickB, 1.0, 0.60, 0.05),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Stone_C.png", 0x383842, 0x141418, 1.0), dithering: true, side: THREE.DoubleSide }, normStoneC, 1.1, 0.65, 0.08),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 1.0, 0.60, 0.05)
       ],
       leaderRoofVariants: [
-        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 2.4, 0.45, 0.08),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 1.2, 0.45, 0.08),
         makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, null),
-        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_B.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickB, 2.2, 0.55, 0.05),
-        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 2.4, 0.45, 0.08),
-        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 2.4, 0.45, 0.08),
-        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 2.4, 0.55, 0.08),
-        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 2.4, 0.45, 0.08)
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_B.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickB, 1.0, 0.55, 0.05),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 1.2, 0.45, 0.08),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 1.2, 0.45, 0.08),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 1.0, 0.55, 0.08),
+        makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 1.2, 0.45, 0.08)
       ],
-      boneHouseWall: makeMat(isPersp, { map: createTintedTexture("Feature_Stone_B.png", 0xf5f3ea, 0x5a554a, 1.0), dithering: true, side: THREE.DoubleSide }, normStoneB, 2.0, 0.65, 0.05),
-      boneHouseRoof: makeMat(isPersp, { map: createTintedTexture("Feature_Stone_B.png", 0xe6e2d3, 0x3d3830, 1.0), dithering: true, side: THREE.DoubleSide }, normStoneB, 2.0, 0.65, 0.05),
-      boneWall: makeMat(isPersp, { map: createTintedTexture("Feature_Stone_B.png", 0xf5f3ea, 0x5a554a, 1.0), dithering: true, side: THREE.DoubleSide }, normStoneB, 2.0, 0.65, 0.05),
-      road: makeMat(isPersp, { map: createTintedTexture("Feature_Stone_B.png", 0x9b7653, 0x4a3520, 1.0), dithering: true, side: THREE.DoubleSide }, normStoneB, 2.2, 0.75, 0.05),
+      boneHouseWall: makeMat(isPersp, { map: createTintedTexture("Feature_Stone_B.png", 0xf5f3ea, 0x5a554a, 1.0), dithering: true, side: THREE.DoubleSide }, normStoneB, 1.0, 0.65, 0.05),
+      boneHouseRoof: makeMat(isPersp, { map: createTintedTexture("Feature_Stone_B.png", 0xe6e2d3, 0x3d3830, 1.0), dithering: true, side: THREE.DoubleSide }, normStoneB, 1.0, 0.65, 0.05),
+      boneWall: makeMat(isPersp, { map: createTintedTexture("Feature_Stone_B.png", 0xf5f3ea, 0x5a554a, 1.0), dithering: true, side: THREE.DoubleSide }, normStoneB, 1.0, 0.65, 0.05),
+      road: makeMat(isPersp, { map: createTintedTexture("Feature_Stone_B.png", 0x9b7653, 0x4a3520, 1.0), dithering: true, side: THREE.DoubleSide }, normStoneB, 0.9, 0.75, 0.05),
       roadSnap: makeMat(isPersp, { map: createTintedTexture("Feature_Pebbles.png", 0xd8ba80, 0x6a5024, 1.0), dithering: true, side: THREE.DoubleSide }, null),
-      waterWellBase: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 2.4, 0.60, 0.05),
+      waterWellBase: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 1.0, 0.60, 0.05),
       waterWellWood: makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xd4a373, 0x4a3525, 1.0), dithering: true, side: THREE.DoubleSide }, null),
-      waterWellRoof: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 2.4, 0.45, 0.08),
+      waterWellRoof: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_C.png", 0xffffff, 0x888888, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickC, 1.2, 0.45, 0.08),
       woodBridge: makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0x8b5a2b, 0x3a2214, 1.0), dithering: true, side: THREE.DoubleSide }, null),
-      stoneBridge: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xc8c8c8, 0x4a4a4a, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 2.4, 0.60, 0.05),
+      stoneBridge: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xc8c8c8, 0x4a4a4a, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 1.0, 0.60, 0.05),
       waterPlatform: makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0x7c4c24, 0x2e1a0e, 1.0), dithering: true, side: THREE.DoubleSide }, null)
     });
 
@@ -5225,16 +5262,16 @@ export class RCT3DRenderer {
           tx + 1, h11, ty + 1,
           tx + 1, h10, ty
         );
-        if (tType === TILE_WATER) {
-          // Continuous world-space UV coordinates for seamless water wave flow
+        if (tType === TILE_WATER && isPersp) {
+          // Perspective mode: continuous world coordinates at 1.0 original tile texture scale
           bucket.uvs.push(
-            tx * 0.25, ty * 0.25,
-            tx * 0.25, (ty + 1) * 0.25,
-            (tx + 1) * 0.25, (ty + 1) * 0.25,
+            tx, ty,
+            tx, ty + 1,
+            tx + 1, ty + 1,
 
-            tx * 0.25, ty * 0.25,
-            (tx + 1) * 0.25, (ty + 1) * 0.25,
-            (tx + 1) * 0.25, ty * 0.25
+            tx, ty,
+            tx + 1, ty + 1,
+            tx + 1, ty
           );
 
           // Uniform clean aquatic lighting without per-tile dark AO border seams
@@ -5334,96 +5371,98 @@ export class RCT3DRenderer {
         }
 
         // 4-Sided Cliff Drop-walls (South, East, North, West) for full 360-degree visibility
-        const baseH = (tType === TILE_WATER) ? -0.5 : 0.0;
-        const cliffBaseAO = 0.65 * zoneMult;
-        const cliffTopAO = 0.95 * zoneMult;
+        if (tType !== TILE_WATER) {
+          const baseH = 0.0;
+          const cliffBaseAO = 0.65 * zoneMult;
+          const cliffTopAO = 0.95 * zoneMult;
 
-        // 1. South Face (+Y, at ty + 1, facing +Z)
-        if (ty === clampedMaxTy || isWaterAt(tx, ty + 1)) {
-          bucket.pos.push(
-            tx, baseH, ty + 1,
-            tx + 1, baseH, ty + 1,
-            tx + 1, h11, ty + 1,
+          // 1. South Face (+Y, at ty + 1, facing +Z)
+          if (ty === clampedMaxTy || isWaterAt(tx, ty + 1)) {
+            bucket.pos.push(
+              tx, baseH, ty + 1,
+              tx + 1, baseH, ty + 1,
+              tx + 1, h11, ty + 1,
 
-            tx, baseH, ty + 1,
-            tx + 1, h11, ty + 1,
-            tx, h01, ty + 1
-          );
-          bucket.uvs.push(0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1);
-          bucket.colors.push(
-            cliffBaseAO, cliffBaseAO, cliffBaseAO,
-            cliffBaseAO, cliffBaseAO, cliffBaseAO,
-            cliffTopAO, cliffTopAO, cliffTopAO,
-            cliffBaseAO, cliffBaseAO, cliffBaseAO,
-            cliffTopAO, cliffTopAO, cliffTopAO,
-            cliffTopAO, cliffTopAO, cliffTopAO
-          );
-        }
+              tx, baseH, ty + 1,
+              tx + 1, h11, ty + 1,
+              tx, h01, ty + 1
+            );
+            bucket.uvs.push(0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1);
+            bucket.colors.push(
+              cliffBaseAO, cliffBaseAO, cliffBaseAO,
+              cliffBaseAO, cliffBaseAO, cliffBaseAO,
+              cliffTopAO, cliffTopAO, cliffTopAO,
+              cliffBaseAO, cliffBaseAO, cliffBaseAO,
+              cliffTopAO, cliffTopAO, cliffTopAO,
+              cliffTopAO, cliffTopAO, cliffTopAO
+            );
+          }
 
-        // 2. East Face (+X, at tx + 1, facing +X)
-        if (tx === clampedMaxTx || isWaterAt(tx + 1, ty)) {
-          bucket.pos.push(
-            tx + 1, baseH, ty + 1,
-            tx + 1, baseH, ty,
-            tx + 1, h10, ty,
+          // 2. East Face (+X, at tx + 1, facing +X)
+          if (tx === clampedMaxTx || isWaterAt(tx + 1, ty)) {
+            bucket.pos.push(
+              tx + 1, baseH, ty + 1,
+              tx + 1, baseH, ty,
+              tx + 1, h10, ty,
 
-            tx + 1, baseH, ty + 1,
-            tx + 1, h10, ty,
-            tx + 1, h11, ty + 1
-          );
-          bucket.uvs.push(0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1);
-          bucket.colors.push(
-            cliffBaseAO, cliffBaseAO, cliffBaseAO,
-            cliffBaseAO, cliffBaseAO, cliffBaseAO,
-            cliffTopAO, cliffTopAO, cliffTopAO,
-            cliffBaseAO, cliffBaseAO, cliffBaseAO,
-            cliffTopAO, cliffTopAO, cliffTopAO,
-            cliffTopAO, cliffTopAO, cliffTopAO
-          );
-        }
+              tx + 1, baseH, ty + 1,
+              tx + 1, h10, ty,
+              tx + 1, h11, ty + 1
+            );
+            bucket.uvs.push(0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1);
+            bucket.colors.push(
+              cliffBaseAO, cliffBaseAO, cliffBaseAO,
+              cliffBaseAO, cliffBaseAO, cliffBaseAO,
+              cliffTopAO, cliffTopAO, cliffTopAO,
+              cliffBaseAO, cliffBaseAO, cliffBaseAO,
+              cliffTopAO, cliffTopAO, cliffTopAO,
+              cliffTopAO, cliffTopAO, cliffTopAO
+            );
+          }
 
-        // 3. North Face (-Y, at ty, facing -Z)
-        if (ty === clampedMinTy || isWaterAt(tx, ty - 1)) {
-          bucket.pos.push(
-            tx + 1, baseH, ty,
-            tx, baseH, ty,
-            tx, h00, ty,
+          // 3. North Face (-Y, at ty, facing -Z)
+          if (ty === clampedMinTy || isWaterAt(tx, ty - 1)) {
+            bucket.pos.push(
+              tx + 1, baseH, ty,
+              tx, baseH, ty,
+              tx, h00, ty,
 
-            tx + 1, baseH, ty,
-            tx, h00, ty,
-            tx + 1, h10, ty
-          );
-          bucket.uvs.push(0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1);
-          bucket.colors.push(
-            cliffBaseAO, cliffBaseAO, cliffBaseAO,
-            cliffBaseAO, cliffBaseAO, cliffBaseAO,
-            cliffTopAO, cliffTopAO, cliffTopAO,
-            cliffBaseAO, cliffBaseAO, cliffBaseAO,
-            cliffTopAO, cliffTopAO, cliffTopAO,
-            cliffTopAO, cliffTopAO, cliffTopAO
-          );
-        }
+              tx + 1, baseH, ty,
+              tx, h00, ty,
+              tx + 1, h10, ty
+            );
+            bucket.uvs.push(0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1);
+            bucket.colors.push(
+              cliffBaseAO, cliffBaseAO, cliffBaseAO,
+              cliffBaseAO, cliffBaseAO, cliffBaseAO,
+              cliffTopAO, cliffTopAO, cliffTopAO,
+              cliffBaseAO, cliffBaseAO, cliffBaseAO,
+              cliffTopAO, cliffTopAO, cliffTopAO,
+              cliffTopAO, cliffTopAO, cliffTopAO
+            );
+          }
 
-        // 4. West Face (-X, at tx, facing -X)
-        if (tx === clampedMinTx || isWaterAt(tx - 1, ty)) {
-          bucket.pos.push(
-            tx, baseH, ty,
-            tx, baseH, ty + 1,
-            tx, h01, ty + 1,
+          // 4. West Face (-X, at tx, facing -X)
+          if (tx === clampedMinTx || isWaterAt(tx - 1, ty)) {
+            bucket.pos.push(
+              tx, baseH, ty,
+              tx, baseH, ty + 1,
+              tx, h01, ty + 1,
 
-            tx, baseH, ty,
-            tx, h01, ty + 1,
-            tx, h00, ty
-          );
-          bucket.uvs.push(0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1);
-          bucket.colors.push(
-            cliffBaseAO, cliffBaseAO, cliffBaseAO,
-            cliffBaseAO, cliffBaseAO, cliffBaseAO,
-            cliffTopAO, cliffTopAO, cliffTopAO,
-            cliffBaseAO, cliffBaseAO, cliffBaseAO,
-            cliffTopAO, cliffTopAO, cliffTopAO,
-            cliffTopAO, cliffTopAO, cliffTopAO
-          );
+              tx, baseH, ty,
+              tx, h01, ty + 1,
+              tx, h00, ty
+            );
+            bucket.uvs.push(0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1);
+            bucket.colors.push(
+              cliffBaseAO, cliffBaseAO, cliffBaseAO,
+              cliffBaseAO, cliffBaseAO, cliffBaseAO,
+              cliffTopAO, cliffTopAO, cliffTopAO,
+              cliffBaseAO, cliffBaseAO, cliffBaseAO,
+              cliffTopAO, cliffTopAO, cliffTopAO,
+              cliffTopAO, cliffTopAO, cliffTopAO
+            );
+          }
         }
       }
     }
@@ -5622,8 +5661,10 @@ export class RCT3DRenderer {
       this.syncActiveMaterials(isPersp);
     }
 
-    if (!this.isPaused) {
-      this.waterTime += dt * 1.0;
+    const effectiveSpeed = (this.isPaused || simSpeed <= 0) ? 0.0 : simSpeed;
+    if (effectiveSpeed > 0) {
+      this.waterTime += dt * effectiveSpeed;
+      this.flameTime += dt * effectiveSpeed;
 
       const waterMat = this.materials[TILE_WATER];
       if (waterMat) {
@@ -5648,6 +5689,16 @@ export class RCT3DRenderer {
       }
       if (this.materials.grassFoliage?.userData?.foliageShader) {
         this.materials.grassFoliage.userData.foliageShader.uniforms.uSimTick.value = currentTickVal;
+      }
+    }
+
+    // Animated realistic flame shaders for campfires and torches (freeze completely when paused)
+    for (const dict of [this.materials, this.materialsIso, this.materialsPerspective]) {
+      if (dict && dict.campfireFlames?.uniforms?.uTime) {
+        dict.campfireFlames.uniforms.uTime.value = this.flameTime;
+      }
+      if (dict && dict.torchFlames?.uniforms?.uTime) {
+        dict.torchFlames.uniforms.uTime.value = this.flameTime;
       }
     }
 
@@ -6930,14 +6981,6 @@ export class RCT3DRenderer {
       }
     }
 
-    // Animated realistic flame shaders for campfires and torches
-    const flameTime = performance.now() * 0.001;
-    if (this.materials.campfireFlames?.uniforms?.uTime) {
-      this.materials.campfireFlames.uniforms.uTime.value = flameTime;
-    }
-    if (this.materials.torchFlames?.uniforms?.uTime) {
-      this.materials.torchFlames.uniforms.uTime.value = flameTime;
-    }
 
     // Draw WebGL Frame with Depth of Field & Chromatic Aberration in Perspective Modes
     const activeCam = this.isPerspectiveActive() ? this.fpCamera : this.camera;
