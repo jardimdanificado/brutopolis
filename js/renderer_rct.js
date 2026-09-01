@@ -533,19 +533,19 @@ function createHousePegsGeometry() {
 // Stage 1: Foundation Slab + 4 Timber Corner Posts (1 to 15 materials)
 function createHouseStage1Geometry() {
   const parts = [];
-  const slab = new THREE.BoxGeometry(1.48, 0.22, 1.48);
-  slab.translate(0, 0.11, 0);
+  const slab = new THREE.BoxGeometry(1.48, 0.25, 1.48);
+  slab.translate(0, 0.125, 0);
   parts.push(slab);
 
-  const postH = 0.95;
-  const postGeo = new THREE.BoxGeometry(0.12, postH, 0.12);
+  const postH = 2.20;
+  const postGeo = new THREE.BoxGeometry(0.14, postH, 0.14);
   const px = 0.64;
   const pz = 0.64;
 
-  const p1 = postGeo.clone(); p1.translate(-px, 0.22 + postH / 2, -pz); parts.push(p1);
-  const p2 = postGeo.clone(); p2.translate( px, 0.22 + postH / 2, -pz); parts.push(p2);
-  const p3 = postGeo.clone(); p3.translate(-px, 0.22 + postH / 2,  pz); parts.push(p3);
-  const p4 = postGeo.clone(); p4.translate( px, 0.22 + postH / 2,  pz); parts.push(p4);
+  const p1 = postGeo.clone(); p1.translate(-px, 0.25 + postH / 2, -pz); parts.push(p1);
+  const p2 = postGeo.clone(); p2.translate( px, 0.25 + postH / 2, -pz); parts.push(p2);
+  const p3 = postGeo.clone(); p3.translate(-px, 0.25 + postH / 2,  pz); parts.push(p3);
+  const p4 = postGeo.clone(); p4.translate( px, 0.25 + postH / 2,  pz); parts.push(p4);
 
   return mergeBufferGeometries(parts);
 }
@@ -553,31 +553,31 @@ function createHouseStage1Geometry() {
 // Stage 2: Foundation Slab + Posts + Top Cross Beams + Half Stone Masonry Walls (16 to 34 materials)
 function createHouseStage2Geometry() {
   const parts = [];
-  const slab = new THREE.BoxGeometry(1.48, 0.22, 1.48);
-  slab.translate(0, 0.11, 0);
+  const slab = new THREE.BoxGeometry(1.48, 0.25, 1.48);
+  slab.translate(0, 0.125, 0);
   parts.push(slab);
 
-  const wallBase = new THREE.BoxGeometry(1.42, 0.55, 1.42);
-  wallBase.translate(0, 0.22 + 0.275, 0);
+  const wallBase = new THREE.BoxGeometry(1.42, 1.10, 1.42);
+  wallBase.translate(0, 0.25 + 0.55, 0);
   parts.push(wallBase);
 
-  const postH = 0.95;
-  const postGeo = new THREE.BoxGeometry(0.12, postH, 0.12);
+  const postH = 2.20;
+  const postGeo = new THREE.BoxGeometry(0.14, postH, 0.14);
   const px = 0.64;
   const pz = 0.64;
 
-  const p1 = postGeo.clone(); p1.translate(-px, 0.22 + postH / 2, -pz); parts.push(p1);
-  const p2 = postGeo.clone(); p2.translate( px, 0.22 + postH / 2, -pz); parts.push(p2);
-  const p3 = postGeo.clone(); p3.translate(-px, 0.22 + postH / 2,  pz); parts.push(p3);
-  const p4 = postGeo.clone(); p4.translate( px, 0.22 + postH / 2,  pz); parts.push(p4);
+  const p1 = postGeo.clone(); p1.translate(-px, 0.25 + postH / 2, -pz); parts.push(p1);
+  const p2 = postGeo.clone(); p2.translate( px, 0.25 + postH / 2, -pz); parts.push(p2);
+  const p3 = postGeo.clone(); p3.translate(-px, 0.25 + postH / 2,  pz); parts.push(p3);
+  const p4 = postGeo.clone(); p4.translate( px, 0.25 + postH / 2,  pz); parts.push(p4);
 
-  const beamX = new THREE.BoxGeometry(1.40, 0.10, 0.10);
-  const bx1 = beamX.clone(); bx1.translate(0, 0.22 + postH, -pz); parts.push(bx1);
-  const bx2 = beamX.clone(); bx2.translate(0, 0.22 + postH,  pz); parts.push(bx2);
+  const beamX = new THREE.BoxGeometry(1.40, 0.16, 0.16);
+  const bx1 = beamX.clone(); bx1.translate(0, 0.25 + postH, -pz); parts.push(bx1);
+  const bx2 = beamX.clone(); bx2.translate(0, 0.25 + postH,  pz); parts.push(bx2);
 
-  const beamZ = new THREE.BoxGeometry(0.10, 0.10, 1.40);
-  const bz1 = beamZ.clone(); bz1.translate(-px, 0.22 + postH, 0); parts.push(bz1);
-  const bz2 = beamZ.clone(); bz2.translate( px, 0.22 + postH, 0); parts.push(bz2);
+  const beamZ = new THREE.BoxGeometry(0.16, 0.16, 1.40);
+  const bz1 = beamZ.clone(); bz1.translate(-px, 0.25 + postH, 0); parts.push(bz1);
+  const bz2 = beamZ.clone(); bz2.translate( px, 0.25 + postH, 0); parts.push(bz2);
 
   return mergeBufferGeometries(parts);
 }
@@ -585,22 +585,22 @@ function createHouseStage2Geometry() {
 // Stage 3: Full Stone Walls + Roof Timber Ridge & Rafter Framing Skeleton (35 to 49 materials)
 function createHouseStage3Geometry() {
   const parts = [];
-  const walls = new THREE.BoxGeometry(1.48, 1.20, 1.48);
-  walls.translate(0, 0.60, 0);
+  const walls = new THREE.BoxGeometry(1.48, 2.40, 1.48);
+  walls.translate(0, 1.20, 0);
   parts.push(walls);
 
-  const postH = 1.20;
+  const postH = 2.40;
   const pz = 0.64;
 
-  const ridge = new THREE.BoxGeometry(0.10, 0.10, 1.50);
-  ridge.translate(0, postH + 0.55, 0);
+  const ridge = new THREE.BoxGeometry(0.14, 0.14, 1.50);
+  ridge.translate(0, postH + 1.10, 0);
   parts.push(ridge);
 
-  const strutGeo = new THREE.BoxGeometry(0.08, 0.85, 0.08);
-  const s1 = strutGeo.clone(); s1.rotateZ(0.68); s1.translate(-0.35, postH + 0.28, -pz); parts.push(s1);
-  const s2 = strutGeo.clone(); s2.rotateZ(-0.68); s2.translate(0.35, postH + 0.28, -pz); parts.push(s2);
-  const s3 = strutGeo.clone(); s3.rotateZ(0.68); s3.translate(-0.35, postH + 0.28,  pz); parts.push(s3);
-  const s4 = strutGeo.clone(); s4.rotateZ(-0.68); s4.translate(0.35, postH + 0.28,  pz); parts.push(s4);
+  const strutGeo = new THREE.BoxGeometry(0.10, 1.60, 0.10);
+  const s1 = strutGeo.clone(); s1.rotateZ(0.68); s1.translate(-0.45, postH + 0.55, -pz); parts.push(s1);
+  const s2 = strutGeo.clone(); s2.rotateZ(-0.68); s2.translate(0.45, postH + 0.55, -pz); parts.push(s2);
+  const s3 = strutGeo.clone(); s3.rotateZ(0.68); s3.translate(-0.45, postH + 0.55,  pz); parts.push(s3);
+  const s4 = strutGeo.clone(); s4.rotateZ(-0.68); s4.translate(0.45, postH + 0.55,  pz); parts.push(s4);
 
   return mergeBufferGeometries(parts);
 }
@@ -609,20 +609,25 @@ function createHouseStage3Geometry() {
 // House Variational Geometries (Stone Castle Keep & Rustic Forest Wood Cabin)
 // -----------------------------------------------------------------------------
 
-// Stone Castle Keep House Walls (Square fortress tower with 4 corner bastion turrets)
+// Stone Castle Keep House Walls (Square fortress tower with 4 corner bastion turrets & belt courses)
 function createStoneCastleWallGeometry() {
   const parts = [];
   // Base fortified keep body
-  const body = new THREE.BoxGeometry(1.58, 1.40, 1.58);
-  body.translate(0, 0.70, 0);
+  const body = new THREE.BoxGeometry(1.58, 4.20, 1.58);
+  body.translate(0, 2.10, 0);
   parts.push(body);
 
+  // Intermediate stone string course / belt cornice (prevents vertical stretching look)
+  const belt = new THREE.BoxGeometry(1.64, 0.18, 1.64);
+  belt.translate(0, 2.10, 0);
+  parts.push(belt);
+
   // 4 Corner Bastion Turrets
-  const turretGeo = new THREE.BoxGeometry(0.36, 1.65, 0.36);
-  const t1 = turretGeo.clone(); t1.translate(-0.72, 0.825, -0.72); parts.push(t1);
-  const t2 = turretGeo.clone(); t2.translate( 0.72, 0.825, -0.72); parts.push(t2);
-  const t3 = turretGeo.clone(); t3.translate(-0.72, 0.825,  0.72); parts.push(t3);
-  const t4 = turretGeo.clone(); t4.translate( 0.72, 0.825,  0.72); parts.push(t4);
+  const turretGeo = new THREE.BoxGeometry(0.42, 4.90, 0.42);
+  const t1 = turretGeo.clone(); t1.translate(-0.72, 2.45, -0.72); parts.push(t1);
+  const t2 = turretGeo.clone(); t2.translate( 0.72, 2.45, -0.72); parts.push(t2);
+  const t3 = turretGeo.clone(); t3.translate(-0.72, 2.45,  0.72); parts.push(t3);
+  const t4 = turretGeo.clone(); t4.translate( 0.72, 2.45,  0.72); parts.push(t4);
 
   return mergeBufferGeometries(parts);
 }
@@ -631,25 +636,25 @@ function createStoneCastleWallGeometry() {
 function createStoneCastleRoofGeometry() {
   const parts = [];
   // Flat stone walkway slab
-  const slab = new THREE.BoxGeometry(1.68, 0.15, 1.68);
-  slab.translate(0, 1.40 + 0.075, 0);
+  const slab = new THREE.BoxGeometry(1.68, 0.25, 1.68);
+  slab.translate(0, 4.20 + 0.125, 0);
   parts.push(slab);
 
   // Perimeter Crenellated Merlons
-  const merlonX = new THREE.BoxGeometry(0.34, 0.28, 0.16);
+  const merlonX = new THREE.BoxGeometry(0.34, 0.55, 0.16);
   for (const x of [-0.48, 0, 0.48]) {
-    const mf = merlonX.clone(); mf.translate(x, 1.40 + 0.15 + 0.14, 0.76); parts.push(mf);
-    const mb = merlonX.clone(); mb.translate(x, 1.40 + 0.15 + 0.14, -0.76); parts.push(mb);
+    const mf = merlonX.clone(); mf.translate(x, 4.45 + 0.275, 0.76); parts.push(mf);
+    const mb = merlonX.clone(); mb.translate(x, 4.45 + 0.275, -0.76); parts.push(mb);
   }
-  const merlonZ = new THREE.BoxGeometry(0.16, 0.28, 0.34);
+  const merlonZ = new THREE.BoxGeometry(0.16, 0.55, 0.34);
   for (const z of [-0.32, 0.32]) {
-    const ml = merlonZ.clone(); ml.translate(-0.76, 1.40 + 0.15 + 0.14, z); parts.push(ml);
-    const mr = merlonZ.clone(); mr.translate( 0.76, 1.40 + 0.15 + 0.14, z); parts.push(mr);
+    const ml = merlonZ.clone(); ml.translate(-0.76, 4.45 + 0.275, z); parts.push(ml);
+    const mr = merlonZ.clone(); mr.translate( 0.76, 4.45 + 0.275, z); parts.push(mr);
   }
 
   // Central Flagpole Mast
-  const mast = new THREE.CylinderGeometry(0.04, 0.04, 0.70, 5);
-  mast.translate(0, 1.40 + 0.15 + 0.35, 0);
+  const mast = new THREE.CylinderGeometry(0.05, 0.05, 1.60, 5);
+  mast.translate(0, 4.45 + 0.80, 0);
   parts.push(mast);
 
   return mergeBufferGeometries(parts);
@@ -675,337 +680,343 @@ function createCleanPitchedRoof(w, d, h) {
 // 0. Timber Cabin (2-Story, 2x1 Footprint: X [0.05..1.95], Z [0.05..0.95])
 function createWoodCabinWallGeo() {
   const parts = [];
-  
-  const plinth = new THREE.BoxGeometry(1.90, 0.20, 0.90); plinth.translate(0, 0.10, 0); parts.push(plinth);
-  const f1 = new THREE.BoxGeometry(1.85, 1.10, 0.85); f1.translate(0, 0.75, 0); parts.push(f1);
-  const f2 = new THREE.BoxGeometry(1.90, 1.00, 0.90); f2.translate(0, 1.80, 0); parts.push(f2);
-  const chimney = new THREE.BoxGeometry(0.35, 2.80, 0.35); chimney.translate(0.75, 1.40, -0.25); parts.push(chimney);
+  const plinth = new THREE.BoxGeometry(1.90, 0.25, 0.90); plinth.translate(0, 0.125, 0); parts.push(plinth);
+  const f1 = new THREE.BoxGeometry(1.85, 1.85, 0.85); f1.translate(0, 1.175, 0); parts.push(f1);
+  const jetty = new THREE.BoxGeometry(1.92, 0.12, 0.92); jetty.translate(0, 2.16, 0); parts.push(jetty);
+  const f2 = new THREE.BoxGeometry(1.88, 1.75, 0.88); f2.translate(0, 3.095, 0); parts.push(f2);
+  const chimney = new THREE.BoxGeometry(0.40, 5.80, 0.40); chimney.translate(0.75, 2.90, -0.25); parts.push(chimney);
   return mergeBufferGeometries(parts);
 }
 function createWoodCabinRoofGeo() {
-  const roof = createCleanPitchedRoof(1.92, 0.92, 0.85);
-  roof.translate(0, 2.30, 0);
+  const roof = createCleanPitchedRoof(1.94, 0.94, 1.45);
+  roof.translate(0, 4.00, 0);
   return roof;
 }
 
 // 1. Stone Masonry Cottage (2-Story, 2x2 Footprint: X [0.05..1.95], Z [0.05..1.95])
 function createStoneCottageWallGeo() {
   const parts = [];
-  
-  const plinth = new THREE.BoxGeometry(1.90, 0.22, 1.90); plinth.translate(0, 0.11, 0); parts.push(plinth);
-  const f1 = new THREE.BoxGeometry(1.85, 1.10, 1.85); f1.translate(0, 0.77, 0); parts.push(f1);
-  const f2 = new THREE.BoxGeometry(1.80, 1.00, 1.80); f2.translate(0, 1.82, 0); parts.push(f2);
-  const chimney = new THREE.BoxGeometry(0.40, 2.90, 0.40); chimney.translate(-0.70, 1.45, 0.65); parts.push(chimney);
+  const plinth = new THREE.BoxGeometry(1.90, 0.25, 1.90); plinth.translate(0, 0.125, 0); parts.push(plinth);
+  const f1 = new THREE.BoxGeometry(1.85, 1.85, 1.85); f1.translate(0, 1.175, 0); parts.push(f1);
+  const belt = new THREE.BoxGeometry(1.92, 0.14, 1.92); belt.translate(0, 2.17, 0); parts.push(belt);
+  const f2 = new THREE.BoxGeometry(1.82, 1.75, 1.82); f2.translate(0, 3.115, 0); parts.push(f2);
+  const chimney = new THREE.BoxGeometry(0.45, 6.00, 0.45); chimney.translate(-0.70, 3.00, 0.65); parts.push(chimney);
   return mergeBufferGeometries(parts);
 }
 function createStoneCottageRoofGeo() {
-  const roof = createCleanPitchedRoof(1.92, 1.92, 0.95, false);
-  roof.translate(0, 2.32, 0);
+  const roof = createCleanPitchedRoof(1.94, 1.94, 1.55, false);
+  roof.translate(0, 4.00, 0);
   return roof;
 }
 
 // 2. Thatched Hut / Roundhouse (2-Story, 1x1x2 Footprint: X [0.05..0.95], Z [0.05..0.95])
 function createThatchedHutWallGeo() {
   const parts = [];
-  
-  const footing = new THREE.CylinderGeometry(0.44, 0.46, 0.15, 16); footing.translate(0, 0.075, 0); parts.push(footing);
-  const f1 = new THREE.CylinderGeometry(0.42, 0.44, 0.95, 16); f1.translate(0, 0.625, 0); parts.push(f1);
-  const f2 = new THREE.CylinderGeometry(0.40, 0.42, 0.90, 16); f2.translate(0, 1.55, 0); parts.push(f2);
+  const footing = new THREE.CylinderGeometry(0.46, 0.48, 0.25, 16); footing.translate(0, 0.125, 0); parts.push(footing);
+  const f1 = new THREE.CylinderGeometry(0.44, 0.46, 1.80, 16); f1.translate(0, 1.15, 0); parts.push(f1);
+  const ring = new THREE.CylinderGeometry(0.47, 0.47, 0.14, 16); ring.translate(0, 2.12, 0); parts.push(ring);
+  const f2 = new THREE.CylinderGeometry(0.42, 0.44, 1.70, 16); f2.translate(0, 3.04, 0); parts.push(f2);
   return mergeBufferGeometries(parts);
 }
 function createThatchedHutRoofGeo() {
-  
-  const roof = new THREE.ConeGeometry(0.55, 0.85, 16); roof.translate(0, 2.425, 0);
+  const roof = new THREE.ConeGeometry(0.58, 1.65, 16); roof.translate(0, 4.725, 0);
   return roof;
 }
 
 // 3. Heavy Log Lodge (3-Story, 2x2x3 Footprint: X [0.05..1.95], Z [0.05..1.95])
 function createLogLodgeWallGeo() {
   const parts = [];
-  
-  const stoneBase = new THREE.BoxGeometry(1.90, 0.22, 1.90); stoneBase.translate(0, 0.11, 0); parts.push(stoneBase);
-  const f1 = new THREE.BoxGeometry(1.85, 1.00, 1.85); f1.translate(0, 0.72, 0); parts.push(f1);
-  const f2 = new THREE.BoxGeometry(1.88, 1.00, 1.88); f2.translate(0, 1.72, 0); parts.push(f2);
-  const f3 = new THREE.BoxGeometry(1.70, 0.90, 1.70); f3.translate(0, 2.67, 0); parts.push(f3);
-  const chim1 = new THREE.BoxGeometry(0.35, 3.80, 0.35); chim1.translate(0.70, 1.90, -0.45); parts.push(chim1);
+  const stoneBase = new THREE.BoxGeometry(1.90, 0.30, 1.90); stoneBase.translate(0, 0.15, 0); parts.push(stoneBase);
+  const f1 = new THREE.BoxGeometry(1.86, 1.85, 1.86); f1.translate(0, 1.225, 0); parts.push(f1);
+  const ledge1 = new THREE.BoxGeometry(1.92, 0.12, 1.92); ledge1.translate(0, 2.21, 0); parts.push(ledge1);
+  const f2 = new THREE.BoxGeometry(1.84, 1.75, 1.84); f2.translate(0, 3.145, 0); parts.push(f2);
+  const ledge2 = new THREE.BoxGeometry(1.88, 0.12, 1.88); ledge2.translate(0, 4.08, 0); parts.push(ledge2);
+  const f3 = new THREE.BoxGeometry(1.72, 1.65, 1.72); f3.translate(0, 4.965, 0); parts.push(f3);
+  const chim1 = new THREE.BoxGeometry(0.40, 7.80, 0.40); chim1.translate(0.70, 3.90, -0.45); parts.push(chim1);
   return mergeBufferGeometries(parts);
 }
 function createLogLodgeRoofGeo() {
-  const roof = createCleanPitchedRoof(1.92, 1.92, 0.95, false);
-  roof.translate(0, 3.12, 0);
+  const roof = createCleanPitchedRoof(1.94, 1.94, 1.75, false);
+  roof.translate(0, 5.80, 0);
   return roof;
 }
 
 // 4. Half-Timbered Tudor House (2-Story, 2x1x2 Footprint: X [0.05..1.95], Z [0.05..0.95])
 function createHalfTimberedWallGeo() {
   const parts = [];
-  
-  const plinth = new THREE.BoxGeometry(1.90, 0.18, 0.90); plinth.translate(0, 0.09, 0); parts.push(plinth);
-  const f1 = new THREE.BoxGeometry(1.85, 1.10, 0.85); f1.translate(0, 0.73, 0); parts.push(f1);
-  const f2 = new THREE.BoxGeometry(1.90, 1.00, 0.90); f2.translate(0, 1.78, 0); parts.push(f2);
-  const chimney = new THREE.BoxGeometry(0.35, 2.90, 0.35); chimney.translate(0.75, 1.45, 0); parts.push(chimney);
+  const plinth = new THREE.BoxGeometry(1.90, 0.25, 0.90); plinth.translate(0, 0.125, 0); parts.push(plinth);
+  const f1 = new THREE.BoxGeometry(1.85, 1.85, 0.85); f1.translate(0, 1.175, 0); parts.push(f1);
+  const jetty = new THREE.BoxGeometry(1.95, 0.16, 0.95); jetty.translate(0, 2.18, 0); parts.push(jetty);
+  const f2 = new THREE.BoxGeometry(1.90, 1.80, 0.90); f2.translate(0, 3.16, 0); parts.push(f2);
+  const chimney = new THREE.BoxGeometry(0.40, 6.00, 0.40); chimney.translate(0.75, 3.00, 0); parts.push(chimney);
   return mergeBufferGeometries(parts);
 }
 function createHalfTimberedRoofGeo() {
-  const roof = createCleanPitchedRoof(1.92, 0.92, 0.90);
-  roof.translate(0, 2.28, 0);
+  const roof = createCleanPitchedRoof(1.95, 0.95, 1.50);
+  roof.translate(0, 4.10, 0);
   return roof;
 }
 
 // 5. Mud-Brick Adobe / Pueblo (2-Story, 2x2x2 Footprint: X [0.05..1.95], Z [0.05..1.95])
 function createMudBrickAdobeWallGeo() {
   const parts = [];
-  
-  const f1 = new THREE.BoxGeometry(1.90, 1.15, 1.90); f1.translate(0, 0.575, 0); parts.push(f1);
-  const f2 = new THREE.BoxGeometry(1.30, 1.00, 1.30); f2.translate(-0.25, 1.65, -0.25); parts.push(f2);
+  const f1 = new THREE.BoxGeometry(1.90, 2.10, 1.90); f1.translate(0, 1.05, 0); parts.push(f1);
+  const f2 = new THREE.BoxGeometry(1.30, 1.85, 1.30); f2.translate(-0.25, 3.025, -0.25); parts.push(f2);
+  for (let z = -0.70; z <= 0.70; z += 0.45) {
+    const viga = new THREE.CylinderGeometry(0.04, 0.04, 2.05, 6);
+    viga.rotateZ(Math.PI / 2);
+    viga.translate(0, 1.95, z);
+    parts.push(viga);
+  }
   return mergeBufferGeometries(parts);
 }
 function createMudBrickAdobeRoofGeo() {
   const parts = [];
-  
-  const p1 = new THREE.BoxGeometry(1.92, 0.12, 1.92); p1.translate(0, 1.21, 0); parts.push(p1);
-  const p2 = new THREE.BoxGeometry(1.34, 0.12, 1.34); p2.translate(-0.25, 2.21, -0.25); parts.push(p2);
+  const p1 = new THREE.BoxGeometry(1.94, 0.16, 1.94); p1.translate(0, 2.10 + 0.08, 0); parts.push(p1);
+  const p2 = new THREE.BoxGeometry(1.34, 0.16, 1.34); p2.translate(-0.25, 3.95 + 0.08, -0.25); parts.push(p2);
   return mergeBufferGeometries(parts);
 }
 
 // 6. Alpine Stilt House (3-Story, 2x2x3 Footprint: X [0.05..1.95], Z [0.05..1.95])
 function createMountainStiltWallGeo() {
   const parts = [];
-  
-  const stilt = new THREE.BoxGeometry(0.18, 1.25, 0.18);
-  const s1 = stilt.clone(); s1.translate(-0.80, 0.625, -0.80); parts.push(s1);
-  const s2 = stilt.clone(); s2.translate(0.80, 0.625, -0.80); parts.push(s2);
-  const s3 = stilt.clone(); s3.translate(-0.80, 0.625, 0.80); parts.push(s3);
-  const s4 = stilt.clone(); s4.translate(0.80, 0.625, 0.80); parts.push(s4);
-  const deck = new THREE.BoxGeometry(1.90, 0.14, 1.90); deck.translate(0, 1.32, 0); parts.push(deck);
-  const f2 = new THREE.BoxGeometry(1.70, 1.10, 1.70); f2.translate(0, 1.94, 0); parts.push(f2);
-  const f3 = new THREE.BoxGeometry(1.80, 1.00, 1.80); f3.translate(0, 2.99, 0); parts.push(f3);
+  const stilt = new THREE.BoxGeometry(0.20, 2.10, 0.20);
+  const s1 = stilt.clone(); s1.translate(-0.80, 1.05, -0.80); parts.push(s1);
+  const s2 = stilt.clone(); s2.translate( 0.80, 1.05, -0.80); parts.push(s2);
+  const s3 = stilt.clone(); s3.translate(-0.80, 1.05,  0.80); parts.push(s3);
+  const s4 = stilt.clone(); s4.translate( 0.80, 1.05,  0.80); parts.push(s4);
+  const deck = new THREE.BoxGeometry(1.94, 0.20, 1.94); deck.translate(0, 2.20, 0); parts.push(deck);
+  const f2 = new THREE.BoxGeometry(1.72, 1.85, 1.72); f2.translate(0, 3.225, 0); parts.push(f2);
+  const ledge = new THREE.BoxGeometry(1.80, 0.12, 1.80); ledge.translate(0, 4.21, 0); parts.push(ledge);
+  const f3 = new THREE.BoxGeometry(1.78, 1.70, 1.78); f3.translate(0, 5.12, 0); parts.push(f3);
   return mergeBufferGeometries(parts);
 }
 function createMountainStiltRoofGeo() {
-  const roof = createCleanPitchedRoof(1.92, 1.92, 1.00, false);
-  roof.translate(0, 3.49, 0);
+  const roof = createCleanPitchedRoof(1.95, 1.95, 1.75, false);
+  roof.translate(0, 6.00, 0);
   return roof;
 }
 
-// 7. Nordic Viking Longhouse (3-Story, 3x2x3 Footprint: X [0.05..2.95], Z [0.05..1.95])
+// 7. Nordic Viking Longhouse (2-Story Hall, 3x2x2 Footprint: X [0.05..2.95], Z [0.05..1.95])
 function createLonghouseWallGeo() {
   const parts = [];
-  
-  const skirt = new THREE.BoxGeometry(2.90, 0.25, 1.90); skirt.translate(0, 0.125, 0); parts.push(skirt);
-  const body = new THREE.BoxGeometry(2.85, 2.10, 1.85); body.translate(0, 1.30, 0); parts.push(body);
+  const skirt = new THREE.BoxGeometry(2.90, 0.35, 1.90); skirt.translate(0, 0.175, 0); parts.push(skirt);
+  const body = new THREE.BoxGeometry(2.85, 3.65, 1.85); body.translate(0, 2.175, 0); parts.push(body);
+  const belt = new THREE.BoxGeometry(2.92, 0.14, 1.92); belt.translate(0, 2.15, 0); parts.push(belt);
   return mergeBufferGeometries(parts);
 }
 function createLonghouseRoofGeo() {
-  const roof = createCleanPitchedRoof(2.92, 1.92, 1.10);
-  roof.translate(0, 2.35, 0);
+  const roof = createCleanPitchedRoof(2.94, 1.94, 1.85);
+  roof.translate(0, 4.00, 0);
   return roof;
 }
 
 // 8. Ancient Bone Ossuary (3-Story, 2x2x3 Footprint: X [0.05..1.95], Z [0.05..1.95])
 function createBoneOssuaryWallGeo() {
   const parts = [];
-  
-  const f1 = new THREE.BoxGeometry(1.90, 1.10, 1.90); f1.translate(0, 0.55, 0); parts.push(f1);
-  const f2 = new THREE.BoxGeometry(1.75, 1.10, 1.75); f2.translate(0, 1.65, 0); parts.push(f2);
-  const f3 = new THREE.BoxGeometry(1.10, 1.00, 1.10); f3.translate(0, 2.70, 0); parts.push(f3);
+  const f1 = new THREE.BoxGeometry(1.90, 1.90, 1.90); f1.translate(0, 0.95, 0); parts.push(f1);
+  const ledge1 = new THREE.BoxGeometry(1.94, 0.14, 1.94); ledge1.translate(0, 1.97, 0); parts.push(ledge1);
+  const f2 = new THREE.BoxGeometry(1.75, 1.80, 1.75); f2.translate(0, 2.94, 0); parts.push(f2);
+  const ledge2 = new THREE.BoxGeometry(1.80, 0.14, 1.80); ledge2.translate(0, 3.91, 0); parts.push(ledge2);
+  const f3 = new THREE.BoxGeometry(1.15, 1.70, 1.15); f3.translate(0, 4.83, 0); parts.push(f3);
   return mergeBufferGeometries(parts);
 }
 function createBoneOssuaryRoofGeo() {
   const parts = [];
-  
-  const r1 = createCleanPitchedRoof(1.92, 1.92, 0.70, false); r1.translate(0, 2.20, 0); parts.push(r1);
-  const spire = new THREE.ConeGeometry(0.60, 1.20, 8); spire.translate(0, 3.80, 0); parts.push(spire);
+  const r1 = createCleanPitchedRoof(1.94, 1.94, 1.25, false); r1.translate(0, 3.90, 0); parts.push(r1);
+  const spire = new THREE.ConeGeometry(0.60, 2.20, 8); spire.translate(0, 6.80, 0); parts.push(spire);
   return mergeBufferGeometries(parts);
 }
 
 // 9. Manor Villa (4-Story, 3x3x4 Footprint: X [0.05..2.95], Z [0.05..2.95])
 function createWatchtowerVillaWallGeo() {
   const parts = [];
-  
-  const f1 = new THREE.BoxGeometry(2.85, 1.15, 2.85); f1.translate(0, 0.575, 0); parts.push(f1);
-  const f2 = new THREE.BoxGeometry(2.65, 1.10, 2.65); f2.translate(0, 1.70, 0); parts.push(f2);
-  const f3 = new THREE.BoxGeometry(2.45, 1.00, 2.45); f3.translate(0, 2.75, 0); parts.push(f3);
-  const f4 = new THREE.BoxGeometry(2.15, 0.90, 2.15); f4.translate(0, 3.70, 0); parts.push(f4);
-  const chimney = new THREE.BoxGeometry(0.45, 4.80, 0.45); chimney.translate(0.95, 2.40, -0.75); parts.push(chimney);
+  const f1 = new THREE.BoxGeometry(2.85, 2.00, 2.85); f1.translate(0, 1.00, 0); parts.push(f1);
+  const balc1 = new THREE.BoxGeometry(2.92, 0.15, 2.92); balc1.translate(0, 2.075, 0); parts.push(balc1);
+  const f2 = new THREE.BoxGeometry(2.65, 1.90, 2.65); f2.translate(0, 3.10, 0); parts.push(f2);
+  const balc2 = new THREE.BoxGeometry(2.72, 0.15, 2.72); balc2.translate(0, 4.125, 0); parts.push(balc2);
+  const f3 = new THREE.BoxGeometry(2.45, 1.80, 2.45); f3.translate(0, 5.10, 0); parts.push(f3);
+  const balc3 = new THREE.BoxGeometry(2.52, 0.15, 2.52); balc3.translate(0, 6.075, 0); parts.push(balc3);
+  const f4 = new THREE.BoxGeometry(2.15, 1.70, 2.15); f4.translate(0, 7.00, 0); parts.push(f4);
+  const chimney = new THREE.BoxGeometry(0.50, 9.50, 0.50); chimney.translate(0.95, 4.75, -0.75); parts.push(chimney);
   return mergeBufferGeometries(parts);
 }
 function createWatchtowerVillaRoofGeo() {
-  
-  const mainRoof = createCleanPitchedRoof(2.25, 2.25, 1.00, false);
-  mainRoof.translate(0, 4.15, 0);
+  const mainRoof = createCleanPitchedRoof(2.25, 2.25, 1.85, false);
+  mainRoof.translate(0, 7.85, 0);
   return mainRoof;
 }
 
-// 10. Slender Timber Tower House (1x1x3 Footprint: X [0.05..0.95], Z [0.05..0.95])
+// 10. Slender Timber Tower House (3-Story, 1x1x3 Footprint: X [0.05..0.95], Z [0.05..0.95])
 function createTimberTowerWallGeo() {
   const parts = [];
-  
-  const base = new THREE.BoxGeometry(0.90, 0.20, 0.90); base.translate(0, 0.10, 0); parts.push(base);
-  const f1 = new THREE.BoxGeometry(0.85, 1.00, 0.85); f1.translate(0, 0.70, 0); parts.push(f1);
-  const f2 = new THREE.BoxGeometry(0.88, 0.95, 0.88); f2.translate(0, 1.675, 0); parts.push(f2);
-  const f3 = new THREE.BoxGeometry(0.82, 0.90, 0.82); f3.translate(0, 2.60, 0); parts.push(f3);
+  const base = new THREE.BoxGeometry(0.90, 0.25, 0.90); base.translate(0, 0.125, 0); parts.push(base);
+  const f1 = new THREE.BoxGeometry(0.85, 1.80, 0.85); f1.translate(0, 1.15, 0); parts.push(f1);
+  const ledge1 = new THREE.BoxGeometry(0.92, 0.12, 0.92); ledge1.translate(0, 2.11, 0); parts.push(ledge1);
+  const f2 = new THREE.BoxGeometry(0.88, 1.70, 0.88); f2.translate(0, 3.02, 0); parts.push(f2);
+  const ledge2 = new THREE.BoxGeometry(0.92, 0.12, 0.92); ledge2.translate(0, 3.93, 0); parts.push(ledge2);
+  const f3 = new THREE.BoxGeometry(0.82, 1.60, 0.82); f3.translate(0, 4.79, 0); parts.push(f3);
   return mergeBufferGeometries(parts);
 }
 function createTimberTowerRoofGeo() {
-  
-  const roof = createCleanPitchedRoof(0.92, 0.92, 0.75, false);
-  roof.translate(0, 3.05, 0);
+  const roof = createCleanPitchedRoof(0.94, 0.94, 1.45, false);
+  roof.translate(0, 5.60, 0);
   return roof;
 }
 
-// 11. Slender Stone Townhouse (1x1x3 Footprint: X [0.05..0.95], Z [0.05..0.95])
+// 11. Slender Stone Townhouse (3-Story, 1x1x3 Footprint: X [0.05..0.95], Z [0.05..0.95])
 function createStoneTownhouseWallGeo() {
   const parts = [];
-  
   const plinth = new THREE.BoxGeometry(0.92, 0.25, 0.92); plinth.translate(0, 0.125, 0); parts.push(plinth);
-  const f1 = new THREE.BoxGeometry(0.86, 1.05, 0.86); f1.translate(0, 0.775, 0); parts.push(f1);
-  const f2 = new THREE.BoxGeometry(0.84, 1.00, 0.84); f2.translate(0, 1.80, 0); parts.push(f2);
-  const f3 = new THREE.BoxGeometry(0.80, 0.90, 0.80); f3.translate(0, 2.75, 0); parts.push(f3);
+  const f1 = new THREE.BoxGeometry(0.86, 1.80, 0.86); f1.translate(0, 1.15, 0); parts.push(f1);
+  const belt1 = new THREE.BoxGeometry(0.92, 0.12, 0.92); belt1.translate(0, 2.11, 0); parts.push(belt1);
+  const f2 = new THREE.BoxGeometry(0.84, 1.70, 0.84); f2.translate(0, 3.02, 0); parts.push(f2);
+  const belt2 = new THREE.BoxGeometry(0.90, 0.12, 0.90); belt2.translate(0, 3.93, 0); parts.push(belt2);
+  const f3 = new THREE.BoxGeometry(0.80, 1.60, 0.80); f3.translate(0, 4.79, 0); parts.push(f3);
   return mergeBufferGeometries(parts);
 }
 function createStoneTownhouseRoofGeo() {
-  
-  const spire = new THREE.ConeGeometry(0.52, 1.10, 4);
+  const spire = new THREE.ConeGeometry(0.52, 1.85, 4);
   spire.rotateY(Math.PI / 4);
-  spire.translate(0, 3.20 + 0.55, 0);
+  spire.translate(0, 6.525, 0);
   return spire;
 }
 
-// 12. Stilt Watch-Shack (1x1x2 Footprint: X [0.05..0.95], Z [0.05..0.95])
+// 12. Stilt Watch-Shack (2-Story, 1x1x2 Footprint: X [0.05..0.95], Z [0.05..0.95])
 function createStiltWatchShackWallGeo() {
   const parts = [];
-  
-  const stilt = new THREE.BoxGeometry(0.12, 1.10, 0.12);
-  const s1 = stilt.clone(); s1.translate(-0.35, 0.55, -0.35); parts.push(s1);
-  const s2 = stilt.clone(); s2.translate(0.35, 0.55, -0.35); parts.push(s2);
-  const s3 = stilt.clone(); s3.translate(-0.35, 0.55, 0.35); parts.push(s3);
-  const s4 = stilt.clone(); s4.translate(0.35, 0.55, 0.35); parts.push(s4);
-  const deck = new THREE.BoxGeometry(0.92, 0.12, 0.92); deck.translate(0, 1.16, 0); parts.push(deck);
-  const f2 = new THREE.BoxGeometry(0.85, 0.95, 0.85); f2.translate(0, 1.70, 0); parts.push(f2);
+  const stilt = new THREE.BoxGeometry(0.14, 2.00, 0.14);
+  const s1 = stilt.clone(); s1.translate(-0.35, 1.00, -0.35); parts.push(s1);
+  const s2 = stilt.clone(); s2.translate( 0.35, 1.00, -0.35); parts.push(s2);
+  const s3 = stilt.clone(); s3.translate(-0.35, 1.00,  0.35); parts.push(s3);
+  const s4 = stilt.clone(); s4.translate( 0.35, 1.00,  0.35); parts.push(s4);
+  const deck = new THREE.BoxGeometry(0.94, 0.18, 0.94); deck.translate(0, 2.09, 0); parts.push(deck);
+  const f2 = new THREE.BoxGeometry(0.86, 1.75, 0.86); f2.translate(0, 3.055, 0); parts.push(f2);
   return mergeBufferGeometries(parts);
 }
 function createStiltWatchShackRoofGeo() {
-  
-  const roof = createCleanPitchedRoof(0.94, 0.94, 0.65, false);
-  roof.translate(0, 2.175, 0);
+  const roof = createCleanPitchedRoof(0.95, 0.95, 1.25, false);
+  roof.translate(0, 3.95, 0);
   return roof;
 }
 
-// 13. Plaster Steeple Townhouse (1x1x4 Footprint: X [0.05..0.95], Z [0.05..0.95])
+// 13. Plaster Steeple Townhouse (4-Story, 1x1x4 Footprint: X [0.05..0.95], Z [0.05..0.95])
 function createPlasterSteepleWallGeo() {
   const parts = [];
-  
-  const plinth = new THREE.BoxGeometry(0.90, 0.18, 0.90); plinth.translate(0, 0.09, 0); parts.push(plinth);
-  const f1 = new THREE.BoxGeometry(0.85, 1.00, 0.85); f1.translate(0, 0.68, 0); parts.push(f1);
-  const f2 = new THREE.BoxGeometry(0.88, 0.95, 0.88); f2.translate(0, 1.655, 0); parts.push(f2);
-  const f3 = new THREE.BoxGeometry(0.82, 0.90, 0.82); f3.translate(0, 2.58, 0); parts.push(f3);
-  const f4 = new THREE.BoxGeometry(0.76, 0.85, 0.76); f4.translate(0, 3.455, 0); parts.push(f4);
+  const plinth = new THREE.BoxGeometry(0.90, 0.25, 0.90); plinth.translate(0, 0.125, 0); parts.push(plinth);
+  const f1 = new THREE.BoxGeometry(0.86, 1.75, 0.86); f1.translate(0, 1.125, 0); parts.push(f1);
+  const ledge1 = new THREE.BoxGeometry(0.92, 0.10, 0.92); ledge1.translate(0, 2.05, 0); parts.push(ledge1);
+  const f2 = new THREE.BoxGeometry(0.88, 1.65, 0.88); f2.translate(0, 2.925, 0); parts.push(f2);
+  const ledge2 = new THREE.BoxGeometry(0.92, 0.10, 0.92); ledge2.translate(0, 3.80, 0); parts.push(ledge2);
+  const f3 = new THREE.BoxGeometry(0.82, 1.55, 0.82); f3.translate(0, 4.625, 0); parts.push(f3);
+  const ledge3 = new THREE.BoxGeometry(0.88, 0.10, 0.88); ledge3.translate(0, 5.45, 0); parts.push(ledge3);
+  const f4 = new THREE.BoxGeometry(0.76, 1.45, 0.76); f4.translate(0, 6.225, 0); parts.push(f4);
   return mergeBufferGeometries(parts);
 }
 function createPlasterSteepleRoofGeo() {
-  
-  const spire = new THREE.ConeGeometry(0.48, 1.40, 8);
-  spire.translate(0, 3.88 + 0.70, 0);
+  const spire = new THREE.ConeGeometry(0.48, 2.20, 8);
+  spire.translate(0, 8.10, 0);
   return spire;
 }
 
 // 14. Single-Story Rustic Timber Ranch (1-Story, 2x1x1 Footprint: X [0.05..1.95], Z [0.05..0.95])
 function createSingleCabinWallGeo() {
   const parts = []; 
-  const porch = new THREE.BoxGeometry(1.90, 0.12, 0.90); porch.translate(0, 0.06, 0); parts.push(porch);
-  const cabin = new THREE.BoxGeometry(1.80, 0.85, 0.80); cabin.translate(0, 0.545, 0); parts.push(cabin);
-  const p1 = new THREE.BoxGeometry(0.10, 0.85, 0.10); p1.translate(-0.85, 0.545, 0.35); parts.push(p1);
-  const p2 = new THREE.BoxGeometry(0.10, 0.85, 0.10); p2.translate(0.85, 0.545, 0.35); parts.push(p2);
+  const porch = new THREE.BoxGeometry(1.90, 0.18, 0.90); porch.translate(0, 0.09, 0); parts.push(porch);
+  const cabin = new THREE.BoxGeometry(1.82, 1.85, 0.82); cabin.translate(0, 1.105, 0); parts.push(cabin);
+  const p1 = new THREE.BoxGeometry(0.10, 1.85, 0.10); p1.translate(-0.85, 1.105, 0.35); parts.push(p1);
+  const p2 = new THREE.BoxGeometry(0.10, 1.85, 0.10); p2.translate( 0.85, 1.105, 0.35); parts.push(p2);
+  const beam = new THREE.BoxGeometry(1.90, 0.12, 0.10); beam.translate(0, 2.09, 0.35); parts.push(beam);
   return mergeBufferGeometries(parts);
 }
 function createSingleCabinRoofGeo() {
-  
-  const roof = createCleanPitchedRoof(1.92, 0.92, 0.48);
-  roof.translate(0, 0.97, 0);
+  const roof = createCleanPitchedRoof(1.94, 0.94, 1.15);
+  roof.translate(0, 2.15, 0);
   return roof;
 }
 
 // 15. Single-Story Stone Cottage (1-Story, 2x2x1 Footprint: X [0.05..1.95], Z [0.05..1.95])
 function createSingleStoneCottageWallGeo() {
   const parts = []; 
-  const plinth = new THREE.BoxGeometry(1.90, 0.15, 1.90); plinth.translate(0, 0.075, 0); parts.push(plinth);
-  const body = new THREE.BoxGeometry(1.82, 0.82, 1.82); body.translate(0, 0.56, 0); parts.push(body);
-  const chimney = new THREE.BoxGeometry(0.35, 1.35, 0.35); chimney.translate(0.65, 0.675, -0.65); parts.push(chimney);
+  const plinth = new THREE.BoxGeometry(1.90, 0.25, 1.90); plinth.translate(0, 0.125, 0); parts.push(plinth);
+  const body = new THREE.BoxGeometry(1.84, 1.85, 1.84); body.translate(0, 1.175, 0); parts.push(body);
+  const chimney = new THREE.BoxGeometry(0.40, 3.80, 0.40); chimney.translate(0.65, 1.90, -0.65); parts.push(chimney);
   return mergeBufferGeometries(parts);
 }
 function createSingleStoneCottageRoofGeo() {
-  
-  const roof = createCleanPitchedRoof(1.92, 1.92, 0.55, false);
-  roof.translate(0, 0.97, 0);
+  const roof = createCleanPitchedRoof(1.94, 1.94, 1.25, false);
+  roof.translate(0, 2.15, 0);
   return roof;
 }
 
-// 16. Fenced Ranch Compound (1-Story, 3x3x1 Footprint: X [0.05..2.95], Z [0.05..2.95])
 // 16. Fenced Ranch Compound (1-Story, 3x3x1 Footprint: centered at origin)
 function createFencedRanchWallGeo() {
   const parts = []; 
-  const wingBack = new THREE.BoxGeometry(2.80, 0.88, 1.25); wingBack.translate(0, 0.44, -0.65); parts.push(wingBack);
-  const wingSide = new THREE.BoxGeometry(1.20, 0.85, 1.45); wingSide.translate(0.65, 0.425, 0.65); parts.push(wingSide);
-  const fPost1 = new THREE.BoxGeometry(0.08, 0.45, 0.08); fPost1.translate(-1.35, 0.225, 1.35); parts.push(fPost1);
-  const fPost2 = new THREE.BoxGeometry(0.08, 0.45, 0.08); fPost2.translate(1.35, 0.225, 1.35); parts.push(fPost2);
-  const fPost3 = new THREE.BoxGeometry(0.08, 0.45, 0.08); fPost3.translate(1.35, 0.225, -0.10); parts.push(fPost3);
-  const railFront = new THREE.BoxGeometry(2.70, 0.08, 0.06); railFront.translate(0, 0.35, 1.35); parts.push(railFront);
-  const railSide = new THREE.BoxGeometry(0.06, 0.08, 1.45); railSide.translate(1.35, 0.35, 0.65); parts.push(railSide);
+  const wingBack = new THREE.BoxGeometry(2.80, 1.85, 1.25); wingBack.translate(0, 0.925, -0.65); parts.push(wingBack);
+  const wingSide = new THREE.BoxGeometry(1.20, 1.80, 1.45); wingSide.translate(0.65, 0.90, 0.65); parts.push(wingSide);
+  const fPost1 = new THREE.BoxGeometry(0.10, 0.90, 0.10); fPost1.translate(-1.35, 0.45, 1.35); parts.push(fPost1);
+  const fPost2 = new THREE.BoxGeometry(0.10, 0.90, 0.10); fPost2.translate( 1.35, 0.45, 1.35); parts.push(fPost2);
+  const fPost3 = new THREE.BoxGeometry(0.10, 0.90, 0.10); fPost3.translate( 1.35, 0.45, -0.10); parts.push(fPost3);
+  const railFront = new THREE.BoxGeometry(2.70, 0.10, 0.08); railFront.translate(0, 0.75, 1.35); parts.push(railFront);
+  const railSide = new THREE.BoxGeometry(0.08, 0.10, 1.45); railSide.translate(1.35, 0.75, 0.65); parts.push(railSide);
   return mergeBufferGeometries(parts);
 }
 function createFencedRanchRoofGeo() {
   const parts = [];
-  const rBack = createCleanPitchedRoof(2.85, 1.30, 0.55); rBack.translate(0, 0.88, -0.65); parts.push(rBack);
-  const rSide = createCleanPitchedRoof(1.25, 1.50, 0.52); rSide.translate(0.65, 0.85, 0.65); parts.push(rSide);
+  const rBack = createCleanPitchedRoof(2.85, 1.30, 1.15); rBack.translate(0, 1.85, -0.65); parts.push(rBack);
+  const rSide = createCleanPitchedRoof(1.25, 1.50, 1.10); rSide.translate(0.65, 1.80, 0.65); parts.push(rSide);
   return mergeBufferGeometries(parts);
 }
 
 // 17. Courtyard Hacienda Estate (1-Story Condominium Compound, 4x4x1 Footprint: centered at origin)
 function createCourtyardHaciendaWallGeo() {
   const parts = []; 
-  const wingN = new THREE.BoxGeometry(3.85, 0.90, 1.05); wingN.translate(0, 0.45, -1.40); parts.push(wingN);
-  const wingS = new THREE.BoxGeometry(3.85, 0.90, 1.05); wingS.translate(0, 0.45, 1.40); parts.push(wingS);
-  const wingE = new THREE.BoxGeometry(1.05, 0.90, 1.75); wingE.translate(1.40, 0.45, 0); parts.push(wingE);
-  const wingW = new THREE.BoxGeometry(1.05, 0.90, 1.75); wingW.translate(-1.40, 0.45, 0); parts.push(wingW);
-  const patio = new THREE.BoxGeometry(1.80, 0.08, 1.80); patio.translate(0, 0.04, 0); parts.push(patio);
-  const fountain = new THREE.CylinderGeometry(0.35, 0.40, 0.35, 8); fountain.translate(0, 0.20, 0); parts.push(fountain);
+  const wingN = new THREE.BoxGeometry(3.85, 1.85, 1.05); wingN.translate(0, 0.925, -1.40); parts.push(wingN);
+  const wingS = new THREE.BoxGeometry(3.85, 1.85, 1.05); wingS.translate(0, 0.925, 1.40); parts.push(wingS);
+  const wingE = new THREE.BoxGeometry(1.05, 1.85, 1.75); wingE.translate(1.40, 0.925, 0); parts.push(wingE);
+  const wingW = new THREE.BoxGeometry(1.05, 1.85, 1.75); wingW.translate(-1.40, 0.925, 0); parts.push(wingW);
+  const patio = new THREE.BoxGeometry(1.80, 0.10, 1.80); patio.translate(0, 0.05, 0); parts.push(patio);
+  const fountain = new THREE.CylinderGeometry(0.40, 0.50, 0.55, 8); fountain.translate(0, 0.275, 0); parts.push(fountain);
   return mergeBufferGeometries(parts);
 }
 function createCourtyardHaciendaRoofGeo() {
   const parts = []; 
-  const rN = createCleanPitchedRoof(3.90, 1.10, 0.48); rN.translate(0, 0.90, -1.40); parts.push(rN);
-  const rS = createCleanPitchedRoof(3.90, 1.10, 0.48); rS.translate(0, 0.90, 1.40); parts.push(rS);
-  const rE = createCleanPitchedRoof(1.10, 1.80, 0.48); rE.translate(1.40, 0.90, 0); parts.push(rE);
-  const rW = createCleanPitchedRoof(1.10, 1.80, 0.48); rW.translate(-1.40, 0.90, 0); parts.push(rW);
+  const rN = createCleanPitchedRoof(3.90, 1.10, 1.10); rN.translate(0, 1.85, -1.40); parts.push(rN);
+  const rS = createCleanPitchedRoof(3.90, 1.10, 1.10); rS.translate(0, 1.85, 1.40); parts.push(rS);
+  const rE = createCleanPitchedRoof(1.10, 1.80, 1.10); rE.translate(1.40, 1.85, 0); parts.push(rE);
+  const rW = createCleanPitchedRoof(1.10, 1.80, 1.10); rW.translate(-1.40, 1.85, 0); parts.push(rW);
   return mergeBufferGeometries(parts);
 }
 
 // 18. Single-Story Adobe Rancho (1-Story, 2x2x1 Footprint: X [0.05..1.95], Z [0.05..1.95])
 function createAdobeRanchoWallGeo() {
   const parts = []; 
-  const body = new THREE.BoxGeometry(1.85, 0.85, 1.85); body.translate(0, 0.425, 0); parts.push(body);
-  const parapet = new THREE.BoxGeometry(1.90, 0.15, 1.90); parapet.translate(0, 0.925, 0); parts.push(parapet);
-  const oven = new THREE.CylinderGeometry(0.35, 0.42, 0.45, 8); oven.translate(0.65, 0.225, 0.65); parts.push(oven);
+  const body = new THREE.BoxGeometry(1.85, 1.95, 1.85); body.translate(0, 0.975, 0); parts.push(body);
+  const parapet = new THREE.BoxGeometry(1.90, 0.25, 1.90); parapet.translate(0, 2.075, 0); parts.push(parapet);
+  const oven = new THREE.CylinderGeometry(0.40, 0.50, 0.85, 8); oven.translate(0.65, 0.425, 0.65); parts.push(oven);
+  for (let z = -0.65; z <= 0.65; z += 0.45) {
+    const viga = new THREE.CylinderGeometry(0.04, 0.04, 2.02, 6);
+    viga.rotateZ(Math.PI / 2);
+    viga.translate(0, 1.85, z);
+    parts.push(viga);
+  }
   return mergeBufferGeometries(parts);
 }
 function createAdobeRanchoRoofGeo() {
-  
-  const coping = new THREE.BoxGeometry(1.75, 0.08, 1.75);
-  coping.translate(0, 0.95, 0);
+  const coping = new THREE.BoxGeometry(1.75, 0.12, 1.75);
+  coping.translate(0, 2.15, 0);
   return coping;
 }
 
 // 19. Ground Thatched Croft (1-Story, 1x1x1 Footprint: X [0.05..0.95], Z [0.05..0.95])
 function createGroundCroftWallGeo() {
   const parts = []; 
-  const body = new THREE.BoxGeometry(0.85, 0.80, 0.85); body.translate(0, 0.40, 0); parts.push(body);
+  const body = new THREE.BoxGeometry(0.85, 1.80, 0.85); body.translate(0, 0.90, 0); parts.push(body);
   return mergeBufferGeometries(parts);
 }
 function createGroundCroftRoofGeo() {
-  
-  const roof = createCleanPitchedRoof(0.92, 0.92, 0.55);
-  roof.translate(0, 0.80, 0);
+  const roof = createCleanPitchedRoof(0.94, 0.94, 1.20);
+  roof.translate(0, 1.80, 0);
   return roof;
 }
 
@@ -1017,16 +1028,22 @@ function createGroundCroftRoofGeo() {
 function createLeaderCitadelWallGeo() {
   const parts = [];
   for (let i = 0; i < 7; i++) {
-    const s = 2.4 - i * 0.15;
-    const tier = new THREE.BoxGeometry(s, 0.9, s);
-    tier.translate(0, i * 0.9 + 0.45, 0);
+    const s = 2.70 - i * 0.22;
+    const tier = new THREE.BoxGeometry(s, 1.70, s);
+    tier.translate(0, i * 1.70 + 0.85, 0);
     parts.push(tier);
+    // Eave ledge / balustrade at each tier
+    if (i < 6) {
+      const ledge = new THREE.BoxGeometry(s + 0.12, 0.10, s + 0.12);
+      ledge.translate(0, (i + 1) * 1.70, 0);
+      parts.push(ledge);
+    }
   }
-  const tw = 0.6;
-  for (const dx of [-1.2, 1.2]) {
-    for (const dz of [-1.2, 1.2]) {
-      const tower = new THREE.BoxGeometry(tw, 4.0, tw);
-      tower.translate(dx, 2.0, dz);
+  const tw = 0.55;
+  for (const dx of [-1.15, 1.15]) {
+    for (const dz of [-1.15, 1.15]) {
+      const tower = new THREE.BoxGeometry(tw, 7.50, tw);
+      tower.translate(dx, 3.75, dz);
       parts.push(tower);
     }
   }
@@ -1034,14 +1051,14 @@ function createLeaderCitadelWallGeo() {
 }
 function createLeaderCitadelRoofGeo() {
   const parts = [];
-  const roof = createCleanPitchedRoof(1.60, 1.60, 1.25, false);
-  roof.translate(0, 6.30, 0);
+  const roof = createCleanPitchedRoof(1.30, 1.30, 2.20, false);
+  roof.translate(0, 11.90, 0);
   parts.push(roof);
-  const twR = 0.7;
-  for (const dx of [-1.2, 1.2]) {
-    for (const dz of [-1.2, 1.2]) {
-      const troof = createCleanPitchedRoof(twR, twR, 0.8, false);
-      troof.translate(dx, 4.0, dz);
+  const twR = 0.65;
+  for (const dx of [-1.15, 1.15]) {
+    for (const dz of [-1.15, 1.15]) {
+      const troof = createCleanPitchedRoof(twR, twR, 1.40, false);
+      troof.translate(dx, 7.50, dz);
       parts.push(troof);
     }
   }
@@ -1051,30 +1068,34 @@ function createLeaderCitadelRoofGeo() {
 // 1: Nordic Jarl High Long-Hall Tower (7 Stories)
 function createLeaderJarlHallWallGeo() {
   const parts = [];
-  const base = new THREE.BoxGeometry(2.9, 1.2, 1.8);
-  base.translate(0, 0.6, 0);
+  const base = new THREE.BoxGeometry(2.90, 2.20, 1.80);
+  base.translate(0, 1.10, 0);
   parts.push(base);
-  const base2 = new THREE.BoxGeometry(1.8, 1.2, 2.9);
-  base2.translate(0, 0.6, 0);
+  const base2 = new THREE.BoxGeometry(1.80, 2.20, 2.90);
+  base2.translate(0, 1.10, 0);
   parts.push(base2);
   for (let i = 1; i < 7; i++) {
-    const s = 2.2 - i * 0.25;
-    const tier = new THREE.BoxGeometry(s, 1.0, s);
-    tier.translate(0, i * 1.0 + 0.5, 0);
+    const s = 2.35 - i * 0.22;
+    const tier = new THREE.BoxGeometry(s, 1.65, s);
+    tier.translate(0, 2.20 + (i - 1) * 1.65 + 0.825, 0);
     parts.push(tier);
+    // Timber ledge band
+    const ledge = new THREE.BoxGeometry(s + 0.12, 0.10, s + 0.12);
+    ledge.translate(0, 2.20 + (i - 1) * 1.65 + 1.65, 0);
+    parts.push(ledge);
   }
   return mergeBufferGeometries(parts);
 }
 function createLeaderJarlHallRoofGeo() {
   const parts = [];
-  const r1 = createCleanPitchedRoof(3.0, 1.9, 0.8, false);
-  r1.translate(0, 1.2, 0);
+  const r1 = createCleanPitchedRoof(3.00, 1.90, 1.40, false);
+  r1.translate(0, 2.20, 0);
   parts.push(r1);
-  const r2 = createCleanPitchedRoof(1.9, 3.0, 0.8, false);
-  r2.translate(0, 1.2, 0);
+  const r2 = createCleanPitchedRoof(1.90, 3.00, 1.40, false);
+  r2.translate(0, 2.20, 0);
   parts.push(r2);
-  const roof = createCleanPitchedRoof(1.2, 1.2, 1.8, false);
-  roof.translate(0, 6.6, 0);
+  const roof = createCleanPitchedRoof(1.05, 1.05, 2.60, false);
+  roof.translate(0, 12.10, 0);
   parts.push(roof);
   return mergeBufferGeometries(parts);
 }
@@ -1083,22 +1104,22 @@ function createLeaderJarlHallRoofGeo() {
 function createLeaderZigguratWallGeo() {
   const parts = [];
   for (let i = 0; i < 7; i++) {
-    const s = 2.90 - i * 0.3;
-    const h = 0.85;
+    const s = 2.90 - i * 0.26;
+    const h = 1.60;
     const tier = new THREE.BoxGeometry(s, h, s);
-    tier.translate(0, i * 0.85 + 0.425, 0);
+    tier.translate(0, i * 1.60 + 0.80, 0);
     parts.push(tier);
   }
-  for (let s = 0; s < 15; s++) {
-    const step = new THREE.BoxGeometry(1.0, (s+1)*0.2, 0.2);
-    step.translate(0, (s+1)*0.1, 1.45 - s*0.1);
+  for (let s = 0; s < 16; s++) {
+    const step = new THREE.BoxGeometry(1.00, (s+1)*0.36, 0.20);
+    step.translate(0, (s+1)*0.18, 1.45 - s*0.09);
     parts.push(step);
   }
   return mergeBufferGeometries(parts);
 }
 function createLeaderZigguratRoofGeo() {
-  const altarRoof = new THREE.BoxGeometry(1.20, 0.3, 1.20);
-  altarRoof.translate(0, 7 * 0.85 + 0.15, 0);
+  const altarRoof = new THREE.BoxGeometry(1.20, 0.50, 1.20);
+  altarRoof.translate(0, 7 * 1.60 + 0.25, 0);
   return altarRoof;
 }
 
@@ -1106,13 +1127,13 @@ function createLeaderZigguratRoofGeo() {
 function createLeaderPagodaWallGeo() {
   const parts = [];
   for (let i = 0; i < 7; i++) {
-    const s = 2.4 - i * 0.2;
-    const h = 0.85;
-    const tier1 = new THREE.BoxGeometry(s, h, s - 0.4);
-    tier1.translate(0, i * 0.85 + 0.425, 0);
+    const s = 2.50 - i * 0.18;
+    const h = 1.60;
+    const tier1 = new THREE.BoxGeometry(s, h, s - 0.40);
+    tier1.translate(0, i * 1.60 + 0.80, 0);
     parts.push(tier1);
-    const tier2 = new THREE.BoxGeometry(s - 0.4, h, s);
-    tier2.translate(0, i * 0.85 + 0.425, 0);
+    const tier2 = new THREE.BoxGeometry(s - 0.40, h, s);
+    tier2.translate(0, i * 1.60 + 0.80, 0);
     parts.push(tier2);
   }
   return mergeBufferGeometries(parts);
@@ -1120,16 +1141,16 @@ function createLeaderPagodaWallGeo() {
 function createLeaderPagodaRoofGeo() {
   const parts = [];
   for (let i = 0; i < 7; i++) {
-    const s = 2.8 - i * 0.2;
-    const cap1 = new THREE.BoxGeometry(s, 0.15, s - 0.4);
-    cap1.translate(0, (i + 1) * 0.85, 0);
+    const s = 2.90 - i * 0.18;
+    const cap1 = new THREE.BoxGeometry(s, 0.22, s - 0.40);
+    cap1.translate(0, (i + 1) * 1.60, 0);
     parts.push(cap1);
-    const cap2 = new THREE.BoxGeometry(s - 0.4, 0.15, s);
-    cap2.translate(0, (i + 1) * 0.85, 0);
+    const cap2 = new THREE.BoxGeometry(s - 0.40, 0.22, s);
+    cap2.translate(0, (i + 1) * 1.60, 0);
     parts.push(cap2);
   }
-  const topSpire = new THREE.ConeGeometry(0.30, 2.0, 8);
-  topSpire.translate(0, 7 * 0.85 + 1.0, 0);
+  const topSpire = new THREE.ConeGeometry(0.30, 3.20, 8);
+  topSpire.translate(0, 7 * 1.60 + 1.60, 0);
   parts.push(topSpire);
   return mergeBufferGeometries(parts);
 }
@@ -1137,27 +1158,27 @@ function createLeaderPagodaRoofGeo() {
 // 4: Sanctuary Cathedral Keep (7 Stories)
 function createLeaderSanctuaryWallGeo() {
   const parts = [];
-  const b1 = new THREE.BoxGeometry(1.2, 6.0, 2.8);
-  b1.translate(0, 3.0, 0);
+  const b1 = new THREE.BoxGeometry(1.30, 11.50, 2.80);
+  b1.translate(0, 5.75, 0);
   parts.push(b1);
-  const b2 = new THREE.BoxGeometry(2.8, 6.0, 1.2);
-  b2.translate(0, 3.0, 0);
+  const b2 = new THREE.BoxGeometry(2.80, 11.50, 1.30);
+  b2.translate(0, 5.75, 0);
   parts.push(b2);
-  const center = new THREE.BoxGeometry(1.4, 7.5, 1.4);
-  center.translate(0, 3.75, 0);
+  const center = new THREE.BoxGeometry(1.50, 13.80, 1.50);
+  center.translate(0, 6.90, 0);
   parts.push(center);
   return mergeBufferGeometries(parts);
 }
 function createLeaderSanctuaryRoofGeo() {
   const parts = [];
-  const spire = new THREE.ConeGeometry(0.8, 2.5, 4);
-  spire.translate(0, 7.5 + 1.25, 0);
+  const spire = new THREE.ConeGeometry(0.85, 3.80, 4);
+  spire.translate(0, 13.80 + 1.90, 0);
   parts.push(spire);
-  const r1 = createCleanPitchedRoof(1.3, 2.9, 0.6, false);
-  r1.translate(0, 6.0, 0);
+  const r1 = createCleanPitchedRoof(1.40, 2.90, 1.40, false);
+  r1.translate(0, 11.50, 0);
   parts.push(r1);
-  const r2 = createCleanPitchedRoof(2.9, 1.3, 0.6, false);
-  r2.translate(0, 6.0, 0);
+  const r2 = createCleanPitchedRoof(2.90, 1.40, 1.40, false);
+  r2.translate(0, 11.50, 0);
   parts.push(r2);
   return mergeBufferGeometries(parts);
 }
@@ -1165,31 +1186,31 @@ function createLeaderSanctuaryRoofGeo() {
 // 5: Basalt Monolith Castle (7 Stories)
 function createLeaderMonolithWallGeo() {
   const parts = [];
-  const core = new THREE.BoxGeometry(2.2, 6.5, 2.2);
-  core.translate(0, 3.25, 0);
+  const core = new THREE.BoxGeometry(2.20, 12.60, 2.20);
+  core.translate(0, 6.30, 0);
   parts.push(core);
-  for (const dx of [-1.1, 1.1]) {
-    const b = new THREE.BoxGeometry(0.6, 5.0, 2.8);
-    b.translate(dx, 2.5, 0);
+  for (const dx of [-1.10, 1.10]) {
+    const b = new THREE.BoxGeometry(0.60, 10.00, 2.80);
+    b.translate(dx, 5.00, 0);
     parts.push(b);
   }
-  for (const dz of [-1.1, 1.1]) {
-    const b = new THREE.BoxGeometry(2.8, 5.0, 0.6);
-    b.translate(0, 2.5, dz);
+  for (const dz of [-1.10, 1.10]) {
+    const b = new THREE.BoxGeometry(2.80, 10.00, 0.60);
+    b.translate(0, 5.00, dz);
     parts.push(b);
   }
   return mergeBufferGeometries(parts);
 }
 function createLeaderMonolithRoofGeo() {
   const parts = [];
-  const flat = new THREE.BoxGeometry(2.3, 0.2, 2.3);
-  flat.translate(0, 6.5, 0);
+  const flat = new THREE.BoxGeometry(2.30, 0.30, 2.30);
+  flat.translate(0, 12.60, 0);
   parts.push(flat);
   for (const dx of [-1.0, 0, 1.0]) {
     for (const dz of [-1.0, 0, 1.0]) {
       if (Math.abs(dx) === 1.0 || Math.abs(dz) === 1.0) {
-        const bat = new THREE.BoxGeometry(0.4, 0.5, 0.4);
-        bat.translate(dx, 6.75, dz);
+        const bat = new THREE.BoxGeometry(0.40, 0.80, 0.40);
+        bat.translate(dx, 12.60 + 0.40, dz);
         parts.push(bat);
       }
     }
@@ -1200,33 +1221,33 @@ function createLeaderMonolithRoofGeo() {
 // 6: Imperial Pavilion Palace (7 Stories)
 function createLeaderImperialWallGeo() {
   const parts = [];
-  const back = new THREE.BoxGeometry(2.8, 1.5, 1.0);
-  back.translate(0, 0.75, -0.9);
+  const back = new THREE.BoxGeometry(2.80, 3.20, 1.10);
+  back.translate(0, 1.60, -0.90);
   parts.push(back);
-  const lWing = new THREE.BoxGeometry(1.0, 1.5, 1.8);
-  lWing.translate(-0.9, 0.75, 0.5);
+  const lWing = new THREE.BoxGeometry(1.10, 3.20, 1.80);
+  lWing.translate(-0.90, 1.60, 0.50);
   parts.push(lWing);
-  const rWing = new THREE.BoxGeometry(1.0, 1.5, 1.8);
-  rWing.translate(0.9, 0.75, 0.5);
+  const rWing = new THREE.BoxGeometry(1.10, 3.20, 1.80);
+  rWing.translate(0.90, 1.60, 0.50);
   parts.push(rWing);
-  const tower = new THREE.BoxGeometry(1.6, 6.5, 1.6);
-  tower.translate(0, 3.25, -0.6);
+  const tower = new THREE.BoxGeometry(1.65, 12.50, 1.65);
+  tower.translate(0, 6.25, -0.60);
   parts.push(tower);
   return mergeBufferGeometries(parts);
 }
 function createLeaderImperialRoofGeo() {
   const parts = [];
-  const rb = createCleanPitchedRoof(2.9, 1.1, 0.6, false);
-  rb.translate(0, 1.5, -0.9);
+  const rb = createCleanPitchedRoof(2.90, 1.20, 1.20, false);
+  rb.translate(0, 3.20, -0.90);
   parts.push(rb);
-  const rl = createCleanPitchedRoof(1.1, 1.9, 0.6, false);
-  rl.translate(-0.9, 1.5, 0.5);
+  const rl = createCleanPitchedRoof(1.20, 1.90, 1.20, false);
+  rl.translate(-0.90, 3.20, 0.50);
   parts.push(rl);
-  const rr = createCleanPitchedRoof(1.1, 1.9, 0.6, false);
-  rr.translate(0.9, 1.5, 0.5);
+  const rr = createCleanPitchedRoof(1.20, 1.90, 1.20, false);
+  rr.translate(0.90, 3.20, 0.50);
   parts.push(rr);
-  const rt = createCleanPitchedRoof(1.8, 1.8, 1.2, false);
-  rt.translate(0, 6.5, -0.6);
+  const rt = createCleanPitchedRoof(1.85, 1.85, 2.20, false);
+  rt.translate(0, 12.50, -0.60);
   parts.push(rt);
   return mergeBufferGeometries(parts);
 }
@@ -1238,86 +1259,86 @@ function createLeaderImperialRoofGeo() {
 // Timber Barn Warehouse (Var 0)
 function createWarehouseWallGeo0() {
   const parts = [];
-  const body = new THREE.BoxGeometry(1.82, 1.30, 1.82); body.translate(0, 0.65, 0); parts.push(body);
-  const awning = new THREE.BoxGeometry(1.90, 0.12, 0.40); awning.translate(0, 1.30, 1.00); parts.push(awning);
-  const post1 = new THREE.CylinderGeometry(0.08, 0.08, 1.30, 6); post1.translate(-0.85, 0.65, 1.05); parts.push(post1);
-  const post2 = new THREE.CylinderGeometry(0.08, 0.08, 1.30, 6); post2.translate( 0.85, 0.65, 1.05); parts.push(post2);
-  const crate1 = new THREE.BoxGeometry(0.35, 0.35, 0.35); crate1.translate(-1.02, 0.175, 0.20); parts.push(crate1);
-  const crate2 = new THREE.BoxGeometry(0.30, 0.30, 0.30); crate2.translate(-1.02, 0.45, 0.20); parts.push(crate2);
-  const mast = new THREE.CylinderGeometry(0.05, 0.05, 0.85, 5); mast.translate(0, 1.30 + 0.88 + 0.40, 0); parts.push(mast);
+  const body = new THREE.BoxGeometry(1.82, 2.40, 1.82); body.translate(0, 1.20, 0); parts.push(body);
+  const awning = new THREE.BoxGeometry(1.90, 0.18, 0.40); awning.translate(0, 2.40, 1.00); parts.push(awning);
+  const post1 = new THREE.CylinderGeometry(0.08, 0.08, 2.40, 6); post1.translate(-0.85, 1.20, 1.05); parts.push(post1);
+  const post2 = new THREE.CylinderGeometry(0.08, 0.08, 2.40, 6); post2.translate( 0.85, 1.20, 1.05); parts.push(post2);
+  const crate1 = new THREE.BoxGeometry(0.45, 0.45, 0.45); crate1.translate(-1.02, 0.225, 0.20); parts.push(crate1);
+  const crate2 = new THREE.BoxGeometry(0.38, 0.38, 0.38); crate2.translate(-1.02, 0.60, 0.20); parts.push(crate2);
+  const mast = new THREE.CylinderGeometry(0.05, 0.05, 1.50, 5); mast.translate(0, 2.40 + 1.40 + 0.60, 0); parts.push(mast);
   return mergeBufferGeometries(parts);
 }
 function createWarehouseRoofGeo0() {
-  const roof = createPitchedRoofGeometry(2.04, 2.04, 0.88);
-  roof.translate(0, 1.30, 0);
+  const roof = createPitchedRoofGeometry(2.04, 2.04, 1.40);
+  roof.translate(0, 2.40, 0);
   return roof;
 }
 
 // Stone Depot Vault Warehouse (Var 1)
 function createWarehouseWallGeo1() {
   const parts = [];
-  const body = new THREE.BoxGeometry(1.85, 1.35, 1.85); body.translate(0, 0.675, 0); parts.push(body);
-  const vaultArch = new THREE.BoxGeometry(0.20, 1.10, 0.90); vaultArch.translate(0.95, 0.55, 0); parts.push(vaultArch);
+  const body = new THREE.BoxGeometry(1.85, 2.40, 1.85); body.translate(0, 1.20, 0); parts.push(body);
+  const vaultArch = new THREE.BoxGeometry(0.20, 1.85, 0.90); vaultArch.translate(0.95, 0.925, 0); parts.push(vaultArch);
   return mergeBufferGeometries(parts);
 }
 function createWarehouseRoofGeo1() {
-  const roof = createPitchedRoofGeometry(2.05, 2.05, 0.95);
-  roof.translate(0, 1.35, 0);
+  const roof = createPitchedRoofGeometry(2.05, 2.05, 1.50);
+  roof.translate(0, 2.40, 0);
   return roof;
 }
 
 // Slaughterhouse Var 0: Timber Abatedouro
 function createTimberAbatedouroWallGeo() {
   const parts = [];
-  const body = new THREE.BoxGeometry(1.65, 1.15, 1.55); body.translate(0, 0.575, 0); parts.push(body);
-  const slab = new THREE.BoxGeometry(0.60, 0.40, 0.45); slab.translate(-0.90, 0.20, 0.25); parts.push(slab);
-  const rack = new THREE.BoxGeometry(0.10, 0.95, 0.75); rack.translate(0.90, 0.475, 0.25); parts.push(rack);
+  const body = new THREE.BoxGeometry(1.65, 2.20, 1.55); body.translate(0, 1.10, 0); parts.push(body);
+  const slab = new THREE.BoxGeometry(0.60, 0.55, 0.45); slab.translate(-0.90, 0.275, 0.25); parts.push(slab);
+  const rack = new THREE.BoxGeometry(0.10, 1.75, 0.75); rack.translate(0.90, 0.875, 0.25); parts.push(rack);
   return mergeBufferGeometries(parts);
 }
 function createTimberAbatedouroRoofGeo() {
-  const roof = createPitchedRoofGeometry(1.85, 1.75, 0.75);
-  roof.translate(0, 1.15, 0);
+  const roof = createPitchedRoofGeometry(1.85, 1.75, 1.30);
+  roof.translate(0, 2.20, 0);
   return roof;
 }
 
 // Slaughterhouse Var 1: Stone Abattoir
 function createStoneAbatedouroWallGeo() {
   const parts = [];
-  const body = new THREE.BoxGeometry(1.70, 1.25, 1.60); body.translate(0, 0.625, 0); parts.push(body);
-  const chimney = new THREE.BoxGeometry(0.40, 1.95, 0.40); chimney.translate(0.85, 0.975, -0.35); parts.push(chimney);
+  const body = new THREE.BoxGeometry(1.70, 2.20, 1.60); body.translate(0, 1.10, 0); parts.push(body);
+  const chimney = new THREE.BoxGeometry(0.40, 3.80, 0.40); chimney.translate(0.85, 1.90, -0.35); parts.push(chimney);
   return mergeBufferGeometries(parts);
 }
 function createStoneAbatedouroRoofGeo() {
-  const roof = createPitchedRoofGeometry(1.90, 1.80, 0.85);
-  roof.translate(0, 1.25, 0);
+  const roof = createPitchedRoofGeometry(1.90, 1.80, 1.35);
+  roof.translate(0, 2.20, 0);
   return roof;
 }
 
 // Kitchen Var 0: Brick Oven Bakery & Kitchen
 function createBrickOvenKitchenWallGeo() {
   const parts = [];
-  const body = new THREE.BoxGeometry(1.60, 1.15, 1.60); body.translate(0, 0.575, 0); parts.push(body);
-  const oven = new THREE.CylinderGeometry(0.48, 0.55, 0.65, 8); oven.translate(-0.92, 0.325, 0.25); parts.push(oven);
-  const chimney = new THREE.BoxGeometry(0.38, 2.05, 0.38); chimney.translate(-0.92, 1.025, 0.25); parts.push(chimney);
+  const body = new THREE.BoxGeometry(1.60, 2.20, 1.60); body.translate(0, 1.10, 0); parts.push(body);
+  const oven = new THREE.CylinderGeometry(0.48, 0.55, 1.05, 8); oven.translate(-0.92, 0.525, 0.25); parts.push(oven);
+  const chimney = new THREE.BoxGeometry(0.38, 3.80, 0.38); chimney.translate(-0.92, 1.90, 0.25); parts.push(chimney);
   return mergeBufferGeometries(parts);
 }
 function createBrickOvenKitchenRoofGeo() {
-  const roof = createPitchedRoofGeometry(1.82, 1.82, 0.80);
-  roof.translate(0, 1.15, 0);
+  const roof = createPitchedRoofGeometry(1.82, 1.82, 1.30);
+  roof.translate(0, 2.20, 0);
   return roof;
 }
 
 // Kitchen Var 1: Timber Smokery Kitchen
 function createTimberSmokeryKitchenWallGeo() {
   const parts = [];
-  const body = new THREE.BoxGeometry(1.55, 1.10, 1.55); body.translate(0, 0.55, 0); parts.push(body);
-  const smokeStack = new THREE.BoxGeometry(0.45, 1.80, 0.45); smokeStack.translate(0.75, 0.90, -0.30); parts.push(smokeStack);
-  const prepTable = new THREE.BoxGeometry(0.55, 0.42, 0.75); prepTable.translate(-0.88, 0.21, 0.20); parts.push(prepTable);
+  const body = new THREE.BoxGeometry(1.55, 2.20, 1.55); body.translate(0, 1.10, 0); parts.push(body);
+  const smokeStack = new THREE.BoxGeometry(0.45, 3.60, 0.45); smokeStack.translate(0.75, 1.80, -0.30); parts.push(smokeStack);
+  const prepTable = new THREE.BoxGeometry(0.55, 0.65, 0.75); prepTable.translate(-0.88, 0.325, 0.20); parts.push(prepTable);
   return mergeBufferGeometries(parts);
 }
 function createTimberSmokeryKitchenRoofGeo() {
-  const roof = createPitchedRoofGeometry(1.75, 1.75, 0.78);
-  roof.translate(0, 1.10, 0);
+  const roof = createPitchedRoofGeometry(1.75, 1.75, 1.30);
+  roof.translate(0, 2.20, 0);
   return roof;
 }
 
@@ -1325,13 +1346,13 @@ function createTimberSmokeryKitchenRoofGeo() {
 function createWaterWellBaseGeometry() {
   const parts = [];
   // 1. Chiseled Stone Basin / Well Rim (cylindrical base)
-  const basin = new THREE.CylinderGeometry(0.58, 0.62, 0.48, 12);
-  basin.translate(0, 0.24, 0);
+  const basin = new THREE.CylinderGeometry(0.58, 0.62, 0.60, 12);
+  basin.translate(0, 0.30, 0);
   parts.push(basin);
 
   // 2. Interior dark water disk
   const water = new THREE.CylinderGeometry(0.44, 0.44, 0.05, 10);
-  water.translate(0, 0.35, 0);
+  water.translate(0, 0.45, 0);
   parts.push(water);
 
   return mergeBufferGeometries(parts);
@@ -1340,54 +1361,54 @@ function createWaterWellBaseGeometry() {
 function createWaterWellWoodGeometry() {
   const parts = [];
   // Wooden Support Pillars (Left & Right)
-  const postL = new THREE.CylinderGeometry(0.05, 0.05, 1.05, 6);
-  postL.translate(-0.44, 0.72, 0);
+  const postL = new THREE.CylinderGeometry(0.05, 0.05, 2.00, 6);
+  postL.translate(-0.44, 1.25, 0);
   parts.push(postL);
 
-  const postR = new THREE.CylinderGeometry(0.05, 0.05, 1.05, 6);
-  postR.translate(0.44, 0.72, 0);
+  const postR = new THREE.CylinderGeometry(0.05, 0.05, 2.00, 6);
+  postR.translate(0.44, 1.25, 0);
   parts.push(postR);
 
   // Wooden Crossbeam Axle
   const beam = new THREE.CylinderGeometry(0.04, 0.04, 0.96, 6);
   beam.rotateZ(Math.PI / 2);
-  beam.translate(0, 1.15, 0);
+  beam.translate(0, 2.10, 0);
   parts.push(beam);
 
   // Suspended Wooden Bucket
-  const bucket = new THREE.CylinderGeometry(0.09, 0.07, 0.16, 6);
-  bucket.translate(0, 0.60, 0);
+  const bucket = new THREE.CylinderGeometry(0.09, 0.07, 0.22, 6);
+  bucket.translate(0, 1.10, 0);
   parts.push(bucket);
 
   return mergeBufferGeometries(parts);
 }
 
 function createWaterWellRoofGeometry() {
-  const roof = createPitchedRoofGeometry(1.15, 1.05, 0.38);
-  roof.translate(0, 1.22, 0);
+  const roof = createPitchedRoofGeometry(1.15, 1.05, 0.65);
+  roof.translate(0, 2.20, 0);
   return roof;
 }
 
 // Bone Ossuary House Walls Geometry (Bone Pillars & Skull Corners)
 function createBoneHouseWallGeometry() {
   const parts = [];
-  const body = new THREE.BoxGeometry(1.50, 1.15, 1.50);
-  body.translate(0, 0.575, 0);
+  const body = new THREE.BoxGeometry(1.50, 2.20, 1.50);
+  body.translate(0, 1.10, 0);
   parts.push(body);
 
   // 4 Corner Skull & Bone Pillars
-  const pillarGeo = new THREE.CylinderGeometry(0.12, 0.14, 1.35, 6);
-  const p1 = pillarGeo.clone(); p1.translate(-0.70, 0.675, -0.70); parts.push(p1);
-  const p2 = pillarGeo.clone(); p2.translate( 0.70, 0.675, -0.70); parts.push(p2);
-  const p3 = pillarGeo.clone(); p3.translate(-0.70, 0.675,  0.70); parts.push(p3);
-  const p4 = pillarGeo.clone(); p4.translate( 0.70, 0.675,  0.70); parts.push(p4);
+  const pillarGeo = new THREE.CylinderGeometry(0.12, 0.14, 2.60, 6);
+  const p1 = pillarGeo.clone(); p1.translate(-0.70, 1.30, -0.70); parts.push(p1);
+  const p2 = pillarGeo.clone(); p2.translate( 0.70, 1.30, -0.70); parts.push(p2);
+  const p3 = pillarGeo.clone(); p3.translate(-0.70, 1.30,  0.70); parts.push(p3);
+  const p4 = pillarGeo.clone(); p4.translate( 0.70, 1.30,  0.70); parts.push(p4);
 
   // Skull corner finials
-  const skullGeo = new THREE.SphereGeometry(0.14, 6, 6);
-  const sk1 = skullGeo.clone(); sk1.translate(-0.70, 1.42, -0.70); parts.push(sk1);
-  const sk2 = skullGeo.clone(); sk2.translate( 0.70, 1.42, -0.70); parts.push(sk2);
-  const sk3 = skullGeo.clone(); sk3.translate(-0.70, 1.42,  0.70); parts.push(sk3);
-  const sk4 = skullGeo.clone(); sk4.translate( 0.70, 1.42,  0.70); parts.push(sk4);
+  const skullGeo = new THREE.SphereGeometry(0.16, 6, 6);
+  const sk1 = skullGeo.clone(); sk1.translate(-0.70, 2.75, -0.70); parts.push(sk1);
+  const sk2 = skullGeo.clone(); sk2.translate( 0.70, 2.75, -0.70); parts.push(sk2);
+  const sk3 = skullGeo.clone(); sk3.translate(-0.70, 2.75,  0.70); parts.push(sk3);
+  const sk4 = skullGeo.clone(); sk4.translate( 0.70, 2.75,  0.70); parts.push(sk4);
 
   return mergeBufferGeometries(parts);
 }
@@ -1396,17 +1417,17 @@ function createBoneHouseWallGeometry() {
 function createBoneHouseRoofGeometry() {
   const parts = [];
   // Rib dome roof
-  const dome = createPitchedRoofGeometry(1.68, 1.68, 0.75);
-  dome.translate(0, 1.15, 0);
+  const dome = createPitchedRoofGeometry(1.68, 1.68, 1.35);
+  dome.translate(0, 2.20, 0);
   parts.push(dome);
 
   // Central Top Skull Totem
-  const topSkull = new THREE.SphereGeometry(0.18, 6, 6);
-  topSkull.translate(0, 1.15 + 0.75 + 0.15, 0);
+  const topSkull = new THREE.SphereGeometry(0.20, 6, 6);
+  topSkull.translate(0, 2.20 + 1.35 + 0.25, 0);
   parts.push(topSkull);
 
-  const mast = new THREE.CylinderGeometry(0.04, 0.04, 0.60, 5);
-  mast.translate(0, 1.15 + 0.75 + 0.45, 0);
+  const mast = new THREE.CylinderGeometry(0.04, 0.04, 1.00, 5);
+  mast.translate(0, 2.20 + 1.35 + 0.70, 0);
   parts.push(mast);
 
   return mergeBufferGeometries(parts);
@@ -1419,16 +1440,16 @@ function createBoneWallGeometry() {
   skirt.translate(0, -0.12, 0);
   parts.push(skirt);
 
-  // Vertical Bone Posts
+  // Vertical Bone Posts (height 1.85)
   for (let i = -1.5; i <= 1.5; i += 1.0) {
-    const bone = new THREE.CylinderGeometry(0.10, 0.11, 1.10, 6);
-    bone.translate(i * 0.25, 0.55, 0);
+    const bone = new THREE.CylinderGeometry(0.10, 0.12, 1.85, 6);
+    bone.translate(i * 0.25, 0.925, 0);
     parts.push(bone);
 
     // Skulls on top of center posts
     if (Math.abs(i) < 1.0) {
-      const skull = new THREE.SphereGeometry(0.13, 6, 6);
-      skull.translate(i * 0.25, 1.10 + 0.10, 0);
+      const skull = new THREE.SphereGeometry(0.14, 6, 6);
+      skull.translate(i * 0.25, 1.85 + 0.14, 0);
       parts.push(skull);
     }
   }
@@ -1509,18 +1530,18 @@ function createStoneWallGeometry() {
   skirt.translate(0, -0.15, 0);
   parts.push(skirt);
 
-  // 2. Main solid wall body
-  const body = new THREE.BoxGeometry(1.0, 1.05, 0.82);
-  body.translate(0, 0.525, 0);
+  // 2. Main solid wall body (height = 1.75)
+  const body = new THREE.BoxGeometry(1.0, 1.75, 0.82);
+  body.translate(0, 0.875, 0);
   parts.push(body);
 
   // 3. Merlons / Crenellations atop the wall
-  const merlon1 = new THREE.BoxGeometry(0.38, 0.28, 0.86);
-  merlon1.translate(-0.31, 1.05 + 0.14, 0);
+  const merlon1 = new THREE.BoxGeometry(0.38, 0.45, 0.86);
+  merlon1.translate(-0.31, 1.75 + 0.225, 0);
   parts.push(merlon1);
 
-  const merlon2 = new THREE.BoxGeometry(0.38, 0.28, 0.86);
-  merlon2.translate(0.31, 1.05 + 0.14, 0);
+  const merlon2 = new THREE.BoxGeometry(0.38, 0.45, 0.86);
+  merlon2.translate(0.31, 1.75 + 0.225, 0);
   parts.push(merlon2);
 
   return mergeBufferGeometries(parts);
@@ -1534,11 +1555,11 @@ function createWoodPalisadeGeometry() {
   parts.push(skirt);
 
   for (let i = -1.5; i <= 1.5; i += 1.0) {
-    const log = new THREE.CylinderGeometry(0.11, 0.12, 1.15, 6);
-    log.translate(i * 0.24, 0.575, 0);
+    const log = new THREE.CylinderGeometry(0.11, 0.13, 1.85, 6);
+    log.translate(i * 0.24, 0.925, 0);
     parts.push(log);
-    const tip = new THREE.ConeGeometry(0.11, 0.22, 6);
-    tip.translate(i * 0.24, 1.15 + 0.11, 0);
+    const tip = new THREE.ConeGeometry(0.12, 0.35, 6);
+    tip.translate(i * 0.24, 1.85 + 0.175, 0);
     parts.push(tip);
   }
   return mergeBufferGeometries(parts);
@@ -1551,22 +1572,22 @@ function createMixedWallGeometry() {
   skirt.translate(0, -0.12, 0);
   parts.push(skirt);
 
-  // Stone base
-  const stoneBase = new THREE.BoxGeometry(1.0, 0.65, 0.80);
-  stoneBase.translate(0, 0.325, 0);
+  // Stone base (height 1.05)
+  const stoneBase = new THREE.BoxGeometry(1.0, 1.05, 0.80);
+  stoneBase.translate(0, 0.525, 0);
   parts.push(stoneBase);
 
   // Timber railing & posts
-  const beam = new THREE.BoxGeometry(1.02, 0.14, 0.18);
-  beam.translate(0, 0.95, 0);
+  const beam = new THREE.BoxGeometry(1.02, 0.16, 0.18);
+  beam.translate(0, 1.65, 0);
   parts.push(beam);
 
-  const post1 = new THREE.BoxGeometry(0.14, 0.45, 0.20);
-  post1.translate(-0.35, 0.80, 0);
+  const post1 = new THREE.BoxGeometry(0.14, 0.65, 0.20);
+  post1.translate(-0.35, 1.40, 0);
   parts.push(post1);
 
-  const post2 = new THREE.BoxGeometry(0.14, 0.45, 0.20);
-  post2.translate(0.35, 0.80, 0);
+  const post2 = new THREE.BoxGeometry(0.14, 0.65, 0.20);
+  post2.translate(0.35, 1.40, 0);
   parts.push(post2);
 
   return mergeBufferGeometries(parts);
@@ -1579,11 +1600,11 @@ function createWallStage1Geometry() {
   trench.translate(0, 0.10, 0);
   parts.push(trench);
 
-  const post = new THREE.BoxGeometry(0.08, 0.70, 0.08);
-  const p1 = post.clone(); p1.translate(-0.45, 0.35, -0.40); parts.push(p1);
-  const p2 = post.clone(); p2.translate( 0.45, 0.35, -0.40); parts.push(p2);
-  const p3 = post.clone(); p3.translate(-0.45, 0.35,  0.40); parts.push(p3);
-  const p4 = post.clone(); p4.translate( 0.45, 0.35,  0.40); parts.push(p4);
+  const post = new THREE.BoxGeometry(0.08, 1.25, 0.08);
+  const p1 = post.clone(); p1.translate(-0.45, 0.625, -0.40); parts.push(p1);
+  const p2 = post.clone(); p2.translate( 0.45, 0.625, -0.40); parts.push(p2);
+  const p3 = post.clone(); p3.translate(-0.45, 0.625,  0.40); parts.push(p3);
+  const p4 = post.clone(); p4.translate( 0.45, 0.625,  0.40); parts.push(p4);
 
   return mergeBufferGeometries(parts);
 }
@@ -1591,28 +1612,28 @@ function createWallStage1Geometry() {
 // Fortified Wooden & Iron Gatehouse (Closed State)
 function createGatehouseClosedGeometry() {
   const parts = [];
-  // 1. Left & Right Heavy Timber/Stone Pillars
-  const pillarGeo = new THREE.BoxGeometry(0.26, 1.45, 0.60);
-  const leftPillar = pillarGeo.clone(); leftPillar.translate(-0.38, 0.725, 0); parts.push(leftPillar);
-  const rightPillar = pillarGeo.clone(); rightPillar.translate( 0.38, 0.725, 0); parts.push(rightPillar);
+  // 1. Left & Right Heavy Timber/Stone Pillars (height = 2.40)
+  const pillarGeo = new THREE.BoxGeometry(0.28, 2.40, 0.60);
+  const leftPillar = pillarGeo.clone(); leftPillar.translate(-0.38, 1.20, 0); parts.push(leftPillar);
+  const rightPillar = pillarGeo.clone(); rightPillar.translate( 0.38, 1.20, 0); parts.push(rightPillar);
 
   // 2. Top Architrave / Lintel Beam
-  const lintel = new THREE.BoxGeometry(1.08, 0.32, 0.64);
-  lintel.translate(0, 1.45 + 0.16, 0);
+  const lintel = new THREE.BoxGeometry(1.08, 0.36, 0.64);
+  lintel.translate(0, 2.40 + 0.18, 0);
   parts.push(lintel);
 
   // 3. Merlons atop the Gatehouse
-  const m1 = new THREE.BoxGeometry(0.28, 0.22, 0.66); m1.translate(-0.40, 1.61 + 0.22, 0); parts.push(m1);
-  const m2 = new THREE.BoxGeometry(0.28, 0.22, 0.66); m2.translate( 0.40, 1.61 + 0.22, 0); parts.push(m2);
+  const m1 = new THREE.BoxGeometry(0.28, 0.35, 0.66); m1.translate(-0.40, 2.76 + 0.175, 0); parts.push(m1);
+  const m2 = new THREE.BoxGeometry(0.28, 0.35, 0.66); m2.translate( 0.40, 2.76 + 0.175, 0); parts.push(m2);
 
   // 4. Closed Double Wooden Doors with Iron Bracing
-  const doorGeo = new THREE.BoxGeometry(0.50, 1.35, 0.12);
-  doorGeo.translate(0, 0.675, 0);
+  const doorGeo = new THREE.BoxGeometry(0.50, 2.30, 0.12);
+  doorGeo.translate(0, 1.15, 0);
   parts.push(doorGeo);
 
   // Iron Cross-brace
-  const brace1 = new THREE.BoxGeometry(0.52, 0.08, 0.16); brace1.translate(0, 0.35, 0); parts.push(brace1);
-  const brace2 = new THREE.BoxGeometry(0.52, 0.08, 0.16); brace2.translate(0, 1.05, 0); parts.push(brace2);
+  const brace1 = new THREE.BoxGeometry(0.52, 0.10, 0.16); brace1.translate(0, 0.60, 0); parts.push(brace1);
+  const brace2 = new THREE.BoxGeometry(0.52, 0.10, 0.16); brace2.translate(0, 1.70, 0); parts.push(brace2);
 
   return mergeBufferGeometries(parts);
 }
@@ -1620,24 +1641,24 @@ function createGatehouseClosedGeometry() {
 // Fortified Wooden & Iron Gatehouse (Open State)
 function createGatehouseOpenGeometry() {
   const parts = [];
-  // 1. Left & Right Heavy Pillars
-  const pillarGeo = new THREE.BoxGeometry(0.26, 1.45, 0.60);
-  const leftPillar = pillarGeo.clone(); leftPillar.translate(-0.38, 0.725, 0); parts.push(leftPillar);
-  const rightPillar = pillarGeo.clone(); rightPillar.translate( 0.38, 0.725, 0); parts.push(rightPillar);
+  // 1. Left & Right Heavy Pillars (height = 2.40)
+  const pillarGeo = new THREE.BoxGeometry(0.28, 2.40, 0.60);
+  const leftPillar = pillarGeo.clone(); leftPillar.translate(-0.38, 1.20, 0); parts.push(leftPillar);
+  const rightPillar = pillarGeo.clone(); rightPillar.translate( 0.38, 1.20, 0); parts.push(rightPillar);
 
   // 2. Top Architrave / Lintel Beam
-  const lintel = new THREE.BoxGeometry(1.08, 0.32, 0.64);
-  lintel.translate(0, 1.45 + 0.16, 0);
+  const lintel = new THREE.BoxGeometry(1.08, 0.36, 0.64);
+  lintel.translate(0, 2.40 + 0.18, 0);
   parts.push(lintel);
 
   // 3. Merlons atop the Gatehouse
-  const m1 = new THREE.BoxGeometry(0.28, 0.22, 0.66); m1.translate(-0.40, 1.61 + 0.22, 0); parts.push(m1);
-  const m2 = new THREE.BoxGeometry(0.28, 0.22, 0.66); m2.translate( 0.40, 1.61 + 0.22, 0); parts.push(m2);
+  const m1 = new THREE.BoxGeometry(0.28, 0.35, 0.66); m1.translate(-0.40, 2.76 + 0.175, 0); parts.push(m1);
+  const m2 = new THREE.BoxGeometry(0.28, 0.35, 0.66); m2.translate( 0.40, 2.76 + 0.175, 0); parts.push(m2);
 
   // 4. Swung-Open Doors folded against the interior pillars
-  const doorLeaf = new THREE.BoxGeometry(0.10, 1.30, 0.26);
-  const leftDoor = doorLeaf.clone(); leftDoor.translate(-0.24, 0.65, 0.14); parts.push(leftDoor);
-  const rightDoor = doorLeaf.clone(); rightDoor.translate( 0.24, 0.65, 0.14); parts.push(rightDoor);
+  const doorLeaf = new THREE.BoxGeometry(0.10, 2.25, 0.26);
+  const leftDoor = doorLeaf.clone(); leftDoor.translate(-0.24, 1.125, 0.14); parts.push(leftDoor);
+  const rightDoor = doorLeaf.clone(); rightDoor.translate( 0.24, 1.125, 0.14); parts.push(rightDoor);
 
   return mergeBufferGeometries(parts);
 }
@@ -1645,10 +1666,10 @@ function createGatehouseOpenGeometry() {
 // Stage 1: Gate Foundation & Post Framing
 function createGateStage1Geometry() {
   const parts = [];
-  const postGeo = new THREE.BoxGeometry(0.18, 1.10, 0.18);
-  const p1 = postGeo.clone(); p1.translate(-0.38, 0.55, 0); parts.push(p1);
-  const p2 = postGeo.clone(); p2.translate( 0.38, 0.55, 0); parts.push(p2);
-  const cross = new THREE.BoxGeometry(0.94, 0.08, 0.08); cross.translate(0, 1.05, 0); parts.push(cross);
+  const postGeo = new THREE.BoxGeometry(0.18, 2.00, 0.18);
+  const p1 = postGeo.clone(); p1.translate(-0.38, 1.00, 0); parts.push(p1);
+  const p2 = postGeo.clone(); p2.translate( 0.38, 1.00, 0); parts.push(p2);
+  const cross = new THREE.BoxGeometry(0.94, 0.12, 0.12); cross.translate(0, 1.90, 0); parts.push(cross);
   return mergeBufferGeometries(parts);
 }
 
@@ -5823,7 +5844,7 @@ export class RCT3DRenderer {
           }
 
           const numFloors = h?.maxFloors || h?.floors?.length || (isLeaderHouse ? 7 : 2);
-          const peakY = surfaceH + (1.20 + numFloors * 1.15) + 0.25;
+          const peakY = surfaceH + (1.20 + numFloors * 1.85) + 0.40;
           flagMesh.position.set(e.x + fpW * 0.5, peakY, e.y + fpH * 0.5);
           flagMesh.rotation.y = this.fixedRotationY;
         } else if (!isCompleted) {
