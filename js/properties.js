@@ -733,7 +733,18 @@ export const HOUSE_STYLES = [
   { id: "fenced_ranch_compound", label: "Fenced Ranch Homestead", skin: "Overworld_House.png", color: 0xff8b5a2b, woodCost: 3, stoneCost: 1, condition: 14000, floorsCount: 1, footprint: "3x3", yardType: "Fenced Pasture, Corral & Wellside Land" },
   { id: "courtyard_hacienda", label: "Courtyard Hacienda Estate", skin: "Overworld_House.png", color: 0xfff0e6d2, woodCost: 3, stoneCost: 3, condition: 20000, floorsCount: 1, footprint: "4x4", yardType: "Quad Condominium Courtyard & Central Fountain" },
   { id: "adobe_rancho", label: "Single-Story Adobe Rancho", skin: "Overworld_House.png", color: 0xffd2965a, woodCost: 1, stoneCost: 2, condition: 8500, floorsCount: 1, footprint: "2x2", yardType: "Clay Patio, Clay Oven & Storage Plot" },
-  { id: "ground_croft", label: "Ground Thatched Croft", skin: "Overworld_House.png", color: 0xffe6c86e, woodCost: 1, stoneCost: 1, condition: 5500, floorsCount: 1, footprint: "1x1", yardType: "Rustic Thatch Shed & Fence" }
+  { id: "ground_croft", label: "Ground Thatched Croft", skin: "Overworld_House.png", color: 0xffe6c86e, woodCost: 1, stoneCost: 1, condition: 5500, floorsCount: 1, footprint: "1x1", yardType: "Rustic Thatch Shed & Fence" },
+  // Brand New Architectural Typologies (Large, Medium, Small & Unique Geometries)
+  { id: "l_shaped_villa", label: "L-Shaped Courtyard Villa", skin: "Overworld_House.png", color: 0xfff0e6d2, woodCost: 3, stoneCost: 2, condition: 17500, floorsCount: 3, footprint: "3x3", yardType: "Stone Patio & Arbor Pergola" },
+  { id: "stepped_sanctuary", label: "Stepped Ziggurat Pavilion", skin: "Overworld_House.png", color: 0xffd2965a, woodCost: 2, stoneCost: 4, condition: 24000, floorsCount: 3, footprint: "3x3", yardType: "Terraced Stone Plazas & Sun Braziers" },
+  { id: "octagonal_mill", label: "Octagonal Millhouse Tower", skin: "Overworld_House.png", color: 0xffc8c8c8, woodCost: 2, stoneCost: 3, condition: 19000, floorsCount: 4, footprint: "2x2", yardType: "Millstone Yard & Balconies" },
+  { id: "cantilever_chalet", label: "Cantilevered Alpine Chalet", skin: "Overworld_House.png", color: 0xff8b5a2b, woodCost: 3, stoneCost: 2, condition: 16500, floorsCount: 3, footprint: "3x2", yardType: "Overhanging Timber Deck & Woodpile" },
+  { id: "bridge_house", label: "Archway Bridgehouse", skin: "Overworld_House.png", color: 0xffa06432, woodCost: 2, stoneCost: 3, condition: 15500, floorsCount: 2, footprint: "3x1", yardType: "Under-Arch Paved Passage & Loft" },
+  { id: "sunken_atrium_villa", label: "Sunken Atrium Oasis Villa", skin: "Overworld_House.png", color: 0xffb47850, woodCost: 3, stoneCost: 3, condition: 21000, floorsCount: 2, footprint: "3x3", yardType: "Open-Air Garden Atrium & Colonnade" },
+  { id: "minaret_hermitage", label: "Domed Spire Hermitage", skin: "Overworld_House.png", color: 0xfff5f5dc, woodCost: 1, stoneCost: 3, condition: 14500, floorsCount: 5, footprint: "1x1", yardType: "High Lookout Observatory & Dome" },
+  { id: "barbican_manor", label: "Twin-Tower Barbican Manor", skin: "Overworld_House.png", color: 0xff968278, woodCost: 3, stoneCost: 4, condition: 26000, floorsCount: 3, footprint: "4x2", yardType: "Fortified Curtain Ramparts & Gateyard" },
+  { id: "crescent_hall", label: "Crescent Amphitheater Hall", skin: "Overworld_House.png", color: 0xffcd853f, woodCost: 3, stoneCost: 2, condition: 18000, floorsCount: 2, footprint: "3x2", yardType: "Curved Timber Colonnade & Forum" },
+  { id: "cruciform_grange", label: "Cruciform Cross Manor", skin: "Overworld_House.png", color: 0xfff0e6d2, woodCost: 4, stoneCost: 3, condition: 23000, floorsCount: 3, footprint: "3x3", yardType: "Crosswing Courtyards & Dual Hearths" }
 ];
 
 export const LEADER_HOUSE_STYLES = [
@@ -747,21 +758,10 @@ export const LEADER_HOUSE_STYLES = [
 ];
 
 export function pickWeightedHouseStyle(seed = Math.random()) {
-  // Smaller and lower (single-story, small footprint) buildings have much higher chance
-  const weights = HOUSE_STYLES.map(s => {
-    const [w, h] = (s.footprint || "1x1").split("x").map(Number);
-    const area = (w || 1) * (h || 1);
-    const floors = s.floorsCount || 1;
-    const vol = area * Math.pow(floors, 1.25);
-    return Math.max(1, Math.round(1000 / vol));
-  });
-  const totalWeight = weights.reduce((a, b) => a + b, 0);
-  let r = (Math.abs(seed) % 1) * totalWeight;
-  for (let i = 0; i < weights.length; i++) {
-    if (r < weights[i]) return i;
-    r -= weights[i];
-  }
-  return 0;
+  // Equal probability across all house styles (both small, medium, and large buildings)
+  const total = HOUSE_STYLES.length;
+  const idx = Math.floor((Math.abs(seed) % 1.0) * total);
+  return Math.max(0, Math.min(total - 1, idx));
 }
 
 export function createHouseEntity(x, y, style = "mixed", ownerId = null, ownerName = null, supportMaterial = "wood", forcedVariant = null, rotation = null) {

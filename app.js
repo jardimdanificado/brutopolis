@@ -2,8 +2,8 @@
 // Brutopolis
 // =============================================================================
 
-const BrutopolisVersion = "0.122.20";
-const BrutopolisVersionName = "Charm is deceptive, and beauty is fleeting";
+const BrutopolisVersion = "0.122.25";
+const BrutopolisVersionName = "Who may ascend the mountain of the LORD? Who may stand in his holy place?";
 
 // WASM replaced by Pure JS Renderer
 import { World } from "./js/world.js";
