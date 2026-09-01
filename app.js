@@ -2,7 +2,7 @@
 // Brutopolis
 // =============================================================================
 
-const BrutopolisVersion = "0.121.10";
+const BrutopolisVersion = "0.121.12";
 const BrutopolisVersionName = "Charm is deceptive, and beauty is fleeting";
 
 // WASM replaced by Pure JS Renderer
@@ -6136,7 +6136,11 @@ const gameOptions = {
   perspectiveAnisotropy: 4, // 1 (OFF) | 2 (2X) | 4 (4X) | 8 (8X) | 16 (16X)
   perspectiveAmbientOcclusion: true,
   perspectiveAOType: "SSAO", // "CONTACT" | "CREVICE" | "SSAO" | "DEEP"
-  perspectiveAOIntensity: "HIGH" // "LOW" | "MED" | "HIGH" | "ULTRA"
+  perspectiveAOIntensity: "HIGH", // "LOW" | "MED" | "HIGH" | "ULTRA"
+  // Calibration
+  renderBrightness: 1.0, // 0.70, 0.85, 1.00, 1.15, 1.30
+  renderContrast: 1.0,   // 0.70, 0.85, 1.00, 1.15, 1.30
+  renderAlpha: 1.0       // 0.60, 0.80, 1.00, 1.20, 1.40
 };
 
 function loadGameOptions() {
@@ -6174,7 +6178,10 @@ function applyGameOptions() {
         anisotropy: gameOptions.perspectiveAnisotropy,
         ambientOcclusion: gameOptions.perspectiveAmbientOcclusion,
         aoType: gameOptions.perspectiveAOType,
-        aoIntensity: gameOptions.perspectiveAOIntensity
+        aoIntensity: gameOptions.perspectiveAOIntensity,
+        brightness: gameOptions.renderBrightness,
+        contrast: gameOptions.renderContrast,
+        alpha: gameOptions.renderAlpha
       });
     }
   }
@@ -6215,11 +6222,12 @@ function renderOptionsModal() {
     { id: "OPTIMIZATION", label: "OPTIMIZATION" },
     { id: "GRAPHICS", label: "GRAPHICS" },
     { id: "PERSPECTIVE", label: "1P/3P EFFECTS" },
+    { id: "CALIBRATION", label: "CALIBRATION" },
     { id: "AUDIO", label: "AUDIO" }
   ];
   for (const t of tabs) {
     const isSel = optionsTab === t.id;
-    const tw = isMobile ? 70 : 110;
+    const tw = isMobile ? 62 : 94;
     drawNESButton(tabX, tabY, tw, 22, t.label, isSel, false);
     const tid = t.id;
     registerClickableRegion(tabX, tabY, tw, 22, () => {
@@ -6646,6 +6654,94 @@ function renderOptionsModal() {
       });
       bx += bw + 6;
     }
+  } else if (optionsTab === "CALIBRATION") {
+    // 1. Brightness Calibration
+    const curBright = gameOptions.renderBrightness !== undefined ? gameOptions.renderBrightness : 1.0;
+    const brightPct = Math.round(curBright * 100);
+    drawText8x8(`BRIGHTNESS / BRILHO: [ ${brightPct}% ]`, mx + 16, curY, "#3cbcfc", 1);
+    const brightOptions = [
+      { val: 0.70, label: "70%" },
+      { val: 0.85, label: "85%" },
+      { val: 1.00, label: "100%" },
+      { val: 1.15, label: "115%" },
+      { val: 1.30, label: "130%" }
+    ];
+    let bx = mx + 16;
+    for (const opt of brightOptions) {
+      const isSel = Math.abs(curBright - opt.val) < 0.01;
+      const bw = isMobile ? 52 : 78;
+      drawNESButton(bx, curY + 10, bw, 22, opt.label, isSel, false);
+      const v = opt.val;
+      registerClickableRegion(bx, curY + 10, bw, 22, () => {
+        gameOptions.renderBrightness = v;
+        applyGameOptions();
+        saveGameOptions();
+      });
+      bx += bw + 6;
+    }
+    curY += 40;
+
+    // 2. Contrast Calibration
+    const curContrast = gameOptions.renderContrast !== undefined ? gameOptions.renderContrast : 1.0;
+    const contrastPct = Math.round(curContrast * 100);
+    drawText8x8(`CONTRAST / CONTRASTE: [ ${contrastPct}% ]`, mx + 16, curY, "#3cbcfc", 1);
+    const contrastOptions = [
+      { val: 0.70, label: "70%" },
+      { val: 0.85, label: "85%" },
+      { val: 1.00, label: "100%" },
+      { val: 1.15, label: "115%" },
+      { val: 1.30, label: "130%" }
+    ];
+    bx = mx + 16;
+    for (const opt of contrastOptions) {
+      const isSel = Math.abs(curContrast - opt.val) < 0.01;
+      const bw = isMobile ? 52 : 78;
+      drawNESButton(bx, curY + 10, bw, 22, opt.label, isSel, false);
+      const v = opt.val;
+      registerClickableRegion(bx, curY + 10, bw, 22, () => {
+        gameOptions.renderContrast = v;
+        applyGameOptions();
+        saveGameOptions();
+      });
+      bx += bw + 6;
+    }
+    curY += 40;
+
+    // 3. Alpha / Opacity Calibration
+    const curAlpha = gameOptions.renderAlpha !== undefined ? gameOptions.renderAlpha : 1.0;
+    const alphaPct = Math.round(curAlpha * 100);
+    drawText8x8(`ALPHA / TRANSPARENCY & OPACITY: [ ${alphaPct}% ]`, mx + 16, curY, "#3cbcfc", 1);
+    const alphaOptions = [
+      { val: 0.60, label: "60%" },
+      { val: 0.80, label: "80%" },
+      { val: 1.00, label: "100%" },
+      { val: 1.20, label: "120%" },
+      { val: 1.40, label: "140%" }
+    ];
+    bx = mx + 16;
+    for (const opt of alphaOptions) {
+      const isSel = Math.abs(curAlpha - opt.val) < 0.01;
+      const bw = isMobile ? 52 : 78;
+      drawNESButton(bx, curY + 10, bw, 22, opt.label, isSel, false);
+      const v = opt.val;
+      registerClickableRegion(bx, curY + 10, bw, 22, () => {
+        gameOptions.renderAlpha = v;
+        applyGameOptions();
+        saveGameOptions();
+      });
+      bx += bw + 6;
+    }
+    curY += 40;
+
+    // Reset Defaults Button
+    drawNESButton(mx + 16, curY + 10, 160, 22, "RESET CALIBRATION", false, false);
+    registerClickableRegion(mx + 16, curY + 10, 160, 22, () => {
+      gameOptions.renderBrightness = 1.0;
+      gameOptions.renderContrast = 1.0;
+      gameOptions.renderAlpha = 1.0;
+      applyGameOptions();
+      saveGameOptions();
+    });
   } else if (optionsTab === "AUDIO") {
     // 1. Audio & Sound FX
     drawText8x8(`AUDIO & SOUND FX: [ ${isAudioMuted ? "MUTED" : "ENABLED"} ]`, mx + 16, curY, "#3cbcfc", 1);

@@ -1704,10 +1704,19 @@ function createStandingTorchGeometry() {
   ironRing.translate(0, 0.98, 0);
   parts.push(ironRing);
 
-  // 3. Flame core
-  const flame = new THREE.OctahedronGeometry(0.11);
-  flame.translate(0, 1.12, 0);
-  parts.push(flame);
+  return mergeBufferGeometries(parts);
+}
+
+// Glowing Dynamic Torch Flame Geometry (Rendered with animated flame shader)
+function createStandingTorchFlameGeometry() {
+  const parts = [];
+  const f1 = new THREE.OctahedronGeometry(0.12);
+  f1.translate(0, 1.10, 0);
+  parts.push(f1);
+
+  const f2 = new THREE.OctahedronGeometry(0.075);
+  f2.translate(0, 1.20, 0);
+  parts.push(f2);
 
   return mergeBufferGeometries(parts);
 }
@@ -1886,7 +1895,7 @@ export function createNormalMapFromTexture(skinName, intensity = 1.6) {
 // ---------------------------------------------------------------------------
 // Procedural Pixelated Terrain Normal Map Generator (Grass & Sand)
 // ---------------------------------------------------------------------------
-function generateProceduralTerrainNormalMap(type, intensity = 1.35) {
+function generateProceduralTerrainNormalMap(type, intensity = 0.45) {
   const size = 32;
   const canvas = document.createElement("canvas");
   canvas.width = size;
@@ -1903,13 +1912,13 @@ function generateProceduralTerrainNormalMap(type, intensity = 1.35) {
       if (type === "grass") {
         const f1 = Math.sin(x * 1.8 + Math.sin(y * 0.8) * 2.0);
         const f2 = Math.sin((x + y) * 1.2);
-        h = 0.5 + 0.3 * f1 + 0.2 * f2;
+        h = 0.5 + 0.15 * f1 + 0.10 * f2;
       } else if (type === "sand") {
         const r1 = Math.sin(x * 0.4 + y * 0.2);
         const r2 = Math.cos(x * 0.8 - y * 0.3);
-        h = 0.5 + 0.35 * r1 + 0.15 * r2;
+        h = 0.5 + 0.15 * r1 + 0.08 * r2;
       }
-      heightMap[y * size + x] = Math.round(h * 6) / 6;
+      heightMap[y * size + x] = h;
     }
   }
 
@@ -1920,8 +1929,8 @@ function generateProceduralTerrainNormalMap(type, intensity = 1.35) {
       const xm = (x - 1 + size) % size;
       const xp = (x + 1) % size;
 
-      const dX = (heightMap[y * size + xp] - heightMap[y * size + xm]) * (intensity * 1.8);
-      const dY = (heightMap[yp * size + x] - heightMap[ym * size + x]) * (intensity * 1.8);
+      const dX = (heightMap[y * size + xp] - heightMap[y * size + xm]) * (intensity * 1.0);
+      const dY = (heightMap[yp * size + x] - heightMap[ym * size + x]) * (intensity * 1.0);
 
       let nx = -dX;
       let ny = -dY;
@@ -1931,14 +1940,14 @@ function generateProceduralTerrainNormalMap(type, intensity = 1.35) {
       ny /= len;
       nz /= len;
 
-      const r = Math.round(((nx * 0.5 + 0.5) * 255) / 32) * 32;
-      const g = Math.round(((ny * 0.5 + 0.5) * 255) / 32) * 32;
-      const b = Math.round(((nz * 0.5 + 0.5) * 255) / 32) * 32;
+      const r = Math.round((nx * 0.5 + 0.5) * 255);
+      const g = Math.round((ny * 0.5 + 0.5) * 255);
+      const b = Math.round((nz * 0.5 + 0.5) * 255);
 
       const idx = (y * size + x) * 4;
-      data[idx + 0] = Math.min(255, r);
-      data[idx + 1] = Math.min(255, g);
-      data[idx + 2] = Math.min(255, b);
+      data[idx + 0] = Math.min(255, Math.max(0, r));
+      data[idx + 1] = Math.min(255, Math.max(0, g));
+      data[idx + 2] = Math.min(255, Math.max(0, b));
       data[idx + 3] = 255;
     }
   }
@@ -2481,6 +2490,9 @@ export class RCT3DRenderer {
         uAoEnabled: { value: 1.0 },
         uAoType: { value: 2 }, // 0 = CONTACT, 1 = CREVICE, 2 = SSAO, 3 = DEEP
         uAoIntensity: { value: 1.0 },
+        uBrightness: { value: 1.0 },
+        uContrast: { value: 1.0 },
+        uAlpha: { value: 1.0 },
         uCameraNear: { value: 0.1 },
         uCameraFar: { value: 1000.0 },
         uResolution: { value: new THREE.Vector2(800, 600) }
@@ -2500,6 +2512,9 @@ export class RCT3DRenderer {
         uniform float uAoEnabled;
         uniform int uAoType;
         uniform float uAoIntensity;
+        uniform float uBrightness;
+        uniform float uContrast;
+        uniform float uAlpha;
         uniform float uCameraNear;
         uniform float uCameraFar;
         uniform vec2 uResolution;
@@ -2620,9 +2635,14 @@ export class RCT3DRenderer {
 
             float blend = smoothstep(0.04, 0.38, dist);
             vec3 finalCol = mix(baseColor, blurCol.rgb, blend * 0.65);
-            gl_FragColor = vec4(finalCol, a);
+            // Apply Contrast and Brightness calibration
+            finalCol = (finalCol - 0.5) * uContrast + 0.5;
+            finalCol = clamp(finalCol * uBrightness, 0.0, 1.0);
+            gl_FragColor = vec4(finalCol, a * uAlpha);
           } else {
-            gl_FragColor = vec4(baseColor, a);
+            vec3 finalCol = (baseColor - 0.5) * uContrast + 0.5;
+            finalCol = clamp(finalCol * uBrightness, 0.0, 1.0);
+            gl_FragColor = vec4(finalCol, a * uAlpha);
           }
         }
       `,
@@ -2706,13 +2726,16 @@ export class RCT3DRenderer {
       anisotropy: 4,
       ambientOcclusion: true,
       aoType: "SSAO", // "CONTACT" | "CREVICE" | "SSAO" | "DEEP"
-      aoIntensity: "HIGH" // "LOW" | "MED" | "HIGH" | "ULTRA"
+      aoIntensity: "HIGH", // "LOW" | "MED" | "HIGH" | "ULTRA"
+      brightness: 1.0,
+      contrast: 1.0,
+      alpha: 1.0
     };
     this._lastPerspState = null;
 
     // 4.6 Texture-Derived & Procedural Normal Maps
-    const normGrass = generateProceduralTerrainNormalMap("grass", 1.25);
-    const normSand = generateProceduralTerrainNormalMap("sand", 1.15);
+    const normGrass = generateProceduralTerrainNormalMap("grass", 0.40);
+    const normSand = generateProceduralTerrainNormalMap("sand", 0.35);
     const normOak = generateProceduralFoliageNormalMap("oak", 1.5);
     const normPine = generateProceduralFoliageNormalMap("pine", 1.5);
     const normCactus = generateProceduralFoliageNormalMap("cactus", 1.6);
@@ -2738,17 +2761,17 @@ export class RCT3DRenderer {
     };
 
     const buildDict = (isPersp) => ({
-      [TILE_FLOOR]: makeMat(isPersp, { color: 0x2e5424, dithering: true, vertexColors: true, side: THREE.DoubleSide }, normGrass, 0.8, 0.82, 0.05),
-      sandClean: makeMat(isPersp, { color: 0xdec078, dithering: true, vertexColors: true, side: THREE.DoubleSide }, normSand, 0.8, 0.88, 0.02),
-      [TILE_SAND]: makeMat(isPersp, { map: createTintedTexture("Feature_Pebbles.png", 0x6e5228, 0xdec078, 1.0), dithering: true, vertexColors: true, side: THREE.DoubleSide }, normSand, 0.9, 0.86, 0.03),
+      [TILE_FLOOR]: makeMat(isPersp, { color: 0x2e5424, dithering: true, vertexColors: true, side: THREE.DoubleSide }, normGrass, 0.28, 0.85, 0.02),
+      sandClean: makeMat(isPersp, { color: 0xdec078, dithering: true, vertexColors: true, side: THREE.DoubleSide }, normSand, 0.22, 0.90, 0.01),
+      [TILE_SAND]: makeMat(isPersp, { map: createTintedTexture("Feature_Pebbles.png", 0x6e5228, 0xdec078, 1.0), dithering: true, vertexColors: true, side: THREE.DoubleSide }, normSand, 0.25, 0.88, 0.02),
       [TILE_STONE]: makeMat(isPersp, { map: createTintedTexture("Feature_Stone_B.png", 0xa5a5af, 0x3a3a44, 1.0), dithering: true, vertexColors: true, side: THREE.DoubleSide }, normStoneB, 1.1, 0.70, 0.08),
       [TILE_MOUNTAIN]: makeMat(isPersp, { map: createTintedTexture("Feature_Stone_C.png", 0xb4afaa, 0x484242, 1.0), dithering: true, vertexColors: true, side: THREE.DoubleSide }, normStoneC, 1.25, 0.65, 0.10),
       [TILE_WATER]: makeMat(isPersp, { color: isPersp ? 0x1668b8 : 0xffffff, map: createTintedTexture("Feature_Waves.png", 0x64b4ff, 0x143764, 1.0), dithering: true, vertexColors: true, transparent: false, opacity: 1.0, side: THREE.DoubleSide }, normWaves, 0.9, 0.18, 0.14),
       [TILE_ROAD_GRASS]: makeMat(isPersp, { map: createTintedTexture("Feature_Stone_B.png", 0xa67c52, 0x3d2816, 1.0), dithering: true, vertexColors: true, side: THREE.DoubleSide }, normStoneB, 0.9, 0.75, 0.05),
-      [TILE_ROAD_SAND]: makeMat(isPersp, { map: createTintedTexture("Feature_Pebbles.png", 0xc8a060, 0x5c4220, 1.0), dithering: true, vertexColors: true, side: THREE.DoubleSide }, normSand, 0.9, 0.82, 0.04),
+      [TILE_ROAD_SAND]: makeMat(isPersp, { map: createTintedTexture("Feature_Pebbles.png", 0xc8a060, 0x5c4220, 1.0), dithering: true, vertexColors: true, side: THREE.DoubleSide }, normSand, 0.25, 0.85, 0.02),
       [TILE_ROAD_STONE]: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0x909098, 0x383842, 1.0), dithering: true, vertexColors: true, side: THREE.DoubleSide }, normBrickA, 1.1, 0.65, 0.08),
       cliff: makeMat(isPersp, { map: createTintedTexture("Feature_Stone_C.png", 0x887a6a, 0x2b2218, 1.0), dithering: true, vertexColors: true, side: THREE.DoubleSide }, normStoneC, 1.1, 0.72, 0.05),
-      grassFoliage: makeMat(isPersp, { map: createTintedTexture("Feature_Grass.png", 0x3c7228, 0x000000, 0.0), dithering: true, transparent: false, alphaTest: 0.5, depthWrite: true, depthTest: true, side: THREE.DoubleSide }, normGrass, 0.7, 0.85, 0.02),
+      grassFoliage: makeMat(isPersp, { map: createTintedTexture("Feature_Grass.png", 0x3c7228, 0x000000, 0.0), dithering: true, transparent: false, alphaTest: 0.5, depthWrite: true, depthTest: true, side: THREE.DoubleSide }, normGrass, 0.25, 0.85, 0.02),
       treeTrunk: makeMat(isPersp, { color: 0x583c1e, dithering: true }, normWood, 0.9, 0.75, 0.02),
       oakLeaves: makeMat(isPersp, { color: 0x3e8226, dithering: true }, normOak, 1.2, 0.70, 0.02),
       pineLeaves: makeMat(isPersp, { color: 0x205222, dithering: true }, normPine, 1.2, 0.70, 0.02),
@@ -2768,9 +2791,9 @@ export class RCT3DRenderer {
       stoneItem: makeMat(isPersp, { map: createTintedTexture("Feature_Stone_B.png", 0xd8d8e6, 0x3c3c46, 1.0), dithering: true, side: THREE.DoubleSide }, normStoneB, 1.0, 0.65, 0.05),
       gate: makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xad7842, 0x3a2214, 1.0), dithering: true, side: THREE.DoubleSide }, normWood, 0.9, 0.65, 0.04),
       gateBlueprint: new THREE.MeshLambertMaterial({ map: createTintedTexture("Feature_Wood.png", 0xc89858, 0x482c18, 1.0), dithering: true, side: THREE.DoubleSide }),
-      torchFlames: isPersp ? createRealisticFlameMaterial() : new THREE.MeshBasicMaterial({ color: 0xffaa33, dithering: true }),
+      torchFlames: createRealisticFlameMaterial(),
       campfireLogs: makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0x8a5228, 0x2e1a0a, 1.0), dithering: true, side: THREE.DoubleSide }, normWood, 0.9, 0.70, 0.03),
-      campfireFlames: isPersp ? createRealisticFlameMaterial() : new THREE.MeshBasicMaterial({ color: 0xff7711, dithering: true }),
+      campfireFlames: createRealisticFlameMaterial(),
       warehouse: makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xd4a373, 0x4a3525, 1.0), dithering: true, side: THREE.DoubleSide }, normWood, 0.9, 0.65, 0.04),
       stoneWarehouse: makeMat(isPersp, { map: createTintedTexture("Feature_Brick_A.png", 0xd8d7de, 0x3a3842, 1.0), dithering: true, side: THREE.DoubleSide }, normBrickA, 1.0, 0.60, 0.05),
       slaughterhouseTimber: makeMat(isPersp, { map: createTintedTexture("Feature_Wood.png", 0xc89858, 0x482c18, 1.0), dithering: true, side: THREE.DoubleSide }, normWood, 0.9, 0.65, 0.04),
@@ -3201,7 +3224,7 @@ export class RCT3DRenderer {
     this.instStoneItems.castShadow = true;
     this.instStoneItems.receiveShadow = true;
 
-    // 3D Standing Torches (Lit & Unlit Posts)
+    // 3D Standing Torches (Lit & Unlit Posts + Flames)
     const standingTorchGeo = createStandingTorchGeometry();
     this.instTorches = new THREE.InstancedMesh(standingTorchGeo, this.materials.woodWall, 600);
     this.instTorches.castShadow = true;
@@ -3212,6 +3235,9 @@ export class RCT3DRenderer {
     this.instTorchesUnlit.castShadow = true;
     this.instTorchesUnlit.receiveShadow = true;
 
+    const torchFlameGeo = createStandingTorchFlameGeometry();
+    this.instTorchFlames = new THREE.InstancedMesh(torchFlameGeo, this.materials.torchFlames, 600);
+
     // 3D Wood Campfires & Flames
     const woodCampfireGeo = createWoodCampfireGeometry();
     this.instWoodCampfires = new THREE.InstancedMesh(woodCampfireGeo, this.materials.woodWall, 600);
@@ -3219,7 +3245,7 @@ export class RCT3DRenderer {
     this.instWoodCampfires.receiveShadow = true;
 
     const campfireFlameGeo = createCampfireFlameGeometry();
-    this.instCampfireFlames = new THREE.InstancedMesh(campfireFlameGeo, this.materials.campfireFlame, 600);
+    this.instCampfireFlames = new THREE.InstancedMesh(campfireFlameGeo, this.materials.campfireFlames, 600);
 
     // 3D Roads & Snap Points (Paved Flat Mud / Dirt Path Slabs & Cobblestone Snap Points)
     const roadGeo = new THREE.BoxGeometry(0.96, 0.04, 0.96);
@@ -3287,6 +3313,7 @@ export class RCT3DRenderer {
     this.instStoneItems.frustumCulled = false;
     this.instTorches.frustumCulled = false;
     this.instTorchesUnlit.frustumCulled = false;
+    this.instTorchFlames.frustumCulled = false;
     this.instWoodCampfires.frustumCulled = false;
     this.instCampfireFlames.frustumCulled = false;
     this.instRoads.frustumCulled = false;
@@ -3314,7 +3341,7 @@ export class RCT3DRenderer {
       this.instHouseStage2, this.instHouseStage3,
       this.instGrassTufts,
       this.instWoodLogs, this.instStoneItems,
-      this.instTorches, this.instTorchesUnlit,
+      this.instTorches, this.instTorchesUnlit, this.instTorchFlames,
       this.instWoodCampfires, this.instCampfireFlames,
       this.instRoads, this.instRoadSnaps,
       this.instWoodBridges, this.instStoneBridges, this.instWaterPlatforms
@@ -3880,6 +3907,7 @@ export class RCT3DRenderer {
     if (this.instPineLeaves && activeDict.pineLeaves) this.instPineLeaves.material = activeDict.pineLeaves;
     if (this.instCacti && activeDict.cactus) this.instCacti.material = activeDict.cactus;
     if (this.instCampfireFlames && activeDict.campfireFlames) this.instCampfireFlames.material = activeDict.campfireFlames;
+    if (this.instTorchFlames && activeDict.torchFlames) this.instTorchFlames.material = activeDict.torchFlames;
     if (this.instGrassTufts && activeDict.grassFoliage) this.instGrassTufts.material = activeDict.grassFoliage;
 
     // Reset camera tile marker so terrain chunks re-bind with active materials
@@ -5322,6 +5350,7 @@ export class RCT3DRenderer {
     let stage3Count = 0;
     let torchCount = 0;
     let torchUnlitCount = 0;
+    let torchFlameCount = 0;
     let woodCampfireCount = 0;
     let campfireFlameCount = 0;
     let roadCount = 0;
@@ -5443,28 +5472,35 @@ export class RCT3DRenderer {
         this.instCacti.setMatrixAt(cactusCount, mMatrix);
         cactusCount++;
       }
-      // --- 3D STANDING TORCHES (Lit vs Unlit Post) ---
+      // --- 3D STANDING TORCHES (Lit vs Unlit Post + Dynamic Flame in 1P/3P Night) ---
       else if (isTorch) {
-        const isLit = e.properties?.torch?.isLit !== false && (e.properties?.torch?.fuel || 0) > 0;
+        const curHour = world?.clock ? (world.clock.hour + (world.clock.minute || 0) / 60) : 12;
+        const isNight = (curHour >= 17.5 || curHour < 5.8);
+        const hasFuel = (e.properties?.torch?.fuel || 0) > 0;
+        const isLit = e.properties?.torch?.isLit !== false && hasFuel;
         mMatrix.identity();
         mMatrix.setPosition(e.x + 0.5, surfaceH, e.y + 0.5);
         if (isLit && torchCount < 600) {
           this.instTorches.setMatrixAt(torchCount++, mMatrix);
+          if (isPersp && isNight && torchFlameCount < 600) {
+            this.instTorchFlames.setMatrixAt(torchFlameCount++, mMatrix);
+          }
         } else if (!isLit && torchUnlitCount < 600) {
           this.instTorchesUnlit.setMatrixAt(torchUnlitCount++, mMatrix);
         }
       }
-      // --- 3D WOOD CAMPFIRE (Cross-Stacked Wood Logs + Dynamic Flame) ---
+      // --- 3D WOOD CAMPFIRE (Cross-Stacked Wood Logs + Dynamic Flame in 1P/3P Night) ---
       else if (isCampfire) {
         const curHour = world?.clock ? (world.clock.hour + (world.clock.minute || 0) / 60) : 12;
         const isNight = (curHour >= 17.5 || curHour < 5.8);
-        const isLit = isNight && e.properties?.campfire?.isLit && (e.properties?.campfire?.fuel || 0) > 0;
+        const hasFuel = (e.properties?.campfire?.fuel || 0) > 0;
+        const isLit = isNight && e.properties?.campfire?.isLit && hasFuel;
         mMatrix.identity();
         mMatrix.setPosition(e.x + 0.5, surfaceH, e.y + 0.5);
         if (woodCampfireCount < 600) {
           this.instWoodCampfires.setMatrixAt(woodCampfireCount++, mMatrix);
         }
-        if (isLit && campfireFlameCount < 600) {
+        if (isPersp && isLit && campfireFlameCount < 600) {
           this.instCampfireFlames.setMatrixAt(campfireFlameCount++, mMatrix);
         }
       }
@@ -6358,6 +6394,8 @@ export class RCT3DRenderer {
     this.instTorches.instanceMatrix.needsUpdate = true;
     this.instTorchesUnlit.count = torchUnlitCount;
     this.instTorchesUnlit.instanceMatrix.needsUpdate = true;
+    this.instTorchFlames.count = torchFlameCount;
+    this.instTorchFlames.instanceMatrix.needsUpdate = true;
 
     this.instWoodCampfires.count = woodCampfireCount;
     this.instWoodCampfires.instanceMatrix.needsUpdate = true;
@@ -6466,6 +6504,9 @@ export class RCT3DRenderer {
       this.postMaterial.uniforms.uAoEnabled.value = aoEnabled ? 1.0 : 0.0;
       this.postMaterial.uniforms.uAoType.value = aoTypeInt;
       this.postMaterial.uniforms.uAoIntensity.value = aoIntensityVal;
+      this.postMaterial.uniforms.uBrightness.value = (typeof this.graphicOptions?.brightness === "number") ? this.graphicOptions.brightness : 1.0;
+      this.postMaterial.uniforms.uContrast.value = (typeof this.graphicOptions?.contrast === "number") ? this.graphicOptions.contrast : 1.0;
+      this.postMaterial.uniforms.uAlpha.value = (typeof this.graphicOptions?.alpha === "number") ? this.graphicOptions.alpha : 1.0;
       this.postMaterial.uniforms.uCameraNear.value = activeCam.near || 0.05;
       this.postMaterial.uniforms.uCameraFar.value = activeCam.far || 800.0;
       this.postMaterial.uniforms.uResolution.value.set(
