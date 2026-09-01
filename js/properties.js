@@ -8344,13 +8344,14 @@ export function evaluateAndAssignClanRoles(group, entities, world) {
     }
   }
 
-  // 6. Diplomat of the Interior: Queue Stone Street Paving Projects in Claimed Zones
-  const interiorDiplomatId = group.diplomats[3];
+  // 6. Public Works: Queue Stone Street Paving Projects in Claimed Zones
+  const interiorDiplomatId = group.diplomats?.[3];
   const interiorEnt = interiorDiplomatId ? getEntityById(interiorDiplomatId) : null;
   const hasInteriorDiplomat = (interiorEnt && !interiorEnt.destroyed && (interiorEnt.properties?.health ?? 1) > 0) ||
     livingMembers.some(m => m.properties.diplomatRole === "Interior" || (m.properties.role === "Diplomat" && livingMembers.length >= 6));
+  const canPlanStoneRoads = (group.resources?.stone > 0) || livingMembers.length >= 3 || hasInteriorDiplomat;
 
-  if (hasInteriorDiplomat) {
+  if (canPlanStoneRoads) {
     const curW = world || getSimWorld();
     if (curW && group.claimedZones && group.claimedZones.length > 0) {
       const sz = currentZoneSize || 8;
@@ -9440,9 +9441,9 @@ export function createLocomotionProp() {
             }
           }
 
-          // --- 5.25 Stone Street Paving Projects (Diplomat of the Interior Public Works) ---
-          const hasInteriorDiplomat = group?.diplomats?.[3] !== null || (group?.members || []).some(id => getEntityById(id)?.properties?.diplomatRole === "Interior");
-          if (!hasIntention && hasInteriorDiplomat && group._plannedStoneRoads && group._plannedStoneRoads.length > 0 && energyRatio > 0.35 && waterRatio > 0.35 && !ent.properties.injured) {
+          // --- 5.25 Stone Street Paving Projects (Civic Public Works) ---
+          const canPave = group._plannedStoneRoads && group._plannedStoneRoads.length > 0 && energyRatio > 0.35 && waterRatio > 0.35 && !ent.properties.injured;
+          if (!hasIntention && canPave) {
             const hasHeldStone = (ent.properties.arm_left?.heldItem?.resourceType === "stone" || ent.properties.arm_right?.heldItem?.resourceType === "stone" || ent.properties.heldItem?.resourceType === "stone");
             const hasBackpackStone = (ent.properties.backpack?.items || []).some(it => it.resourceType === "stone" || it.name?.includes("Pedra") || it.name?.includes("Stone"));
 
@@ -9492,10 +9493,18 @@ export function createLocomotionProp() {
                   hasIntention = true;
                 }
               }
+            } else if (group.resources && group.resources.stone >= 1) {
+              // Withdraw 1 stone from clan stockpile
+              group.resources.stone -= 1;
+              if (!ent.properties.arm_left) ent.properties.arm_left = createArmProp("Braço Esquerdo", "left");
+              ent.properties.arm_left.heldItem = { name: "Pedra de Pavimentação", resourceType: "stone", weight: 2.0 };
+              chosenDx = 0;
+              chosenDy = 0;
+              hasIntention = true;
             } else {
-              // Find loose stone or warehouse stone in claimed territory
-              const closestStone = findClosestEntityInRadius(ent.x, ent.y, 25, e =>
-                !e.destroyed && e.properties?.resourceType === "stone" && isTileInClaimedZones(e.x, e.y, group.claimedZones)
+              // Find loose stone in territory or nearby radius
+              const closestStone = findClosestEntityInRadius(ent.x, ent.y, 35, e =>
+                !e.destroyed && e.properties?.resourceType === "stone"
               );
               if (closestStone) {
                 const d = Math.abs(closestStone.x - ent.x) + Math.abs(closestStone.y - ent.y);
