@@ -4677,11 +4677,11 @@ export function createCommunicationProp(talkRate = 4.0) {
     effect(ent, dt, world, entities) {
       if (ent.properties.life?.isSleeping) return;
 
-      // --- A. PASSIVE "PASS-BY" MICRO-INTERACTIONS (Organic chance per step within <= 1 tile) ---
+      // --- A. PASSIVE "PASS-BY" MICRO-INTERACTIONS (Organic encounters when crossing paths within <= 1 tile) ---
       this.passByTimer = (this.passByTimer || 0) + dt;
-      if (this.passByTimer >= 0.25) {
+      if (this.passByTimer >= 0.20) {
         this.passByTimer = 0;
-        if (Math.random() < 0.12) {
+        if (Math.random() < 0.15) {
           const adjacentTalkers = getEntitiesInRadius(ent.x, ent.y, 1);
           for (const other of adjacentTalkers) {
             if (other !== ent && !other.destroyed && other.properties?.brain && !other.properties.life?.isSleeping) {
@@ -4695,35 +4695,29 @@ export function createCommunicationProp(talkRate = 4.0) {
         }
       }
 
-      // --- B. ACTIVE DELIBERATE CONVERSATIONS & GOSSIP ---
+      // --- B. ACTIVE DELIBERATE CONVERSATIONS (Strictly reserved for romantic partners) ---
       this.talkTimer = (this.talkTimer || 0) + dt;
       if (this.talkTimer < this.talkRate) return;
       this.talkTimer = 0;
 
       const isBusyWorking = isCarryingItem(ent, "stone") || isCarryingItem(ent, "wood") || isCarryingItem(ent, "seed") || isCarryingItem(ent, "meat") || ent._taskGoal;
-      if (isBusyWorking) return; // Working citizens stay on task and only exchange passive pass-by greetings!
+      if (isBusyWorking) return;
 
-      // General talking cooldown: creature only engages in conversation once per 30 ticks
-      if (ent._lastTalkTick && (currentTick - ent._lastTalkTick < 30)) return;
+      const partnerId = ent.properties.monogamy?.partnerId;
+      if (!partnerId) return; // Non-partnered individuals build relationships organically through pass-by encounters
 
-      const mouth = ent.properties.mouth;
-      const talkRange = mouth ? (mouth.talkRadius || 6) : 4;
-      const nearbyTalkers = getEntitiesInRadius(ent.x, ent.y, talkRange);
+      // Partner interaction cooldown (once every 60 ticks)
+      if (ent._lastTalkTick && (currentTick - ent._lastTalkTick < 60)) return;
 
-      for (const other of nearbyTalkers) {
-        if (other === ent || other.destroyed || !other.properties.brain || other.properties.life?.isSleeping) continue;
-
-        // Pair interaction cooldown (45 ticks between conversations with the same person)
-        if (ent._lastSpokeWith && ent._lastSpokeWith[other.id] && (currentTick - ent._lastSpokeWith[other.id] < 45)) {
-          continue;
-        }
-
-        const dist = Math.abs(other.x - ent.x) + Math.abs(other.y - ent.y);
+      const partner = getEntityById(partnerId);
+      if (partner && !partner.destroyed && partner.properties?.brain && !partner.properties.life?.isSleeping) {
+        const mouth = ent.properties.mouth;
+        const talkRange = mouth ? (mouth.talkRadius || 6) : 4;
+        const dist = Math.abs(partner.x - ent.x) + Math.abs(partner.y - ent.y);
         if (dist <= talkRange) {
           ent._lastTalkTick = currentTick;
-          other._lastTalkTick = currentTick;
-          gossipBetweenCreatures(ent, other, world, entities);
-          break;
+          partner._lastTalkTick = currentTick;
+          gossipBetweenCreatures(ent, partner, world, entities);
         }
       }
     }
@@ -9680,23 +9674,18 @@ export function createLocomotionProp() {
             }
           }
 
-          // --- 5.55 Idle Courtship & Romantic Partner Seeking (STRICTLY when completely idle and has zero tasks) ---
+          // --- 5.55 Idle Romantic Partner Seeking (STRICTLY for established romantic partners when completely idle) ---
           if (!hasIntention && !hasUnbuiltStruct && ent.properties.genitalia && (ent.properties.genitalia.matingCooldown || 0) <= 0 && energyRatio > 0.45) {
             const partnerId = ent.properties.monogamy?.partnerId;
-            let targetPartner = partnerId ? getEntityById(partnerId) : null;
-            if (!targetPartner || targetPartner.destroyed || !targetPartner.properties?.life) {
-              targetPartner = findEntityInRadius(ent.x, ent.y, 6, other =>
-                other !== ent && !other.destroyed && other.properties?.life && other.properties?.genitalia &&
-                (other.properties.genitalia.matingCooldown || 0) <= 0 &&
-                isSexuallyCompatible(ent, other)
-              );
-            }
-            if (targetPartner && !targetPartner.destroyed) {
-              const pDist = Math.abs(targetPartner.x - ent.x) + Math.abs(targetPartner.y - ent.y);
-              if (pDist > 1 && pDist <= 8) {
-                chosenDx = Math.sign(targetPartner.x - ent.x);
-                chosenDy = Math.sign(targetPartner.y - ent.y);
-                hasIntention = true;
+            if (partnerId) {
+              const targetPartner = getEntityById(partnerId);
+              if (targetPartner && !targetPartner.destroyed && targetPartner.properties?.life && !targetPartner.properties.life.isSleeping) {
+                const pDist = Math.abs(targetPartner.x - ent.x) + Math.abs(targetPartner.y - ent.y);
+                if (pDist > 1 && pDist <= 8) {
+                  chosenDx = Math.sign(targetPartner.x - ent.x);
+                  chosenDy = Math.sign(targetPartner.y - ent.y);
+                  hasIntention = true;
+                }
               }
             }
           }
