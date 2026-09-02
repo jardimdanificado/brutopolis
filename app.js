@@ -2,7 +2,7 @@
 // Brutopolis
 // =============================================================================
 
-const BrutopolisVersion = "0.123.4";
+const BrutopolisVersion = "0.123.5";
 const BrutopolisVersionName = "Who may ascend the mountain of the LORD? Who may stand in his holy place?";
 
 // WASM replaced by Pure JS Renderer
@@ -2046,17 +2046,25 @@ window.addEventListener("keydown", (e) => {
   } else if (e.code === "KeyO") {
     toggleThirdPersonMode();
   } else if (e.code === "ArrowLeft" && (isFirstPersonMode || isThirdPersonMode) && rctRenderer?.rotatePerspectiveCamera) {
-    e.preventDefault();
-    rctRenderer.rotatePerspectiveCamera(-0.08, 0);
+    if (perspectiveEntityId !== null) {
+      e.preventDefault();
+      rctRenderer.rotatePerspectiveCamera(-0.08, 0);
+    }
   } else if (e.code === "ArrowRight" && (isFirstPersonMode || isThirdPersonMode) && rctRenderer?.rotatePerspectiveCamera) {
-    e.preventDefault();
-    rctRenderer.rotatePerspectiveCamera(0.08, 0);
+    if (perspectiveEntityId !== null) {
+      e.preventDefault();
+      rctRenderer.rotatePerspectiveCamera(0.08, 0);
+    }
   } else if (e.code === "ArrowUp" && (isFirstPersonMode || isThirdPersonMode) && rctRenderer?.rotatePerspectiveCamera) {
-    e.preventDefault();
-    rctRenderer.rotatePerspectiveCamera(0, -0.05);
+    if (perspectiveEntityId !== null) {
+      e.preventDefault();
+      rctRenderer.rotatePerspectiveCamera(0, 0.05);
+    }
   } else if (e.code === "ArrowDown" && (isFirstPersonMode || isThirdPersonMode) && rctRenderer?.rotatePerspectiveCamera) {
-    e.preventDefault();
-    rctRenderer.rotatePerspectiveCamera(0, 0.05);
+    if (perspectiveEntityId !== null) {
+      e.preventDefault();
+      rctRenderer.rotatePerspectiveCamera(0, -0.05);
+    }
   } else if (e.code === "Tab") {
     e.preventDefault();
     cycleNextLivingEntity();
@@ -2134,11 +2142,11 @@ window.addEventListener("keyup", (e) => {
 function handleCameraKeys(dt) {
   if (isFirstPersonMode && perspectiveEntityId === null && is3DMode && rctRenderer && rctRenderer.moveFreeCamera) {
     const speed = 25.0 * dt;
-    if (keysDown.has("ArrowUp")) rctRenderer.moveFreeCamera(0, 0, -1, speed);
-    if (keysDown.has("ArrowDown")) rctRenderer.moveFreeCamera(0, 0, 1, speed);
-    if (keysDown.has("ArrowLeft")) rctRenderer.moveFreeCamera(-1, 0, 0, speed);
-    if (keysDown.has("ArrowRight")) rctRenderer.moveFreeCamera(1, 0, 0, speed);
-    if (keysDown.has("Space")) rctRenderer.moveFreeCamera(0, 1, 0, speed);
+    if (keysDown.has("ArrowUp") || keysDown.has("KeyW")) rctRenderer.moveFreeCamera(0, 0, 1, speed);
+    if (keysDown.has("ArrowDown") || keysDown.has("KeyS")) rctRenderer.moveFreeCamera(0, 0, -1, speed);
+    if (keysDown.has("ArrowLeft") || keysDown.has("KeyA")) rctRenderer.moveFreeCamera(-1, 0, 0, speed);
+    if (keysDown.has("ArrowRight") || keysDown.has("KeyD")) rctRenderer.moveFreeCamera(1, 0, 0, speed);
+    if (keysDown.has("ShiftLeft") || keysDown.has("ShiftRight")) rctRenderer.moveFreeCamera(0, 1, 0, speed);
     if (keysDown.has("ControlLeft") || keysDown.has("ControlRight")) rctRenderer.moveFreeCamera(0, -1, 0, speed);
   }
 }
@@ -3097,7 +3105,7 @@ function renderDossierModal() {
   if (!target) {
     drawText8x8("NO CREATURE SELECTED", mx + 20, my + 30, "#f8b800", 1);
     drawText8x8("CLICK ON MAP OR PRESS [TAB] TO SELECT.", mx + 20, my + 50, "#ffffff", 1);
-    
+
     const isFree1P = isFirstPersonMode && perspectiveEntityId === null;
     drawNESButton(mx + 20, my + 70, 140, 30, "FREE 1P FLIGHT", isFree1P, false);
     registerClickableRegion(mx + 20, my + 70, 140, 30, () => {
@@ -6190,6 +6198,7 @@ function applyGameOptions() {
         chroma: gameOptions.perspectiveChromaticAberration,
         waterReflections: gameOptions.perspectiveWaterReflections,
         fog: gameOptions.perspectiveFog,
+        horizonMode: gameOptions.horizonMode,
         anisotropy: gameOptions.perspectiveAnisotropy,
         ambientOcclusion: gameOptions.perspectiveAmbientOcclusion,
         aoType: gameOptions.perspectiveAOType,
@@ -6564,7 +6573,9 @@ function renderOptionsModal() {
     const fogOptions = [
       { val: "OFF", label: "OFF" },
       { val: "LIGHT", label: "LIGHT" },
-      { val: "DENSE", label: "DENSE" }
+      { val: "DENSE", label: "DENSE" },
+      { val: "MIST", label: "MIST" },
+      { val: "SILENT HILL", label: "SILENT HILL" }
     ];
     bx = mx + 16;
     for (const opt of fogOptions) {
@@ -6600,6 +6611,28 @@ function renderOptionsModal() {
       const v = opt.val;
       registerClickableRegion(bx, curY + 10, bw, 22, () => {
         gameOptions.perspectiveAnisotropy = v;
+        applyGameOptions();
+        saveGameOptions();
+      });
+      bx += bw + 6;
+    }
+    curY += 40;
+
+    // Horizon Mode
+    const horizonVal = gameOptions.horizonMode || "TERRAIN";
+    drawText8x8(`HORIZON MODE (1P/3P): [ ${horizonVal} ]`, mx + 16, curY, "#3cbcfc", 1);
+    const horizonOptions = [
+      { val: "TERRAIN", label: "TERRAIN" },
+      { val: "INFINITE SEA", label: "INFINITE SEA" }
+    ];
+    bx = mx + 16;
+    for (const opt of horizonOptions) {
+      const isSel = horizonVal === opt.val;
+      const bw = isMobile ? 100 : 120;
+      drawNESButton(bx, curY + 10, bw, 22, opt.label, isSel, false);
+      const v = opt.val;
+      registerClickableRegion(bx, curY + 10, bw, 22, () => {
+        gameOptions.horizonMode = v;
         applyGameOptions();
         saveGameOptions();
       });
@@ -7228,7 +7261,7 @@ function frame(time) {
       if (rctRenderer) {
         rctRenderer.max3DRenderDistance = gameOptions?.max3DRenderDistance;
       }
-      rctRenderer.setMousePos(mouseX, mouseY);
+      rctRenderer.setMousePos(mouseClientX, mouseClientY);
       rctRenderer.render(world, entities, time * 0.001, dt, isPaused ? 0.0 : simSpeed, visionTarget, visualizedGroupId);
       ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     } else {
