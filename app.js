@@ -2,7 +2,7 @@
 // Brutopolis
 // =============================================================================
 
-const BrutopolisVersion = "0.122.25";
+const BrutopolisVersion = "0.123.3";
 const BrutopolisVersionName = "Who may ascend the mountain of the LORD? Who may stand in his holy place?";
 
 // WASM replaced by Pure JS Renderer
@@ -28,7 +28,8 @@ import {
   getEntityAtTile,
   getEntitiesInRadius,
   getEntitiesInViewport,
-  tileEntityMap
+  tileEntityMap,
+  setCameraViewport
 } from "./js/engine.js";
 import {
   resetWorldEvents,
@@ -328,6 +329,7 @@ function updateLocalEntities(entitiesData, registryData) {
       ent.combatFlash = entData.combatFlash;
       ent.isConstructed = entData.isConstructed;
       ent.wallStyle = entData.wallStyle;
+      ent.insideHouse = entData.insideHouse;
       if (entData.properties !== undefined) {
         ent.properties = entData.properties;
       }
@@ -922,6 +924,7 @@ if (container3D) {
   rctRenderer = new RCT3DRenderer(container3D);
 }
 let is3DMode = true;
+let lastSyncedCamViewport = null;
 
 function toggle3DMode() {
   is3DMode = !is3DMode;
@@ -7117,12 +7120,15 @@ function frame(time) {
     lastFpsUpdate = time;
   }
 
-  // Perspective Selection Lock & Death Guard (1P and 3P)
+  // Perspective Selection Lock & Death Guard & Indoor Transition (1P and 3P)
   if ((isFirstPersonMode || isThirdPersonMode) && perspectiveEntityId) {
     const pEnt = getEntityById(perspectiveEntityId);
     if (!pEnt || pEnt.destroyed || pEnt.properties?.life?.isDead) {
       exitPerspectiveMode();
     } else if (lastSelectedId !== perspectiveEntityId) {
+      exitPerspectiveMode();
+    } else if (pEnt.insideHouse || pEnt.properties?.insideHouse || pEnt.properties?.life?.isSleeping || pEnt.properties?.life?.insideHouse) {
+      // Creature stepped inside house / bedroom -> automatically return to isometric 3D view
       exitPerspectiveMode();
     }
   }
@@ -7214,6 +7220,36 @@ function frame(time) {
       ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     } else {
       renderer.render(world, entities, time * 0.001, dt, simSpeed);
+    }
+
+    // 2.5. Sync Camera Viewport Simulation LOD (active in 2D and 3D Isometric modes, bypassed in 1P/3P)
+    let currentCamViewport = null;
+    if (currentMode === "MAP" && !isFirstPersonMode && !isThirdPersonMode) {
+      if (is3DMode && rctRenderer && typeof rctRenderer.getViewportBounds === "function") {
+        currentCamViewport = rctRenderer.getViewportBounds();
+      } else if (!is3DMode && renderer && typeof renderer.getViewportBounds === "function") {
+        currentCamViewport = renderer.getViewportBounds();
+      }
+    }
+
+    const vpChanged = !lastSyncedCamViewport !== !currentCamViewport || (
+      currentCamViewport && lastSyncedCamViewport && (
+        lastSyncedCamViewport.minTx !== currentCamViewport.minTx ||
+        lastSyncedCamViewport.maxTx !== currentCamViewport.maxTx ||
+        lastSyncedCamViewport.minTy !== currentCamViewport.minTy ||
+        lastSyncedCamViewport.maxTy !== currentCamViewport.maxTy
+      )
+    );
+
+    if (vpChanged) {
+      lastSyncedCamViewport = currentCamViewport ? { ...currentCamViewport } : null;
+      setCameraViewport(lastSyncedCamViewport);
+      if (simWorker) {
+        simWorker.postMessage({
+          type: "SET_CAMERA_VIEWPORT",
+          viewport: lastSyncedCamViewport
+        });
+      }
     }
 
     // 3. Mode-specific UI Overlay Rendering

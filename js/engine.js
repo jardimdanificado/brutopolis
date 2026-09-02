@@ -50,62 +50,184 @@ export function getTileKey(x, y) {
   return ((Math.floor(x) & 0xFFFF) << 16) | (Math.floor(y) & 0xFFFF);
 }
 
+export function getEntityFootprint(ent) {
+  if (!ent || !ent.properties) return { w: 1, h: 1, isPassable: true };
+  const p = ent.properties;
+
+  // Door is passable if open or owned
+  if (p.door) return { w: 1, h: 1, isPassable: true };
+
+  // Roads, torches, campfires, items, plants, creatures are passable
+  if (p.road || p.torch || p.campfire || p.germination || p.photosynthesis || p.deep_root || p.life || p.species === "item" || p.species === "corpse") {
+    return { w: 1, h: 1, isPassable: true };
+  }
+
+  // Houses
+  if (p.house) {
+    const isSuspended = p.house.houseVariant === 6 || p.house.style === "mountain_stilt" || (p.house.yard && p.house.yard.type === "Suspended Stilt House");
+    const w = p.house.footprintW || (p.house.footprint ? Number(p.house.footprint.split("x")[0]) : 1) || 1;
+    const h = p.house.footprintH || (p.house.footprint ? Number(p.house.footprint.split("x")[1]) : 1) || 1;
+    return { w, h, isPassable: isSuspended };
+  }
+
+  // Chieftain / Leader Palace (3x3)
+  if (p.leaderHouse) {
+    return { w: 3, h: 3, isPassable: false };
+  }
+
+  // Clan production & storage buildings (2x2)
+  if (p.warehouse || p.slaughterhouse || p.kitchen || p.artisan_hut) {
+    return { w: 2, h: 2, isPassable: false };
+  }
+
+  // Water Well (1x1 solid obstacle)
+  if (p.well) {
+    return { w: 1, h: 1, isPassable: false };
+  }
+
+  // Stone Walls / Palisades / Fortifications
+  const isWall = p.render?.skin?.startsWith("Wall_") || p.name?.includes("Muralha") || p.name?.includes("Wall") || (p.structure && !p.resourceType && !p.edible);
+  if (isWall) {
+    return { w: 1, h: 1, isPassable: false };
+  }
+
+  // Default blocking flag
+  if (p.blocking) {
+    return { w: 1, h: 1, isPassable: false };
+  }
+
+  return { w: 1, h: 1, isPassable: true };
+}
+
+export function isBuildingObstacleAt(x, y, forEntity = null) {
+  const tk = getTileKey(x, y);
+  const bucket = tileEntityMap.get(tk);
+  if (!bucket || bucket.size === 0) return false;
+
+  for (const ent of bucket) {
+    if (ent.destroyed) continue;
+    const p = ent.properties;
+    if (!p) continue;
+
+    // Doors can be passed if open or owned
+    if (p.door) {
+      if (p.door.isOpen) continue;
+      if (!p.door.owners || p.door.owners.length === 0 || (forEntity && p.door.owners.includes(forEntity.id))) {
+        continue;
+      }
+      return true; // Locked door
+    }
+
+    // Suspended stilt house over road: walkable
+    if (p.house && (p.house.houseVariant === 6 || p.house.style === "mountain_stilt")) {
+      continue;
+    }
+
+    // Resident entering or residing inside their own home to interact with personal belongings/sleep
+    if (forEntity) {
+      if (p.house && (p.house.ownerId === forEntity.id || p.house.partnerId === forEntity.id)) {
+        if (forEntity.insideHouse || forEntity._enteringHome || forEntity.properties?.life?.isSleeping || forEntity.properties?.life?.insideHouse) {
+          continue; // Allow resident into their own house
+        }
+      }
+      if (p.leaderHouse && (p.leaderHouse.leaderId === forEntity.id || p.leaderHouse.partnerId === forEntity.id)) {
+        if (forEntity.insideHouse || forEntity._enteringHome || forEntity.properties?.life?.isSleeping || forEntity.properties?.life?.insideHouse) {
+          continue; // Allow leader into chieftain palace
+        }
+      }
+    }
+
+    // Solid buildings and structures
+    if (
+      p.house ||
+      p.leaderHouse ||
+      p.warehouse ||
+      p.slaughterhouse ||
+      p.kitchen ||
+      p.artisan_hut ||
+      p.well ||
+      p.blocking ||
+      (p.structure && (p.render?.skin?.startsWith("Wall_") || p.name?.includes("Muralha") || p.name?.includes("Wall") || (!p.road && !p.campfire && !p.torch && !p.resourceType && !p.edible)))
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function registerEntitySpatial(entity, zoneSize = activeZoneSize) {
   if (!entity || entity.destroyed) return;
-  const zk = getSpatialZoneKey(entity.x, entity.y, zoneSize);
-  let bucket = spatialGrid.get(zk);
-  if (!bucket) {
-    bucket = new Set();
-    spatialGrid.set(zk, bucket);
-  }
-  bucket.add(entity);
-  entity._lastSpatialZone = zk;
+  const { w, h, isPassable } = getEntityFootprint(entity);
+
+  entity._lastSpatialFootprintW = w;
+  entity._lastSpatialFootprintH = h;
   entity._lastSpatialX = entity.x;
   entity._lastSpatialY = entity.y;
 
-  const tk = getTileKey(entity.x, entity.y);
-  let tileBucket = tileEntityMap.get(tk);
-  if (!tileBucket) {
-    tileBucket = new Set();
-    tileEntityMap.set(tk, tileBucket);
+  for (let dy = 0; dy < h; dy++) {
+    for (let dx = 0; dx < w; dx++) {
+      const tx = Math.floor(entity.x + dx);
+      const ty = Math.floor(entity.y + dy);
+
+      const zk = getSpatialZoneKey(tx, ty, zoneSize);
+      let bucket = spatialGrid.get(zk);
+      if (!bucket) {
+        bucket = new Set();
+        spatialGrid.set(zk, bucket);
+      }
+      bucket.add(entity);
+
+      const tk = getTileKey(tx, ty);
+      let tileBucket = tileEntityMap.get(tk);
+      if (!tileBucket) {
+        tileBucket = new Set();
+        tileEntityMap.set(tk, tileBucket);
+      }
+      tileBucket.add(entity);
+
+      if (!isPassable) {
+        globalWallCoords.add(`${tx},${ty}`);
+      }
+    }
   }
-  tileBucket.add(entity);
 
   if (entity.properties?.road) {
-    globalRoadCoords.add(tk);
-  }
-
-  const isWall = !entity.properties?.road && !entity.properties?.warehouse && !entity.properties?.well && !entity.properties?.campfire && !entity.properties?.torch && (entity.properties?.render?.skin?.startsWith("Wall_") || entity.properties?.name?.includes("Muralha") || entity.properties?.name?.includes("Wall") || (entity.properties?.structure && !entity.properties?.door && !entity.properties?.house && !entity.properties?.isWell && !entity.properties?.resourceType && !entity.properties?.edible));
-  if (isWall) {
-    globalWallCoords.add(`${entity.x},${entity.y}`);
+    globalRoadCoords.add(getTileKey(entity.x, entity.y));
   }
 }
 
 export function unregisterEntitySpatial(entity, zoneSize = activeZoneSize) {
   if (!entity) return;
-  const zk = entity._lastSpatialZone !== undefined ? entity._lastSpatialZone : getSpatialZoneKey(entity.x, entity.y, zoneSize);
-  const bucket = spatialGrid.get(zk);
-  if (bucket) {
-    bucket.delete(entity);
-    if (bucket.size === 0) spatialGrid.delete(zk);
-  }
-
   const lastX = entity._lastSpatialX !== undefined ? entity._lastSpatialX : entity.x;
   const lastY = entity._lastSpatialY !== undefined ? entity._lastSpatialY : entity.y;
-  const tk = getTileKey(lastX, lastY);
-  const tileBucket = tileEntityMap.get(tk);
-  if (tileBucket) {
-    tileBucket.delete(entity);
-    if (tileBucket.size === 0) tileEntityMap.delete(tk);
+  const w = entity._lastSpatialFootprintW || 1;
+  const h = entity._lastSpatialFootprintH || 1;
+
+  for (let dy = 0; dy < h; dy++) {
+    for (let dx = 0; dx < w; dx++) {
+      const tx = Math.floor(lastX + dx);
+      const ty = Math.floor(lastY + dy);
+
+      const zk = getSpatialZoneKey(tx, ty, zoneSize);
+      const bucket = spatialGrid.get(zk);
+      if (bucket) {
+        bucket.delete(entity);
+        if (bucket.size === 0) spatialGrid.delete(zk);
+      }
+
+      const tk = getTileKey(tx, ty);
+      const tileBucket = tileEntityMap.get(tk);
+      if (tileBucket) {
+        tileBucket.delete(entity);
+        if (tileBucket.size === 0) tileEntityMap.delete(tk);
+      }
+
+      globalWallCoords.delete(`${tx},${ty}`);
+    }
   }
 
   if (entity.properties?.road) {
-    globalRoadCoords.delete(tk);
-  }
-
-  const isWall = !entity.properties?.road && !entity.properties?.warehouse && !entity.properties?.well && !entity.properties?.campfire && !entity.properties?.torch && (entity.properties?.render?.skin?.startsWith("Wall_") || entity.properties?.name?.includes("Muralha") || entity.properties?.name?.includes("Wall") || (entity.properties?.structure && !entity.properties?.door && !entity.properties?.house && !entity.properties?.isWell && !entity.properties?.resourceType && !entity.properties?.edible));
-  if (isWall) {
-    globalWallCoords.delete(`${lastX},${lastY}`);
+    globalRoadCoords.delete(getTileKey(lastX, lastY));
   }
 }
 
@@ -922,6 +1044,16 @@ export function compileEntityEffects(entity) {
   entity._effectsVersion = entity._propsVersion || 0;
 }
 
+let activeCameraViewport = null;
+
+export function setCameraViewport(viewport) {
+  activeCameraViewport = viewport;
+}
+
+export function getCameraViewport() {
+  return activeCameraViewport;
+}
+
 /**
  * Flat simulation tick over all active entities
  */
@@ -948,7 +1080,30 @@ export function tickEntities(entities, dt, world) {
     }
 
     let entityDt = dt;
-    const lod = entity._lodInterval || 1;
+    let lod = entity._lodInterval || 1;
+
+    // Dynamic Camera Viewport Simulation LOD (active in 2D and 3D Isometric modes)
+    if (activeCameraViewport) {
+      const margin = activeCameraViewport.margin !== undefined ? activeCameraViewport.margin : 6;
+      const inView = (
+        entity.x >= activeCameraViewport.minTx - margin &&
+        entity.x <= activeCameraViewport.maxTx + margin &&
+        entity.y >= activeCameraViewport.minTy - margin &&
+        entity.y <= activeCameraViewport.maxTy + margin
+      );
+
+      if (!inView) {
+        const isCombatOrDying = entity.combatFlash > 0 || entity.emote === 8 || (entity.properties?.health?.current < entity.properties?.health?.max) || (entity.properties?.lifespan);
+        if (!isCombatOrDying) {
+          if (lod <= 1) {
+            lod = 8;
+          } else {
+            lod = Math.min(240, lod * 3);
+          }
+        }
+      }
+    }
+
     if (lod > 1) {
       if ((currentTick + entity.id) % lod !== 0) continue;
       entityDt = dt * lod;

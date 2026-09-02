@@ -25,7 +25,8 @@ import {
   rebuildSpatialGrid,
   getEntityAtTile,
   getEntitiesInRadius,
-  tileEntityMap
+  tileEntityMap,
+  setCameraViewport
 } from "./engine.js";
 import {
   resetWorldEvents,
@@ -888,6 +889,7 @@ function postSimSync(force = false) {
     out.combatFlash = e.combatFlash;
     out.isConstructed = e.isConstructed;
     out.wallStyle = e.wallStyle;
+    out.insideHouse = !!e.insideHouse || !!e.properties?.life?.insideHouse || !!e.properties?.life?.isSleeping;
     out.properties = needsPropSync ? getSanitizedProperties(e) : undefined;
   }
   
@@ -1095,6 +1097,10 @@ self.onmessage = (e) => {
 
     case "APPLY_EDITOR_ACTION":
       applyEditorAction(data);
+      break;
+
+    case "SET_CAMERA_VIEWPORT":
+      setCameraViewport(data.viewport || null);
       break;
 
     case "KILL_ENTITY": {

@@ -1,4 +1,4 @@
-import { createEntity, getEntityById, entityRegistry, currentTick, getEntitiesInRadius, findEntityInRadius, hasEntityInRadius, findClosestEntityInRadius, forEachEntityInRadius, countEntitiesInRadius, getEntityAtTile, getEntityAtTileByProp, setSpatialZoneSize, tileEntityMap, globalWallCoords, globalRoadCoords, getTileKey, registerEntitySpatial, dismemberCorpse, createCorpseEntity } from "./engine.js";
+import { createEntity, getEntityById, entityRegistry, currentTick, getEntitiesInRadius, findEntityInRadius, hasEntityInRadius, findClosestEntityInRadius, forEachEntityInRadius, countEntitiesInRadius, getEntityAtTile, getEntityAtTileByProp, setSpatialZoneSize, tileEntityMap, globalWallCoords, globalRoadCoords, getTileKey, registerEntitySpatial, dismemberCorpse, createCorpseEntity, isBuildingObstacleAt, getEntityFootprint } from "./engine.js";
 import { MAP_WIDTH, MAP_HEIGHT, TILE_FLOOR, TILE_MOUNTAIN, TILE_WATER, TILE_SAND, TILE_STONE, TILE_VOID, TILE_ROAD_GRASS, TILE_ROAD_SAND, TILE_ROAD_GRASS_STONE, TILE_HILL, TILE_PEAK, TILE_ROAD_SAND_STONE, TILE_ROAD_HILL, TILE_ROAD_HILL_STONE } from "./world_gen.js";
 import {
   recordWorldEvent,
@@ -351,6 +351,9 @@ export function createLifeProp(energy = 4000, max = 4000, basalRate = 1.8, initi
         const wakeThreshold = (isDayTime && !inOwnHouse) ? this.max * 0.70 : this.max * 0.90;
         if ((this.energy >= wakeThreshold || (isDayTime && this.energy >= this.max * 0.50)) && (this._sleepTimer || 0) >= 6.0) {
           this.isSleeping = false;
+          this.insideHouse = false;
+          ent.insideHouse = false;
+          ent._enteringHome = false;
           this._sleepTimer = 0;
           this._brainSacrificeDone = false;
           ent.emote = 2; // Happy
@@ -8104,10 +8107,10 @@ export function findPathAStarLocal(startX, startY, targetX, targetY, world, ent,
         stepCost = 4.0;
       }
 
-      // Check structure collision (walls & doors)
-      if (globalWallCoords.has(`${nx},${ny}`)) {
+      // Check structure collision (buildings, houses, warehouses, walls & doors)
+      if (globalWallCoords.has(`${nx},${ny}`) || isBuildingObstacleAt(nx, ny, ent)) {
         const occ = getEntityAtTile(nx, ny);
-        if (occ && occ.properties.structure) {
+        if (occ && occ.properties) {
           if (occ.properties.door) {
             const door = occ.properties.door;
             if (door.isOpen || !door.owners || door.owners.length === 0 || (ent && door.owners.includes(ent.id))) {
@@ -8115,9 +8118,13 @@ export function findPathAStarLocal(startX, startY, targetX, targetY, world, ent,
             } else {
               continue; // Locked door
             }
+          } else if (occ.properties.house && (occ.properties.house.houseVariant === 6 || occ.properties.house.style === "mountain_stilt")) {
+            stepCost += 0.8; // Suspended stilt house over road: walkable underneath
           } else {
-            continue; // Solid wall
+            continue; // Solid building / wall obstacle
           }
+        } else {
+          continue; // Blocked structure coord
         }
       }
 
@@ -8518,6 +8525,7 @@ export function createLocomotionProp() {
       if (!hasIntention && isTiredLoco && entities) {
         const ownHouse = getOwnHouse(ent.id, entities);
         if (ownHouse) {
+          ent._enteringHome = true;
           const distToHouse = Math.abs(ownHouse.x - ent.x) + Math.abs(ownHouse.y - ent.y);
           if (distToHouse > 0) {
             chosenDx = Math.sign(ownHouse.x - ent.x);
@@ -8526,8 +8534,15 @@ export function createLocomotionProp() {
             ent._navGoal = null;
             ent._taskGoal = null;
           } else {
-            // Arrived home: go to sleep safely!
-            ent.properties.life.isSleeping = true;
+            // Arrived physically inside own house to rest!
+            ent.x = ownHouse.x;
+            ent.y = ownHouse.y;
+            ent.insideHouse = true;
+            ent._enteringHome = false;
+            if (ent.properties?.life) {
+              ent.properties.life.isSleeping = true;
+              ent.properties.life.insideHouse = true;
+            }
             ent.emote = 8; // Emote_Sleeping.png
             return;
           }
@@ -9139,14 +9154,18 @@ export function createLocomotionProp() {
 
           if (targetBuild) {
             ent._buildTarget = { x: targetBuild.x, y: targetBuild.y, type: targetBuild.type, isLeaderHouse: targetBuild.isLeaderHouse, footprintW: targetBuild.footprintW, footprintH: targetBuild.footprintH, ownerId: targetBuild.ownerId };
-            const buildChebDist = Math.max(Math.abs(targetBuild.x - ent.x), Math.abs(targetBuild.y - ent.y));
+            const bFpW = targetBuild.footprintW || (targetBuild.type === "leader_house" ? 3 : (targetBuild.type === "warehouse" || targetBuild.type === "kitchen" || targetBuild.type === "slaughterhouse" || targetBuild.type === "artisan_hut" ? 2 : 1));
+            const bFpH = targetBuild.footprintH || (targetBuild.type === "leader_house" ? 3 : (targetBuild.type === "warehouse" || targetBuild.type === "kitchen" || targetBuild.type === "slaughterhouse" || targetBuild.type === "artisan_hut" ? 2 : 1));
+            const nearX = Math.max(targetBuild.x, Math.min(ent.x, targetBuild.x + bFpW - 1));
+            const nearY = Math.max(targetBuild.y, Math.min(ent.y, targetBuild.y + bFpH - 1));
+            const buildChebDist = Math.max(Math.abs(nearX - ent.x), Math.abs(nearY - ent.y));
             if (buildChebDist <= 1) {
               chosenDx = 0;
               chosenDy = 0;
               hasIntention = true;
             } else {
-              chosenDx = Math.sign(targetBuild.x - ent.x);
-              chosenDy = Math.sign(targetBuild.y - ent.y);
+              chosenDx = Math.sign(nearX - ent.x);
+              chosenDy = Math.sign(nearY - ent.y);
               hasIntention = true;
             }
           } else {
@@ -9154,9 +9173,18 @@ export function createLocomotionProp() {
             // Held material/item is not needed by any active construction site: haul it to Warehouse/Stockpile!
             const warehouse = getGroupWarehouse(group, entities);
             if (warehouse) {
-              chosenDx = Math.sign(warehouse.x - ent.x);
-              chosenDy = Math.sign(warehouse.y - ent.y);
-              hasIntention = true;
+              const whNearX = Math.max(warehouse.x, Math.min(ent.x, warehouse.x + 1));
+              const whNearY = Math.max(warehouse.y, Math.min(ent.y, warehouse.y + 1));
+              const whDist = Math.max(Math.abs(whNearX - ent.x), Math.abs(whNearY - ent.y));
+              if (whDist <= 1) {
+                chosenDx = 0;
+                chosenDy = 0;
+                hasIntention = true;
+              } else {
+                chosenDx = Math.sign(whNearX - ent.x);
+                chosenDy = Math.sign(whNearY - ent.y);
+                hasIntention = true;
+              }
             } else {
               chosenDx = Math.sign(homeBaseX - ent.x);
               chosenDy = Math.sign(homeBaseY - ent.y);
@@ -9180,8 +9208,24 @@ export function createLocomotionProp() {
           const ownHouse = getOwnHouse(ent.id, entities);
           const needsPantryStock = ownHouse && (ownHouse.properties.house.pantry?.length || 0) < 2;
           if (needsPantryStock) {
-            chosenDx = Math.sign(ownHouse.x - ent.x);
-            chosenDy = Math.sign(ownHouse.y - ent.y);
+            ent._enteringHome = true;
+            const distToHouse = Math.abs(ownHouse.x - ent.x) + Math.abs(ownHouse.y - ent.y);
+            if (distToHouse > 0) {
+              chosenDx = Math.sign(ownHouse.x - ent.x);
+              chosenDy = Math.sign(ownHouse.y - ent.y);
+            } else {
+              ent.insideHouse = true;
+              ent._enteringHome = false;
+              if (!ownHouse.properties.house.pantry) ownHouse.properties.house.pantry = [];
+              const meatItem = getCarriedItem(ent, "meat");
+              if (meatItem) {
+                dropCarriedItem(ent, "meat");
+                ownHouse.properties.house.pantry.push(meatItem);
+              }
+              ent.emote = 2; // Happy
+              chosenDx = 0;
+              chosenDy = 0;
+            }
           } else {
             chosenDx = Math.sign(homeBaseX - ent.x);
             chosenDy = Math.sign(homeBaseY - ent.y);
@@ -9550,10 +9594,12 @@ export function createLocomotionProp() {
           if (isCook && !hasIntention) {
             const completedKitchen = entities.find(e => !e.destroyed && e.properties.kitchen?.isCompleted && isTileInClaimedZones(e.x, e.y, group.claimedZones));
             if (completedKitchen) {
-              const distToKit = Math.abs(completedKitchen.x - ent.x) + Math.abs(completedKitchen.y - ent.y);
+              const kitNearX = Math.max(completedKitchen.x, Math.min(ent.x, completedKitchen.x + 1));
+              const kitNearY = Math.max(completedKitchen.y, Math.min(ent.y, completedKitchen.y + 1));
+              const distToKit = Math.abs(kitNearX - ent.x) + Math.abs(kitNearY - ent.y);
               if (distToKit > 1) {
-                chosenDx = Math.sign(completedKitchen.x - ent.x);
-                chosenDy = Math.sign(completedKitchen.y - ent.y);
+                chosenDx = Math.sign(kitNearX - ent.x);
+                chosenDy = Math.sign(kitNearY - ent.y);
                 hasIntention = true;
               }
             }
@@ -10031,19 +10077,8 @@ export function createLocomotionProp() {
               }
 
               if (canTraverse) {
-                const occ = getEntityAtTile(tx, ty);
-                if (occ && occ.properties.structure) {
-                  if (occ.properties.door) {
-                    if (occ.properties.door.isOpen) {
-                      // Open door can be traversed
-                    } else if (!occ.properties.door.owners || occ.properties.door.owners.length === 0 || occ.properties.door.owners.includes(ent.id)) {
-                      occ.properties.door.open();
-                    } else {
-                      canTraverse = false; // Locked for non-owner
-                    }
-                  } else {
-                    canTraverse = false; // Solid wall
-                  }
+                if (isBuildingObstacleAt(tx, ty, ent)) {
+                  canTraverse = false;
                 }
               }
 
@@ -10077,7 +10112,7 @@ export function createLocomotionProp() {
 
           if (world && tx >= 0 && tx < mapW && ty >= 0 && ty < mapH) {
             const targetTile = world.getTile(tx, ty);
-            if (targetTile === 2) {
+            if (targetTile === 2 && !isBuildingObstacleAt(tx, ty, ent)) {
               // Cross water barrier towards destination
               ent._recentPositions.push({ x: ent.x, y: ent.y });
               if (ent._recentPositions.length > 6) ent._recentPositions.shift();
@@ -10103,8 +10138,10 @@ export function createLocomotionProp() {
         let defChosen = perpDirs[0];
         if (world) {
           for (const pd of perpDirs) {
-            const pTile = world.getTile(ent.x + pd.dx, ent.y + pd.dy);
-            if (pTile !== 5 && (isFlying || isAquatic || pTile !== 2)) {
+            const ptx = ent.x + pd.dx;
+            const pty = ent.y + pd.dy;
+            const pTile = world.getTile(ptx, pty);
+            if (pTile !== 5 && (isFlying || isAquatic || pTile !== 2) && !isBuildingObstacleAt(ptx, pty, ent)) {
               defChosen = pd;
               break;
             }
@@ -10134,7 +10171,7 @@ export function createLocomotionProp() {
             const ry = ent.y + rd.dy;
             if (world && rx >= 0 && rx < mapW && ry >= 0 && ry < mapH) {
               const rt = world.getTile(rx, ry);
-              if (rt !== 5 && rt !== 2) {
+              if (rt !== 5 && rt !== 2 && !isBuildingObstacleAt(rx, ry, ent)) {
                 ent._recentPositions.push({ x: ent.x, y: ent.y });
                 if (ent._recentPositions.length > 6) ent._recentPositions.shift();
                 ent.x = rx;
@@ -10152,7 +10189,7 @@ export function createLocomotionProp() {
               const ry = ent.y + rd.dy;
               if (world && rx >= 0 && rx < mapW && ry >= 0 && ry < mapH) {
                 const rt = world.getTile(rx, ry);
-                if (rt !== 5) {
+                if (rt !== 5 && !isBuildingObstacleAt(rx, ry, ent)) {
                   ent._recentPositions.push({ x: ent.x, y: ent.y });
                   if (ent._recentPositions.length > 6) ent._recentPositions.shift();
                   ent.x = rx;

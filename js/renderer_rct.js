@@ -4589,6 +4589,16 @@ export class RCT3DRenderer {
   getCameraY() { return this.camY; }
   getCameraZoom() { return this.zoom; }
 
+  getViewportBounds() {
+    if (this.isPerspectiveActive()) return null;
+    return {
+      minTx: this.renderedMinTx,
+      maxTx: this.renderedMaxTx,
+      minTy: this.renderedMinTy,
+      maxTy: this.renderedMaxTy
+    };
+  }
+
   selectEntity(id) { this.selectedEntityId = id; }
 
   setFirstPersonMode(enabled, entityId = null) {

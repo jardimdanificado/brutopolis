@@ -354,6 +354,20 @@ export class Renderer {
   getCameraY() { return this.camY; }
   getCameraZoom() { return this.zoom; }
 
+  getViewportBounds() {
+    const width = this.width || 800;
+    const height = this.height || 600;
+    const tileSize = Math.max(1, 16 * this.zoom);
+    const halfVisW = (width / tileSize) * 0.5 + 2;
+    const halfVisH = (height / tileSize) * 0.5 + 2;
+    return {
+      minTx: Math.max(0, Math.floor(this.camX - halfVisW)),
+      maxTx: Math.min(MAP_WIDTH - 1, Math.ceil(this.camX + halfVisW)),
+      minTy: Math.max(0, Math.floor(this.camY - halfVisH)),
+      maxTy: Math.min(MAP_HEIGHT - 1, Math.ceil(this.camY + halfVisH))
+    };
+  }
+
   selectEntity(id) { this.selectedEntityId = id; }
   getSelectedId() { return this.selectedEntityId; }
 
