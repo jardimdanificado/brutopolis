@@ -2,7 +2,7 @@
 // Brutopolis
 // =============================================================================
 
-const BrutopolisVersion = "0.123.5";
+const BrutopolisVersion = "0.123.7";
 const BrutopolisVersionName = "Who may ascend the mountain of the LORD? Who may stand in his holy place?";
 
 // WASM replaced by Pure JS Renderer
@@ -1249,7 +1249,7 @@ function applyTileBrush(cx, cy, tileType, brushSize) {
 
 function getEditorHoverTile() {
   if (is3DMode && rctRenderer) {
-    return rctRenderer.getTileAtScreen(mouseClientX, mouseClientY, world);
+    return rctRenderer.getTileAtScreen(mouseX, mouseY, world);
   } else if (renderer) {
     const zoom = renderer.getCameraZoom();
     const tileSize = 16.0 * zoom;
@@ -2142,10 +2142,10 @@ window.addEventListener("keyup", (e) => {
 function handleCameraKeys(dt) {
   if (isFirstPersonMode && perspectiveEntityId === null && is3DMode && rctRenderer && rctRenderer.moveFreeCamera) {
     const speed = 25.0 * dt;
-    if (keysDown.has("ArrowUp") || keysDown.has("KeyW")) rctRenderer.moveFreeCamera(0, 0, 1, speed);
-    if (keysDown.has("ArrowDown") || keysDown.has("KeyS")) rctRenderer.moveFreeCamera(0, 0, -1, speed);
-    if (keysDown.has("ArrowLeft") || keysDown.has("KeyA")) rctRenderer.moveFreeCamera(-1, 0, 0, speed);
-    if (keysDown.has("ArrowRight") || keysDown.has("KeyD")) rctRenderer.moveFreeCamera(1, 0, 0, speed);
+    if (keysDown.has("ArrowUp")) rctRenderer.moveFreeCamera(0, 0, 1, speed);
+    if (keysDown.has("ArrowDown")) rctRenderer.moveFreeCamera(0, 0, -1, speed);
+    if (keysDown.has("ArrowLeft")) rctRenderer.moveFreeCamera(1, 0, 0, speed);
+    if (keysDown.has("ArrowRight")) rctRenderer.moveFreeCamera(-1, 0, 0, speed);
     if (keysDown.has("ShiftLeft") || keysDown.has("ShiftRight")) rctRenderer.moveFreeCamera(0, 1, 0, speed);
     if (keysDown.has("ControlLeft") || keysDown.has("ControlRight")) rctRenderer.moveFreeCamera(0, -1, 0, speed);
   }
@@ -5832,7 +5832,7 @@ function renderHoverTooltip() {
   let hoveredEnt = null;
 
   if (is3DMode && rctRenderer) {
-    const foundId = rctRenderer.getEntityAtScreen(mouseClientX, mouseClientY, entities);
+    const foundId = rctRenderer.getEntityAtScreen(mouseX, mouseY, entities);
     if (foundId > 0) {
       hoveredEnt = getEntityById(foundId);
     }
@@ -6198,7 +6198,6 @@ function applyGameOptions() {
         chroma: gameOptions.perspectiveChromaticAberration,
         waterReflections: gameOptions.perspectiveWaterReflections,
         fog: gameOptions.perspectiveFog,
-        horizonMode: gameOptions.horizonMode,
         anisotropy: gameOptions.perspectiveAnisotropy,
         ambientOcclusion: gameOptions.perspectiveAmbientOcclusion,
         aoType: gameOptions.perspectiveAOType,
@@ -6611,28 +6610,6 @@ function renderOptionsModal() {
       const v = opt.val;
       registerClickableRegion(bx, curY + 10, bw, 22, () => {
         gameOptions.perspectiveAnisotropy = v;
-        applyGameOptions();
-        saveGameOptions();
-      });
-      bx += bw + 6;
-    }
-    curY += 40;
-
-    // Horizon Mode
-    const horizonVal = gameOptions.horizonMode || "TERRAIN";
-    drawText8x8(`HORIZON MODE (1P/3P): [ ${horizonVal} ]`, mx + 16, curY, "#3cbcfc", 1);
-    const horizonOptions = [
-      { val: "TERRAIN", label: "TERRAIN" },
-      { val: "INFINITE SEA", label: "INFINITE SEA" }
-    ];
-    bx = mx + 16;
-    for (const opt of horizonOptions) {
-      const isSel = horizonVal === opt.val;
-      const bw = isMobile ? 100 : 120;
-      drawNESButton(bx, curY + 10, bw, 22, opt.label, isSel, false);
-      const v = opt.val;
-      registerClickableRegion(bx, curY + 10, bw, 22, () => {
-        gameOptions.horizonMode = v;
         applyGameOptions();
         saveGameOptions();
       });
@@ -7261,7 +7238,7 @@ function frame(time) {
       if (rctRenderer) {
         rctRenderer.max3DRenderDistance = gameOptions?.max3DRenderDistance;
       }
-      rctRenderer.setMousePos(mouseClientX, mouseClientY);
+      rctRenderer.setMousePos(mouseX, mouseY);
       rctRenderer.render(world, entities, time * 0.001, dt, isPaused ? 0.0 : simSpeed, visionTarget, visualizedGroupId);
       ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     } else {

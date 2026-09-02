@@ -46,8 +46,8 @@ for (const item of ASSET_DATA) {
 // ---------------------------------------------------------------------------
 
 const DAY_NIGHT_KEYFRAMES = [
-  { t: 0.0,  sun: 0x3d5475, amb: 0x0c1422, bg: 0x0c1422, sunI: 0.20, ambI: 0.18 }, // Midnight
-  { t: 4.5,  sun: 0x486488, amb: 0x101a2c, bg: 0x101a2c, sunI: 0.24, ambI: 0.22 }, // Pre-dawn
+  { t: 0.0,  sun: 0x060a12, amb: 0x060a12, bg: 0x060a12, sunI: 0.05, ambI: 0.16 }, // Midnight
+  { t: 4.5,  sun: 0x0a101d, amb: 0x0a101d, bg: 0x0a101d, sunI: 0.08, ambI: 0.18 }, // Pre-dawn
   { t: 5.5,  sun: 0xff7b39, amb: 0x7a4860, bg: 0x7a4860, sunI: 0.70, ambI: 0.45 }, // Sunrise start
   { t: 6.5,  sun: 0xffa048, amb: 0xb07882, bg: 0xb07882, sunI: 0.95, ambI: 0.60 }, // Golden dawn
   { t: 7.5,  sun: 0xffd285, amb: 0xd0b8ae, bg: 0xd0b8ae, sunI: 1.25, ambI: 0.75 }, // Early morning
@@ -56,9 +56,9 @@ const DAY_NIGHT_KEYFRAMES = [
   { t: 15.5, sun: 0xfffaea, amb: 0xdde8f5, bg: 0xdde8f5, sunI: 1.40, ambI: 0.82 }, // Afternoon
   { t: 17.0, sun: 0xffab4c, amb: 0xb57870, bg: 0xb57870, sunI: 1.10, ambI: 0.68 }, // Sunset start
   { t: 18.2, sun: 0xff6a35, amb: 0x8a4565, bg: 0x8a4565, sunI: 0.80, ambI: 0.52 }, // Sunset golden hour
-  { t: 19.5, sun: 0x623d72, amb: 0x221634, bg: 0x221634, sunI: 0.38, ambI: 0.28 }, // Dusk twilight
-  { t: 21.0, sun: 0x3d5475, amb: 0x0f1828, bg: 0x0f1828, sunI: 0.22, ambI: 0.20 }, // Nightfall
-  { t: 24.0, sun: 0x3d5475, amb: 0x0c1422, bg: 0x0c1422, sunI: 0.20, ambI: 0.18 }  // Wrap to midnight
+  { t: 19.5, sun: 0x5a346b, amb: 0x1c1228, bg: 0x1c1228, sunI: 0.32, ambI: 0.24 }, // Dusk twilight
+  { t: 21.0, sun: 0x080e18, amb: 0x080e18, bg: 0x080e18, sunI: 0.06, ambI: 0.18 }, // Nightfall
+  { t: 24.0, sun: 0x060a12, amb: 0x060a12, bg: 0x060a12, sunI: 0.05, ambI: 0.16 }  // Wrap to midnight
 ];
 
 const EMOTE_SKINS = [
@@ -114,10 +114,10 @@ function shouldSpawnGrassTuft(x, y) {
 // ---------------------------------------------------------------------------
 
 function getEntityBounds(e) {
-  const r = e.properties?.render;
+  const r = e.properties?.render || {};
   const isItem = !e.properties?.life && (!!e.properties?.edible || !!e.properties?.resourceType || !!e.properties?.germination || e.properties?.species === "item" || !!e.properties?.weapon || !!e.properties?.armor || !!e.properties?.tool || !!e.properties?.material || !!e.properties?.lifespan);
   const isDoor = !!e.properties?.door;
-  const isHouse = !!e.properties?.house || !!e.properties?.leaderHouse || r?.skin === "Overworld_House.png" || e.properties?.name?.includes("Casa") || e.properties?.name?.includes("Manor") || e.properties?.name?.includes("Villa") || e.properties?.name?.includes("Chalet") || e.properties?.name?.includes("Cottage") || e.properties?.name?.includes("Cabin") || e.properties?.name?.includes("Hut") || e.properties?.name?.includes("Lodge") || e.properties?.name?.includes("Ranch") || e.properties?.name?.includes("Hacienda") || e.properties?.name?.includes("Hall") || e.properties?.name?.includes("Grange") || e.properties?.name?.includes("Hermitage") || e.properties?.name?.includes("Palácio") || e.properties?.name?.includes("Castelo") || e.properties?.name?.includes("Ossuário");
+  const isHouse = !e.properties.brain && (!!e.properties.house || !!e.properties.leaderHouse || r.skin === "Overworld_House.png" || e.properties.name?.includes("Casa") || e.properties.name?.includes("Manor") || e.properties.name?.includes("Villa") || e.properties.name?.includes("Chalet") || e.properties.name?.includes("Cottage") || e.properties.name?.includes("Cabin") || e.properties.name?.includes("Hut") || e.properties.name?.includes("Lodge") || e.properties.name?.includes("Ranch") || e.properties.name?.includes("Palácio") || e.properties.name?.includes("Castelo") || e.properties.name?.includes("Hall") || e.properties.name?.includes("Grange") || e.properties.name?.includes("Citadel"));
   const isWall = !isDoor && !isHouse && (e.properties?.structure || r?.skin?.startsWith("Wall_") || e.properties?.name?.includes("Muralha") || e.properties?.name?.includes("Wall"));
   const isCactus = e.properties?.species === "cactus" || e.properties?.name?.toLowerCase().includes("cactus") || e.properties?.name?.toLowerCase().includes("cacto");
   const isTree = !isCactus && (e.properties?.species === "oak" || e.properties?.species === "pine" || e.properties?.species === "willow" || e.properties?.species === "tree" || !!e.properties?.tree || (r?.skin && r?.skin.toLowerCase().includes("tree")));
@@ -3039,6 +3039,8 @@ export class RCT3DRenderer {
 
           occlusion = clamp(occlusion / float(TAPS), 0.0, 1.0);
           float ao = 1.0 - (occlusion * uAoIntensity);
+          float distanceFade = smoothstep(12.0, 40.0, centerDepth);
+          ao = mix(ao, 1.0, distanceFade);
           return clamp(ao, 0.0, 1.0);
         }
 
@@ -4961,16 +4963,13 @@ export class RCT3DRenderer {
   }
 
   getTileAtScreen(screenX, screenY, world = null) {
-    const rect = this.container.getBoundingClientRect();
-    const w = rect.width || this.width;
-    const h = rect.height || this.height;
-    const ndcX = ((screenX - rect.left) / w) * 2 - 1;
-    const ndcY = -((screenY - rect.top) / h) * 2 + 1;
+    const ndcX = (screenX / this.width) * 2 - 1;
+    const ndcY = -(screenY / this.height) * 2 + 1;
 
     this.raycaster.setFromCamera({ x: ndcX, y: ndcY }, this.camera);
     const ray = this.raycaster.ray;
 
-    const map = world?.map;
+    const map = world?.map || this.currentWorld?.map || this.currentMap;
     if (map && Math.abs(ray.direction.y) > 0.0001) {
       // Raymarch through terrain elevation range (y: 8.0 down to -0.5)
       const tMaxY = (8.0 - ray.origin.y) / ray.direction.y;
@@ -4978,7 +4977,7 @@ export class RCT3DRenderer {
       const tStart = Math.min(tMaxY, tMinY);
       const tEnd = Math.max(tMaxY, tMinY);
 
-      const steps = 60;
+      const steps = 80;
       const dt = (tEnd - tStart) / steps;
       let prevT = tStart;
 
@@ -4993,7 +4992,7 @@ export class RCT3DRenderer {
           // Binary search refinement
           let low = prevT;
           let high = t;
-          for (let b = 0; b < 5; b++) {
+          for (let b = 0; b < 8; b++) {
             const mid = (low + high) * 0.5;
             const mx = ray.origin.x + mid * ray.direction.x;
             const my = ray.origin.y + mid * ray.direction.y;
@@ -5004,29 +5003,38 @@ export class RCT3DRenderer {
               low = mid;
             }
           }
-          const hitX = Math.floor(ray.origin.x + low * ray.direction.x);
-          const hitY = Math.floor(ray.origin.z + low * ray.direction.z);
+          const exactX = ray.origin.x + low * ray.direction.x;
+          const exactZ = ray.origin.z + low * ray.direction.z;
+          const exactY = this.getSurfaceElevation(map, exactX, exactZ);
+          const hitX = Math.floor(exactX);
+          const hitY = Math.floor(exactZ);
           return {
             x: Math.max(0, Math.min(MAP_WIDTH - 1, hitX)),
-            y: Math.max(0, Math.min(MAP_HEIGHT - 1, hitY))
+            y: Math.max(0, Math.min(MAP_HEIGHT - 1, hitY)),
+            exactX,
+            exactY,
+            exactZ
           };
         }
         prevT = t;
       }
     }
 
-    // Fallback: intersect with flat ground plane at Y=0.5
+    // Fallback: intersect with flat ground plane at Y=0.0
     const intersectPoint = new THREE.Vector3();
-    this.groundPlane.constant = -0.5;
+    this.groundPlane.constant = 0.0;
     if (this.raycaster.ray.intersectPlane(this.groundPlane, intersectPoint)) {
       const tx = Math.floor(intersectPoint.x);
       const ty = Math.floor(intersectPoint.z);
       return {
         x: Math.max(0, Math.min(MAP_WIDTH - 1, tx)),
-        y: Math.max(0, Math.min(MAP_HEIGHT - 1, ty))
+        y: Math.max(0, Math.min(MAP_HEIGHT - 1, ty)),
+        exactX: intersectPoint.x,
+        exactY: 0.0,
+        exactZ: intersectPoint.z
       };
     }
-    return { x: Math.floor(this.camX), y: Math.floor(this.camY) };
+    return { x: Math.floor(this.camX), y: Math.floor(this.camY), exactX: this.camX, exactY: 0.0, exactZ: this.camY };
   }
 
   setEditorCursor(world, tileX, tileY, brushSize = 1, toolColorHex = 0xffe600) {
@@ -5266,48 +5274,50 @@ export class RCT3DRenderer {
     if (!this.scene.background) this.scene.background = new THREE.Color();
     this.scene.background.copy(this.tempColor1);
     this.renderer.setClearColor(this.tempColor1, 1.0);
+
     const isPersp = this.isPerspectiveActive();
-    let targetFogDensity = 0.0;
+    const isNight = timeOfDay < 5.0 || timeOfDay > 19.5;
+
     if (isPersp) {
       const fogOpt = this.graphicOptions.fog || "LIGHT";
-      if (fogOpt === "OFF") targetFogDensity = 0.0;
-      else if (fogOpt === "DENSE") targetFogDensity = 0.035;
-      else if (fogOpt === "MIST") targetFogDensity = 0.060;
-      else if (fogOpt === "SILENT HILL") targetFogDensity = 0.120;
-      else targetFogDensity = 0.022; // Increased base fog slightly for better blending
+      let fogNear = 18;
+      let fogFar = 70;
 
-      // Increase fog density slightly at night to hide the horizon edge better
-      if (timeOfDay < 5.0 || timeOfDay > 19.0) {
-         targetFogDensity *= 1.35;
+      if (fogOpt === "OFF") {
+        fogNear = 90;
+        fogFar = 120;
+      } else if (fogOpt === "DENSE") {
+        fogNear = isNight ? 4 : 8;
+        fogFar = isNight ? 28 : 38;
+      } else if (fogOpt === "MIST") {
+        fogNear = isNight ? 2 : 4;
+        fogFar = isNight ? 18 : 24;
+      } else if (fogOpt === "SILENT HILL") {
+        fogNear = 1;
+        fogFar = isNight ? 10 : 14;
+      } else {
+        // LIGHT
+        fogNear = isNight ? 10 : 18;
+        fogFar = isNight ? 48 : 65;
       }
-    }
-    
-    if (!this.scene.fog) {
-      this.scene.fog = new THREE.FogExp2(this.tempColor1.getHex(), targetFogDensity);
+
+      if (!this.scene.fog || !(this.scene.fog instanceof THREE.Fog)) {
+        this.scene.fog = new THREE.Fog(this.tempColor1.getHex(), fogNear, fogFar);
+      } else {
+        this.scene.fog.color.copy(this.tempColor1);
+        this.scene.fog.near = fogNear;
+        this.scene.fog.far = fogFar;
+      }
     } else {
-      this.scene.fog.color.copy(this.tempColor1);
-      this.scene.fog.density = targetFogDensity;
+      // Isometric view: absolutely NO fog!
+      this.scene.fog = null;
     }
 
-    if (this.graphicOptions.horizonMode === "INFINITE SEA" && isPersp) {
-      if (!this.infiniteSea) {
-        const seaGeo = new THREE.PlaneGeometry(2000, 2000);
-        const seaMat = new THREE.MeshBasicMaterial({ color: 0x112233 }); // Color will be updated
-        this.infiniteSea = new THREE.Mesh(seaGeo, seaMat);
-        this.infiniteSea.rotation.x = -Math.PI / 2;
-        this.infiniteSea.position.y = -0.5; // Slightly below ground level
-        this.scene.add(this.infiniteSea);
-      }
-      this.infiniteSea.visible = true;
-      this.infiniteSea.position.x = this.camX;
-      this.infiniteSea.position.z = this.camY;
-      
-      // Sea color reflects sky color but darker
-      this.tempColor2.copy(this.tempColor1).multiplyScalar(0.4).add(new THREE.Color(0x051020));
-      this.infiniteSea.material.color.copy(this.tempColor2);
-      this.infiniteSea.material.fog = true;
-    } else if (this.infiniteSea) {
-      this.infiniteSea.visible = false;
+    if (this.infiniteSea) {
+      this.scene.remove(this.infiniteSea);
+      if (this.infiniteSea.geometry) this.infiniteSea.geometry.dispose();
+      if (this.infiniteSea.material) this.infiniteSea.material.dispose();
+      this.infiniteSea = null;
     }
 
     const sunIntensity = (k1.sunI + (k2.sunI - k1.sunI) * sAlpha) * (isPersp ? 1.25 : 1.0);
@@ -6058,9 +6068,9 @@ export class RCT3DRenderer {
     } else {
       const aspect = this.width / this.height;
       const isPerspActive = this.isPerspectiveActive();
-      const viewSize = isPerspActive ? Math.max(72, maxDist || 64) : Math.min(maxDist, 28 / this.zoom);
+      const viewSize = isPerspActive ? 128 : Math.min(maxDist, 28 / this.zoom);
       const diagonal = Math.hypot(viewSize * aspect, viewSize);
-      const radius = isPerspActive ? Math.max(72, maxDist || 64) : Math.min(maxDist || 64, Math.ceil(diagonal * 1.25) + 3);
+      const radius = isPerspActive ? 128 : Math.min(maxDist || 64, Math.ceil(diagonal * 1.25) + 3);
 
       minTx = Math.max(0, Math.floor(this.camX - radius));
       maxTx = Math.min(MAP_WIDTH - 1, Math.ceil(this.camX + radius));
@@ -7111,7 +7121,7 @@ export class RCT3DRenderer {
         }
 
         // 5. Indoor Glow for Buildings
-        const isHouse = !!e.properties?.house || !!e.properties?.leaderHouse || (e.properties?.species === "structure" && (e.properties?.name?.includes("Casa") || e.properties?.name?.includes("Manor") || e.properties?.name?.includes("Villa") || e.properties?.name?.includes("Chalet") || e.properties?.name?.includes("Cottage") || e.properties?.name?.includes("Cabin") || e.properties?.name?.includes("Hut") || e.properties?.name?.includes("Lodge") || e.properties?.name?.includes("Ranch") || e.properties?.name?.includes("Palácio") || e.properties?.name?.includes("Castelo") || e.properties?.name?.includes("Hall") || e.properties?.name?.includes("Grange")));
+        const r = e.properties.render || {}; const isHouse = !e.properties.brain && (!!e.properties.house || !!e.properties.leaderHouse || r.skin === "Overworld_House.png" || e.properties.name?.includes("Casa") || e.properties.name?.includes("Manor") || e.properties.name?.includes("Villa") || e.properties.name?.includes("Chalet") || e.properties.name?.includes("Cottage") || e.properties.name?.includes("Cabin") || e.properties.name?.includes("Hut") || e.properties.name?.includes("Lodge") || e.properties.name?.includes("Ranch") || e.properties.name?.includes("Palácio") || e.properties.name?.includes("Castelo") || e.properties.name?.includes("Hall") || e.properties.name?.includes("Grange") || e.properties.name?.includes("Citadel"));// || !!e.properties?.leaderHouse || (e.properties?.species === "structure" && (e.properties?.name?.includes("Casa") || e.properties?.name?.includes("Manor") || e.properties?.name?.includes("Villa") || e.properties?.name?.includes("Chalet") || e.properties?.name?.includes("Cottage") || e.properties?.name?.includes("Cabin") || e.properties?.name?.includes("Hut") || e.properties?.name?.includes("Lodge") || e.properties?.name?.includes("Ranch") || e.properties?.name?.includes("Palácio") || e.properties?.name?.includes("Castelo") || e.properties?.name?.includes("Hall") || e.properties?.name?.includes("Grange")));
         const isIndustrial = !!e.properties?.kitchen || e.properties?.name?.includes("Cozinha") || !!e.properties?.slaughterhouse || e.properties?.name?.includes("Abatedouro") || !!e.properties?.artisan_hut || e.properties?.name?.includes("Artesão") || !!e.properties?.forge || e.properties?.name?.includes("Forja");
         if (isHouse || isIndustrial) {
           let fpW = 1, fpH = 1;
@@ -7143,13 +7153,13 @@ export class RCT3DRenderer {
 
       // 5. Mouse Cursor Light in Isometric Mode
       if (!this.isPerspectiveActive() && this.mouseX !== undefined && this.mouseY !== undefined && candidateCount < maxPool) {
-        const mouseTile = this.getTileAtScreen(this.mouseX, this.mouseY);
+        const mouseTile = this.getTileAtScreen(this.mouseX, this.mouseY, world);
         if (mouseTile) {
-          const sH = this.getSurfaceElevation(map, mouseTile.x, mouseTile.y);
+          const sH = (mouseTile.exactY !== undefined) ? mouseTile.exactY : this.getSurfaceElevation(map, mouseTile.x, mouseTile.y);
           const c = this.lightCandidatesPool[candidateCount++];
-          c.x = mouseTile.x + 0.5;
-          c.y = sH + 2.0;
-          c.z = mouseTile.y + 0.5;
+          c.x = (mouseTile.exactX !== undefined) ? mouseTile.exactX : (mouseTile.x + 0.5);
+          c.y = sH + 1.2;
+          c.z = (mouseTile.exactZ !== undefined) ? mouseTile.exactZ : (mouseTile.y + 0.5);
           c.color = 0xffffff;
           c.distance = 24.0;
           c.decay = 1.0;
@@ -7367,9 +7377,10 @@ export class RCT3DRenderer {
       this.reticleMesh.visible = false;
     }
 
-    // Update 3D Atmosphere Clouds (Always visible in 1P & 3P modes, and at high altitude zoom in isometric)
+    // Update 3D Atmosphere Clouds (Visible in 1P & 3P modes during daytime, and at high altitude zoom in isometric)
     if (this.cloudMesh && this.cloudMat) {
-      if (this.isPerspectiveActive() || this.zoom <= 0.38) {
+      const isNightTime = (world?.clock) ? (world.clock.hour < 5 || world.clock.hour >= 20) : false;
+      if (!isNightTime && (this.isPerspectiveActive() || this.zoom <= 0.38)) {
         this.cloudMesh.visible = true;
         this.cloudMesh.position.set(this.camX, 42.0, this.camY);
         this.cloudMat.uniforms.uTime.value = performance.now() * 0.001;
