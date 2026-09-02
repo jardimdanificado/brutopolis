@@ -9689,6 +9689,69 @@ export function createLocomotionProp() {
               }
             }
           }
+          // --- 5.56 Diplomatic Missions ---
+          if (!hasIntention && ent._taskGoal && ent._taskGoal.type === "diplomacy") {
+            const leader = getEntityById(ent._taskGoal.targetLeaderId);
+            if (!leader || leader.destroyed) {
+              ent._taskGoal = null;
+            } else {
+              const dDist = Math.abs(leader.x - ent.x) + Math.abs(leader.y - ent.y);
+              if (dDist <= 2) {
+                // Reach the leader and talk!
+                let targetGroup = (typeof getAllGroups === "function") ? getAllGroups().find(g => g.id === ent._taskGoal.targetGroupId) : null;
+                const group = ent.properties.group;
+                if (targetGroup && group) {
+                  if (Math.random() < 0.65) {
+                    ent.emote = 2; // Happy
+                    leader.emote = 2; // Happy
+                    
+                    if (!group.relations) group.relations = {};
+                    let currentRel = group.relations[targetGroup.id] || 0;
+                    currentRel += Math.floor(Math.random() * 10) + 5;
+                    group.relations[targetGroup.id] = Math.min(100, currentRel);
+                    
+                    if (!targetGroup.relations) targetGroup.relations = {};
+                    targetGroup.relations[group.id] = (targetGroup.relations[group.id] || 0) + 5;
+                    
+                    const desc = `Missão diplomática bem sucedida! ${ent.properties?.name || "Diplomata"} de ${group.name} convenceu ${leader.properties?.name || "Líder"} de ${targetGroup.name} a melhorar as relações.`;
+                    
+                    if (typeof recordWorldEvent === "function") {
+                      recordWorldEvent({
+                        opcode: 92, // OP_DIPLOMATIC_MISSION
+                        primaryEntityId: ent.id,
+                        secondaryEntityId: leader.id,
+                        location: { x: ent.x, y: ent.y },
+                        description: desc,
+                        tick: typeof currentTick !== "undefined" ? currentTick : 0,
+                        metadata: { groupName: group.name, targetName: targetGroup.name }
+                      });
+                    }
+                  } else {
+                    ent.emote = 4; // Sad
+                    leader.emote = 5; // Angry
+                    
+                    const desc = `Missão diplomática falhou! ${leader.properties?.name || "Líder"} de ${targetGroup.name} rejeitou a oferta de ${ent.properties?.name || "Diplomata"} de ${group.name}.`;
+                    
+                    if (typeof recordWorldEvent === "function") {
+                      recordWorldEvent({
+                        opcode: 92, // OP_DIPLOMATIC_MISSION
+                        primaryEntityId: ent.id,
+                        location: { x: ent.x, y: ent.y },
+                        description: desc,
+                        tick: typeof currentTick !== "undefined" ? currentTick : 0
+                      });
+                    }
+                  }
+                }
+                ent._taskGoal = null;
+              } else {
+                chosenDx = Math.sign(leader.x - ent.x);
+                chosenDy = Math.sign(leader.y - ent.y);
+                hasIntention = true;
+              }
+            }
+          }
+
 
           // --- 5.6 Sanitation: Clean Feces Inside Territory ---
           if (!hasIntention && energyRatio > 0.40) {

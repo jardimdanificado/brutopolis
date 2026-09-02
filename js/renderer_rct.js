@@ -4558,6 +4558,12 @@ export class RCT3DRenderer {
     return this.renderFullWorld;
   }
 
+
+  setMousePos(x, y) {
+    this.mouseX = x;
+    this.mouseY = y;
+  }
+
   setFullWorld(enabled) {
     this.renderFullWorld = !!enabled;
     this.lastBuiltCamTileX = -9999;
@@ -4605,8 +4611,14 @@ export class RCT3DRenderer {
     this.isFirstPersonMode = !!enabled;
     if (enabled) this.isThirdPersonMode = false;
     this.fpEntityId = enabled && entityId !== null && entityId !== undefined ? Number(entityId) : null;
-    if (enabled && entityId !== null && entityId !== undefined) {
-      this.selectedEntityId = Number(entityId);
+    if (enabled) {
+      if (entityId !== null && entityId !== undefined) {
+        this.selectedEntityId = Number(entityId);
+      } else {
+        this.freeCamX = this.camX;
+        this.freeCamY = 10.0;
+        this.freeCamZ = this.camY;
+      }
       this.fpYaw = 0;
       this.fpPitch = 0;
       this.lastBuiltCamTileX = -9999;
@@ -4629,7 +4641,7 @@ export class RCT3DRenderer {
   }
 
   isFirstPersonActive() {
-    return this.isFirstPersonMode && this.fpEntityId !== null && this.fpEntityId !== undefined;
+    return this.isFirstPersonMode;
   }
 
   isThirdPersonActive() {
@@ -4637,7 +4649,25 @@ export class RCT3DRenderer {
   }
 
   isPerspectiveActive() {
-    return (this.isFirstPersonMode || this.isThirdPersonMode) && this.fpEntityId !== null && this.fpEntityId !== undefined;
+    return this.isFirstPersonActive() || this.isThirdPersonActive();
+  }
+
+  moveFreeCamera(dx, dy, dz, speed) {
+    if (this.isFirstPersonActive() && (this.fpEntityId === null || this.fpEntityId === undefined)) {
+      const sinYaw = Math.sin(this.fpYaw);
+      const cosYaw = Math.cos(this.fpYaw);
+      
+      // forward/backward
+      this.freeCamX += (sinYaw * dz) * speed;
+      this.freeCamZ += (cosYaw * dz) * speed;
+      
+      // left/right
+      this.freeCamX += (cosYaw * dx) * speed;
+      this.freeCamZ -= (sinYaw * dx) * speed;
+      
+      // up/down
+      this.freeCamY += dy * speed;
+    }
   }
 
   rotatePerspectiveCamera(dYaw, dPitch) {
@@ -4854,33 +4884,48 @@ export class RCT3DRenderer {
         ? (isBuilding ? this.getTileSurfaceHeight(map, Math.floor(e.x), Math.floor(e.y)) : this.getSurfaceElevation(map, posX, posY))
         : 1.0;
 
-      const denom = nx * ray.direction.x + nz * ray.direction.z;
-      if (Math.abs(denom) > 1e-4) {
-        const numer = nx * (posX - ray.origin.x) + nz * (posY - ray.origin.z);
-        const t = numer / denom;
-        if (t > 0 && t < closestDist) {
-          const ix = ray.origin.x + t * ray.direction.x;
-          const iy = ray.origin.y + t * ray.direction.y;
-          const iz = ray.origin.z + t * ray.direction.z;
-
-          const dy = iy - surfaceH;
-          const dx = nx * (ix - posX) - nz * (iz - posY);
-
-          if (dy >= -0.2 && dy <= Math.max(1.0, bounds.h) && Math.abs(dx) <= Math.max(0.75, bounds.radius)) {
+      if (isBuilding) {
+        const box = new THREE.Box3(
+          new THREE.Vector3(e.x, surfaceH - 0.2, e.y),
+          new THREE.Vector3(e.x + fpW, surfaceH + Math.max(1.0, bounds.h), e.y + fpH)
+        );
+        const intersect = new THREE.Vector3();
+        if (ray.intersectBox(box, intersect)) {
+          const t = ray.origin.distanceTo(intersect);
+          if (t < closestDist) {
             closestDist = t;
             bestEntId = e.id;
           }
         }
-      }
+      } else {
+        const denom = nx * ray.direction.x + nz * ray.direction.z;
+        if (Math.abs(denom) > 1e-4) {
+          const numer = nx * (posX - ray.origin.x) + nz * (posY - ray.origin.z);
+          const t = numer / denom;
+          if (t > 0 && t < closestDist) {
+            const ix = ray.origin.x + t * ray.direction.x;
+            const iy = ray.origin.y + t * ray.direction.y;
+            const iz = ray.origin.z + t * ray.direction.z;
 
-      const centerH = surfaceH + (isItem ? 0.25 : bounds.h * 0.45);
-      const entPos = new THREE.Vector3(posX, centerH, posY);
-      const distToRay = ray.distanceToPoint(entPos);
-      if (distToRay < Math.max(0.75, bounds.radius * 0.95)) {
-        const distAlong = ray.origin.distanceTo(entPos);
-        if (distAlong < closestDist) {
-          closestDist = distAlong;
-          bestEntId = e.id;
+            const dy = iy - surfaceH;
+            const dx = nx * (ix - posX) - nz * (iz - posY);
+
+            if (dy >= -0.2 && dy <= Math.max(1.0, bounds.h) && Math.abs(dx) <= Math.max(0.75, bounds.radius)) {
+              closestDist = t;
+              bestEntId = e.id;
+            }
+          }
+        }
+
+        const centerH = surfaceH + (isItem ? 0.25 : bounds.h * 0.45);
+        const entPos = new THREE.Vector3(posX, centerH, posY);
+        const distToRay = ray.distanceToPoint(entPos);
+        if (distToRay < Math.max(0.75, bounds.radius * 0.95)) {
+          const distAlong = ray.origin.distanceTo(entPos);
+          if (distAlong < closestDist) {
+            closestDist = distAlong;
+            bestEntId = e.id;
+          }
         }
       }
     }
@@ -5129,6 +5174,32 @@ export class RCT3DRenderer {
 
           this.fpCamera.lookAt(targetX, targetY, targetZ);
         }
+        return;
+      } else if (this.isFirstPersonActive() && (this.fpEntityId === null || this.fpEntityId === undefined)) {
+        // Free 1P Mode
+        const aspect = this.width / this.height;
+        this.fpCamera.aspect = aspect;
+        this.fpCamera.near = 0.05;
+        this.fpCamera.far = 800;
+        this.fpCamera.updateProjectionMatrix();
+
+        const cosPitch = Math.cos(this.fpPitch);
+        const sinPitch = Math.sin(this.fpPitch);
+        const sinYaw = Math.sin(this.fpYaw);
+        const cosYaw = Math.cos(this.fpYaw);
+
+        this.fpCamera.position.set(this.freeCamX, this.freeCamY, this.freeCamZ);
+
+        const lookDist = 20.0;
+        const targetX = this.freeCamX + sinYaw * cosPitch * lookDist;
+        const targetY = this.freeCamY + sinPitch * lookDist;
+        const targetZ = this.freeCamZ + cosYaw * cosPitch * lookDist;
+
+        this.fpCamera.lookAt(targetX, targetY, targetZ);
+        
+        // sync main camera pos so chunks around free flight load correctly
+        this.camX = this.freeCamX;
+        this.camY = this.freeCamZ;
         return;
       } else {
         this.isFirstPersonMode = false;
@@ -6943,9 +7014,9 @@ export class RCT3DRenderer {
           c.y = sH + 1.20;
           c.z = e.y + 0.5;
           c.color = 0xffa040;
-          c.distance = isPersp ? 18.0 : Math.max(2.5, sz * 0.38);
-          c.decay = isPersp ? 1.15 : 1.4;
-          c.intensity = isPersp ? nightGlow * 2.4 : nightGlow * 1.8;
+          c.distance = isPersp ? 36.0 : Math.max(6.0, sz * 0.9);
+          c.decay = 1.0;
+          c.intensity = isPersp ? nightGlow * 4.0 : nightGlow * 3.5;
           c.priority = 1; // Top priority for placed torches
           c.distSq = dx * dx + dy * dy;
           continue;
@@ -6962,9 +7033,9 @@ export class RCT3DRenderer {
           c.y = sH + 0.50;
           c.z = e.y + 0.5;
           c.color = 0xff7b18;
-          c.distance = isPersp ? 34.0 : Math.max(8.0, sz * 1.45);
-          c.decay = isPersp ? 1.0 : 1.0;
-          c.intensity = isPersp ? nightGlow * 6.8 : nightGlow * 6.5;
+          c.distance = isPersp ? 60.0 : Math.max(16.0, sz * 2.5);
+          c.decay = 0.8;
+          c.intensity = isPersp ? nightGlow * 10.0 : nightGlow * 9.5;
           c.priority = 0; // Highest priority for central campfires
           c.distSq = dx * dx + dy * dy;
           continue;
@@ -6985,9 +7056,9 @@ export class RCT3DRenderer {
             c.y = sH + 0.95;
             c.z = e.y;
             c.color = 0xffaa44;
-            c.distance = isPersp ? 16.0 : Math.max(2.2, sz * 0.32);
-            c.decay = isPersp ? 1.2 : 1.5;
-            c.intensity = isPersp ? nightGlow * 2.2 : nightGlow * 1.6;
+            c.distance = isPersp ? 32.0 : Math.max(5.0, sz * 0.8);
+            c.decay = 1.0;
+            c.intensity = isPersp ? nightGlow * 3.5 : nightGlow * 3.0;
             c.priority = e.id === this.selectedEntityId ? 0 : 2;
             c.distSq = dx * dx + dy * dy;
           }
@@ -7005,11 +7076,29 @@ export class RCT3DRenderer {
           c.y = sH + 1.60;
           c.z = e.y + 0.5;
           c.color = 0xffb555;
-          c.distance = isPersp ? 20.0 : 10.0;
-          c.decay = isPersp ? 1.2 : 1.6;
-          c.intensity = isPersp ? nightGlow * 2.6 : nightGlow * 2.0;
+          c.distance = isPersp ? 36.0 : 18.0;
+          c.decay = 1.0;
+          c.intensity = isPersp ? nightGlow * 4.0 : nightGlow * 3.5;
           c.priority = 3;
           c.distSq = dx * dx + dy * dy;
+        }
+      }
+
+      // 5. Mouse Cursor Light in Isometric Mode
+      if (!this.isPerspectiveActive() && this.mouseX !== undefined && this.mouseY !== undefined && candidateCount < maxPool) {
+        const mouseTile = this.getTileAtScreen(this.mouseX, this.mouseY);
+        if (mouseTile) {
+          const sH = this.getSurfaceElevation(map, mouseTile.x, mouseTile.y);
+          const c = this.lightCandidatesPool[candidateCount++];
+          c.x = mouseTile.x;
+          c.y = sH + 2.0;
+          c.z = mouseTile.y;
+          c.color = 0xffffff;
+          c.distance = 24.0;
+          c.decay = 1.0;
+          c.intensity = nightGlow * 6.0;
+          c.priority = -1; // Highest priority so mouse light is always visible
+          c.distSq = 0;
         }
       }
 

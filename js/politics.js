@@ -516,39 +516,24 @@ function processDiplomaticMissions(group, tick) {
   for (const dipId of activeDiplomats) {
     if (!dipId || !isAlive(dipId)) continue;
     
+    const dipEnt = getEntityById(dipId);
+    if (!dipEnt || dipEnt._taskGoal) continue;
+
     if (Math.random() < 0.01) {
       const allGroups = getAllGroups().filter(g => g.id !== group.id && g.members && g.members.length > 0);
       if (allGroups.length === 0) continue;
 
       const targetGroup = allGroups[Math.floor(Math.random() * allGroups.length)];
-      
-      let currentRel = group.relations[targetGroup.id] || 0;
-      currentRel += Math.floor(Math.random() * 10) + 5;
-      currentRel = Math.min(100, currentRel);
-      group.relations[targetGroup.id] = currentRel;
-      
-      if (!targetGroup.relations) targetGroup.relations = {};
-      targetGroup.relations[group.id] = (targetGroup.relations[group.id] || 0) + 5;
-      
-      const dipEnt = getEntityById(dipId);
-      if (dipEnt) {
-        const desc = `${dipEnt.properties?.name || "Diplomata"} realizou uma missão diplomática melhorando a relação com ${targetGroup.name}.`;
-        recordWorldEvent({
-          opcode: OP_DIPLOMATIC_MISSION,
-          primaryEntityId: dipId,
-          location: { x: dipEnt.x, y: dipEnt.y },
-          description: desc,
-          tick,
-          metadata: { groupName: group.name, targetName: targetGroup.name }
-        });
-        addPoliticalHistoryEntry(group, {
-          type: "DIPLOMATIC_MISSION",
-          title: `Missão Diplomática`,
-          description: desc,
-          targetGroupId: targetGroup.id,
-          targetGroupName: targetGroup.name
-        });
-      }
+      if (!targetGroup.leaderId || !isAlive(targetGroup.leaderId)) continue;
+
+      dipEnt._taskGoal = { 
+        type: "diplomacy", 
+        targetGroupId: targetGroup.id, 
+        targetGroupName: targetGroup.name,
+        targetLeaderId: targetGroup.leaderId,
+        groupId: group.id,
+        groupName: group.name
+      };
     }
   }
 }

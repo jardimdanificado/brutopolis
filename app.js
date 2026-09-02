@@ -1292,9 +1292,8 @@ let isThirdPersonMode = false; // Third-person orbital creature camera perspecti
 let perspectiveEntityId = null;
 let firstPersonEntityId = null;
 
-function toggleFirstPersonMode(targetId = null) {
-  const idToUse = targetId || lastSelectedId;
-  if (!idToUse) return;
+function toggleFirstPersonMode(targetId = undefined) {
+  const idToUse = targetId !== undefined ? targetId : lastSelectedId;
 
   if (isFirstPersonMode && perspectiveEntityId === idToUse) {
     exitPerspectiveMode();
@@ -1303,7 +1302,9 @@ function toggleFirstPersonMode(targetId = null) {
     isThirdPersonMode = false;
     perspectiveEntityId = idToUse;
     firstPersonEntityId = idToUse;
-    lastSelectedId = idToUse;
+    if (idToUse !== null) {
+      lastSelectedId = idToUse;
+    }
     isFollowMode = false;
     currentMode = "MAP";
     if (!is3DMode) toggle3DMode();
@@ -2131,8 +2132,15 @@ window.addEventListener("keyup", (e) => {
 });
 
 function handleCameraKeys(dt) {
-  // Disabled by user request: "setas e wasd estão completamente descalibrados, deixe amovimentação apenas via mouse/touch mesmo."
-  return;
+  if (isFirstPersonMode && perspectiveEntityId === null && is3DMode && rctRenderer && rctRenderer.moveFreeCamera) {
+    const speed = 25.0 * dt;
+    if (keysDown.has("ArrowUp")) rctRenderer.moveFreeCamera(0, 0, -1, speed);
+    if (keysDown.has("ArrowDown")) rctRenderer.moveFreeCamera(0, 0, 1, speed);
+    if (keysDown.has("ArrowLeft")) rctRenderer.moveFreeCamera(-1, 0, 0, speed);
+    if (keysDown.has("ArrowRight")) rctRenderer.moveFreeCamera(1, 0, 0, speed);
+    if (keysDown.has("Space")) rctRenderer.moveFreeCamera(0, 1, 0, speed);
+    if (keysDown.has("ControlLeft") || keysDown.has("ControlRight")) rctRenderer.moveFreeCamera(0, -1, 0, speed);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -3089,6 +3097,13 @@ function renderDossierModal() {
   if (!target) {
     drawText8x8("NO CREATURE SELECTED", mx + 20, my + 30, "#f8b800", 1);
     drawText8x8("CLICK ON MAP OR PRESS [TAB] TO SELECT.", mx + 20, my + 50, "#ffffff", 1);
+    
+    const isFree1P = isFirstPersonMode && perspectiveEntityId === null;
+    drawNESButton(mx + 20, my + 70, 140, 30, "FREE 1P FLIGHT", isFree1P, false);
+    registerClickableRegion(mx + 20, my + 70, 140, 30, () => {
+      toggleFirstPersonMode(null);
+    });
+
     ctx.restore();
     return;
   }
@@ -3103,20 +3118,17 @@ function renderDossierModal() {
 
   // Action Buttons
   if (!target.destroyed) {
-    const isCreature = !!props.life || !!props.brain;
-    if (isCreature) {
-      const is3PAct = isThirdPersonMode && perspectiveEntityId === target.id;
-      drawNESButton(mx + mw - 455, my + 6, 120, 24, "3RD PERSON (3P)", is3PAct, false);
-      registerClickableRegion(mx + mw - 455, my + 6, 120, 24, () => {
-        toggleThirdPersonMode(target.id);
-      });
+    const is3PAct = isThirdPersonMode && perspectiveEntityId === target.id;
+    drawNESButton(mx + mw - 455, my + 6, 120, 24, "3RD PERSON (3P)", is3PAct, false);
+    registerClickableRegion(mx + mw - 455, my + 6, 120, 24, () => {
+      toggleThirdPersonMode(target.id);
+    });
 
-      const is1PAct = isFirstPersonMode && perspectiveEntityId === target.id;
-      drawNESButton(mx + mw - 325, my + 6, 120, 24, "1ST PERSON (1P)", is1PAct, false);
-      registerClickableRegion(mx + mw - 325, my + 6, 120, 24, () => {
-        toggleFirstPersonMode(target.id);
-      });
-    }
+    const is1PAct = isFirstPersonMode && perspectiveEntityId === target.id;
+    drawNESButton(mx + mw - 325, my + 6, 120, 24, "1ST PERSON (1P)", is1PAct, false);
+    registerClickableRegion(mx + mw - 325, my + 6, 120, 24, () => {
+      toggleFirstPersonMode(target.id);
+    });
 
     drawNESButton(mx + mw - 195, my + 6, 75, 24, "FOCUS", false, false);
     registerClickableRegion(mx + mw - 195, my + 6, 75, 24, () => {
@@ -7216,6 +7228,7 @@ function frame(time) {
       if (rctRenderer) {
         rctRenderer.max3DRenderDistance = gameOptions?.max3DRenderDistance;
       }
+      rctRenderer.setMousePos(mouseX, mouseY);
       rctRenderer.render(world, entities, time * 0.001, dt, isPaused ? 0.0 : simSpeed, visionTarget, visualizedGroupId);
       ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     } else {
