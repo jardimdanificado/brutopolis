@@ -7360,12 +7360,14 @@ let freeArm = null; for (const k in ent.properties) { const p = ent.properties[k
                     name: `Seed (${treeSpecies})`,
                     resourceType: "seed",
                     render: { skin: "Item_Egg.png", color: 0xffa0783c, backcolor: 0x00000000 },
-                    germination: createSeedGerminationProp(treeSpecies, 8.0, 0.15)
+                    germination: createSeedGerminationProp(treeSpecies, 8.0, 0.15),
+                    lifespan: createLifespanProp(45.0)
                   },
                   treeX,
                   treeY
                 );
                 entities.push(seedEntity);
+                registerEntitySpatial(seedEntity);
               }
               return;
             }
@@ -10396,10 +10398,14 @@ export function createLocomotionProp() {
                     seedSpecies: ed.seed.species || "oak",
                     ownerId: ent.id
                   };
-                } else if (Math.random() < 0.75) {
-                  const seedEnt = createSeedEntity(ent.x, ent.y, ed.seed.type || "small", ed.seed.species || "oak");
-                  entities.push(seedEnt);
-                  registerEntitySpatial(seedEnt);
+                } else if (Math.random() < 0.25) {
+                  // Only drop wild seed if not already cluttered nearby
+                  const hasSeedNear = hasEntityInRadius(ent.x, ent.y, 4, e => !e.destroyed && e.properties?.resourceType === "seed");
+                  if (!hasSeedNear) {
+                    const seedEnt = createSeedEntity(ent.x, ent.y, ed.seed.type || "small", ed.seed.species || "oak");
+                    entities.push(seedEnt);
+                    registerEntitySpatial(seedEnt);
+                  }
                 }
               }
 
@@ -10769,16 +10775,16 @@ export function createFruitingProp(interval = 90.0, seedType = "small", species 
         const scanR = 6;
         for (let i = 0; i < entities.length; i++) {
           const e = entities[i];
-          if (!e.destroyed && e.properties?.edible?.foodType === "fruit" && Math.abs(e.x - ent.x) <= scanR && Math.abs(e.y - ent.y) <= scanR) {
+          if (!e.destroyed && (e.properties?.edible?.foodType === "fruit" || e.properties?.resourceType === "seed") && Math.abs(e.x - ent.x) <= scanR && Math.abs(e.y - ent.y) <= scanR) {
             nearbyFruits++;
-            if (nearbyFruits >= 2) break;
+            if (nearbyFruits >= 1) break; // Maximum 1 fruit/seed in 6-tile radius per plant
           }
         }
-        if (nearbyFruits >= 2) return;
+        if (nearbyFruits >= 1) return;
 
-        // Disperse fruit/seeds outwards (wind & wildlife scattering, 3 to 10 tiles away)
+        // Disperse fruit/seeds outwards (wind & wildlife scattering, 4 to 12 tiles away)
         const angle = Math.random() * Math.PI * 2;
-        const dist = 3 + Math.floor(Math.random() * 8); // 3 to 10 tiles
+        const dist = 4 + Math.floor(Math.random() * 9); // 4 to 12 tiles away for better natural spreading
         const fx = Math.max(0, Math.min((world.width || 1024) - 1, Math.round(ent.x + Math.cos(angle) * dist)));
         const fy = Math.max(0, Math.min((world.height || 1024) - 1, Math.round(ent.y + Math.sin(angle) * dist)));
 
@@ -10797,13 +10803,14 @@ export function createFruitingProp(interval = 90.0, seedType = "small", species 
               sourceSpecies: ent.properties.species,
               seed: { type: this.seedType, species: this.species }
             },
-            lifespan: createLifespanProp(120.0) // Decomposes after 2 minutes if left uncollected in the wild
+            lifespan: createLifespanProp(45.0) // Decomposes after 45 seconds if left uncollected in the wild
           },
           fx,
           fy
         );
 
         entities.push(fruit);
+        registerEntitySpatial(fruit);
         ent.properties.life.energy -= 40;
       }
     }
@@ -12058,7 +12065,7 @@ export function createSeedEntity(x, y, seedType = "large", species = "oak") {
       render: { skin: seedSkin, color: seedColor, backcolor: 0x00000000 },
       germination: createSeedGerminationProp(species, 5.0, 0.40),
       edible: { nutrition: 600, foodType: "plant", digestDuration: 20 },
-      lifespan: createLifespanProp(60.0) // Sprouts or decomposes after 1 minute if uncollected
+      lifespan: createLifespanProp(45.0) // Sprouts or decomposes after 45s if uncollected
     },
     x,
     y
