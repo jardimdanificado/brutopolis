@@ -127,69 +127,72 @@ function loadAllAssets() {
 
 export { rawTextures };
 
+const textureLookupCache = new Map();
+
 export function findTexture(path) {
   if (!path) return null;
+  if (textureLookupCache.has(path)) return textureLookupCache.get(path);
   const clean = path.toLowerCase().replace(/\\/g, "/");
   const base = clean.split("/").pop();
 
-  if (rawTextures.has(base)) return rawTextures.get(base);
-  if (rawTextures.has(clean)) return rawTextures.get(clean);
+  if (rawTextures.has(base)) {
+    const res = rawTextures.get(base);
+    textureLookupCache.set(path, res);
+    return res;
+  }
+  if (rawTextures.has(clean)) {
+    const res = rawTextures.get(clean);
+    textureLookupCache.set(path, res);
+    return res;
+  }
 
   const baseNoExt = base.replace(/\.png$/, "");
+  let found = null;
   for (const [k, tex] of rawTextures.entries()) {
-    if (k.includes(baseNoExt)) return tex;
+    if (k.includes(baseNoExt)) {
+      found = tex;
+      break;
+    }
   }
 
-  if (baseNoExt.includes("grass") || baseNoExt.includes("relva") || baseNoExt.includes("grama")) {
-    return rawTextures.get("feature_grass.png");
-  }
-  if (baseNoExt.includes("mountain") || baseNoExt.includes("montanha") || baseNoExt.includes("boulder")) {
-    return rawTextures.get("feature_boulders.png");
-  }
-  if (baseNoExt.includes("sand") || baseNoExt.includes("areia") || baseNoExt.includes("duna")) {
-    return rawTextures.get("feature_pebbles.png");
-  }
-  if (baseNoExt.includes("oak") || baseNoExt.includes("carvalho") || baseNoExt.includes("arvore")) {
-    return rawTextures.get("feature_tree_full.png");
-  }
-  if (baseNoExt.includes("pine") || baseNoExt.includes("pinheiro")) {
-    return rawTextures.get("feature_tree_pine.png");
-  }
-  if (baseNoExt.includes("willow") || baseNoExt.includes("salgueiro")) {
-    return rawTextures.get("feature_tree_bare.png");
-  }
-  if (baseNoExt.includes("flower") || baseNoExt.includes("flor") || baseNoExt.includes("lily")) {
-    return rawTextures.get("feature_flower.png");
-  }
-  if (baseNoExt.includes("cactus") || baseNoExt.includes("cacto") || baseNoExt.includes("shrub")) {
-    return rawTextures.get("item_herb.png");
-  }
-  if (baseNoExt.includes("seaweed") || baseNoExt.includes("alga")) {
-    return rawTextures.get("feature_web.png");
-  }
-  if (baseNoExt.includes("fruit") || baseNoExt.includes("fruta") || baseNoExt.includes("maca")) {
-    return rawTextures.get("item_fruit.png");
-  }
-  if (baseNoExt.includes("nut") || baseNoExt.includes("acorn") || baseNoExt.includes("seed") || baseNoExt.includes("semente")) {
-    return rawTextures.get("item_egg.png");
-  }
-  if (baseNoExt.includes("poop") || baseNoExt.includes("feces") || baseNoExt.includes("dung") || baseNoExt.includes("fezes")) {
-    return rawTextures.get("item_nugget.png");
-  }
-  if (baseNoExt.includes("wood") || baseNoExt.includes("log") || baseNoExt.includes("stick") || baseNoExt.includes("madeira")) {
-    return rawTextures.get("item_pole.png");
-  }
-  if (baseNoExt.includes("stone") || baseNoExt.includes("rock") || baseNoExt.includes("pedra")) {
-    return rawTextures.get("feature_boulders.png");
-  }
-  if (baseNoExt.includes("meat") || baseNoExt.includes("carne")) {
-    return rawTextures.get("item_steak.png");
-  }
-  if (baseNoExt.includes("campfire") || baseNoExt.includes("fogueira") || baseNoExt.includes("fire")) {
-    return rawTextures.get("other_fire.png");
+  if (!found) {
+    if (baseNoExt.includes("grass") || baseNoExt.includes("relva") || baseNoExt.includes("grama")) {
+      found = rawTextures.get("feature_grass.png");
+    } else if (baseNoExt.includes("mountain") || baseNoExt.includes("montanha") || baseNoExt.includes("boulder")) {
+      found = rawTextures.get("feature_boulders.png");
+    } else if (baseNoExt.includes("sand") || baseNoExt.includes("areia") || baseNoExt.includes("duna")) {
+      found = rawTextures.get("feature_pebbles.png");
+    } else if (baseNoExt.includes("oak") || baseNoExt.includes("carvalho") || baseNoExt.includes("arvore")) {
+      found = rawTextures.get("feature_tree_full.png");
+    } else if (baseNoExt.includes("pine") || baseNoExt.includes("pinheiro")) {
+      found = rawTextures.get("feature_tree_pine.png");
+    } else if (baseNoExt.includes("willow") || baseNoExt.includes("salgueiro")) {
+      found = rawTextures.get("feature_tree_bare.png");
+    } else if (baseNoExt.includes("flower") || baseNoExt.includes("flor") || baseNoExt.includes("lily")) {
+      found = rawTextures.get("feature_flower.png");
+    } else if (baseNoExt.includes("cactus") || baseNoExt.includes("cacto") || baseNoExt.includes("shrub")) {
+      found = rawTextures.get("item_herb.png");
+    } else if (baseNoExt.includes("seaweed") || baseNoExt.includes("alga")) {
+      found = rawTextures.get("feature_web.png");
+    } else if (baseNoExt.includes("fruit") || baseNoExt.includes("fruta") || baseNoExt.includes("maca")) {
+      found = rawTextures.get("item_fruit.png");
+    } else if (baseNoExt.includes("nut") || baseNoExt.includes("acorn") || baseNoExt.includes("seed") || baseNoExt.includes("semente")) {
+      found = rawTextures.get("item_egg.png");
+    } else if (baseNoExt.includes("poop") || baseNoExt.includes("feces") || baseNoExt.includes("dung") || baseNoExt.includes("fezes")) {
+      found = rawTextures.get("item_nugget.png");
+    } else if (baseNoExt.includes("wood") || baseNoExt.includes("log") || baseNoExt.includes("stick") || baseNoExt.includes("madeira")) {
+      found = rawTextures.get("item_pole.png");
+    } else if (baseNoExt.includes("stone") || baseNoExt.includes("rock") || baseNoExt.includes("pedra")) {
+      found = rawTextures.get("feature_boulders.png");
+    } else if (baseNoExt.includes("meat") || baseNoExt.includes("carne")) {
+      found = rawTextures.get("item_steak.png");
+    } else if (baseNoExt.includes("campfire") || baseNoExt.includes("fogueira") || baseNoExt.includes("fire")) {
+      found = rawTextures.get("other_fire.png");
+    }
   }
 
-  return null;
+  textureLookupCache.set(path, found);
+  return found;
 }
 
 // ---------------------------------------------------------------------------

@@ -127,6 +127,7 @@ let genWidth = 256;
 let genHeight = 256;
 let genZoneSize = 8;
 let lastSyncedEventTick = 0;
+let lastSyncedEventIndex = 0;
 let groupsDirty = false;
 let isTitleWorld = false;
 
@@ -295,6 +296,7 @@ function generateConfiguredWorld(config) {
 
   resetEngineTicks();
   resetWorldEvents();
+  lastSyncedEventIndex = 0;
   world.refresh();
   entities = [];
 
@@ -488,6 +490,7 @@ function generateConfiguredWorld(config) {
 
   rebuildSpatialGrid(entities, getZoneSize());
   lastSyncedEventTick = currentTick;
+  lastSyncedEventIndex = allEvents.length;
   groupsDirty = true;
 
   postFullWorldState(startX, startY, firstLeaderId, isTitleScreen);
@@ -846,7 +849,7 @@ let lastSyncTime = 0;
 let lastPropsSyncTime = 0;
 function postSimSync(force = false) {
   const now = performance.now();
-  if (!force && now - lastSyncTime < 40) return; // Throttle UI sync messages to max 25 FPS to keep main thread light
+  if (!force && now - lastSyncTime < 33) return; // Responsive ~30 FPS sync to main thread
   lastSyncTime = now;
 
   const syncProps = force || (now - lastPropsSyncTime > 1000);
@@ -855,18 +858,17 @@ function postSimSync(force = false) {
   }
 
   // Real-time incremental tile updates (e.g. roads built by creatures or terraforming)
+  let tileUpdates = null;
   if (pendingModifiedTiles.length > 0) {
-    self.postMessage({
-      type: "TILES_UPDATED",
-      tiles: pendingModifiedTiles
-    });
-    pendingModifiedTiles = [];
+    tileUpdates = pendingModifiedTiles.slice();
+    pendingModifiedTiles.length = 0;
   }
 
   const activeEnts = globalThis.cachedActiveEnts = globalThis.cachedActiveEnts || [];
+  const entCountMax = entities.length;
   let entCount = 0;
   
-  for (let i = 0; i < entities.length; i++) {
+  for (let i = 0; i < entCountMax; i++) {
     const e = entities[i];
     if (!e || e.destroyed) continue;
     
@@ -898,8 +900,10 @@ function postSimSync(force = false) {
   const entsToSync = activeEnts.slice(0, entCount);
 
   let newEvents = null;
-  const unposted = allEvents.filter(ev => ev.tick >= lastSyncedEventTick);
-  if (unposted.length > 0) {
+  if (lastSyncedEventIndex < allEvents.length) {
+    const unposted = allEvents.slice(lastSyncedEventIndex);
+    lastSyncedEventIndex = allEvents.length;
+    lastSyncedEventTick = currentTick;
     newEvents = unposted.map(ev => ({
       id: ev.id,
       opcode: ev.opcode,
@@ -913,11 +917,11 @@ function postSimSync(force = false) {
       description: ev.description,
       metadata: sanitizeForTransfer(ev.metadata)
     }));
-    lastSyncedEventTick = currentTick;
   }
 
   self.postMessage({
     type: "SIM_UPDATE",
+    tps: measuredWorkerTps,
     clock: {
       day: world.clock.day,
       hour: world.clock.hour,
@@ -1021,59 +1025,76 @@ function applyEditorAction(data) {
   }
 }
 
-let lastTickTime = performance.now();
+const TARGET_TPS = 60;
+const BASE_TICK_DT = 1.0 / TARGET_TPS; // 0.01667s per tick
+let simTimeAccumulator = 0;
+let lastLoopTime = performance.now();
+let simTicksThisSecond = 0;
+let lastTpsCalcTime = performance.now();
+let measuredWorkerTps = 60;
 
 function simulationLoop() {
   const now = performance.now();
-  const realDt = Math.min((now - lastTickTime) * 0.001, 0.1);
-  lastTickTime = now;
+  const dt = Math.min((now - lastLoopTime) * 0.001, 0.1);
+  lastLoopTime = now;
+
+  // Real TPS calculation over the last 500ms
+  const tpsElapsed = now - lastTpsCalcTime;
+  if (tpsElapsed >= 500) {
+    measuredWorkerTps = isPaused ? 0 : Math.round((simTicksThisSecond * 1000) / tpsElapsed);
+    simTicksThisSecond = 0;
+    lastTpsCalcTime = now;
+  }
 
   if (!isPaused && world) {
     const speedVal = typeof simSpeed === "number" ? Math.max(0.25, simSpeed) : 1.0;
 
     if (speedVal > 4.0) {
       // --- PREDICTIVE MACRO-SIMULATION (Speeds > 4x: e.g. 8x, 16x, 32x) ---
-      // Instead of running 32 distinct sub-tick loops (which crushes weak CPUs),
-      // we execute a single predictive macro-pass with aggregated delta-time.
-      const effectiveDt = realDt * speedVal;
+      // Single predictive macro-pass with aggregated delta-time
+      const effectiveDt = dt * speedVal;
       world.groups = getAllGroups();
 
       // Fast-forward world clock in a single analytical step
       const clockDt = isTitleWorld ? effectiveDt * 8.0 : effectiveDt;
       world.clock.tick(clockDt);
 
-      // Increment tick counter proportionally without spinning iterations
-      const virtualTicks = Math.max(1, Math.round(speedVal));
+      const virtualTicks = Math.max(1, Math.round(speedVal * (dt / BASE_TICK_DT)));
       for (let i = 0; i < virtualTicks; i++) {
         incrementEngineTick();
       }
+      simTicksThisSecond += virtualTicks;
 
       // Single-pass predictive physics, metabolism & behavior step
       tickEntities(entities, effectiveDt, world);
-    } else if (speedVal > 1.0) {
-      // Precise micro-ticks for low fast-forward (2x to 4x)
-      const subTicks = Math.round(speedVal);
-      const subDt = (realDt * speedVal) / subTicks;
-      for (let s = 0; s < subTicks; s++) {
-        world.groups = getAllGroups();
-        world.clock.tick(subDt);
-        incrementEngineTick();
-        tickEntities(entities, subDt, world);
-      }
     } else {
-      // Standard 1x speed
-      world.groups = getAllGroups();
-      const clockDt = isTitleWorld ? realDt * 8.0 : realDt;
-      world.clock.tick(clockDt);
-      incrementEngineTick();
-      tickEntities(entities, realDt, world);
+      // Steady fixed-timestep simulation accumulator: 60 TPS (1x), 120 TPS (2x), 240 TPS (4x)
+      simTimeAccumulator += dt * speedVal;
+      const maxSubSteps = Math.min(16, Math.ceil(speedVal * 4));
+      let stepsRun = 0;
+
+      while (simTimeAccumulator >= BASE_TICK_DT && stepsRun < maxSubSteps) {
+        world.groups = getAllGroups();
+        const clockDt = isTitleWorld ? BASE_TICK_DT * 8.0 : BASE_TICK_DT;
+        world.clock.tick(clockDt);
+        incrementEngineTick();
+        tickEntities(entities, BASE_TICK_DT, world);
+        simTimeAccumulator -= BASE_TICK_DT;
+        stepsRun++;
+        simTicksThisSecond++;
+      }
+
+      // Discard excess accumulator on large lag spike to avoid death spiral
+      if (simTimeAccumulator > BASE_TICK_DT * 2) {
+        simTimeAccumulator = 0;
+      }
     }
 
     postSimSync(false);
   }
 }
 
-setInterval(simulationLoop, 33);
+setInterval(simulationLoop, 16);
 
 self.onmessage = (e) => {
   const data = e.data;
@@ -1087,6 +1108,11 @@ self.onmessage = (e) => {
 
     case "SET_PAUSED":
       isPaused = !!data.isPaused;
+      if (isPaused) {
+        measuredWorkerTps = 0;
+        simTicksThisSecond = 0;
+        postSimSync(true);
+      }
       break;
 
     case "SET_SPEED":

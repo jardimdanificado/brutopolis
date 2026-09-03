@@ -1831,13 +1831,14 @@ export function createBrainProp(maxPath = 16, personality = { bravery: 0.7, curi
 
       // 5. Interpersonal Relationship Milestones (Friendship >= 65 or Hatred <= -65)
       if (!this.affinityMilestones) this.affinityMilestones = {};
-      for (const [targetIdStr, affVal] of Object.entries(this.affinities)) {
-        const tId = parseInt(targetIdStr, 10);
+      for (const targetIdStr in this.affinities) {
+        const affVal = this.affinities[targetIdStr];
+        const tId = Number(targetIdStr);
         const prevMilestone = this.affinityMilestones[tId] || "neutral";
         if (affVal >= 65 && prevMilestone !== "friend") {
           this.affinityMilestones[tId] = "friend";
-          const friend = entities?.find(e => e.id === tId && !e.destroyed);
-          if (friend && friend.properties.brain) {
+          const friend = getEntityById(tId);
+          if (friend && !friend.destroyed && friend.properties?.brain) {
             const friendName = friend.properties.name || `Entity #${tId}`;
             recordWorldEvent({
               type: "RELATION",
@@ -1850,8 +1851,8 @@ export function createBrainProp(maxPath = 16, personality = { bravery: 0.7, curi
           }
         } else if (affVal <= -65 && prevMilestone !== "enemy") {
           this.affinityMilestones[tId] = "enemy";
-          const enemy = entities?.find(e => e.id === tId && !e.destroyed);
-          if (enemy && enemy.properties.brain) {
+          const enemy = getEntityById(tId);
+          if (enemy && !enemy.destroyed && enemy.properties?.brain) {
             const enemyName = enemy.properties.name || `Entity #${tId}`;
             recordWorldEvent({
               type: "RELATION",
@@ -4417,45 +4418,87 @@ export function getPrefabricatedRoadPath(fromX, fromY, toX, toY, group) {
 
 // ---- Per-tick cached lookups to avoid O(N) entity scans in hot loops ----
 
-const _warehouseCache = new Map(); // groupId -> { tick, entity }
-const _ownHouseCache = new Map();  // entityId -> { tick, entity }
+let _warehouseIndexTick = -1;
+const _groupWarehouseMap = new Map(); // groupId -> warehouseEntity
+let _houseIndexTick = -1;
+const _houseOwnerIndex = new Map();   // ownerId/partnerId -> houseEntity
+let _groupCompletedHousesTick = -1;
+const _groupCompletedHousesCount = new Map(); // groupId -> count
+
+function rebuildWarehouseIndex() {
+  _groupWarehouseMap.clear();
+  for (const e of entityRegistry.values()) {
+    if (!e.destroyed && e.properties.warehouse?.isCompleted) {
+      if (e.properties.warehouse.groupId) {
+        _groupWarehouseMap.set(e.properties.warehouse.groupId, e);
+      }
+    }
+  }
+  _warehouseIndexTick = currentTick;
+}
+
+function rebuildHouseOwnerIndex() {
+  _houseOwnerIndex.clear();
+  for (const e of entityRegistry.values()) {
+    if (!e.destroyed && e.properties.house) {
+      if (e.properties.house.ownerId) _houseOwnerIndex.set(e.properties.house.ownerId, e);
+      if (e.properties.house.partnerId) _houseOwnerIndex.set(e.properties.house.partnerId, e);
+    }
+  }
+  _houseIndexTick = currentTick;
+}
 
 /**
- * Finds the completed warehouse for a group with per-tick caching (O(1) after first call per tick).
+ * Finds the completed warehouse for a group with single-pass per-tick index caching.
  */
 export function getGroupWarehouse(group, entities) {
   if (!group) return null;
-  const gid = group.id;
-  const cached = _warehouseCache.get(gid);
-  if (cached && cached.tick === currentTick && cached.entity && !cached.entity.destroyed) {
-    return cached.entity;
+  if (_warehouseIndexTick !== currentTick) {
+    rebuildWarehouseIndex();
   }
-  for (const e of entityRegistry.values()) {
-    if (!e.destroyed && e.properties.warehouse?.isCompleted && (e.properties.warehouse.groupId === gid || isTileInClaimedZones(e.x, e.y, group.claimedZones))) {
-      _warehouseCache.set(gid, { tick: currentTick, entity: e });
-      return e;
-    }
-  }
-  _warehouseCache.set(gid, { tick: currentTick, entity: null });
+  const wh = _groupWarehouseMap.get(group.id);
+  if (wh && !wh.destroyed) return wh;
   return null;
 }
 
 /**
- * Finds the own house for an entity with per-tick caching (O(1) after first call per tick).
+ * Finds the own house for an entity with single-pass per-tick index caching (O(1)).
  */
 export function getOwnHouse(entId, entities) {
-  const cached = _ownHouseCache.get(entId);
-  if (cached && cached.tick === currentTick) {
-    if (!cached.entity || !cached.entity.destroyed) return cached.entity;
+  if (_houseIndexTick !== currentTick) {
+    rebuildHouseOwnerIndex();
   }
-  for (const e of entityRegistry.values()) {
-    if (!e.destroyed && e.properties.house && (e.properties.house.ownerId === entId || e.properties.house.partnerId === entId)) {
-      _ownHouseCache.set(entId, { tick: currentTick, entity: e });
-      return e;
+  const house = _houseOwnerIndex.get(entId);
+  return (house && !house.destroyed) ? house : null;
+}
+
+/**
+ * Returns number of completed houses owned by group members with per-tick caching.
+ */
+export function getGroupCompletedHouseCount(group) {
+  if (!group) return 0;
+  if (_groupCompletedHousesTick !== currentTick) {
+    _groupCompletedHousesCount.clear();
+    _groupCompletedHousesTick = currentTick;
+  }
+  if (_groupCompletedHousesCount.has(group.id)) {
+    return _groupCompletedHousesCount.get(group.id);
+  }
+  if (_houseIndexTick !== currentTick) {
+    rebuildHouseOwnerIndex();
+  }
+  const memberSet = new Set(group.members || []);
+  let count = 0;
+  const countedHouses = new Set();
+  for (const mid of memberSet) {
+    const h = _houseOwnerIndex.get(mid);
+    if (h && !h.destroyed && h.properties.house?.isCompleted && !countedHouses.has(h.id)) {
+      countedHouses.add(h.id);
+      count++;
     }
   }
-  _ownHouseCache.set(entId, { tick: currentTick, entity: null });
-  return null;
+  _groupCompletedHousesCount.set(group.id, count);
+  return count;
 }
 
 /**
@@ -8102,7 +8145,8 @@ export function findPathAStarLocal(startX, startY, targetX, targetY, world, ent,
       }
 
       // Check structure collision (buildings, houses, warehouses, walls & doors)
-      if (globalWallCoords.has(`${nx},${ny}`) || isBuildingObstacleAt(nx, ny, ent)) {
+      const nKey = getTileKey(nx, ny);
+      if (globalWallCoords.has(nKey) || globalWallCoords.has(`${nx},${ny}`) || isBuildingObstacleAt(nx, ny, ent)) {
         const occ = getEntityAtTile(nx, ny);
         if (occ && occ.properties) {
           if (occ.properties.door) {
@@ -8571,7 +8615,7 @@ export function createLocomotionProp() {
         }
 
         if (nearestHostile) {
-          const ownHouse = entities?.find(e => !e.destroyed && e.properties.house?.isCompleted && (e.properties.house.ownerId === ent.id || e.properties.house.partnerId === ent.id));
+          const ownHouse = getOwnHouse(ent.id, entities);
           if (ownHouse) {
             chosenDx = Math.sign(ownHouse.x - ent.x);
             chosenDy = Math.sign(ownHouse.y - ent.y);
@@ -8931,7 +8975,7 @@ export function createLocomotionProp() {
             return m && !m.destroyed;
           });
 
-          const completedHousesCount = entities.filter(e => !e.destroyed && e.properties.house?.isCompleted && (group.members?.includes(e.properties.house.ownerId) || group.members?.includes(e.properties.house.partnerId))).length;
+          const completedHousesCount = getGroupCompletedHouseCount(group);
           const allMembersHoused = completedHousesCount >= Math.max(1, livingClanMembers.length);
 
           // Priority 2.0: Own House (Top Personal Priority) -> Other Houses -> Settlement Infrastructure
@@ -9118,7 +9162,8 @@ export function createLocomotionProp() {
             for (let i = 0; i < blueprint.length; i++) {
               const bp = blueprint[i];
               if (bp.type === "wall") {
-                const wallAtTile = globalWallCoords.has(`${bp.x},${bp.y}`);
+                const bpKey = getTileKey(bp.x, bp.y);
+                const wallAtTile = globalWallCoords.has(bpKey) || globalWallCoords.has(`${bp.x},${bp.y}`);
                 if (!wallAtTile) {
                   const dist = Math.abs(bp.x - ent.x) + Math.abs(bp.y - ent.y);
                   if (dist < minBuildDist) {

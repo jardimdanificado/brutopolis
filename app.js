@@ -2,7 +2,7 @@
 // Brutopolis
 // =============================================================================
 
-const BrutopolisVersion = "0.123.7";
+const BrutopolisVersion = "0.123.8";
 const BrutopolisVersionName = "Who may ascend the mountain of the LORD? Who may stand in his holy place?";
 
 // WASM replaced by Pure JS Renderer
@@ -151,7 +151,7 @@ let simWorker = null;
 
 function initSimWorker() {
   if (simWorker) return;
-  simWorker = new Worker("./js/sim_worker.js", { type: "module" });
+  simWorker = new Worker("./js/sim_worker.js?v=" + Date.now(), { type: "module" });
 
   simWorker.onmessage = (e) => {
     const data = e.data;
@@ -239,6 +239,9 @@ function initSimWorker() {
 
       case "SIM_UPDATE": {
         tpsCounter++;
+        if (typeof data.tps === "number") {
+          measuredTps = data.tps;
+        }
         if (data.tick !== undefined) {
           setEngineTick(data.tick);
           if (rctRenderer) rctRenderer.simTick = data.tick;
@@ -276,6 +279,7 @@ function initSimWorker() {
 }
 
 const _receivedIdsCache = new Set();
+const _localEntitiesBuffer = [];
 
 function updateLocalEntities(entitiesData, registryData) {
   if (Array.isArray(registryData)) {
@@ -303,7 +307,7 @@ function updateLocalEntities(entitiesData, registryData) {
   }
 
   if (Array.isArray(entitiesData)) {
-    const curEntities = [];
+    let writeIdx = 0;
     const zSize = getZoneSize();
     _receivedIdsCache.clear();
     const receivedIds = _receivedIdsCache;
@@ -348,9 +352,10 @@ function updateLocalEntities(entitiesData, registryData) {
       ent.targetY = entData.y;
 
       if (!ent.destroyed) {
-        curEntities.push(ent);
+        _localEntitiesBuffer[writeIdx++] = ent;
       }
     }
+    _localEntitiesBuffer.length = writeIdx;
 
     // Clean up ghosts that the worker stopped sending (because they died)
     if (entities && entities.length > 0) {
@@ -363,7 +368,7 @@ function updateLocalEntities(entitiesData, registryData) {
       }
     }
 
-    entities = curEntities;
+    entities = _localEntitiesBuffer;
   }
 }
 
@@ -1783,6 +1788,7 @@ function centerCamera() {
 function togglePause() {
   if (!renderer || !world) return;
   isPaused = !isPaused;
+  if (isPaused) measuredTps = 0;
   renderer.setPaused(isPaused ? 1 : 0);
   if (simWorker) simWorker.postMessage({ type: "SET_PAUSED", isPaused });
 }
@@ -7199,7 +7205,9 @@ function frame(time) {
     }
 
     if (time - lastTpsUpdate >= 1000) {
-      measuredTps = Math.round(tpsCounter * (1000 / Math.max(1, time - lastTpsUpdate)));
+      if (!simWorker) {
+        measuredTps = Math.round(tpsCounter * (1000 / Math.max(1, time - lastTpsUpdate)));
+      }
       tpsCounter = 0;
       lastTpsUpdate = time;
     }

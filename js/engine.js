@@ -186,7 +186,7 @@ export function registerEntitySpatial(entity, zoneSize = activeZoneSize) {
       tileBucket.add(entity);
 
       if (!isPassable) {
-        globalWallCoords.add(`${tx},${ty}`);
+        globalWallCoords.add(tk);
       }
     }
   }
@@ -222,7 +222,7 @@ export function unregisterEntitySpatial(entity, zoneSize = activeZoneSize) {
         if (tileBucket.size === 0) tileEntityMap.delete(tk);
       }
 
-      globalWallCoords.delete(`${tx},${ty}`);
+      globalWallCoords.delete(tk);
     }
   }
 
@@ -1197,10 +1197,15 @@ export function tickEntities(entities, dt, world) {
 }
 
 export function resolveWallSkin(x, y, wallCoords = globalWallCoords) {
-  const hasN = wallCoords.has(`${x},${y - 1}`);
-  const hasS = wallCoords.has(`${x},${y + 1}`);
-  const hasE = wallCoords.has(`${x + 1},${y}`);
-  const hasW = wallCoords.has(`${x - 1},${y}`);
+  const kN = getTileKey(x, y - 1);
+  const kS = getTileKey(x, y + 1);
+  const kE = getTileKey(x + 1, y);
+  const kW = getTileKey(x - 1, y);
+
+  const hasN = wallCoords.has(kN) || wallCoords.has(`${x},${y - 1}`);
+  const hasS = wallCoords.has(kS) || wallCoords.has(`${x},${y + 1}`);
+  const hasE = wallCoords.has(kE) || wallCoords.has(`${x + 1},${y}`);
+  const hasW = wallCoords.has(kW) || wallCoords.has(`${x - 1},${y}`);
 
   // 4 directions (crossroads)
   if (hasN && hasE && hasS && hasW) return "Wall_NESW.png";

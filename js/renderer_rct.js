@@ -22,7 +22,7 @@ import {
   TILE_ROAD_HILL,
   TILE_ROAD_HILL_STONE
 } from "./world_gen.js";
-import { globalWallCoords, resolveWallSkin, getEntitiesInViewport, getEntityById } from "./engine.js";
+import { globalWallCoords, resolveWallSkin, getEntitiesInViewport, getEntityById, getTileKey } from "./engine.js";
 import { getClanBlueprintTiles, currentZoneSize } from "./properties.js";
 
 // Cache for raw asset images
@@ -76,6 +76,11 @@ const EMOTE_SKINS = [
   "Emote_Question.png",   // 11
   "Emote_Heart.png",      // 12
   "Emote_Exclamation.png" // 13
+];
+
+const STATIC_FOLIAGE_KEYS = [
+  'oakLeaves', 'pineLeaves', 'cherryLeaves', 'birchLeaves',
+  'mapleLeaves', 'cactus', 'bushLeaves', 'bushBerries', 'roseFlowers', 'grassFoliage'
 ];
 
 function getCreatureEmoteSkin(e) {
@@ -4085,6 +4090,11 @@ export class RCT3DRenderer {
     this._scaleMatrix = new THREE.Matrix4();
     this._platMat = new THREE.Matrix4();
     this.tempColor1 = new THREE.Color();
+    this._warehouseCounts = [0, 0];
+    this._slaughterhouseCounts = [0, 0];
+    this._kitchenCounts = [0, 0];
+    this._houseVariantCounts = new Array(30).fill(0);
+    this._leaderVariantCounts = new Array(7).fill(0);
 
     // 3D Procedural Sky Clouds (High altitude layer)
     const cloudGeo = new THREE.PlaneGeometry(1600, 1600, 16, 16);
@@ -4726,14 +4736,14 @@ export class RCT3DRenderer {
       return 0.0;
     }
 
-    const validHeights = [];
-    if (t00 !== TILE_WATER && t00 !== TILE_VOID) validHeights.push(this.getTileBaseHeight(t00));
-    if (t10 !== TILE_WATER && t10 !== TILE_VOID) validHeights.push(this.getTileBaseHeight(t10));
-    if (t01 !== TILE_WATER && t01 !== TILE_VOID) validHeights.push(this.getTileBaseHeight(t01));
-    if (t11 !== TILE_WATER && t11 !== TILE_VOID) validHeights.push(this.getTileBaseHeight(t11));
+    let sum = 0.0;
+    let count = 0;
+    if (t00 !== TILE_WATER && t00 !== TILE_VOID) { sum += this.getTileBaseHeight(t00); count++; }
+    if (t10 !== TILE_WATER && t10 !== TILE_VOID) { sum += this.getTileBaseHeight(t10); count++; }
+    if (t01 !== TILE_WATER && t01 !== TILE_VOID) { sum += this.getTileBaseHeight(t01); count++; }
+    if (t11 !== TILE_WATER && t11 !== TILE_VOID) { sum += this.getTileBaseHeight(t11); count++; }
 
-    if (validHeights.length === 0) return 0.0;
-    return (validHeights.reduce((a, b) => a + b, 0)) / validHeights.length;
+    return count > 0 ? (sum / count) : 0.0;
   }
 
   // ---------------------------------------------------------------------------
@@ -4746,13 +4756,11 @@ export class RCT3DRenderer {
     const t01 = this.getTileTypeAt(map, vx - 1, vy);
     const t11 = this.getTileTypeAt(map, vx, vy);
 
-    const isHighElev = (t) => (t === TILE_MOUNTAIN || t === TILE_PEAK || t === TILE_STONE || t === TILE_HILL);
-
     let higherNeighbors = 0;
-    if (isHighElev(t00)) higherNeighbors++;
-    if (isHighElev(t10)) higherNeighbors++;
-    if (isHighElev(t01)) higherNeighbors++;
-    if (isHighElev(t11)) higherNeighbors++;
+    if (t00 === TILE_MOUNTAIN || t00 === TILE_PEAK || t00 === TILE_STONE || t00 === TILE_HILL) higherNeighbors++;
+    if (t10 === TILE_MOUNTAIN || t10 === TILE_PEAK || t10 === TILE_STONE || t10 === TILE_HILL) higherNeighbors++;
+    if (t01 === TILE_MOUNTAIN || t01 === TILE_PEAK || t01 === TILE_STONE || t01 === TILE_HILL) higherNeighbors++;
+    if (t11 === TILE_MOUNTAIN || t11 === TILE_PEAK || t11 === TILE_STONE || t11 === TILE_HILL) higherNeighbors++;
 
     // Inward crevice / base of cliff receives natural ambient occlusion shading
     if (higherNeighbors >= 3) return 0.70;
@@ -6031,13 +6039,9 @@ export class RCT3DRenderer {
 
       // Update GPU Wind Vertex Sway on all tree species, cacti, bushes, roses and grass
       const currentTickVal = this.simTick || 0;
-      const foliageKeys = [
-        'oakLeaves', 'pineLeaves', 'cherryLeaves', 'birchLeaves',
-        'mapleLeaves', 'cactus', 'bushLeaves', 'bushBerries', 'roseFlowers', 'grassFoliage'
-      ];
       for (const dict of [this.materials, this.materialsIso, this.materialsPerspective]) {
         if (!dict) continue;
-        for (const k of foliageKeys) {
+        for (const k of STATIC_FOLIAGE_KEYS) {
           if (dict[k]?.userData?.foliageShader?.uniforms?.uSimTick) {
             dict[k].userData.foliageShader.uniforms.uSimTick.value = currentTickVal;
           }
@@ -6133,11 +6137,16 @@ export class RCT3DRenderer {
     let gateClosedCount = 0;
     let gateOpenCount = 0;
     let gateStage1Count = 0;
-    const warehouseCounts = [0, 0];
-    const slaughterhouseCounts = [0, 0];
-    const kitchenCounts = [0, 0];
-    const houseVariantCounts = new Array(this.instHouseWallVariants ? this.instHouseWallVariants.length : 30).fill(0);
-    const leaderVariantCounts = new Array(7).fill(0);
+    const warehouseCounts = this._warehouseCounts;
+    warehouseCounts[0] = 0; warehouseCounts[1] = 0;
+    const slaughterhouseCounts = this._slaughterhouseCounts;
+    slaughterhouseCounts[0] = 0; slaughterhouseCounts[1] = 0;
+    const kitchenCounts = this._kitchenCounts;
+    kitchenCounts[0] = 0; kitchenCounts[1] = 0;
+    const houseVariantCounts = this._houseVariantCounts;
+    houseVariantCounts.fill(0);
+    const leaderVariantCounts = this._leaderVariantCounts;
+    leaderVariantCounts.fill(0);
     let warehouseCount = 0;
     let waterWellCount = 0;
     let houseCount = 0;
@@ -6524,10 +6533,14 @@ export class RCT3DRenderer {
         const ty = Math.floor(e.y);
 
         let gateRotY = 0;
-        const hasLeftWall = globalWallCoords?.has?.(`${tx - 1},${ty}`);
-        const hasRightWall = globalWallCoords?.has?.(`${tx + 1},${ty}`);
-        const hasTopWall = globalWallCoords?.has?.(`${tx},${ty - 1}`);
-        const hasBottomWall = globalWallCoords?.has?.(`${tx},${ty + 1}`);
+        const kLeft = getTileKey(tx - 1, ty);
+        const kRight = getTileKey(tx + 1, ty);
+        const kTop = getTileKey(tx, ty - 1);
+        const kBottom = getTileKey(tx, ty + 1);
+        const hasLeftWall = globalWallCoords?.has?.(kLeft) || globalWallCoords?.has?.(`${tx - 1},${ty}`);
+        const hasRightWall = globalWallCoords?.has?.(kRight) || globalWallCoords?.has?.(`${tx + 1},${ty}`);
+        const hasTopWall = globalWallCoords?.has?.(kTop) || globalWallCoords?.has?.(`${tx},${ty - 1}`);
+        const hasBottomWall = globalWallCoords?.has?.(kBottom) || globalWallCoords?.has?.(`${tx},${ty + 1}`);
 
         if ((hasTopWall || hasBottomWall) && !(hasLeftWall || hasRightWall)) {
           gateRotY = Math.PI / 2;
