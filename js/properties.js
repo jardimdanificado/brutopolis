@@ -10764,19 +10764,26 @@ export function createFruitingProp(interval = 90.0, seedType = "small", species 
       if (this.timer >= this.interval) {
         this.timer = 0;
 
-        // Density check: strict limit of 1 unpicked fruit per tree area to prevent item clutter
+        // Density check: limit unpicked fruit within 6 tiles to prevent item clutter
         let nearbyFruits = 0;
+        const scanR = 6;
         for (let i = 0; i < entities.length; i++) {
           const e = entities[i];
-          if (!e.destroyed && e.properties?.edible?.foodType === "fruit" && Math.abs(e.x - ent.x) <= 3 && Math.abs(e.y - ent.y) <= 3) {
+          if (!e.destroyed && e.properties?.edible?.foodType === "fruit" && Math.abs(e.x - ent.x) <= scanR && Math.abs(e.y - ent.y) <= scanR) {
             nearbyFruits++;
-            if (nearbyFruits >= 1) break;
+            if (nearbyFruits >= 2) break;
           }
         }
-        if (nearbyFruits >= 1) return;
+        if (nearbyFruits >= 2) return;
 
-        const fx = Math.max(0, Math.min(world.width - 1, ent.x + (Math.floor(Math.random() * 3) - 1)));
-        const fy = Math.max(0, Math.min(world.height - 1, ent.y + (Math.floor(Math.random() * 3) - 1)));
+        // Disperse fruit/seeds outwards (wind & wildlife scattering, 3 to 10 tiles away)
+        const angle = Math.random() * Math.PI * 2;
+        const dist = 3 + Math.floor(Math.random() * 8); // 3 to 10 tiles
+        const fx = Math.max(0, Math.min((world.width || 1024) - 1, Math.round(ent.x + Math.cos(angle) * dist)));
+        const fy = Math.max(0, Math.min((world.height || 1024) - 1, Math.round(ent.y + Math.sin(angle) * dist)));
+
+        const tVal = world.getTile ? world.getTile(fx, fy) : 0;
+        if (tVal === 2 || tVal === 5 || isRoadTile(fx, fy)) return; // Don't drop on water, void or road
 
         const fruit = createEntity(
           {
@@ -11605,7 +11612,7 @@ export function createCentaur(x, y, opts = {}) {
 /**
  * Seed Germination (Slow natural germination with spatial spacing constraints)
  */
-export function createSeedGerminationProp(species = "oak", checkInterval = 2.0, sproutChance = 0.55) {
+export function createSeedGerminationProp(species = "oak", checkInterval = 8.0, sproutChance = 0.25) {
   return {
     timer: 0,
     species,
@@ -11618,14 +11625,18 @@ export function createSeedGerminationProp(species = "oak", checkInterval = 2.0, 
       if (this.timer >= this.checkInterval) {
         this.timer = 0;
 
-        // Density & Spacing Clearance: Allow plant growth if no tree on exact tile
-        for (let i = 0; i < entities.length; i++) {
-          const e = entities[i];
-          if (!e.destroyed && e.id !== ent.id && (e.properties?.photosynthesis || e.properties?.deep_root || e.properties?.species === "oak" || e.properties?.species === "willow" || e.properties?.species === "cactus" || e.properties?.species === "pine" || e.properties?.species === "berry" || e.properties?.species === "lichen")) {
-            if (e.x === ent.x && e.y === ent.y) {
-              return; // Exact tile occupied
-            }
-          }
+        // Density & Spacing Clearance: require minimum 4 tiles clearance from other trees
+        const hasTreeNearby = hasEntityInRadius(ent.x, ent.y, 4, e =>
+          !e.destroyed && e.id !== ent.id && (
+            e.properties?.photosynthesis || e.properties?.deep_root || e.properties?.tree ||
+            e.properties?.species === "oak" || e.properties?.species === "willow" ||
+            e.properties?.species === "pine" || e.properties?.species === "cherry_blossom" ||
+            e.properties?.species === "birch" || e.properties?.species === "maple" ||
+            e.properties?.species === "cactus"
+          )
+        );
+        if (hasTreeNearby) {
+          return; // Suppress clumping: another tree is within 4 tiles
         }
 
         const tile = world.getTile(ent.x, ent.y);
@@ -11812,7 +11823,7 @@ export function createOakTree(x, y) {
       bladder: createBladderProp(6000, 6000),
       deep_root: createDeepRootProp(20.0, 12.0),
       photosynthesis: createPhotosynthesisProp(0.3, 35.0),
-      fruiting: createFruitingProp(35.0, "large", "oak"),
+      fruiting: createFruitingProp(260.0, "large", "oak"),
       terrain_pref: createTerrainPreferenceProp([0], "Fertile Land"),
       wood: { nutrition: 2000, foodType: "plant" }
     },
@@ -11830,7 +11841,7 @@ export function createWillowTree(x, y) {
       life: createLifeProp(9000, 9000, 0.08),
       bladder: createBladderProp(4000, 4000),
       photosynthesis: createPhotosynthesisProp(0.3, 30.0),
-      fruiting: createFruitingProp(30.0, "small", "willow"),
+      fruiting: createFruitingProp(220.0, "small", "willow"),
       terrain_pref: createTerrainPreferenceProp([0, 2], "Riverbank / Moist Soil"),
       wood: { nutrition: 1500, foodType: "plant" }
     },
@@ -11849,7 +11860,7 @@ export function createPineTree(x, y) {
       bladder: createBladderProp(5000, 5000),
       deep_root: createDeepRootProp(18.0, 14.0),
       photosynthesis: createPhotosynthesisProp(0.3, 32.0),
-      fruiting: createFruitingProp(32.0, "large", "pine"),
+      fruiting: createFruitingProp(240.0, "large", "pine"),
       terrain_pref: createTerrainPreferenceProp([0, 1], "Soil and Mountain"),
       wood: { nutrition: 1800, foodType: "plant" }
     },
@@ -11868,7 +11879,7 @@ export function createCherryBlossomTree(x, y) {
       bladder: createBladderProp(5500, 5500),
       deep_root: createDeepRootProp(18.0, 12.0),
       photosynthesis: createPhotosynthesisProp(0.3, 34.0),
-      fruiting: createFruitingProp(34.0, "large", "cherry"),
+      fruiting: createFruitingProp(280.0, "large", "cherry"),
       terrain_pref: createTerrainPreferenceProp([0, 9], "Plains and Hills"),
       wood: { nutrition: 1900, foodType: "plant" }
     },
@@ -11887,7 +11898,7 @@ export function createBirchTree(x, y) {
       bladder: createBladderProp(4800, 4800),
       deep_root: createDeepRootProp(16.0, 10.0),
       photosynthesis: createPhotosynthesisProp(0.3, 32.0),
-      fruiting: createFruitingProp(30.0, "large", "birch"),
+      fruiting: createFruitingProp(240.0, "large", "birch"),
       terrain_pref: createTerrainPreferenceProp([0, 9], "Lowlands and Hills"),
       wood: { nutrition: 1700, foodType: "plant" }
     },
@@ -11906,7 +11917,7 @@ export function createMapleTree(x, y) {
       bladder: createBladderProp(6000, 6000),
       deep_root: createDeepRootProp(22.0, 14.0),
       photosynthesis: createPhotosynthesisProp(0.3, 36.0),
-      fruiting: createFruitingProp(36.0, "large", "maple"),
+      fruiting: createFruitingProp(270.0, "large", "maple"),
       terrain_pref: createTerrainPreferenceProp([0, 9, 4], "Hills and Foothills"),
       wood: { nutrition: 2100, foodType: "plant" }
     },
@@ -11925,7 +11936,7 @@ export function createBerryBush(x, y) {
       bladder: createBladderProp(3000, 3000),
       deep_root: createDeepRootProp(12.0, 8.0),
       photosynthesis: createPhotosynthesisProp(0.3, 28.0),
-      fruiting: createFruitingProp(22.0, "small", "berry"),
+      fruiting: createFruitingProp(150.0, "small", "berry"),
       terrain_pref: createTerrainPreferenceProp([0, 9], "Fertile Soil and Hills"),
       wood: { nutrition: 800, foodType: "plant" }
     },
@@ -11944,7 +11955,7 @@ export function createRoseBush(x, y) {
       bladder: createBladderProp(3200, 3200),
       deep_root: createDeepRootProp(14.0, 8.0),
       photosynthesis: createPhotosynthesisProp(0.3, 26.0),
-      fruiting: createFruitingProp(24.0, "small", "rose"),
+      fruiting: createFruitingProp(160.0, "small", "rose"),
       terrain_pref: createTerrainPreferenceProp([0, 9], "Fertile Plains and Hills"),
       plant_flesh: { nutrition: 750, foodType: "plant" }
     },

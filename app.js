@@ -2,7 +2,7 @@
 // Brutopolis
 // =============================================================================
 
-const BrutopolisVersion = "0.123.8";
+const BrutopolisVersion = "0.123.9";
 const BrutopolisVersionName = "Who may ascend the mountain of the LORD? Who may stand in his holy place?";
 
 // WASM replaced by Pure JS Renderer

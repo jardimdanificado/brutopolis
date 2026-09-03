@@ -4096,6 +4096,12 @@ export class RCT3DRenderer {
     this._houseVariantCounts = new Array(30).fill(0);
     this._leaderVariantCounts = new Array(7).fill(0);
 
+    this.lastInstCamTileX = -9999;
+    this.lastInstCamTileY = -9999;
+    this.lastInstZoom = -1;
+    this.lastInstVisibleCount = -1;
+    this._forceInstUpdate = true;
+
     // 3D Procedural Sky Clouds (High altitude layer)
     const cloudGeo = new THREE.PlaneGeometry(1600, 1600, 16, 16);
     cloudGeo.rotateX(-Math.PI / 2);
@@ -4408,6 +4414,10 @@ export class RCT3DRenderer {
 
   isShadowsActive() {
     return this.shadowsEnabled;
+  }
+
+  forceStaticInstanceUpdate() {
+    this._forceInstUpdate = true;
   }
 
   applyAnisotropyForMode(isPersp = this.isPerspectiveActive()) {
@@ -6119,6 +6129,14 @@ export class RCT3DRenderer {
     const activeUiIds = this._activeUiIds;
     let selectedPos = null;
 
+    const curCamTileX = Math.floor(this.camX);
+    const curCamTileY = Math.floor(this.camY);
+    const distInstCamX = Math.abs(curCamTileX - (this.lastInstCamTileX ?? -9999));
+    const distInstCamY = Math.abs(curCamTileY - (this.lastInstCamTileY ?? -9999));
+    const zoomDelta = Math.abs(this.zoom - (this.lastInstZoom ?? -1));
+    const entityCountChanged = visibleEntities.length !== (this.lastInstVisibleCount ?? -1);
+    const shouldUpdateStaticInstances = distInstCamX >= 2 || distInstCamY >= 2 || zoomDelta > 0.04 || entityCountChanged || this._forceInstUpdate;
+
     let oakCount = 0;
     let pineCount = 0;
     let cherryCount = 0;
@@ -6229,8 +6247,17 @@ export class RCT3DRenderer {
 
       const isBuilding = isHouse || isWall || isDoor || isWarehouse || isSlaughterhouse || isKitchen || isWell || isArtisanHut;
       const isPlantOrItem = isTree || isCactus || isBerryBush || isRoseBush || isWoodLog || isStoneItem || isTorch || isCampfire || isRoad;
-
       const isItem = !e.properties.brain && !isBuilding && !isTree && !isCactus && !isBerryBush && !isRoseBush && !isWoodLog && !isStoneItem && !isTorch && !isCampfire && !isRoad;
+
+      const isStaticEntity = isBuilding || isPlantOrItem;
+      if (isStaticEntity && !isDoor && !shouldUpdateStaticInstances) {
+        if (this.selectedEntityId && e.id === this.selectedEntityId) {
+          const fpW = isHouse ? (e.properties?.house?.footprintW || 1) : 1;
+          const fpH = isHouse ? (e.properties?.house?.footprintH || 1) : 1;
+          selectedPos = { x: e.x + (fpW - 1) * 0.5, y: 0.1, z: e.y + (fpH - 1) * 0.5, fpW, fpH };
+        }
+        continue;
+      }
       let surfaceH;
       if (isHouse) {
         const h = e.properties?.house;
@@ -6745,7 +6772,8 @@ export class RCT3DRenderer {
           }
 
           sprite = new THREE.Mesh(this.billboardGeo, mat);
-          sprite.castShadow = true;
+          const shouldCastShadow = !isItem && (!!e.properties?.brain || !!e.properties?.life || isDoor);
+          sprite.castShadow = shouldCastShadow;
           sprite.receiveShadow = true;
           sprite.customDepthMaterial = depthMat;
           sprite.renderOrder = 10;
@@ -7207,9 +7235,10 @@ export class RCT3DRenderer {
       pl.intensity = 0;
     }
 
-    // Flush Instanced Counts to GPU
-    this.instOakTrunks.count = oakCount;
-    this.instOakTrunks.instanceMatrix.needsUpdate = true;
+    if (shouldUpdateStaticInstances) {
+      // Flush Instanced Counts to GPU
+      this.instOakTrunks.count = oakCount;
+      this.instOakTrunks.instanceMatrix.needsUpdate = true;
     this.instOakLeaves.count = oakCount;
     this.instOakLeaves.instanceMatrix.needsUpdate = true;
 
@@ -7359,6 +7388,13 @@ export class RCT3DRenderer {
     this.instStoneBridges.instanceMatrix.needsUpdate = true;
     this.instWaterPlatforms.count = waterPlatformCount;
     this.instWaterPlatforms.instanceMatrix.needsUpdate = true;
+
+    this.lastInstCamTileX = curCamTileX;
+    this.lastInstCamTileY = curCamTileY;
+    this.lastInstZoom = this.zoom;
+    this.lastInstVisibleCount = visibleEntities.length;
+    this._forceInstUpdate = false;
+  }
 
     // Clean inactive dynamic billboards
     for (const [id, spr] of this.entitySprites.entries()) {
