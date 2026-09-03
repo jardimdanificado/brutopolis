@@ -20,6 +20,8 @@ export function getCurrentWorld() {
 
 // Central O(1) registry for all entities in the universe (living and deceased)
 export const entityRegistry = new Map();
+// Deceased entity registry to reliably retain and sync corpses/deceased members across threads
+export const deceasedEntityRegistry = new Map();
 
 // Global persistent wall coordinates for zero-GC autotiling
 export const globalWallCoords = new Set();
@@ -616,6 +618,7 @@ export function resetEngineTicks() {
   currentTick = 0;
   nextEntityId = 1;
   entityRegistry.clear();
+  deceasedEntityRegistry.clear();
   spatialGrid.clear();
   tileEntityMap.clear();
   globalWallCoords.clear();
@@ -653,19 +656,21 @@ export function createEntity(properties = {}, x = 0, y = 0) {
  * Finds any entity in O(1) by ID (both living and deceased entities remain available)
  */
 export function getEntityById(id) {
-  return entityRegistry.get(id);
+  return entityRegistry.get(id) || deceasedEntityRegistry.get(id);
 }
 
 /**
- * Destroys an active entity in the world (retains entity in entityRegistry for future references)
+ * Destroys an active entity in the world (retains entity in entityRegistry and deceasedEntityRegistry for future references)
  */
 export function destroyEntity(entity, entitiesArray = null) {
   if (!entity) return;
   entity.destroyed = true;
-  entity.deathTick = currentTick;
+  if (!entity.deathTick) entity.deathTick = currentTick;
   unregisterEntitySpatial(entity);
 
-  // Retain in entityRegistry permanently!
+  // Retain in entity registries permanently
+  deceasedEntityRegistry.set(entity.id, entity);
+
   if (entitiesArray) {
     const idx = entitiesArray.indexOf(entity);
     if (idx >= 0) entitiesArray.splice(idx, 1);
@@ -1164,6 +1169,7 @@ export function tickEntities(entities, dt, world) {
     if (isDead || entity.destroyed) {
       entity.destroyed = true;
       if (!entity.deathTick) entity.deathTick = currentTick;
+      deceasedEntityRegistry.set(entity.id, entity);
       hasDead = true;
       if (explosionReason === "BRAIN_COLLAPSE") {
         recordWorldEvent({

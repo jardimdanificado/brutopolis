@@ -16,6 +16,7 @@ import {
   createEntity,
   tickEntities,
   entityRegistry,
+  deceasedEntityRegistry,
   getEntityById,
   destroyEntity,
   explodeEntityOnDeath,
@@ -919,6 +920,26 @@ function postSimSync(force = false) {
     }));
   }
 
+  // Incremental sync of newly deceased entities so main thread has full dossier/roster data
+  let deceasedToSync = null;
+  if (!globalThis._lastSyncedDeceasedCount) globalThis._lastSyncedDeceasedCount = 0;
+  if (deceasedEntityRegistry.size > globalThis._lastSyncedDeceasedCount || (force && deceasedEntityRegistry.size > 0)) {
+    deceasedToSync = [];
+    for (const [id, ent] of deceasedEntityRegistry.entries()) {
+      if (!ent) continue;
+      deceasedToSync.push({
+        id: ent.id,
+        x: ent.x,
+        y: ent.y,
+        birthTick: ent.birthTick,
+        deathTick: ent.deathTick,
+        destroyed: true,
+        properties: sanitizeForTransfer(ent.properties)
+      });
+    }
+    globalThis._lastSyncedDeceasedCount = deceasedEntityRegistry.size;
+  }
+
   self.postMessage({
     type: "SIM_UPDATE",
     tps: measuredWorkerTps,
@@ -931,6 +952,7 @@ function postSimSync(force = false) {
     },
     tick: currentTick,
     entities: entsToSync,
+    deceased: deceasedToSync,
     groups: serializeGroups(),
     events: newEvents
   });

@@ -1136,6 +1136,7 @@ export function createBasketItem(x, y, size = "medium") {
   return createEntity(
     {
       name,
+      species: "item",
       resourceType: "basket",
       render: { skin: "Item_Cloak.png", color: 0xffc8a064, backcolor: 0x00000000 },
       container: {
@@ -1160,6 +1161,7 @@ export function createBackpackItem(x, y, size = "medium") {
   return createEntity(
     {
       name,
+      species: "item",
       resourceType: "backpack",
       render: { skin: "Item_Cloak.png", color: 0xff8b5a2b, backcolor: 0x00000000 },
       container: {
@@ -1866,8 +1868,9 @@ export function createBrainProp(maxPath = 16, personality = { bravery: 0.7, curi
         }
       }
 
-      // 6. Group Expulsion Check: Expelled if majority of group members dislike entity (affinity <= 0, evaluated every 120 ticks)
-      if (ent.properties.group && entities && (currentTick % 120 === (ent.id % 120))) {
+      // 6. Group Expulsion Check: Expelled if supermajority of group members actively dislike entity (affinity < -10)
+      //    Evaluated every 240 ticks (doubled interval to reduce churn). Requires at least 3 voters and 60% hostile.
+      if (ent.properties.group && entities && (currentTick % 240 === (ent.id % 240))) {
         const group = ent.properties.group;
         let hateCount = 0;
         let totalCount = 0;
@@ -1878,16 +1881,21 @@ export function createBrainProp(maxPath = 16, personality = { bravery: 0.7, curi
             const m = (mEnt && !mEnt.destroyed) ? mEnt : null;
             if (m && m.properties.brain) {
               totalCount++;
-              if ((m.properties.brain.affinities?.[ent.id] || 0) <= 0) {
+              if ((m.properties.brain.affinities?.[ent.id] || 0) < -10) {
                 hateCount++;
               }
             }
           }
         }
 
-        if (totalCount >= 2 && hateCount > totalCount / 2) {
+        if (totalCount >= 3 && hateCount >= Math.ceil(totalCount * 0.6)) {
           // Expelled from the group!
           group.members = group.members.filter(id => id !== ent.id);
+
+          // Set expulsion cooldown to prevent immediate re-recruitment (flapping)
+          ent._expelledFromGroupId = group.id;
+          ent._expelledTick = currentTick;
+
           delete ent.properties.group;
 
           recordWorldEvent({
@@ -4608,7 +4616,14 @@ export function getGroupStockpile(group, entities) {
 
 export function tryJoinGroup(candidate, group, entities, sponsor = null) {
   if (!candidate || !group || !candidate.properties.brain) return false;
+  // Items must never join a group (they are not sentient beings)
+  if (candidate.properties.species === "item" || candidate.properties.resourceType) return false;
   if (candidate.properties.group === group) return true;
+
+  // Expulsion cooldown: recently expelled members cannot rejoin the same group for 2400 ticks (~40 seconds)
+  if (candidate._expelledFromGroupId === group.id && (currentTick - (candidate._expelledTick || 0) < 2400)) {
+    return false;
+  }
 
   // 1. Calculate candidate's relationship with group members
   let sumAff = 0;
@@ -7545,6 +7560,7 @@ export function createWoodItem(x, y) {
   return createEntity(
     {
       name: "Wood Log",
+      species: "item",
       resourceType: "wood",
       render: { skin: "Item_Wood.png", color: 0xffa06e32, backcolor: 0x00000000 },
       lifespan: createLifespanProp(90.0) // Decomposes after 1.5 minutes if ignored in the wild
@@ -7561,6 +7577,7 @@ export function createStoneItem(x, y) {
   return createEntity(
     {
       name: "Stone Block",
+      species: "item",
       resourceType: "stone",
       render: { skin: "Feature_Boulders.png", color: 0xffc8c8c8, backcolor: 0x00000000 },
       lifespan: createLifespanProp(90.0) // Sinks into earth after 1.5 minutes if ignored in the wild
@@ -7577,6 +7594,7 @@ export function createToothItem(x, y, ownerName = "Creature") {
   return createEntity(
     {
       name: `Dente de ${ownerName}`,
+      species: "item",
       resourceType: "bone",
       ownerName: ownerName,
       render: { skin: "Item_Bone.png", color: 0xfff5f5f0, backcolor: 0x00000000 },
@@ -7595,6 +7613,7 @@ export function createBoneItem(x, y, ownerName = "Creature") {
   return createEntity(
     {
       name: `Osso de ${ownerName}`,
+      species: "item",
       resourceType: "bone",
       ownerName: ownerName,
       render: { skin: "Item_Bone.png", color: 0xfff4f1e8, backcolor: 0x00000000 },
@@ -12016,6 +12035,7 @@ export function createFruit(x, y, seedType = "large", species = "oak") {
   return createEntity(
     {
       name: fruitName,
+      species: "item",
       render: { skin: "Item_Fruit.png", color: species === "cactus" ? 0xfffa5078 : 0xfffaa03c, backcolor: 0xff46230a },
       edible: {
         nutrition: species === "cactus" ? 4500 : 3800,
@@ -12062,6 +12082,7 @@ export function createSeedEntity(x, y, seedType = "large", species = "oak") {
   return createEntity(
     {
       name: seedName,
+      species: "item",
       render: { skin: seedSkin, color: seedColor, backcolor: 0x00000000 },
       germination: createSeedGerminationProp(species, 5.0, 0.40),
       edible: { nutrition: 600, foodType: "plant", digestDuration: 20 },
@@ -12076,6 +12097,7 @@ export function createPoopEntity(x, y, seed = null) {
   const poop = createEntity(
     {
       name: seed ? `Feces with Seed (${seed.species})` : "Excrement / Feces",
+      species: "item",
       resourceType: "feces",
       render: { skin: "Item_Nugget.png", color: 0xff643c14, backcolor: 0x00000000 },
       fertilizer: { quality: 1.0 },

@@ -2,7 +2,7 @@
 // Brutopolis
 // =============================================================================
 
-const BrutopolisVersion = "0.123.10";
+const BrutopolisVersion = "0.123.12";
 const BrutopolisVersionName = "Who may ascend the mountain of the LORD? Who may stand in his holy place?";
 
 // WASM replaced by Pure JS Renderer
@@ -257,7 +257,7 @@ function initSimWorker() {
           world.groups = data.groups;
         }
         if (data.entities) {
-          updateLocalEntities(data.entities, data.registry);
+          updateLocalEntities(data.entities, data.registry, data.deceased);
         }
         if (Array.isArray(data.events) && data.events.length > 0) {
           appendWorldEvents(data.events);
@@ -281,7 +281,7 @@ function initSimWorker() {
 const _receivedIdsCache = new Set();
 const _localEntitiesBuffer = [];
 
-function updateLocalEntities(entitiesData, registryData) {
+function updateLocalEntities(entitiesData, registryData, deceasedData = null) {
   if (Array.isArray(registryData)) {
     for (const regData of registryData) {
       if (!regData) continue;
@@ -302,6 +302,25 @@ function updateLocalEntities(entitiesData, registryData) {
       ent.wallStyle = regData.wallStyle;
       if (regData.properties !== undefined) {
         ent.properties = regData.properties;
+      }
+    }
+  }
+
+  if (Array.isArray(deceasedData)) {
+    for (const dData of deceasedData) {
+      if (!dData) continue;
+      let ent = entityRegistry.get(dData.id);
+      if (!ent) {
+        ent = { id: dData.id, properties: {} };
+        entityRegistry.set(ent.id, ent);
+      }
+      ent.x = dData.x;
+      ent.y = dData.y;
+      ent.birthTick = dData.birthTick;
+      ent.deathTick = dData.deathTick;
+      ent.destroyed = true;
+      if (dData.properties !== undefined) {
+        ent.properties = dData.properties;
       }
     }
   }
@@ -3124,7 +3143,7 @@ function renderDossierModal() {
 
   const props = target.properties || {};
   const name = (props.name || `ENTITY #${target.id}`).toUpperCase();
-  const species = (props.species || "UNKNOWN").toUpperCase();
+  const species = (props.species === "item" ? "ITEM" : props.species || (props.resourceType ? "ITEM" : "UNKNOWN")).toUpperCase();
   const groupName = (props.group?.name || "SOLITARY").toUpperCase();
 
   // Title
@@ -4389,7 +4408,7 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
       const leaderBadge = isLeader ? " [LEADER]" : "";
       const statusBadge = isAlive ? "" : " [DECEASED]";
       const mName = m?.properties?.name ? `${m.properties.name.toUpperCase()}${leaderBadge}${statusBadge}` : `MEMBER #${mid}${statusBadge}`;
-      const mRole = m ? (m.properties.role || m.properties.species || "HUMAN").toUpperCase() : "-";
+      const mRole = m ? (m.properties.role || (m.properties.species === "item" ? "ITEM" : m.properties.species) || (m.properties.resourceType ? "ITEM" : "UNKNOWN")).toUpperCase() : "-";
       const hpStr = isAlive && m?.properties.life ? `${Math.round(m.properties.life.energy)}HP` : (isAlive ? "LIVE" : "DEAD");
       const posStr = m && m.x !== undefined && m.y !== undefined ? `[${Math.floor(m.x)},${Math.floor(m.y)}]` : "-";
 
