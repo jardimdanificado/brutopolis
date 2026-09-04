@@ -22,7 +22,7 @@ export const DIPLOMAT_TITLES = [
   "Chief Diplomat"
 ];
 
-function getAllGroups() {
+export function getAllGroups() {
   const world = getCurrentWorld();
   if (!world || !world.groups) return [];
   return world.groups;
@@ -39,10 +39,13 @@ export function getEntityGender(e) {
   return "male";
 }
 
-function isAlive(id) {
+export function isAlive(id) {
   if (!id) return false;
   const e = getEntityById(id);
-  return e && !e.destroyed && e.properties && e.properties.life && !e.properties.life.isDead;
+  if (!e || e.destroyed) return false;
+  if (e.properties?.life?.isDead) return false;
+  if (e.properties?.health && e.properties.health.current <= 0) return false;
+  return true;
 }
 
 function isEligibleCandidate(group, e) {
@@ -113,7 +116,7 @@ function getVoterMood(e) {
   return Math.max(-100, Math.min(100, mood));
 }
 
-function addPoliticalHistoryEntry(group, entry) {
+export function addPoliticalHistoryEntry(group, entry) {
   if (!group.politicalHistory) group.politicalHistory = [];
   group.politicalHistory.unshift({
     id: nextPolEventId++,
@@ -310,32 +313,39 @@ function getBestCandidate(candidates) {
   })[0];
 }
 
-function holdElection(group, type, index = -1, tick) {
+function holdElection(group, type, index = -1, tick, excludeIds = []) {
   if (type === "LEADER") {
-    const candidates = getValidCandidates(group);
+    const candidates = getValidCandidates(group, excludeIds);
     if (candidates.length === 0) return;
 
     // Monarchy & Autocracy inherit or take oldest, Democracy/Pseudocracy/Presidentialism hold voting
     if (group.govType === "DEMOCRACY" || group.govType === "PSEUDOCRACY" || group.govType === "PRESIDENTIALISM") {
       const elec = runElectionSimulation(group, "LEADER", -1, candidates, tick);
       if (elec && elec.winnerId) {
+        const isReelection = (elec.winnerId === group.leaderId);
         group.leaderId = elec.winnerId;
         group.leaderTermTicks = 0;
+        group._lastLeaderElectionTick = tick;
         const wEnt = getEntityById(elec.winnerId);
         if (wEnt) {
+          const titleText = isReelection ? `Reeleição de Alto Líder` : `Eleição de Alto Líder`;
+          const descText = isReelection 
+            ? `${elec.winnerName} foi reeleito(a) Líder de ${group.name} com ${elec.winnerVotes} votos (${elec.winnerPercent}% dos válidos).`
+            : `${elec.winnerName} venceu a eleição com ${elec.winnerVotes} votos (${elec.winnerPercent}% dos válidos) e assumiu como Líder de ${group.name}.`;
+
           recordWorldEvent({
             opcode: OP_ELECTION_HELD,
             primaryEntityId: elec.winnerId,
             location: { x: wEnt.x, y: wEnt.y },
-            description: `${elec.winnerName} venceu a eleição com ${elec.winnerVotes} votos e assumiu como Líder de ${group.name}.`,
+            description: descText,
             tick,
-            metadata: { groupName: group.name, roleTitle: "High Leader", electionId: elec.id }
+            metadata: { groupName: group.name, roleTitle: "High Leader", electionId: elec.id, isReelection }
           });
           addPoliticalHistoryEntry(group, {
             type: "ELECTION",
             electionId: elec.id,
-            title: `Eleição de Alto Líder`,
-            description: `${elec.winnerName} eleito(a) com ${elec.winnerVotes} votos (${elec.winnerPercent}% dos válidos).`,
+            title: titleText,
+            description: descText,
             winnerId: elec.winnerId,
             winnerName: elec.winnerName
           });
@@ -372,28 +382,40 @@ function holdElection(group, type, index = -1, tick) {
   } else if (type === "DIPLOMAT") {
     const otherDips = (group.diplomats || []).filter((d, i) => i !== index && d);
     const dipCandidates = getValidCandidates(group, [group.leaderId, ...otherDips]);
-    if (dipCandidates.length === 0) return;
+    if (dipCandidates.length === 0) {
+      if (!group.diplomatVacancyCooldown) group.diplomatVacancyCooldown = [0, 0, 0, 0, 0, 0];
+      group.diplomatVacancyCooldown[index] = 2400;
+      return;
+    }
 
     if (group.govType === "DEMOCRACY" || group.govType === "PSEUDOCRACY") {
       const elec = runElectionSimulation(group, "DIPLOMAT", index, dipCandidates, tick);
       if (elec && elec.winnerId) {
+        const isReelection = (elec.winnerId === group.diplomats[index]);
         group.diplomats[index] = elec.winnerId;
         group.diplomatTermTicks[index] = 0;
+        if (!group.diplomatVacancyCooldown) group.diplomatVacancyCooldown = [0, 0, 0, 0, 0, 0];
+        group.diplomatVacancyCooldown[index] = 2400;
         const wEnt = getEntityById(elec.winnerId);
         if (wEnt) {
+          const titleText = isReelection ? `Reeleição de Diplomata (${DIPLOMAT_TITLES[index]})` : `Eleição de Diplomata (${DIPLOMAT_TITLES[index]})`;
+          const descText = isReelection
+            ? `${elec.winnerName} foi reeleito(a) como Diplomata (${DIPLOMAT_TITLES[index]}) de ${group.name} com ${elec.winnerVotes} votos.`
+            : `${elec.winnerName} foi eleito(a) como Diplomata (${DIPLOMAT_TITLES[index]}) de ${group.name} com ${elec.winnerVotes} votos.`;
+
           recordWorldEvent({
             opcode: OP_ELECTION_HELD,
             primaryEntityId: elec.winnerId,
             location: { x: wEnt.x, y: wEnt.y },
-            description: `${elec.winnerName} foi eleito(a) como Diplomata (${DIPLOMAT_TITLES[index]}) de ${group.name}.`,
+            description: descText,
             tick,
-            metadata: { groupName: group.name, roleTitle: `Diplomata (${DIPLOMAT_TITLES[index]})`, electionId: elec.id }
+            metadata: { groupName: group.name, roleTitle: `Diplomata (${DIPLOMAT_TITLES[index]})`, electionId: elec.id, isReelection }
           });
           addPoliticalHistoryEntry(group, {
             type: "ELECTION",
             electionId: elec.id,
-            title: `Eleição de Diplomata (${DIPLOMAT_TITLES[index]})`,
-            description: `${elec.winnerName} eleito(a) para o posto de diplomacia com ${elec.winnerVotes} votos.`,
+            title: titleText,
+            description: descText,
             winnerId: elec.winnerId,
             winnerName: elec.winnerName
           });
@@ -409,11 +431,17 @@ function holdElection(group, type, index = -1, tick) {
 function fillVacantDiplomat(group, index, tick) {
   const otherDips = (group.diplomats || []).filter((d, i) => i !== index && d);
   const candidates = getValidCandidates(group, [group.leaderId, ...otherDips]);
-  if (candidates.length === 0) return;
+  if (candidates.length === 0) {
+    if (!group.diplomatVacancyCooldown) group.diplomatVacancyCooldown = [0, 0, 0, 0, 0, 0];
+    group.diplomatVacancyCooldown[index] = 2400;
+    return;
+  }
 
   const winner = getBestCandidate(candidates);
   group.diplomats[index] = winner;
   group.diplomatTermTicks[index] = 0;
+  if (!group.diplomatVacancyCooldown) group.diplomatVacancyCooldown = [0, 0, 0, 0, 0, 0];
+  group.diplomatVacancyCooldown[index] = 2400;
   
   if (winner) {
     const wEnt = getEntityById(winner);
@@ -439,9 +467,15 @@ function fillVacantDiplomat(group, index, tick) {
 }
 
 function handleLeaderDeath(group, tick) {
-  const candidates = getValidCandidates(group);
+  // Prevent spamming elections within 600 ticks (~15 seconds) if leader succession is underway
+  if (group._lastLeaderElectionTick && (tick - group._lastLeaderElectionTick < 600)) {
+    return;
+  }
+  const oldLeaderId = group.leaderId;
+  const candidates = getValidCandidates(group, [oldLeaderId]);
   if (candidates.length === 0) return; 
 
+  group._lastLeaderElectionTick = tick;
   let newLeader = null;
 
   if (group.govType === "MONARCHY") {
@@ -458,7 +492,7 @@ function handleLeaderDeath(group, tick) {
     fillVacantDiplomat(group, 0, tick);
   } else {
     // Democracy / Pseudocracy / Presidentialism hold emergency succession election
-    holdElection(group, "LEADER", -1, tick);
+    holdElection(group, "LEADER", -1, tick, [oldLeaderId]);
     return;
   }
 
@@ -517,10 +551,10 @@ function processDiplomaticMissions(group, tick) {
     if (!dipId || !isAlive(dipId)) continue;
     
     const dipEnt = getEntityById(dipId);
-    if (!dipEnt || dipEnt._taskGoal) continue;
-
-    if (Math.random() < 0.01) {
-      const allGroups = getAllGroups().filter(g => g.id !== group.id && g.members && g.members.length > 0);
+    if (!dipEnt || (dipEnt._taskGoal && dipEnt._taskGoal.type === "diplomacy")) continue;
+    // Diplomats without active diplomatic goals seek diplomatic missions
+    if (Math.random() < 0.18) {
+      const allGroups = getAllGroups().filter(g => g.id !== group.id && !g.dissolved && g.members && g.members.length > 0);
       if (allGroups.length === 0) continue;
 
       const targetGroup = allGroups[Math.floor(Math.random() * allGroups.length)];
@@ -666,9 +700,9 @@ function handleGroupDissolution(group, tick) {
   }
 }
 
-export function updatePolitics(dt, globalTick) {
-  if (globalTick - lastPoliticsTick < POLITICS_TICK_RATE) return;
-  lastPoliticsTick = globalTick;
+export function updatePolitics(dt, tick) {
+  if (tick - lastPoliticsTick < POLITICS_TICK_RATE) return;
+  lastPoliticsTick = tick;
 
   const groups = getAllGroups();
   if (!groups || groups.length === 0) return;
@@ -688,6 +722,7 @@ export function updatePolitics(dt, globalTick) {
     if (!group.wars) group.wars = [];
     if (group.leaderTermTicks === undefined) group.leaderTermTicks = 0;
     if (!group.diplomatTermTicks) group.diplomatTermTicks = [0, 0, 0, 0, 0, 0];
+    if (!group.diplomatVacancyCooldown) group.diplomatVacancyCooldown = [0, 0, 0, 0, 0, 0];
     if (!group.elections) group.elections = [];
     if (!group.politicalHistory) group.politicalHistory = [];
 
@@ -695,17 +730,29 @@ export function updatePolitics(dt, globalTick) {
 
     const livingCount = (group.members || []).filter(m => isAlive(m)).length;
     if (livingCount === 0) {
-      handleGroupDissolution(group, globalTick);
+      handleGroupDissolution(group, tick);
       continue;
     }
 
     // 1. Process terms
     group.leaderTermTicks += POLITICS_TICK_RATE;
-    if (group.govType !== "COMMUNISM" && group.govType !== "MONARCHY" && group.govType !== "AUTOCRACY") {
-      // 14 days = 14 * 2400 ticks = 33600 ticks
-      if (group.leaderTermTicks >= 33600) {
+    if (group.govType === "PRESIDENTIALISM") {
+      // 4 days = 4 * 2400 ticks = 9600 ticks
+      if (group.leaderTermTicks >= 9600) {
         group.leaderTermTicks = 0;
-        holdElection(group, "LEADER", -1, globalTick);
+        holdElection(group, "LEADER", -1, tick);
+      }
+    } else if (group.govType === "DEMOCRACY") {
+      // 7 days = 7 * 2400 ticks = 16800 ticks
+      if (group.leaderTermTicks >= 16800) {
+        group.leaderTermTicks = 0;
+        holdElection(group, "LEADER", -1, tick);
+      }
+    } else if (group.govType === "PSEUDOCRACY") {
+      // 5 days = 5 * 2400 ticks = 12000 ticks
+      if (group.leaderTermTicks >= 12000) {
+        group.leaderTermTicks = 0;
+        holdElection(group, "LEADER", -1, tick);
       }
     }
 
@@ -715,6 +762,9 @@ export function updatePolitics(dt, globalTick) {
 
     for (let i = 0; i < 6; i++) {
       group.diplomatTermTicks[i] += POLITICS_TICK_RATE;
+      if (group.diplomatVacancyCooldown[i] > 0) {
+        group.diplomatVacancyCooldown[i] -= POLITICS_TICK_RATE;
+      }
       
       if (group.govType === "AUTOCRACY") {
         group.diplomats[i] = group.leaderId;
@@ -723,21 +773,30 @@ export function updatePolitics(dt, globalTick) {
         if (group.govType === "DEMOCRACY" || group.govType === "PSEUDOCRACY") {
           if (group.diplomatTermTicks[i] >= 16800) {
             group.diplomatTermTicks[i] = 0;
-            holdElection(group, "DIPLOMAT", i, globalTick);
+            const otherDips = (group.diplomats || []).filter((d, idx) => idx !== i && d);
+            const availableCandidates = getValidCandidates(group, [group.leaderId, ...otherDips]);
+            if (availableCandidates.length > 0) {
+              holdElection(group, "DIPLOMAT", i, tick);
+            }
           }
         }
 
-        // Vacate on death and hold emergency election if candidates exist
+        // Vacate on death or unassigned slot, evaluate with cooldown to avoid spamming empty seats
         if (!group.diplomats[i] || !isAlive(group.diplomats[i])) {
           group.diplomats[i] = null;
-          const otherDips = (group.diplomats || []).filter((d, idx) => idx !== i && d);
-          const availableCandidates = getValidCandidates(group, [group.leaderId, ...otherDips]);
+          if (group.diplomatVacancyCooldown[i] <= 0) {
+            const otherDips = (group.diplomats || []).filter((d, idx) => idx !== i && d);
+            const availableCandidates = getValidCandidates(group, [group.leaderId, ...otherDips]);
 
-          if (availableCandidates.length > 0) {
-            if (group.govType === "DEMOCRACY" || group.govType === "PSEUDOCRACY") {
-              holdElection(group, "DIPLOMAT", i, globalTick);
+            if (availableCandidates.length > 0) {
+              if (group.govType === "DEMOCRACY" || group.govType === "PSEUDOCRACY") {
+                holdElection(group, "DIPLOMAT", i, tick);
+              } else {
+                fillVacantDiplomat(group, i, tick);
+              }
             } else {
-              fillVacantDiplomat(group, i, globalTick);
+              // No candidates available: cooldown for 2400 ticks (1 day) before re-checking
+              group.diplomatVacancyCooldown[i] = 2400;
             }
           }
         }
@@ -745,16 +804,16 @@ export function updatePolitics(dt, globalTick) {
     }
 
     if (!isAlive(group.leaderId)) {
-      handleLeaderDeath(group, globalTick);
+      handleLeaderDeath(group, tick);
     }
 
     // 2. Diplomatic Missions (Increase relations)
-    processDiplomaticMissions(group, globalTick);
+    processDiplomaticMissions(group, tick);
 
     // 3. War Declaration (Estopim)
-    processWarDeclarations(group, groups, globalTick);
+    processWarDeclarations(group, groups, tick);
 
     // 4. Annex Ruins
-    annexRuins(group, globalTick);
+    annexRuins(group, tick);
   }
 }

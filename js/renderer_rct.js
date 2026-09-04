@@ -131,10 +131,14 @@ function getEntityBounds(e) {
   const isMaple = isPlantOrFlora && (e.properties?.species === "maple" || e.properties?.name?.toLowerCase().includes("bordo") || e.properties?.name?.toLowerCase().includes("maple"));
   const isBerryBush = isPlantOrFlora && (e.properties?.species === "berry" || e.properties?.name?.toLowerCase().includes("amora") || (e.properties?.species === "bush" && !e.properties?.name?.toLowerCase().includes("florido")));
   const isRoseBush = isPlantOrFlora && (e.properties?.species === "rose_bush" || e.properties?.name?.toLowerCase().includes("florido") || e.properties?.name?.toLowerCase().includes("rose"));
-  const isTree = !isCactus && !isBerryBush && !isRoseBush && (isCherry || isBirch || isMaple || e.properties?.species === "oak" || e.properties?.species === "pine" || e.properties?.species === "willow" || e.properties?.species === "tree" || !!e.properties?.tree || (r?.skin && r?.skin.toLowerCase().includes("tree")));
+  const isShrub = isPlantOrFlora && (e.properties?.species === "shrub" || e.properties?.name?.toLowerCase().includes("shrub") || e.properties?.name?.toLowerCase().includes("arbusto"));
+  const isWaterLily = isPlantOrFlora && (e.properties?.species === "waterlily" || e.properties?.species === "water_lily" || e.properties?.name?.toLowerCase().includes("lily") || e.properties?.name?.toLowerCase().includes("vitória-régia") || e.properties?.name?.toLowerCase().includes("vitoria"));
+  const isSeaweed = isPlantOrFlora && (e.properties?.species === "seaweed" || e.properties?.name?.toLowerCase().includes("seaweed") || e.properties?.name?.toLowerCase().includes("alga"));
+  const isTree = !isCactus && !isBerryBush && !isRoseBush && !isShrub && !isWaterLily && !isSeaweed && (isCherry || isBirch || isMaple || e.properties?.species === "oak" || e.properties?.species === "pine" || e.properties?.species === "willow" || e.properties?.species === "tree" || !!e.properties?.tree || (r?.skin && r?.skin.toLowerCase().includes("tree")) || (e.properties?.photosynthesis && !e.properties?.life?.isDead));
 
   if (isTree) return { radius: 1.25, h: 4.8, yBottom: 0.0 };
-  if (isBerryBush || isRoseBush) return { radius: 0.9, h: 1.8, yBottom: 0.0 };
+  if (isBerryBush || isRoseBush || isShrub) return { radius: 0.9, h: 1.8, yBottom: 0.0 };
+  if (isWaterLily || isSeaweed) return { radius: 0.75, h: 0.6, yBottom: 0.0 };
   if (isHouse) {
     const floors = e.properties?.house?.maxFloors || e.properties?.house?.floors?.length || 2;
     const fpW = e.properties?.house?.footprintW || 1;
@@ -4918,8 +4922,11 @@ export class RCT3DRenderer {
       const isMaple = isPlantOrFlora && (e.properties.species === "maple" || e.properties.name?.toLowerCase().includes("bordo") || e.properties.name?.toLowerCase().includes("maple"));
       const isBerryBush = isPlantOrFlora && (e.properties.species === "berry" || e.properties.name?.toLowerCase().includes("amora") || (e.properties.species === "bush" && !e.properties.name?.toLowerCase().includes("florido")));
       const isRoseBush = isPlantOrFlora && (e.properties.species === "rose_bush" || e.properties.name?.toLowerCase().includes("florido") || e.properties.name?.toLowerCase().includes("rose"));
-      const isTree = !isCactus && !isBerryBush && !isRoseBush && (isCherry || isBirch || isMaple || e.properties.species === "oak" || e.properties.species === "pine" || e.properties.species === "willow" || e.properties.species === "tree" || !!e.properties.tree || (r.skin && r.skin.toLowerCase().includes("tree")));
-      const isFlora = isTree || isCactus || isBerryBush || isRoseBush;
+      const isShrub = isPlantOrFlora && (e.properties.species === "shrub" || e.properties.name?.toLowerCase().includes("shrub") || e.properties.name?.toLowerCase().includes("arbusto"));
+      const isWaterLily = isPlantOrFlora && (e.properties.species === "waterlily" || e.properties.species === "water_lily" || e.properties.name?.toLowerCase().includes("lily") || e.properties.name?.toLowerCase().includes("vitória-régia") || e.properties.name?.toLowerCase().includes("vitoria"));
+      const isSeaweed = isPlantOrFlora && (e.properties.species === "seaweed" || e.properties.name?.toLowerCase().includes("seaweed") || e.properties.name?.toLowerCase().includes("alga"));
+      const isTree = !isCactus && !isBerryBush && !isRoseBush && !isShrub && !isWaterLily && !isSeaweed && (isCherry || isBirch || isMaple || e.properties.species === "oak" || e.properties.species === "pine" || e.properties.species === "willow" || e.properties.species === "tree" || !!e.properties.tree || (r.skin && r.skin.toLowerCase().includes("tree")) || (e.properties.photosynthesis && !e.properties.life?.isDead));
+      const isFlora = isTree || isCactus || isBerryBush || isRoseBush || isShrub || isWaterLily || isSeaweed;
 
       const isWoodLog = !e.properties.brain && !isDoor && !isWarehouse && !isSlaughterhouse && !isKitchen && !isArtisanHut && !isTorch && !isCampfire && !isRoad && (e.properties.resourceType === "wood" || e.properties.name?.includes("Wood Log") || e.properties.name?.includes("Madeira") || r.skin === "Item_Wood.png");
       const isStoneItem = !e.properties.brain && !isDoor && !isWarehouse && !isSlaughterhouse && !isKitchen && !isArtisanHut && !isTorch && !isCampfire && !isRoad && (e.properties.resourceType === "stone" || e.properties.name?.includes("Stone Block") || e.properties.name?.includes("Pedra"));
@@ -4927,9 +4934,8 @@ export class RCT3DRenderer {
       const isWall = !e.properties.brain && !isDoor && !isHouse && !isWarehouse && !isSlaughterhouse && !isKitchen && !isWell && !isArtisanHut && !isTorch && !isCampfire && !isRoad && !isWoodLog && !isStoneItem && !isFlora && (r.skin?.startsWith("Wall_") || e.properties.name?.includes("Muralha") || e.properties.name?.includes("Paliçada") || e.properties.name?.includes("Muro") || (e.properties.structure && !e.properties.edible && !e.properties.resourceType));
 
       const isBuilding = isHouse || isWall || isDoor || isWarehouse || isSlaughterhouse || isKitchen || isWell || isArtisanHut;
-      const isPlantOrItem = isFlora || isWoodLog || isStoneItem || isTorch || isCampfire || isRoad;
-
       const isItem = !e.properties.brain && !isBuilding && !isFlora && !isWoodLog && !isStoneItem && !isTorch && !isCampfire && !isRoad;
+      const isPlantOrItem = isFlora || isWoodLog || isStoneItem || isTorch || isCampfire || isRoad || isItem;
 
       // Multi-tile footprint for buildings
       let fpW = 1, fpH = 1;

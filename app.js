@@ -2,7 +2,7 @@
 // Brutopolis
 // =============================================================================
 
-const BrutopolisVersion = "0.123.12";
+const BrutopolisVersion = "0.123.18";
 const BrutopolisVersionName = "Who may ascend the mountain of the LORD? Who may stand in his holy place?";
 
 // WASM replaced by Pure JS Renderer
@@ -369,24 +369,15 @@ function updateLocalEntities(entitiesData, registryData, deceasedData = null) {
       }
       ent.targetX = entData.x;
       ent.targetY = entData.y;
+    }
 
+    writeIdx = 0;
+    for (const ent of entityRegistry.values()) {
       if (!ent.destroyed) {
         _localEntitiesBuffer[writeIdx++] = ent;
       }
     }
     _localEntitiesBuffer.length = writeIdx;
-
-    // Clean up ghosts that the worker stopped sending (because they died)
-    if (entities && entities.length > 0) {
-      for (let i = 0; i < entities.length; i++) {
-        const oldEnt = entities[i];
-        if (oldEnt && !oldEnt.destroyed && !receivedIds.has(oldEnt.id)) {
-          oldEnt.destroyed = true;
-          unregisterEntitySpatial(oldEnt, zSize);
-        }
-      }
-    }
-
     entities = _localEntitiesBuffer;
   }
 }
@@ -1990,8 +1981,16 @@ window.addEventListener("mouseup", (e) => {
 canvas.addEventListener("wheel", (e) => {
   e.preventDefault();
   if (currentMode !== "MAP") {
-    if (e.deltaY < 0) modalScroll = Math.max(0, modalScroll - 2);
-    else modalScroll += 2;
+    const scrollStep = (e.deltaY < 0) ? -2 : 2;
+    if (inspectingElectionRecord) {
+      electionModalScroll = Math.max(0, electionModalScroll + scrollStep);
+    } else if (inspectingPoliticalHistoryGroup) {
+      politicalModalScroll = Math.max(0, politicalModalScroll + scrollStep);
+    } else if (inspectingDiplomacyGroup) {
+      diplomacyModalScroll = Math.max(0, diplomacyModalScroll + scrollStep);
+    } else {
+      modalScroll = Math.max(0, modalScroll + scrollStep);
+    }
     return;
   }
 
@@ -3787,10 +3786,17 @@ function getFilteredEntities() {
       return e.properties.resourceType === "basket" || e.properties.resourceType === "backpack" || !!e.properties.container || !!e.properties.basket || !!e.properties.backpack || !!e.properties.attackBonus || !!e.properties.isWeapon || !!e.properties.torch;
     }
     if (entityFilter === "FLORA") {
-      return !!e.properties.photosynthesis || !!e.properties.deep_root || e.properties.species === "oak" || e.properties.species === "willow" || e.properties.species === "pine" || e.properties.species === "cactus" || e.properties.species === "shrub" || e.properties.species === "water_lily" || e.properties.species === "seaweed";
+      const sp = (e.properties.species || "").toLowerCase();
+      const n = (e.properties.name || "").toLowerCase();
+      return !!e.properties.photosynthesis || !!e.properties.deep_root || !!e.properties.fruiting || !!e.properties.wood ||
+        sp === "oak" || sp === "willow" || sp === "pine" || sp === "cactus" || sp === "shrub" || sp === "waterlily" || sp === "water_lily" ||
+        sp === "seaweed" || sp === "cherry_blossom" || sp === "birch" || sp === "maple" || sp === "berry" || sp === "rose_bush" ||
+        n.includes("árvore") || n.includes("arvore") || n.includes("tree") || n.includes("amora") || n.includes("cacto") || n.includes("cactus") ||
+        n.includes("sakura") || n.includes("cerejeira") || n.includes("bétula") || n.includes("betula") || n.includes("bordo") || n.includes("maple");
     }
     if (entityFilter === "ITEMS") {
-      return !!e.properties.resourceType || !!e.properties.germination || e.properties.species === "item" || (!e.properties.life && !e.properties.structure);
+      const sp = (e.properties.species || "").toLowerCase();
+      return !!e.properties.resourceType || !!e.properties.germination || sp === "item" || !!e.properties.edible || (!e.properties.life && !e.properties.structure && !e.properties.photosynthesis && !e.properties.deep_root);
     }
     if (entityFilter === "LIVING") {
       return !!e.properties.life && e.properties.species !== "item" && e.properties.species !== "corpse";
@@ -4715,6 +4721,16 @@ function renderDiplomacyModal(mx, my, mw, mh, g) {
 function renderPoliticalHistoryModal(mx, my, mw, mh, g) {
   const gFgColor = g.color ? `#${(g.color & 0xffffff).toString(16).padStart(6, "0")}` : "#f8b800";
   drawText8x8(`POLITICAL CHRONICLES & ELECTIONS: ${(g.name || "CLAN").toUpperCase()}`, mx + 16, my + 14, gFgColor, 1);
+
+  // Scroll Buttons
+  drawNESButton(mx + mw - 190, my + 6, 32, 24, "▲", false, false);
+  registerClickableRegion(mx + mw - 190, my + 6, 32, 24, () => {
+    politicalModalScroll = Math.max(0, politicalModalScroll - 2);
+  });
+  drawNESButton(mx + mw - 150, my + 6, 32, 24, "▼", false, false);
+  registerClickableRegion(mx + mw - 150, my + 6, 32, 24, () => {
+    politicalModalScroll = Math.max(0, politicalModalScroll + 2);
+  });
 
   // Back Button
   drawNESButton(mx + mw - 110, my + 6, 100, 24, "< DOSSIER", false, false);

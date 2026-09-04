@@ -1,4 +1,4 @@
-import { createEntity, getEntityById, entityRegistry, currentTick, getEntitiesInRadius, findEntityInRadius, hasEntityInRadius, findClosestEntityInRadius, forEachEntityInRadius, countEntitiesInRadius, getEntityAtTile, getEntityAtTileByProp, setSpatialZoneSize, tileEntityMap, globalWallCoords, globalRoadCoords, getTileKey, registerEntitySpatial, dismemberCorpse, createCorpseEntity, isBuildingObstacleAt, getEntityFootprint } from "./engine.js";
+import { createEntity, getEntityById, entityRegistry, currentTick, getEntitiesInRadius, findEntityInRadius, hasEntityInRadius, findClosestEntityInRadius, forEachEntityInRadius, countEntitiesInRadius, getEntityAtTile, getEntityAtTileByProp, setSpatialZoneSize, tileEntityMap, globalWallCoords, globalRoadCoords, getTileKey, registerEntitySpatial, dismemberCorpse, createCorpseEntity, isBuildingObstacleAt, getEntityFootprint, setCurrentWorld } from "./engine.js";
 import { MAP_WIDTH, MAP_HEIGHT, TILE_FLOOR, TILE_MOUNTAIN, TILE_WATER, TILE_SAND, TILE_STONE, TILE_VOID, TILE_ROAD_GRASS, TILE_ROAD_SAND, TILE_ROAD_GRASS_STONE, TILE_HILL, TILE_PEAK, TILE_ROAD_SAND_STONE, TILE_ROAD_HILL, TILE_ROAD_HILL_STONE } from "./world_gen.js";
 import {
   recordWorldEvent,
@@ -30,13 +30,16 @@ import {
   OP_CRAFT,
   OP_PLANT,
   OP_HARVEST,
-  OP_FORGET
+  OP_FORGET,
+  OP_DIPLOMATIC_MISSION
 } from "./event_log.js";
+import { addPoliticalHistoryEntry, isAlive, getAllGroups } from "./politics.js";
 import { vocabulario } from "./vocabulario.js";
 
 export let activeWorld = null;
 export function setActiveWorld(w) {
   activeWorld = w;
+  setCurrentWorld(w);
 }
 
 export function getSimWorld() {
@@ -6011,11 +6014,13 @@ export function createGroupMemberProp() {
         }).filter(Boolean);
         group.maxMembersEver = Math.max(group.maxMembersEver || 0, livingMems.length);
 
-        // Leadership check: prioritize senior living member with highest group affinity/age
-        const curL = getEntityById(group.leaderId);
-        const isCurLeaderAlive = (curL && !curL.destroyed && curL.properties.life);
+        // Leadership check: prioritize senior living member with highest group affinity/age only if no leader or leader dead
+        const isCurLeaderAlive = isAlive(group.leaderId);
         if (!group.leaderId || !isCurLeaderAlive) {
-          if (livingMems.length > 0) {
+          // If group is democratic or presidential, let the politics engine handle regular election
+          if (group.govType === "DEMOCRACY" || group.govType === "PRESIDENTIALISM" || group.govType === "PSEUDOCRACY") {
+            // Let politics.js handle it
+          } else if (livingMems.length > 0) {
             livingMems.sort((a, b) => (b.properties.life?.age || 0) - (a.properties.life?.age || 0));
             group.leaderId = livingMems[0].id;
             livingMems[0].properties.role = "Leader";
@@ -8954,6 +8959,93 @@ export function createLocomotionProp() {
           }
         }
 
+        // 0.5 High Priority: Diplomatic Missions (Emissaries travel to foreign leaders)
+        if (!hasIntention && ent._taskGoal && ent._taskGoal.type === "diplomacy") {
+          const leader = getEntityById(ent._taskGoal.targetLeaderId);
+          if (!leader || leader.destroyed) {
+            ent._taskGoal = null;
+          } else {
+            const dDist = Math.abs(leader.x - ent.x) + Math.abs(leader.y - ent.y);
+            if (dDist <= 2) {
+              // Reach the leader and negotiate!
+              let targetGroup = (typeof getAllGroups === "function") ? getAllGroups().find(g => g.id === ent._taskGoal.targetGroupId) : null;
+              const group = ent.properties.group;
+              if (targetGroup && group) {
+                if (Math.random() < 0.65) {
+                  ent.emote = 2; // Happy
+                  leader.emote = 2; // Happy
+                  
+                  if (!group.relations) group.relations = {};
+                  let currentRel = group.relations[targetGroup.id] || 0;
+                  currentRel += Math.floor(Math.random() * 10) + 5;
+                  group.relations[targetGroup.id] = Math.min(100, currentRel);
+                  
+                  if (!targetGroup.relations) targetGroup.relations = {};
+                  targetGroup.relations[group.id] = (targetGroup.relations[group.id] || 0) + 5;
+                  
+                  const desc = `Missão diplomática bem sucedida! ${ent.properties?.name || "Diplomata"} de ${group.name} convenceu ${leader.properties?.name || "Líder"} de ${targetGroup.name} a melhorar as relações.`;
+                  
+                  if (typeof recordWorldEvent === "function") {
+                    recordWorldEvent({
+                      opcode: OP_DIPLOMATIC_MISSION,
+                      primaryEntityId: ent.id,
+                      secondaryEntityId: leader.id,
+                      location: { x: ent.x, y: ent.y },
+                      description: desc,
+                      tick: typeof currentTick !== "undefined" ? currentTick : 0,
+                      metadata: { groupName: group.name, targetName: targetGroup.name }
+                    });
+                  }
+
+                  addPoliticalHistoryEntry(group, {
+                    type: "DIPLOMATIC_MISSION",
+                    targetGroupId: targetGroup.id,
+                    title: `Missão Diplomática (Sucesso)`,
+                    description: desc,
+                    tick: typeof currentTick !== "undefined" ? currentTick : 0
+                  });
+
+                  addPoliticalHistoryEntry(targetGroup, {
+                    type: "DIPLOMATIC_MISSION",
+                    targetGroupId: group.id,
+                    title: `Emissário Recebido`,
+                    description: `${ent.properties?.name || "Diplomata"} de ${group.name} melhorou as relações com nosso povo.`,
+                    tick: typeof currentTick !== "undefined" ? currentTick : 0
+                  });
+                } else {
+                  ent.emote = 4; // Sad
+                  leader.emote = 5; // Angry
+                  
+                  const desc = `Missão diplomática falhou! ${leader.properties?.name || "Líder"} de ${targetGroup.name} rejeitou a oferta de ${ent.properties?.name || "Diplomata"} de ${group.name}.`;
+                  
+                  if (typeof recordWorldEvent === "function") {
+                    recordWorldEvent({
+                      opcode: OP_DIPLOMATIC_MISSION,
+                      primaryEntityId: ent.id,
+                      location: { x: ent.x, y: ent.y },
+                      description: desc,
+                      tick: typeof currentTick !== "undefined" ? currentTick : 0
+                    });
+                  }
+
+                  addPoliticalHistoryEntry(group, {
+                    type: "DIPLOMATIC_MISSION",
+                    targetGroupId: targetGroup.id,
+                    title: `Missão Diplomática (Recusada)`,
+                    description: desc,
+                    tick: typeof currentTick !== "undefined" ? currentTick : 0
+                  });
+                }
+              }
+              ent._taskGoal = null;
+            } else {
+              chosenDx = Math.sign(leader.x - ent.x);
+              chosenDy = Math.sign(leader.y - ent.y);
+              hasIntention = true;
+            }
+          }
+        }
+
         // 1. If carrying seed: cultivate and plant inside territory with spacing
         if (!hasIntention && isCarryingSeed) {
           let targetPlot = null;
@@ -9755,69 +9847,6 @@ export function createLocomotionProp() {
               }
             }
           }
-          // --- 5.56 Diplomatic Missions ---
-          if (!hasIntention && ent._taskGoal && ent._taskGoal.type === "diplomacy") {
-            const leader = getEntityById(ent._taskGoal.targetLeaderId);
-            if (!leader || leader.destroyed) {
-              ent._taskGoal = null;
-            } else {
-              const dDist = Math.abs(leader.x - ent.x) + Math.abs(leader.y - ent.y);
-              if (dDist <= 2) {
-                // Reach the leader and talk!
-                let targetGroup = (typeof getAllGroups === "function") ? getAllGroups().find(g => g.id === ent._taskGoal.targetGroupId) : null;
-                const group = ent.properties.group;
-                if (targetGroup && group) {
-                  if (Math.random() < 0.65) {
-                    ent.emote = 2; // Happy
-                    leader.emote = 2; // Happy
-                    
-                    if (!group.relations) group.relations = {};
-                    let currentRel = group.relations[targetGroup.id] || 0;
-                    currentRel += Math.floor(Math.random() * 10) + 5;
-                    group.relations[targetGroup.id] = Math.min(100, currentRel);
-                    
-                    if (!targetGroup.relations) targetGroup.relations = {};
-                    targetGroup.relations[group.id] = (targetGroup.relations[group.id] || 0) + 5;
-                    
-                    const desc = `Missão diplomática bem sucedida! ${ent.properties?.name || "Diplomata"} de ${group.name} convenceu ${leader.properties?.name || "Líder"} de ${targetGroup.name} a melhorar as relações.`;
-                    
-                    if (typeof recordWorldEvent === "function") {
-                      recordWorldEvent({
-                        opcode: 92, // OP_DIPLOMATIC_MISSION
-                        primaryEntityId: ent.id,
-                        secondaryEntityId: leader.id,
-                        location: { x: ent.x, y: ent.y },
-                        description: desc,
-                        tick: typeof currentTick !== "undefined" ? currentTick : 0,
-                        metadata: { groupName: group.name, targetName: targetGroup.name }
-                      });
-                    }
-                  } else {
-                    ent.emote = 4; // Sad
-                    leader.emote = 5; // Angry
-                    
-                    const desc = `Missão diplomática falhou! ${leader.properties?.name || "Líder"} de ${targetGroup.name} rejeitou a oferta de ${ent.properties?.name || "Diplomata"} de ${group.name}.`;
-                    
-                    if (typeof recordWorldEvent === "function") {
-                      recordWorldEvent({
-                        opcode: 92, // OP_DIPLOMATIC_MISSION
-                        primaryEntityId: ent.id,
-                        location: { x: ent.x, y: ent.y },
-                        description: desc,
-                        tick: typeof currentTick !== "undefined" ? currentTick : 0
-                      });
-                    }
-                  }
-                }
-                ent._taskGoal = null;
-              } else {
-                chosenDx = Math.sign(leader.x - ent.x);
-                chosenDy = Math.sign(leader.y - ent.y);
-                hasIntention = true;
-              }
-            }
-          }
-
 
           // --- 5.6 Sanitation: Clean Feces Inside Territory ---
           if (!hasIntention && energyRatio > 0.40) {
@@ -9989,21 +10018,25 @@ export function createLocomotionProp() {
         const distToBase = Math.abs(ent.x - homeBaseX) + Math.abs(ent.y - homeBaseY);
         const inClanTerritory = isTileInClaimedZones(ent.x, ent.y, group.claimedZones);
 
-        // Ensure living leaderId is tracked or auto-elected
-        const curLeaderEnt = getEntityById(group.leaderId);
-        const isLeaderLiving = (curLeaderEnt && !curLeaderEnt.destroyed);
+        // Ensure living leaderId is tracked or auto-elected only if truly dead
+        const isLeaderLiving = isAlive(group.leaderId);
         if (!group.leaderId || !isLeaderLiving) {
-          const livingMems = (group.members || []).map(id => {
-            const e = getEntityById(id);
-            return (e && !e.destroyed) ? e : null;
-          }).filter(Boolean);
-          if (livingMems.length > 0) {
-            group.leaderId = livingMems[0].id;
+          if (group.govType !== "DEMOCRACY" && group.govType !== "PRESIDENTIALISM" && group.govType !== "PSEUDOCRACY") {
+            const livingMems = (group.members || []).map(id => {
+              const e = getEntityById(id);
+              return (e && !e.destroyed) ? e : null;
+            }).filter(Boolean);
+            if (livingMems.length > 0) {
+              group.leaderId = livingMems[0].id;
+            }
           }
         }
 
-        // Hysteresis leash: Only trigger returning home if outside territory OR > 14 tiles away
-        if (!ent._returningClanBase) {
+        // Hysteresis leash: Only trigger returning home if outside territory OR > 14 tiles away (Diplomats on mission exempt)
+        const isDiplomatOnMission = (ent._taskGoal && ent._taskGoal.type === "diplomacy");
+        if (isDiplomatOnMission) {
+          ent._returningClanBase = false;
+        } else if (!ent._returningClanBase) {
           if (!inClanTerritory || distToBase > 14) {
             ent._returningClanBase = true;
           }
@@ -11724,7 +11757,7 @@ export function createCactus(x, y) {
       deep_root: createDeepRootProp(22.0, 14.0),
       photosynthesis: createPhotosynthesisProp(0.2, 38.0),
       fruiting: createFruitingProp(180.0, "large", "cactus"),
-      terrain_pref: createTerrainPreferenceProp([3], "Arid Desert Sand"),
+      terrain_pref: createTerrainPreferenceProp([0, 3, 4, 9, 1], "Arid and Sandy Land"),
       plant_flesh: { nutrition: 1600, foodType: "plant" }
     },
     x,
@@ -11752,7 +11785,7 @@ export function createScorpion(x, y) {
       arm_right: createArmProp("stinger", 1.2, 100, 100, { name: generateUniqueWeaponName("Venomous Stinger"), damage: 46 }),
       leg_left: createLegProp("legs_left", 1.2, 100, 100),
       leg_right: createLegProp("legs_right", 1.2, 100, 100),
-      terrain_pref: createTerrainPreferenceProp([3], "Desert Sand"),
+      terrain_pref: createTerrainPreferenceProp([3, 0], "Sand and Soil"),
       locomotion: createLocomotionProp(),
       carapace: { condition: 100, maxCondition: 100, defense: 25, nutrition: 800, foodType: "bone" },
       flesh: { condition: 100, maxCondition: 100, nutrition: 1500, foodType: "meat" }
@@ -11800,7 +11833,7 @@ export function createAlpineShrub(x, y) {
       life: createLifeProp(4500, 4500, 0.04),
       bladder: createBladderProp(2500, 2500),
       photosynthesis: createPhotosynthesisProp(0.25, 26.0),
-      terrain_pref: createTerrainPreferenceProp([4, 1], "Rocky Ground and Mountain"),
+      terrain_pref: createTerrainPreferenceProp([0, 1, 4, 9, 10], "Rocky Ground and Mountain"),
       plant_flesh: { nutrition: 800, foodType: "plant" }
     },
     x,
@@ -11816,21 +11849,18 @@ export function createMountainGoat(x, y) {
       surname: naming.surname,
       species: "goat",
       render: { skin: "Creature_Bear_U.png", color: 0xffe6e6dc, backcolor: 0xff3c3c3c },
-      life: createLifeProp(5200, 5200),
+      life: createLifeProp(7500, 7500),
       terrestrial: createTerrestrialProp(),
-      mouth: createMouthProp(32, 32),
-      communication: createCommunicationProp(2.5),
-      brain: createBrainProp(14, { bravery: 0.6, curiosity: 0.7, aggression: 0.4 }, 1.1),
-      stomach: createStomachProp(4, { plant: 1.4, fruit: 1.0, meat: 0.1 }),
-      bladder: createBladderProp(2500, 2500),
-      kidney: createKidneyProp(0.7),
-      combat: createCombatProp(1.0, 3),
+      communication: createCommunicationProp(8.0),
+      brain: createBrainProp(14, { bravery: 0.8, curiosity: 0.5, aggression: 0.3 }, 1.0),
+      stomach: createStomachProp(6, { plant: 1.8, fruit: 1.2, grain: 1.0 }),
+      bladder: createBladderProp(3500, 3500),
       horns: createArmProp("horns", 1.2, 100, 100, { name: generateUniqueWeaponName("Mountain Horns"), damage: 38 }),
       paw_front_left: createPawProp("front_left", 1.2, 100, 100, 0, 0, 0),
       paw_front_right: createPawProp("front_right", 1.2, 100, 100, 0, 0, 0),
       paw_back_left: createPawProp("back_left", 1.2, 100, 100, 0, 0, 0),
       paw_back_right: createPawProp("back_right", 1.2, 100, 100, 0, 0, 0),
-      terrain_pref: createTerrainPreferenceProp([4, 1, 0], "Mountains and Crags"),
+      terrain_pref: createTerrainPreferenceProp([4, 1, 0, 9], "Mountains and Crags"),
       locomotion: createLocomotionProp(),
       flesh: { condition: 100, maxCondition: 100, nutrition: 2600, foodType: "meat" }
     },
@@ -11850,7 +11880,7 @@ export function createOakTree(x, y) {
       deep_root: createDeepRootProp(20.0, 12.0),
       photosynthesis: createPhotosynthesisProp(0.3, 35.0),
       fruiting: createFruitingProp(260.0, "large", "oak"),
-      terrain_pref: createTerrainPreferenceProp([0], "Fertile Land"),
+      terrain_pref: createTerrainPreferenceProp([0, 9, 3, 4], "Fertile Land and Hills"),
       wood: { nutrition: 2000, foodType: "plant" }
     },
     x,
@@ -11868,7 +11898,7 @@ export function createWillowTree(x, y) {
       bladder: createBladderProp(4000, 4000),
       photosynthesis: createPhotosynthesisProp(0.3, 30.0),
       fruiting: createFruitingProp(220.0, "small", "willow"),
-      terrain_pref: createTerrainPreferenceProp([0, 2], "Riverbank / Moist Soil"),
+      terrain_pref: createTerrainPreferenceProp([0, 2, 3, 9], "Riverbank / Moist Soil"),
       wood: { nutrition: 1500, foodType: "plant" }
     },
     x,
@@ -11887,7 +11917,7 @@ export function createPineTree(x, y) {
       deep_root: createDeepRootProp(18.0, 14.0),
       photosynthesis: createPhotosynthesisProp(0.3, 32.0),
       fruiting: createFruitingProp(240.0, "large", "pine"),
-      terrain_pref: createTerrainPreferenceProp([0, 1], "Soil and Mountain"),
+      terrain_pref: createTerrainPreferenceProp([0, 1, 4, 9, 10], "Soil, Hills and Mountain"),
       wood: { nutrition: 1800, foodType: "plant" }
     },
     x,
@@ -11906,7 +11936,7 @@ export function createCherryBlossomTree(x, y) {
       deep_root: createDeepRootProp(18.0, 12.0),
       photosynthesis: createPhotosynthesisProp(0.3, 34.0),
       fruiting: createFruitingProp(280.0, "large", "cherry"),
-      terrain_pref: createTerrainPreferenceProp([0, 9], "Plains and Hills"),
+      terrain_pref: createTerrainPreferenceProp([0, 9, 3, 4], "Plains and Hills"),
       wood: { nutrition: 1900, foodType: "plant" }
     },
     x,
@@ -11925,8 +11955,8 @@ export function createBirchTree(x, y) {
       deep_root: createDeepRootProp(16.0, 10.0),
       photosynthesis: createPhotosynthesisProp(0.3, 32.0),
       fruiting: createFruitingProp(240.0, "large", "birch"),
-      terrain_pref: createTerrainPreferenceProp([0, 9], "Lowlands and Hills"),
-      wood: { nutrition: 1700, foodType: "plant" }
+      terrain_pref: createTerrainPreferenceProp([0, 9, 3, 4], "Lowlands and Hills"),
+      wood: { nutrition: 1750, foodType: "plant" }
     },
     x,
     y
@@ -11944,7 +11974,7 @@ export function createMapleTree(x, y) {
       deep_root: createDeepRootProp(22.0, 14.0),
       photosynthesis: createPhotosynthesisProp(0.3, 36.0),
       fruiting: createFruitingProp(270.0, "large", "maple"),
-      terrain_pref: createTerrainPreferenceProp([0, 9, 4], "Hills and Foothills"),
+      terrain_pref: createTerrainPreferenceProp([0, 9, 4, 1], "Hills and Foothills"),
       wood: { nutrition: 2100, foodType: "plant" }
     },
     x,
@@ -11963,7 +11993,7 @@ export function createBerryBush(x, y) {
       deep_root: createDeepRootProp(12.0, 8.0),
       photosynthesis: createPhotosynthesisProp(0.3, 28.0),
       fruiting: createFruitingProp(150.0, "small", "berry"),
-      terrain_pref: createTerrainPreferenceProp([0, 9], "Fertile Soil and Hills"),
+      terrain_pref: createTerrainPreferenceProp([0, 9, 3, 4], "Fertile Soil and Hills"),
       wood: { nutrition: 800, foodType: "plant" }
     },
     x,
@@ -11982,7 +12012,7 @@ export function createRoseBush(x, y) {
       deep_root: createDeepRootProp(14.0, 8.0),
       photosynthesis: createPhotosynthesisProp(0.3, 26.0),
       fruiting: createFruitingProp(160.0, "small", "rose"),
-      terrain_pref: createTerrainPreferenceProp([0, 9], "Fertile Plains and Hills"),
+      terrain_pref: createTerrainPreferenceProp([0, 9, 3, 4], "Fertile Plains and Hills"),
       plant_flesh: { nutrition: 750, foodType: "plant" }
     },
     x,
