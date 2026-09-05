@@ -2,7 +2,7 @@
 // Brutopolis
 // =============================================================================
 
-const BrutopolisVersion = "0.123.20";
+const BrutopolisVersion = "0.123.21";
 const BrutopolisVersionName = "Who may ascend the mountain of the LORD? Who may stand in his holy place?";
 
 // WASM replaced by Pure JS Renderer
@@ -4124,11 +4124,11 @@ function renderGroupsModal() {
     const cardX = mx + 16 + col * (cardW + 8);
     const cardY = my + 38 + row * (cardH + cardGap);
 
-    const livingMembers = g.members.filter(mid => {
+    const livingMembers = (g.members || []).filter(mid => {
       const m = getEntityById(mid);
       return m && !m.destroyed;
     }).length;
-    const lEnt = getEntityById(g.members[0]);
+    const lEnt = getEntityById((g.members || [])[0]);
     const leaderEnt = (lEnt && !lEnt.destroyed) ? lEnt : null;
     const stockpile = getGroupStockpile(g, entities);
 

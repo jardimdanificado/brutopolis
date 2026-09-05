@@ -2816,6 +2816,7 @@ export function gerarNomeGrupo(founderName = null) {
 let nextGroupId = 1;
 
 export function createGroup(name, founder, baseZone = null, claimedZones = null) {
+  globalThis.groupsDirty = true;
   let founderId = typeof founder === "object" && founder !== null ? founder.id : founder;
   let zx = 32;
   let zy = 32;

@@ -228,7 +228,8 @@ const SPAWNERS = {
 
 let cachedGroupsList = null;
 function getAllGroups() {
-  if (!groupsDirty && cachedGroupsList) return cachedGroupsList;
+  if (!(groupsDirty || globalThis.groupsDirty) && cachedGroupsList) return cachedGroupsList;
+  globalThis.groupsDirty = false;
   const groupsMap = new Map();
   if (world && Array.isArray(world.groups)) {
     for (const g of world.groups) {
@@ -493,10 +494,6 @@ function generateConfiguredWorld(config) {
     }
   }
 
-  if (isTitleScreen) {
-    spawnGhostTownRuins(world, minX, maxX, minY, maxY, startX, startY, entities);
-  }
-
   rebuildSpatialGrid(entities, getZoneSize());
   lastSyncedEventTick = currentTick;
   lastSyncedEventIndex = allEvents.length;
@@ -505,164 +502,6 @@ function generateConfiguredWorld(config) {
   postFullWorldState(startX, startY, firstLeaderId, isTitleScreen);
 }
 
-function spawnGhostTownRuins(world, minX, maxX, minY, maxY, centerX, centerY, entities) {
-  const numClusters = 2 + Math.floor(Math.random() * 2);
-  const clusterCenters = [{ cx: centerX, cy: centerY }];
-
-  for (let i = 1; i < numClusters; i++) {
-    const angle = (i / numClusters) * Math.PI * 2 + (Math.random() - 0.5) * 0.6;
-    const dist = 16 + Math.floor(Math.random() * 20);
-    const cx = Math.max(minX + 8, Math.min(maxX - 8, centerX + Math.round(Math.cos(angle) * dist)));
-    const cy = Math.max(minY + 8, Math.min(maxY - 8, centerY + Math.round(Math.sin(angle) * dist)));
-    if (world.isWalkable(cx, cy)) {
-      clusterCenters.push({ cx, cy });
-    }
-  }
-
-  for (const { cx, cy } of clusterCenters) {
-    // 1. Central Ancient Hearth (extinguished stone campfire)
-    const hearth = createCampfireEntity(cx, cy);
-    if (hearth) {
-      hearth.isConstructed = true;
-      hearth.woodCurrent = hearth.woodCost || 3;
-      if (hearth.properties?.campfire) {
-        hearth.properties.campfire.isLit = false;
-        hearth.properties.campfire.fuel = 0;
-      }
-      entities.push(hearth);
-    }
-
-    // 2. Abandoned Water Well
-    const wellOffsets = [{ dx: 2, dy: 1 }, { dx: -2, dy: 1 }, { dx: 1, dy: -2 }, { dx: -1, dy: -2 }];
-    const wellOff = wellOffsets[Math.floor(Math.random() * wellOffsets.length)];
-    const wx = cx + wellOff.dx;
-    const wy = cy + wellOff.dy;
-    if (world.isWalkable(wx, wy)) {
-      const well = createWaterWellEntity(wx, wy, { name: "Ancient Ruins" });
-      if (well) {
-        if (well.properties?.well) {
-          well.properties.well.isCompleted = true;
-          well.properties.well.woodCurrent = well.properties.well.woodCost;
-          well.properties.well.stoneCurrent = well.properties.well.stoneCost;
-        }
-        entities.push(well);
-      }
-    }
-
-    // 3. Old Warehouse / Granary Ruin
-    const whOffsets = [{ dx: -3, dy: -2 }, { dx: 3, dy: -2 }, { dx: -2, dy: 3 }, { dx: 2, dy: 3 }];
-    const whOff = whOffsets[Math.floor(Math.random() * whOffsets.length)];
-    const whx = cx + whOff.dx;
-    const why = cy + whOff.dy;
-    if (world.isWalkable(whx, why)) {
-      const wh = createWarehouseEntity(whx, why, { name: "Ancient Ruins" }, Math.floor(Math.random() * 2));
-      if (wh) {
-        if (wh.properties?.warehouse) {
-          wh.properties.warehouse.isCompleted = true;
-          wh.properties.warehouse.woodCurrent = wh.properties.warehouse.woodCost;
-          wh.properties.warehouse.stoneCurrent = wh.properties.warehouse.stoneCost;
-        }
-        entities.push(wh);
-      }
-    }
-
-    // 4. Abandoned Houses & Cottages (4 to 7 per cluster)
-    const houseCount = 4 + Math.floor(Math.random() * 4);
-    const housePositions = [
-      { dx: -3, dy: 0 }, { dx: 3, dy: 0 }, { dx: 0, dy: -3 }, { dx: 0, dy: 3 },
-      { dx: -4, dy: -3 }, { dx: 4, dy: -3 }, { dx: -3, dy: 4 }, { dx: 4, dy: 3 },
-      { dx: -5, dy: 1 }, { dx: 5, dy: -1 }, { dx: 1, dy: 5 }, { dx: -2, dy: -5 }
-    ];
-
-    let spawnedHouses = 0;
-    for (const hPos of housePositions) {
-      if (spawnedHouses >= houseCount) break;
-      const hx = cx + hPos.dx;
-      const hy = cy + hPos.dy;
-      if (hx >= minX && hx < maxX && hy >= minY && hy < maxY && world.isWalkable(hx, hy)) {
-        const hasEnt = entities.some(e => !e.destroyed && e.x === hx && e.y === hy);
-        if (!hasEnt) {
-          const variantIdx = Math.floor(Math.random() * 10);
-          const house = createHouseEntity(hx, hy, "mixed", null, "Ancient Ones", "wood", variantIdx);
-          if (house) {
-            if (house.properties?.house) {
-              house.properties.house.isCompleted = true;
-              house.properties.house.woodCurrent = house.properties.house.woodCost;
-              house.properties.house.stoneCurrent = house.properties.house.stoneCost;
-              house.properties.house.boneCurrent = house.properties.house.boneCost;
-            }
-            entities.push(house);
-            spawnedHouses++;
-          }
-        }
-      }
-    }
-
-    // 5. Ruined Stone Perimeter Wall Sections
-    const wallRadius = 5;
-    for (let angle = 0; angle < Math.PI * 2; angle += 0.4) {
-      if (Math.random() > 0.45) {
-        const wx = Math.round(cx + Math.cos(angle) * wallRadius);
-        const wy = Math.round(cy + Math.sin(angle) * wallRadius);
-        if (wx >= minX && wx < maxX && wy >= minY && wy < maxY && world.isWalkable(wx, wy)) {
-          const hasEnt = entities.some(e => !e.destroyed && e.x === wx && e.y === wy);
-          if (!hasEnt) {
-            const wall = createWallEntity(wx, wy, "Forgotten Realm", "stone");
-            if (wall) {
-              wall.isConstructed = true;
-              wall.stoneCurrent = wall.stoneCost || 2;
-              entities.push(wall);
-            }
-          }
-        }
-      }
-    }
-
-    // 6. Ancient Overgrown Cobblestone / Dirt Trails connecting ruins
-    for (let dy = -4; dy <= 4; dy++) {
-      for (let dx = -4; dx <= 4; dx++) {
-        if ((Math.abs(dx) <= 1 || Math.abs(dy) <= 1) && Math.random() < 0.65) {
-          const tx = cx + dx;
-          const ty = cy + dy;
-          if (tx >= minX && tx < maxX && ty >= minY && ty < maxY) {
-            const curTile = world.getTile(tx, ty);
-            if (curTile === 0 || curTile === 3 || curTile === 4) {
-              world.setTile(tx, ty, (curTile === 3) ? 7 : (curTile === 4 ? 8 : 6));
-            }
-          }
-        }
-      }
-    }
-
-    // 7. Atmospheric Village Standing Torches (3 to 5 torches illuminating ruins and pathways)
-    const torchOffsets = [
-      { dx: -2, dy: -2 }, { dx: 2, dy: -2 }, { dx: -2, dy: 2 }, { dx: 2, dy: 2 },
-      { dx: 0, dy: -4 }, { dx: 0, dy: 4 }, { dx: -4, dy: 0 }, { dx: 4, dy: 0 }
-    ];
-    let spawnedTorches = 0;
-    for (const tOff of torchOffsets) {
-      if (spawnedTorches >= 4) break;
-      if (Math.random() < 0.75) {
-        const tox = cx + tOff.dx;
-        const toy = cy + tOff.dy;
-        if (tox >= minX && tox < maxX && toy >= minY && toy < maxY && world.isWalkable(tox, toy)) {
-          const hasEnt = entities.some(e => !e.destroyed && e.x === tox && e.y === toy);
-          if (!hasEnt) {
-            const torch = createTorchEntity(tox, toy, null);
-            if (torch) {
-              if (torch.properties?.torch) {
-                torch.properties.torch.isLit = true;
-                torch.properties.torch.fuel = 9999;
-              }
-              entities.push(torch);
-              spawnedTorches++;
-            }
-          }
-        }
-      }
-    }
-  }
-}
 
 function sanitizeForTransfer(obj, depth = 0) {
   if (depth > 6 || obj === null || obj === undefined) return obj;
