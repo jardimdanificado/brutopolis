@@ -4786,6 +4786,36 @@ export function createCommunicationProp(talkRate = 4.0) {
 }
 
 export function gossipBetweenCreatures(speaker, listener, world, entities) {
+  const spkGroup = speaker.properties.group;
+  const lisGroup = listener.properties.group;
+  
+  const spkBrain = speaker.properties.brain;
+  const lisBrain = listener.properties.brain;
+  if (!spkBrain || !lisBrain) return;
+
+  const oldSpkAff = spkBrain.affinities[listener.id] || 0;
+  const oldLisAff = lisBrain.affinities[speaker.id] || 0;
+
+  _gossipBetweenCreatures(speaker, listener, world, entities);
+
+  if (spkGroup && lisGroup && spkGroup.id !== lisGroup.id && !spkGroup.dissolved && !lisGroup.dissolved) {
+    const newSpkAff = spkBrain.affinities[listener.id] || 0;
+    const newLisAff = lisBrain.affinities[speaker.id] || 0;
+    const deltaSpk = newSpkAff - oldSpkAff;
+    const deltaLis = newLisAff - oldLisAff;
+    const totalDelta = (deltaSpk + deltaLis) * 0.10; // 10% of personal affinity changes apply to group relation
+    
+    if (Math.abs(totalDelta) > 0) {
+      if (!spkGroup.relations) spkGroup.relations = {};
+      if (!lisGroup.relations) lisGroup.relations = {};
+      
+      spkGroup.relations[lisGroup.id] = Math.max(-100, Math.min(100, (spkGroup.relations[lisGroup.id] || 0) + totalDelta));
+      lisGroup.relations[spkGroup.id] = Math.max(-100, Math.min(100, (lisGroup.relations[spkGroup.id] || 0) + totalDelta));
+    }
+  }
+}
+
+function _gossipBetweenCreatures(speaker, listener, world, entities) {
   const spkBrain = speaker.properties.brain;
   const lisBrain = listener.properties.brain;
   if (!spkBrain || !lisBrain) return;
@@ -5365,60 +5395,44 @@ export function createAndTransmitLie(speaker, listener, world, entities) {
       if (enemies.length > 0 && (friends.length === 0 || Math.random() < 0.65)) {
         // Purpose: Slander / Diminish an enemy
         accusedTarget = enemies[Math.floor(Math.random() * enemies.length)];
-        const targetName = accusedTarget.properties.name;
-        lieType = "PURPOSEFUL_SLANDER";
-        const slanderTemplates = [
-          `spread the malicious rumor that ${targetName} committed treason and stole clan resources!`,
-          `falsely accused ${targetName} of fleeing in panic and acting like a vile coward!`,
-          `slandered ${targetName}, claiming they were humiliated and easily defeated in battle!`,
-          `whispered that ${targetName} eats dirt when no one is looking!`,
-          `claimed ${targetName} secretly worships forbidden entities in the dark!`,
-          `started a rumor that ${targetName} sleeps during their guard shifts!`
-        ];
-        narrative = `${speaker.properties.name} ${slanderTemplates[Math.floor(Math.random() * slanderTemplates.length)]}`;
+        const types = ["FABRICATED_MURDER", "FABRICATED_ATTACK", "FABRICATED_STEAL", "FABRICATED_CURSE", "FABRICATED_TREASON", "FABRICATED_COWARDICE", "FABRICATED_ADULTERY"];
+        lieType = types[Math.floor(Math.random() * types.length)];
       } else if (friends.length > 0 || Math.random() < 0.50) {
         // Purpose: Exalt / Glorify a friend or self
         const exaltSelf = Math.random() < 0.40 || friends.length === 0;
         accusedTarget = exaltSelf ? speaker : friends[Math.floor(Math.random() * friends.length)];
-        const targetName = accusedTarget.properties.name;
-        lieType = "PURPOSEFUL_EXALT";
-        const exaltTemplates = [
-          `boasted that ${targetName} single-handedly vanquished a monstrous beast in heroic combat!`,
-          `fabricated a legend that ${targetName} discovered a blessed sacred relic!`,
-          `swore they saw ${targetName} lift a boulder with one hand!`,
-          `claimed ${targetName} has the wisdom of ancient kings!`,
-          `spread a tall tale that ${targetName} can communicate with the wind!`,
-          `told everyone that ${targetName} never misses a strike in battle!`
-        ];
-        narrative = `${speaker.properties.name} ${exaltTemplates[Math.floor(Math.random() * exaltTemplates.length)]}`;
+        const types = ["FABRICATED_EXALT", "FABRICATED_HEROISM", "FABRICATED_MIRACLE", "FABRICATED_GENIUS", "FABRICATED_CHARITY"];
+        lieType = types[Math.floor(Math.random() * types.length)];
       } else {
-        return; // No purposeful emotional motive to fabricate a lie
+        // Just causing chaos
+        accusedTarget = candidateLivingKnown[Math.floor(Math.random() * candidateLivingKnown.length)];
+        if (!accusedTarget) accusedTarget = listener; // default to conversation partner if no other known
+
+        const recentRealEvents = allEvents.slice(-40).filter(e => e.opcode === OP_ATTACK || e.opcode === OP_DEATH || e.opcode === OP_AMPUTATION || e.opcode === OP_INSULT);
+        const realEv = recentRealEvents.length > 0 ? recentRealEvents[Math.floor(Math.random() * recentRealEvents.length)] : null;
+
+        if (realEv && Math.random() < 0.50) {
+          lieType = "FRAME_JOB";
+          realEventId = realEv.id;
+        } else {
+          const types = ["FABRICATED_MURDER", "FABRICATED_DEATH", "FABRICATED_BIRTH", "FABRICATED_ATTACK", "FABRICATED_STEAL", "FABRICATED_CURSE", "FABRICATED_ADULTERY"];
+          lieType = types[Math.floor(Math.random() * types.length)];
+        }
       }
     } else {
       // CAREER LIAR (MANIPULATOR): Can fabricate purposeful or chaotic lies, but only against known living creatures
       accusedTarget = candidateLivingKnown.length > 0 ? candidateLivingKnown[Math.floor(Math.random() * candidateLivingKnown.length)] : null;
       if (!accusedTarget) accusedTarget = listener; // default to conversation partner if no other known
 
-      const targetName = accusedTarget.properties?.name || "a traveler";
       const recentRealEvents = allEvents.slice(-40).filter(e => e.opcode === OP_ATTACK || e.opcode === OP_DEATH || e.opcode === OP_AMPUTATION || e.opcode === OP_INSULT);
       const realEv = recentRealEvents.length > 0 ? recentRealEvents[Math.floor(Math.random() * recentRealEvents.length)] : null;
 
-      if (realEv && Math.random() < 0.50) {
+      if (realEv && Math.random() < 0.65) {
         lieType = "FRAME_JOB";
         realEventId = realEv.id;
-        narrative = `${speaker.properties.name} falsely accused ${targetName} of being the culprit in event #${realEv.id} (${realEv.description})!`;
       } else {
-        const manipulatorLies = [
-          { type: "FABRICATED_MURDER", text: `falsely claimed that ${targetName} murdered an innocent in cold blood!` },
-          { type: "FABRICATED_DEATH", text: `spread a fake rumor that ${targetName} was slain in the wilderness!` },
-          { type: "FABRICATED_BIRTH", text: `gossiped that ${targetName} had a secret illegitimate child!` },
-          { type: "FABRICATED_ATTACK", text: `claimed that ${targetName} secretly betrayed the clan!` },
-          { type: "FABRICATED_STEAL", text: `swore they saw ${targetName} stealing food from the warehouse in the dead of night!` },
-          { type: "FABRICATED_CURSE", text: `told everyone that ${targetName} is cursed and brings bad luck to the village!` }
-        ];
-        const chosen = manipulatorLies[Math.floor(Math.random() * manipulatorLies.length)];
-        lieType = chosen.type;
-        narrative = `${speaker.properties.name} ${chosen.text}`;
+        const manipulatorLies = ["FABRICATED_MURDER", "FABRICATED_DEATH", "FABRICATED_BIRTH", "FABRICATED_ATTACK", "FABRICATED_INSULT"];
+        lieType = manipulatorLies[Math.floor(Math.random() * manipulatorLies.length)];
       }
     }
 
@@ -5435,7 +5449,6 @@ export function createAndTransmitLie(speaker, listener, world, entities) {
         lieType,
         realEventId,
         citedEventId: realEventId,
-        narrative,
         believedBy: speakerBelievesLie ? [speaker.id] : [],
         disbelievedBy: []
       }
@@ -8971,19 +8984,79 @@ export function createLocomotionProp() {
               let targetGroup = (typeof getAllGroups === "function") ? getAllGroups().find(g => g.id === ent._taskGoal.targetGroupId) : null;
               const group = ent.properties.group;
               if (targetGroup && group) {
-                if (Math.random() < 0.65) {
+                const isSuccess = Math.random() < 0.65;
+                const missionReport = {
+                  success: isSuccess,
+                  giftsExchanged: [],
+                  skillsShared: [],
+                  locationsShared: [],
+                  relationChange: 0,
+                  summary: ""
+                };
+
+                if (!group.relations) group.relations = {};
+                if (!targetGroup.relations) targetGroup.relations = {};
+
+                if (isSuccess) {
                   ent.emote = 2; // Happy
                   leader.emote = 2; // Happy
                   
-                  if (!group.relations) group.relations = {};
-                  let currentRel = group.relations[targetGroup.id] || 0;
-                  currentRel += Math.floor(Math.random() * 10) + 5;
-                  group.relations[targetGroup.id] = Math.min(100, currentRel);
+                  const relBoost = Math.floor(Math.random() * 7) + 2; // +2 to +8
+                  missionReport.relationChange = relBoost;
+                  missionReport.startTick = ent._taskGoal.startTick || 0;
+                  missionReport.endTick = typeof currentTick !== "undefined" ? currentTick : 0;
                   
-                  if (!targetGroup.relations) targetGroup.relations = {};
-                  targetGroup.relations[group.id] = (targetGroup.relations[group.id] || 0) + 5;
+                  group.relations[targetGroup.id] = Math.min(100, Math.max(-100, (group.relations[targetGroup.id] || 0) + relBoost));
+                  targetGroup.relations[group.id] = Math.min(100, Math.max(-100, (targetGroup.relations[group.id] || 0) + relBoost));
                   
-                  const desc = `Missão diplomática bem sucedida! ${ent.properties?.name || "Diplomata"} de ${group.name} convenceu ${leader.properties?.name || "Líder"} de ${targetGroup.name} a melhorar as relações.`;
+                  // Exchange Real Knowledge / Events
+                  if (Math.random() < 0.6 && typeof allEvents !== 'undefined') {
+                    const recentRealEvents = allEvents.slice(-60).filter(e => (e.opcode === 2 || e.opcode === 11 || e.opcode === 13 || e.opcode === 18));
+                    if (recentRealEvents.length > 0) {
+                      const sharedEv = recentRealEvents[Math.floor(Math.random() * recentRealEvents.length)];
+                      const evtDesc = typeof formatEventDescription === "function" ? formatEventDescription(sharedEv) : sharedEv.description;
+                      missionReport.skillsShared.push(`News: ${evtDesc}`);
+                      missionReport.summary += `Shared real news about event #${sharedEv.id}. `;
+                    }
+                  }
+
+                  // Exchange Real Locations
+                  if (Math.random() < 0.5 && typeof getAllGroups === 'function') {
+                    const otherClans = getAllGroups().filter(g => g.id !== group.id && g.id !== targetGroup.id && g.claimedZones && g.claimedZones.length > 0);
+                    if (otherClans.length > 0) {
+                      const clan = otherClans[Math.floor(Math.random() * otherClans.length)];
+                      const zKey = clan.claimedZones[0];
+                      const zx = (zKey >> 16) & 0xFFFF;
+                      const zy = zKey & 0xFFFF;
+                      missionReport.locationsShared.push(`Location of ${clan.name}'s territory near (${zx * 16}, ${zy * 16})`);
+                      missionReport.summary += `Exchanged map information. `;
+                    }
+                  }
+
+                  // Exchange Real Gifts (from backpack or hand)
+                  let giftGiven = null;
+                  if (ent.properties.backpack?.items?.length > 0) {
+                    giftGiven = ent.properties.backpack.items.pop();
+                  } else {
+                    for (const k in ent.properties) {
+                      const p = ent.properties[k];
+                      if ((k.startsWith("arm") || k.startsWith("paw")) && p && p.heldItem) {
+                        giftGiven = p.heldItem;
+                        p.heldItem = null;
+                        break;
+                      }
+                    }
+                  }
+                  
+                  if (giftGiven) {
+                    if (!targetGroup.storage) targetGroup.storage = [];
+                    const itemName = giftGiven.name || giftGiven.resourceType || "Item";
+                    targetGroup.storage.push(itemName);
+                    missionReport.giftsExchanged.push(itemName);
+                    missionReport.summary += `Gifted physical item: ${itemName}. `;
+                  }
+
+                  const desc = `Missão diplomática bem sucedida! ${ent.properties?.name || "Diplomata"} de ${group.name} convenceu ${leader.properties?.name || "Líder"} de ${targetGroup.name}. ${missionReport.summary}`;
                   
                   if (typeof recordWorldEvent === "function") {
                     recordWorldEvent({
@@ -8993,7 +9066,7 @@ export function createLocomotionProp() {
                       location: { x: ent.x, y: ent.y },
                       description: desc,
                       tick: typeof currentTick !== "undefined" ? currentTick : 0,
-                      metadata: { groupName: group.name, targetName: targetGroup.name }
+                      metadata: { groupName: group.name, targetName: targetGroup.name, missionReport }
                     });
                   }
 
@@ -9002,21 +9075,37 @@ export function createLocomotionProp() {
                     targetGroupId: targetGroup.id,
                     title: `Missão Diplomática (Sucesso)`,
                     description: desc,
-                    tick: typeof currentTick !== "undefined" ? currentTick : 0
+                    tick: typeof currentTick !== "undefined" ? currentTick : 0,
+                    missionReport
                   });
 
                   addPoliticalHistoryEntry(targetGroup, {
                     type: "DIPLOMATIC_MISSION",
                     targetGroupId: group.id,
-                    title: `Emissário Recebido`,
-                    description: `${ent.properties?.name || "Diplomata"} de ${group.name} melhorou as relações com nosso povo.`,
-                    tick: typeof currentTick !== "undefined" ? currentTick : 0
+                    title: `Emissário Recebido (Sucesso)`,
+                    description: `${ent.properties?.name || "Diplomata"} de ${group.name} melhorou as relações. ${missionReport.summary}`,
+                    tick: typeof currentTick !== "undefined" ? currentTick : 0,
+                    missionReport
                   });
                 } else {
                   ent.emote = 4; // Sad
                   leader.emote = 5; // Angry
                   
-                  const desc = `Missão diplomática falhou! ${leader.properties?.name || "Líder"} de ${targetGroup.name} rejeitou a oferta de ${ent.properties?.name || "Diplomata"} de ${group.name}.`;
+                  const relDrop = Math.floor(Math.random() * 10) + 5; // -5 to -14
+                  missionReport.relationChange = -relDrop;
+                  missionReport.startTick = ent._taskGoal.startTick || 0;
+                  missionReport.endTick = typeof currentTick !== "undefined" ? currentTick : 0;
+                  
+                  group.relations[targetGroup.id] = Math.min(100, Math.max(-100, (group.relations[targetGroup.id] || 0) - relDrop));
+                  targetGroup.relations[group.id] = Math.min(100, Math.max(-100, (targetGroup.relations[group.id] || 0) - relDrop));
+                  
+                  if (Math.random() < 0.3) {
+                     missionReport.summary += "O emissário foi insultado publicamente. ";
+                  } else {
+                     missionReport.summary += "A proposta de paz foi ignorada. ";
+                  }
+                  
+                  const desc = `Missão diplomática falhou! ${leader.properties?.name || "Líder"} de ${targetGroup.name} rejeitou a oferta de ${ent.properties?.name || "Diplomata"} de ${group.name}. ${missionReport.summary}`;
                   
                   if (typeof recordWorldEvent === "function") {
                     recordWorldEvent({
@@ -9024,16 +9113,27 @@ export function createLocomotionProp() {
                       primaryEntityId: ent.id,
                       location: { x: ent.x, y: ent.y },
                       description: desc,
-                      tick: typeof currentTick !== "undefined" ? currentTick : 0
+                      tick: typeof currentTick !== "undefined" ? currentTick : 0,
+                      metadata: { groupName: group.name, targetName: targetGroup.name, missionReport }
                     });
                   }
 
                   addPoliticalHistoryEntry(group, {
                     type: "DIPLOMATIC_MISSION",
                     targetGroupId: targetGroup.id,
-                    title: `Missão Diplomática (Recusada)`,
+                    title: `Missão Diplomática (Fracasso)`,
                     description: desc,
-                    tick: typeof currentTick !== "undefined" ? currentTick : 0
+                    tick: typeof currentTick !== "undefined" ? currentTick : 0,
+                    missionReport
+                  });
+                  
+                  addPoliticalHistoryEntry(targetGroup, {
+                    type: "DIPLOMATIC_MISSION",
+                    targetGroupId: group.id,
+                    title: `Emissário Rejeitado`,
+                    description: `${leader.properties?.name || "Líder"} rejeitou as ofertas de ${group.name}. ${missionReport.summary}`,
+                    tick: typeof currentTick !== "undefined" ? currentTick : 0,
+                    missionReport
                   });
                 }
               }
@@ -10808,7 +10908,7 @@ export function createSurfaceRootProp() {
 /**
  * Fruiting (Generates Edible Fruits with Seeds at Low Frequency with Density Limit)
  */
-export function createFruitingProp(interval = 90.0, seedType = "small", species = "oak", initialTimer = null) {
+export function createFruitingProp(interval = 400.0, seedType = "small", species = "oak", initialTimer = null) {
   return {
     interval,
     seedType,
@@ -10841,7 +10941,11 @@ export function createFruitingProp(interval = 90.0, seedType = "small", species 
         const fy = Math.max(0, Math.min((world.height || 1024) - 1, Math.round(ent.y + Math.sin(angle) * dist)));
 
         const tVal = world.getTile ? world.getTile(fx, fy) : 0;
-        if (tVal === 2 || tVal === 5 || isRoadTile(fx, fy)) return; // Don't drop on water, void or road
+        if (tVal === 2 || tVal === 5 || (typeof isRoadTile === 'function' && isRoadTile(fx, fy))) return; // Don't drop on water, void or road
+
+        // Ensure no other items/trees exactly on this tile
+        const hasEnt = (typeof findEntityInRadius === 'function') ? findEntityInRadius(fx, fy, 0, e => !e.destroyed) : null;
+        if (hasEnt) return;
 
         const fruit = createEntity(
           {
@@ -11688,6 +11792,7 @@ export function createSeedGerminationProp(species = "oak", checkInterval = 8.0, 
         const hasTreeNearby = hasEntityInRadius(ent.x, ent.y, 4, e =>
           !e.destroyed && e.id !== ent.id && (
             e.properties?.photosynthesis || e.properties?.deep_root || e.properties?.tree ||
+            e.properties?.germination || // Also avoid sprouting near other seeds
             e.properties?.species === "oak" || e.properties?.species === "willow" ||
             e.properties?.species === "pine" || e.properties?.species === "cherry_blossom" ||
             e.properties?.species === "birch" || e.properties?.species === "maple" ||

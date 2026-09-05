@@ -157,6 +157,10 @@ export function formatEventDescription(ev) {
         return `${pName} spread a rumor that a secret child was born to ${sName}!${locStr}`;
       } else if (lieType === "FABRICATED_ATTACK") {
         return `${pName} falsely claimed that ${sName} attacked them in secret!${locStr}`;
+      } else if (lieType === "FABRICATED_INSULT") {
+        return `${pName} claimed that ${sName} hurled terrible insults at them!${locStr}`;
+      } else if (lieType === "FABRICATED_PRAISE") {
+        return `${pName} exaggeratedly claimed ${sName} praised them!${locStr}`;
       }
       return `${pName} told a fabricated lie about ${sName}!${locStr}`;
     }

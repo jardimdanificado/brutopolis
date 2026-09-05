@@ -26,6 +26,7 @@ import {
   rebuildSpatialGrid,
   getEntityAtTile,
   getEntitiesInRadius,
+  hasEntityInRadius,
   tileEntityMap,
   setCameraViewport
 } from "./engine.js";
@@ -248,6 +249,8 @@ function getAllGroups() {
   return cachedGroupsList;
 }
 
+const globalUsedCoords = new Set();
+
 function spawnRandomGlobal(count, factoryFn, conditionFn = null, bounds = null) {
   let spawned = 0;
   const minX = bounds ? bounds.minX : 2;
@@ -261,7 +264,9 @@ function spawnRandomGlobal(count, factoryFn, conditionFn = null, bounds = null) 
   for (let attempt = 0; attempt < maxAttempts && spawned < count; attempt++) {
     const rx = minX + Math.floor(Math.random() * spanX);
     const ry = minY + Math.floor(Math.random() * spanY);
-    if (!conditionFn || conditionFn(rx, ry)) {
+    const key = `${rx},${ry}`;
+    if (!globalUsedCoords.has(key) && (!conditionFn || conditionFn(rx, ry))) {
+      globalUsedCoords.add(key);
       const e = factoryFn(rx, ry);
       entities.push(e);
       spawned++;
@@ -270,6 +275,7 @@ function spawnRandomGlobal(count, factoryFn, conditionFn = null, bounds = null) 
 }
 
 function generateConfiguredWorld(config) {
+  globalUsedCoords.clear();
   const genPreset = config.preset !== undefined ? config.preset : 0;
   genWidth = config.width || 256;
   genHeight = config.height || 256;
@@ -347,16 +353,18 @@ function generateConfiguredWorld(config) {
   }
 
   const floraCount = (base) => Math.max(1, Math.round(base * plantMult));
-  spawnRandomGlobal(floraCount(85), createOakTree, (x, y) => inBounds(x, y) && (world.getTile(x, y) === TILE_FLOOR || world.getTile(x, y) === TILE_HILL) && !isRoadTile(x, y), spawnBounds);
-  spawnRandomGlobal(floraCount(60), createCherryBlossomTree, (x, y) => inBounds(x, y) && (world.getTile(x, y) === TILE_FLOOR || world.getTile(x, y) === TILE_HILL) && !isRoadTile(x, y), spawnBounds);
-  spawnRandomGlobal(floraCount(65), createBirchTree, (x, y) => inBounds(x, y) && (world.getTile(x, y) === TILE_FLOOR || world.getTile(x, y) === TILE_HILL) && !isRoadTile(x, y), spawnBounds);
-  spawnRandomGlobal(floraCount(55), createMapleTree, (x, y) => inBounds(x, y) && (world.getTile(x, y) === TILE_HILL || world.getTile(x, y) === TILE_STONE) && !isRoadTile(x, y), spawnBounds);
+  const isClearOfTrees = (x, y) => !hasEntityInRadius(x, y, 2, e => !e.destroyed && (e.properties?.photosynthesis || e.properties?.tree || e.properties?.species === "pine" || e.properties?.species === "oak" || e.properties?.species === "willow"));
+
+  spawnRandomGlobal(floraCount(85), createOakTree, (x, y) => inBounds(x, y) && (world.getTile(x, y) === TILE_FLOOR || world.getTile(x, y) === TILE_HILL) && !isRoadTile(x, y) && isClearOfTrees(x, y), spawnBounds);
+  spawnRandomGlobal(floraCount(60), createCherryBlossomTree, (x, y) => inBounds(x, y) && (world.getTile(x, y) === TILE_FLOOR || world.getTile(x, y) === TILE_HILL) && !isRoadTile(x, y) && isClearOfTrees(x, y), spawnBounds);
+  spawnRandomGlobal(floraCount(65), createBirchTree, (x, y) => inBounds(x, y) && (world.getTile(x, y) === TILE_FLOOR || world.getTile(x, y) === TILE_HILL) && !isRoadTile(x, y) && isClearOfTrees(x, y), spawnBounds);
+  spawnRandomGlobal(floraCount(55), createMapleTree, (x, y) => inBounds(x, y) && (world.getTile(x, y) === TILE_HILL || world.getTile(x, y) === TILE_STONE) && !isRoadTile(x, y) && isClearOfTrees(x, y), spawnBounds);
   spawnRandomGlobal(floraCount(50), createBerryBush, (x, y) => inBounds(x, y) && (world.getTile(x, y) === TILE_FLOOR || world.getTile(x, y) === TILE_HILL) && !isRoadTile(x, y), spawnBounds);
   spawnRandomGlobal(floraCount(45), createRoseBush, (x, y) => inBounds(x, y) && (world.getTile(x, y) === TILE_FLOOR || world.getTile(x, y) === TILE_HILL) && !isRoadTile(x, y), spawnBounds);
-  spawnRandomGlobal(floraCount(65), createWillowTree, (x, y) => inBounds(x, y) && (world.getTile(x, y) === TILE_FLOOR || world.getTile(x, y) === TILE_SAND) && !isRoadTile(x, y), spawnBounds);
-  spawnRandomGlobal(floraCount(60), createCactus, (x, y) => inBounds(x, y) && world.getTile(x, y) === TILE_SAND && !isRoadTile(x, y), spawnBounds);
+  spawnRandomGlobal(floraCount(65), createWillowTree, (x, y) => inBounds(x, y) && (world.getTile(x, y) === TILE_FLOOR || world.getTile(x, y) === TILE_SAND) && !isRoadTile(x, y) && isClearOfTrees(x, y), spawnBounds);
+  spawnRandomGlobal(floraCount(60), createCactus, (x, y) => inBounds(x, y) && world.getTile(x, y) === TILE_SAND && !isRoadTile(x, y) && isClearOfTrees(x, y), spawnBounds);
   spawnRandomGlobal(floraCount(55), createAlpineShrub, (x, y) => inBounds(x, y) && (world.getTile(x, y) === TILE_STONE || world.getTile(x, y) === TILE_MOUNTAIN || world.getTile(x, y) === TILE_PEAK) && !isRoadTile(x, y), spawnBounds);
-  spawnRandomGlobal(floraCount(65), createPineTree, (x, y) => inBounds(x, y) && (world.getTile(x, y) === TILE_HILL || world.getTile(x, y) === TILE_STONE || world.getTile(x, y) === TILE_MOUNTAIN || world.getTile(x, y) === TILE_PEAK) && !isRoadTile(x, y), spawnBounds);
+  spawnRandomGlobal(floraCount(65), createPineTree, (x, y) => inBounds(x, y) && (world.getTile(x, y) === TILE_HILL || world.getTile(x, y) === TILE_STONE || world.getTile(x, y) === TILE_MOUNTAIN || world.getTile(x, y) === TILE_PEAK) && !isRoadTile(x, y) && isClearOfTrees(x, y), spawnBounds);
   spawnRandomGlobal(floraCount(90), createWaterLily, (x, y) => inBounds(x, y) && world.getTile(x, y) === TILE_WATER, spawnBounds);
   spawnRandomGlobal(floraCount(110), createSeaweed, (x, y) => inBounds(x, y) && world.getTile(x, y) === TILE_WATER, spawnBounds);
 
@@ -675,18 +683,7 @@ function sanitizeForTransfer(obj, depth = 0) {
           name: val.name,
           color: val.color,
           backcolor: val.backcolor,
-          flagSkin: val.flagSkin,
-          claimedZones: val.claimedZones ? [...val.claimedZones] : [],
-          members: val.members ? [...val.members] : [],
-          founderSurname: val.founderSurname || null,
-          leaderId: val.leaderId || null,
-          govType: val.govType || null,
-          govGender: val.govGender || null,
-          diplomats: val.diplomats ? [...val.diplomats] : [null, null, null, null, null, null],
-          relations: val.relations ? { ...val.relations } : {},
-          wars: val.wars ? [...val.wars] : [],
-          elections: val.elections ? val.elections.slice(0, 30).map(e => ({ ...e, ranking: e.ranking ? [...e.ranking] : [], voterDetails: e.voterDetails ? [...e.voterDetails] : [] })) : [],
-          politicalHistory: val.politicalHistory ? val.politicalHistory.slice(0, 50).map(h => ({ ...h })) : []
+          flagSkin: val.flagSkin
         };
       } else {
         const sanitized = sanitizeForTransfer(val, depth + 1);
@@ -925,7 +922,12 @@ function postSimSync(force = false) {
   if (!globalThis._lastSyncedDeceasedCount) globalThis._lastSyncedDeceasedCount = 0;
   if (deceasedEntityRegistry.size > globalThis._lastSyncedDeceasedCount || (force && deceasedEntityRegistry.size > 0)) {
     deceasedToSync = [];
+    let count = 0;
     for (const [id, ent] of deceasedEntityRegistry.entries()) {
+      count++;
+      // Skip entities that we have already synced (unless force sync is active)
+      if (!force && count <= globalThis._lastSyncedDeceasedCount) continue;
+      
       if (!ent) continue;
       deceasedToSync.push({
         id: ent.id,

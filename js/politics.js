@@ -566,7 +566,8 @@ function processDiplomaticMissions(group, tick) {
         targetGroupName: targetGroup.name,
         targetLeaderId: targetGroup.leaderId,
         groupId: group.id,
-        groupName: group.name
+        groupName: group.name,
+        startTick: tick
       };
     }
   }

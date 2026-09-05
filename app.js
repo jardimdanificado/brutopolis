@@ -2,7 +2,7 @@
 // Brutopolis
 // =============================================================================
 
-const BrutopolisVersion = "0.123.18";
+const BrutopolisVersion = "0.123.20";
 const BrutopolisVersionName = "Who may ascend the mountain of the LORD? Who may stand in his holy place?";
 
 // WASM replaced by Pure JS Renderer
@@ -1028,6 +1028,7 @@ let inspectingGroup = null; // Currently inspected clan for full dossier/stockpi
 let inspectingDiplomacyGroup = null; // Clan inspected for diplomacy relations modal
 let inspectingPoliticalHistoryGroup = null; // Clan inspected for political chronicles modal
 let inspectingElectionRecord = null; // Election record inspected in election inspector
+let inspectingDiplomaticMission = null; // Diplomatic mission inspected
 let diplomacyModalScroll = 0;
 let politicalModalScroll = 0;
 let electionModalScroll = 0;
@@ -3960,8 +3961,25 @@ function renderEntitiesModal() {
         currentMode = "INSPECT";
       });
     }
-
     rowY += rowH;
+  }
+
+  // Draw Scrollbar
+  if (maxScroll > 0) {
+    const sbX = mx + mw - 16;
+    const sbY = tableY + 28;
+    const sbH = tableH - 36;
+    ctx.fillStyle = "#333333";
+    ctx.fillRect(sbX, sbY, 6, sbH);
+    const thumbH = Math.max(20, (visibleRows / list.length) * sbH);
+    const thumbY = sbY + (modalScroll / maxScroll) * (sbH - thumbH);
+    ctx.fillStyle = "#888888";
+    ctx.fillRect(sbX, thumbY, 6, thumbH);
+
+    registerClickableRegion(sbX - 8, sbY, 20, sbH, () => {
+      const ratio = Math.max(0, Math.min(1, (mouseY - sbY - thumbH / 2) / (sbH - thumbH)));
+      modalScroll = Math.floor(ratio * maxScroll);
+    });
   }
 
   ctx.restore();
@@ -4028,6 +4046,12 @@ function renderGroupsModal() {
   // Modal Sub-Views
   if (inspectingElectionRecord) {
     renderElectionInspector(mx, my, mw, mh, inspectingElectionRecord);
+    ctx.restore();
+    return;
+  }
+
+  if (inspectingDiplomaticMission) {
+    renderDiplomaticMissionModal(mx, my, mw, mh, inspectingDiplomaticMission);
     ctx.restore();
     return;
   }
@@ -4782,6 +4806,11 @@ function renderPoliticalHistoryModal(mx, my, mw, mh, g) {
           electionModalScroll = 0;
         }
       });
+    } else if (ev.type === "DIPLOMATIC_MISSION" && ev.missionReport) {
+      drawNESButton(mx + mw - 150, curY + 4, 130, 22, "INSPECT MISSION", false, false);
+      registerClickableRegion(mx + mw - 150, curY + 4, 130, 22, () => {
+        inspectingDiplomaticMission = { ...ev };
+      });
     } else if (ev.winnerId) {
       drawNESButton(mx + mw - 95, curY + 4, 75, 22, "INSPECT", false, false);
       const wId = ev.winnerId;
@@ -4800,6 +4829,107 @@ function renderPoliticalHistoryModal(mx, my, mw, mh, g) {
     }
 
     curY += rowH;
+  }
+}
+
+function renderDiplomaticMissionModal(mx, my, mw, mh, ev) {
+  const isSuccess = ev.missionReport?.success;
+  const col = isSuccess ? "#58d854" : "#ff2040";
+  drawText8x8(`DIPLOMATIC MISSION REPORT`, mx + 16, my + 14, col, 1);
+
+  // Back Button
+  drawNESButton(mx + mw - 140, my + 6, 130, 24, "< CHRONICLES", false, false);
+  registerClickableRegion(mx + mw - 140, my + 6, 130, 24, () => {
+    inspectingDiplomaticMission = null;
+  });
+
+  const contentY = my + 38;
+  const contentH = (my + mh - 12) - contentY;
+  drawNESBox(mx + 12, contentY, mw - 24, contentH);
+
+  let curY = contentY + 16;
+  drawText8x8(`RESULT: ${isSuccess ? "SUCCESS" : "FAILURE"}`, mx + 24, curY, col, 1);
+  curY += 16;
+  drawText8x8(`EVENT: ${ev.title || ""}`, mx + 24, curY, "#f8b800", 1);
+  curY += 16;
+  if (ev.missionReport && ev.missionReport.startTick) {
+    drawText8x8(`START TICK: ${ev.missionReport.startTick} | END TICK: ${ev.missionReport.endTick || ev.tick || 0}`, mx + 24, curY, "#bcbcbc", 1);
+  } else {
+    drawText8x8(`TICK: ${ev.tick || 0}`, mx + 24, curY, "#bcbcbc", 1);
+  }
+  curY += 24;
+
+  const descWords = (ev.description || "").split(" ");
+  let line = "";
+  for (const w of descWords) {
+    if ((line + w).length > (mw - 48) / 8) {
+      drawText8x8(line, mx + 24, curY, "#e0e0e0", 1);
+      curY += 12;
+      line = w + " ";
+    } else {
+      line += w + " ";
+    }
+  }
+  if (line) {
+    drawText8x8(line, mx + 24, curY, "#e0e0e0", 1);
+    curY += 24;
+  }
+
+  if (ev.missionReport) {
+    const report = ev.missionReport;
+    drawText8x8(`RELATIONS CHANGE: ${report.relationChange > 0 ? "+" : ""}${report.relationChange}`, mx + 24, curY, report.relationChange >= 0 ? "#58d854" : "#ff2040", 1);
+    curY += 24;
+
+    if (report.skillsShared && report.skillsShared.length > 0) {
+      drawText8x8(`KNOWLEDGE SHARED:`, mx + 24, curY, "#3cbcfc", 1);
+      curY += 12;
+      for (const s of report.skillsShared) {
+        let line = "";
+        for (const w of s.split(" ")) {
+          if ((line + w).length > (mw - 56) / 8) {
+            drawText8x8(`  ${line}`, mx + 32, curY, "#ffffff", 1);
+            curY += 12;
+            line = w + " ";
+          } else line += w + " ";
+        }
+        if (line) { drawText8x8(`- ${line}`, mx + 32, curY, "#ffffff", 1); curY += 12; }
+      }
+      curY += 12;
+    }
+
+    if (report.locationsShared && report.locationsShared.length > 0) {
+      drawText8x8(`LOCATIONS REVEALED:`, mx + 24, curY, "#3cbcfc", 1);
+      curY += 12;
+      for (const l of report.locationsShared) {
+        let line = "";
+        for (const w of l.split(" ")) {
+          if ((line + w).length > (mw - 56) / 8) {
+            drawText8x8(`  ${line}`, mx + 32, curY, "#ffffff", 1);
+            curY += 12;
+            line = w + " ";
+          } else line += w + " ";
+        }
+        if (line) { drawText8x8(`- ${line}`, mx + 32, curY, "#ffffff", 1); curY += 12; }
+      }
+      curY += 12;
+    }
+
+    if (report.giftsExchanged && report.giftsExchanged.length > 0) {
+      drawText8x8(`GIFTS EXCHANGED:`, mx + 24, curY, "#f8b800", 1);
+      curY += 12;
+      for (const g of report.giftsExchanged) {
+        let line = "";
+        for (const w of g.split(" ")) {
+          if ((line + w).length > (mw - 56) / 8) {
+            drawText8x8(`  ${line}`, mx + 32, curY, "#ffffff", 1);
+            curY += 12;
+            line = w + " ";
+          } else line += w + " ";
+        }
+        if (line) { drawText8x8(`- ${line}`, mx + 32, curY, "#ffffff", 1); curY += 12; }
+      }
+      curY += 12;
+    }
   }
 }
 
