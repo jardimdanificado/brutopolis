@@ -1,4 +1,4 @@
-import { createEntity, getEntityById, entityRegistry, currentTick, getEntitiesInRadius, findEntityInRadius, hasEntityInRadius, findClosestEntityInRadius, forEachEntityInRadius, countEntitiesInRadius, getEntityAtTile, getEntityAtTileByProp, setSpatialZoneSize, tileEntityMap, globalWallCoords, globalRoadCoords, getTileKey, registerEntitySpatial, dismemberCorpse, createCorpseEntity, isBuildingObstacleAt, getEntityFootprint, setCurrentWorld } from "./engine.js";
+import { createEntity, getEntityById, entityRegistry, currentTick, getEntitiesInRadius, findEntityInRadius, hasEntityInRadius, findClosestEntityInRadius, forEachEntityInRadius, countEntitiesInRadius, getEntityAtTile, getEntityAtTileByProp, setSpatialZoneSize, tileEntityMap, globalWallCoords, globalRoadCoords, getTileKey, registerEntitySpatial, dismemberCorpse, createCorpseEntity, isBuildingObstacleAt, getEntityFootprint, setCurrentWorld, destroyEntity } from "./engine.js";
 import { MAP_WIDTH, MAP_HEIGHT, TILE_FLOOR, TILE_MOUNTAIN, TILE_WATER, TILE_SAND, TILE_STONE, TILE_VOID, TILE_ROAD_GRASS, TILE_ROAD_SAND, TILE_ROAD_GRASS_STONE, TILE_HILL, TILE_PEAK, TILE_ROAD_SAND_STONE, TILE_ROAD_HILL, TILE_ROAD_HILL_STONE } from "./world_gen.js";
 import {
   recordWorldEvent,
@@ -120,7 +120,7 @@ export function createLifespanProp(maxSeconds = 120.0) {
     effect(ent, dt) {
       this.age += (dt !== undefined ? dt : 1.0);
       if (this.age >= this.maxAge) {
-        ent.destroyed = true;
+        destroyEntity(ent);
       }
     }
   };
@@ -1381,7 +1381,7 @@ export function createRoadEntity(x, y, group = null) {
     for (const e of entityRegistry.values()) {
       if (!e.destroyed && e.x === x && e.y === y) {
         if (e.properties?.wood || e.properties?.photosynthesis || e.properties?.deep_root || e.properties?.plant_flesh || e.properties?.stone_deposit || e.properties?.item) {
-          e.destroyed = true;
+          destroyEntity(e);
         }
       }
     }
@@ -3200,7 +3200,7 @@ export function generateWorldRoadNetwork(world, minX, maxX, minY, maxY, sz = 8, 
         const e = entities[i];
         if (e && !e.destroyed && e.x === x && e.y === y) {
           if (e.properties?.wood || e.properties?.photosynthesis || e.properties?.deep_root || e.properties?.plant_flesh || e.properties?.stone_deposit || e.properties?.item) {
-            e.destroyed = true;
+            destroyEntity(e);
           }
         }
       }
@@ -4247,7 +4247,7 @@ export function getClanBlueprintTiles(group) {
     if (!ent.destroyed && ent.properties.structure && (ent.properties.wallStyle || ent.properties.name?.includes("Muralha") || ent.properties.name?.includes("Wall"))) {
       if (ent.properties.name && group.name && ent.properties.name.includes(group.name)) {
         if (!validWallCoords.has(`${ent.x}_${ent.y}`)) {
-          ent.destroyed = true; // Destroy the orphaned wall so builders stop targeting it
+          destroyEntity(ent); // Destroy the orphaned wall so builders stop targeting it
         }
       }
     }
@@ -7283,7 +7283,7 @@ let freeArm = null; for (const k in ent.properties) { const p = ent.properties[k
         // A. Faxina: Pick up feces inside claimed zones to discard outside
         const nearbyFecesInBase = findEntityInRadius(ent.x, ent.y, 1, e => !e.destroyed && (e.properties.resourceType === "feces" || e.properties.edible?.foodType === "feces") && isTileInClaimedZones(e.x, e.y, group.claimedZones));
         if (nearbyFecesInBase && energyRatio > 0.40) {
-          nearbyFecesInBase.destroyed = true;
+          destroyEntity(nearbyFecesInBase);
           freeArm.heldItem = { name: "Excrement / Feces", resourceType: "feces", weight: 1 };
           return;
         }
@@ -7365,7 +7365,7 @@ let freeArm = null; for (const k in ent.properties) { const p = ent.properties[k
             if (dist <= 1) {
               const isStone = nearbyRes.properties.resourceType === "stone";
               const resName = isStone ? "Stone Block" : "Wood Log";
-              nearbyRes.destroyed = true;
+              destroyEntity(nearbyRes);
               freeArm.heldItem = { name: resName, resourceType: isStone ? "stone" : "wood", weight: 1 };
               return;
             } else {
@@ -7382,7 +7382,7 @@ let freeArm = null; for (const k in ent.properties) { const p = ent.properties[k
               const treeSpecies = nearbyTree.properties.species || "oak";
               const treeX = nearbyTree.x;
               const treeY = nearbyTree.y;
-              nearbyTree.destroyed = true;
+              destroyEntity(nearbyTree);
 
               // Pick up 1 wood log directly
               freeArm.heldItem = { name: "Wood Log", resourceType: "wood", weight: 1 };
@@ -7449,7 +7449,7 @@ let freeArm = null; for (const k in ent.properties) { const p = ent.properties[k
             (!!e.properties.edible || !!e.properties.resourceType || !!e.properties.germination || e.properties.species === "item" || !!e.properties.attackBonus || !!e.properties.isWeapon || !!e.properties.artifact)
           );
           if (nearbyGroundItem) {
-            nearbyGroundItem.destroyed = true;
+            destroyEntity(nearbyGroundItem);
             const resType = nearbyGroundItem.properties.resourceType || (nearbyGroundItem.properties.edible ? (nearbyGroundItem.properties.edible.foodType || "food") : "item");
             const itemObj = {
               name: nearbyGroundItem.properties.name || (nearbyGroundItem.properties.resourceType ? `${nearbyGroundItem.properties.resourceType}` : "Item"),
@@ -7776,7 +7776,7 @@ export function createCombatProp(attackInterval = 1.2, aggroRange = 3) {
         target.combatFlash = 6;
 
         if (struct.condition <= 0) {
-          target.destroyed = true;
+          destroyEntity(target);
           recordWorldEvent({
             opcode: OP_DEATH,
             type: "DEATH",
@@ -8688,7 +8688,7 @@ export function createLocomotionProp() {
               totalTurns: 20,
               remainingTurns: 20
             });
-            limb.destroyed = true;
+            destroyEntity(limb);
             ent._huntingLimbTarget = null;
             ent.emote = 2; // Happy
           }
@@ -9806,7 +9806,7 @@ export function createLocomotionProp() {
               if (closestStone) {
                 const d = Math.abs(closestStone.x - ent.x) + Math.abs(closestStone.y - ent.y);
                 if (d <= 1) {
-                  closestStone.destroyed = true;
+                  destroyEntity(closestStone);
                   if (!ent.properties.arm_left) ent.properties.arm_left = createArmProp("Braço Esquerdo", "left");
                   ent.properties.arm_left.heldItem = { name: "Pedra de Pavimentação", resourceType: "stone", weight: 2.0 };
                   chosenDx = 0;
@@ -10648,7 +10648,7 @@ export function createLocomotionProp() {
                 });
               }
 
-              other.destroyed = true;
+              destroyEntity(other);
               break;
             }
           }
@@ -11827,7 +11827,7 @@ export function createSeedGerminationProp(species = "oak", checkInterval = 8.0, 
             newPlant = createOakTree(ent.x, ent.y);
           }
 
-          ent.destroyed = true;
+          destroyEntity(ent);
           if (entities && newPlant) {
             entities.push(newPlant);
             registerEntitySpatial(newPlant);

@@ -795,7 +795,8 @@ function postSimSync(force = false) {
     entities: entsToSync,
     deceased: deceasedToSync,
     groups: serializeGroups(),
-    events: newEvents
+    events: newEvents,
+    tileUpdates: tileUpdates
   });
 }
 

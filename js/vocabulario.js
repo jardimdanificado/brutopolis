@@ -24,7 +24,7 @@ function analisar(p1, p2) {
 }
 
 export const vocabulario = {
-    "combinar": (p1, p2, modo = 'preciso') => {
+    "combinar": (p1, p2, modo = 'preciso', genero = '') => {
         p1 = sanitizar(p1);
         p2 = sanitizar(p2);
         if (!p1 || !p2) throw new Error('Palavras inválidas');
@@ -86,6 +86,54 @@ export const vocabulario = {
                 res = palavra1 + 'o' + palavra2;
             } else {
                 res = palavra1 + palavra2;
+            }
+        }
+
+        // Lógica de Gênero
+        if (genero) {
+            const classificar = (str) => {
+                // terminações fortemente femininas
+                if (/(ção|são|ssão|dade|tude|ice|ez|eza|agem|ância|ência|aria|eria)$/.test(str))
+                    return 'feminino';
+
+                // terminações fortemente masculinas
+                if (/(mento|ismo|ado|eiro|ário|ório)$/.test(str))
+                    return 'masculino';
+
+                // flexão explícita
+                if (/(o|os|ão|ãos)$/.test(str))
+                    return 'masculino';
+
+                if (/(a|as|ã|ãs|ães)$/.test(str))
+                    return 'feminino';
+
+                return 'neutro';
+            };
+
+            const genAtual = classificar(res);
+
+            if (genero === 'neutro') {
+                if (genAtual !== 'neutro') {
+                    throw new Error('Gênero incompatível: exigido neutro');
+                }
+            } else if (genero === 'masculino-apenas') {
+                if (genAtual === 'neutro') throw new Error('Gênero incompatível: neutro não aceito na opção \'-apenas\'');
+                if (genAtual === 'feminino') {
+                    res = res.replace(/a$/, 'o').replace(/as$/, 'os').replace(/ã$/, 'ão').replace(/ães$/, 'ãos');
+                }
+            } else if (genero === 'feminino-apenas') {
+                if (genAtual === 'neutro') throw new Error('Gênero incompatível: neutro não aceito na opção \'-apenas\'');
+                if (genAtual === 'masculino') {
+                    res = res.replace(/o$/, 'a').replace(/os$/, 'as').replace(/ão$/, 'ã').replace(/ãos$/, 'ães');
+                }
+            } else if (genero === 'masculino') {
+                if (genAtual === 'feminino') {
+                    res = res.replace(/a$/, 'o').replace(/as$/, 'os').replace(/ã$/, 'ão').replace(/ães$/, 'ãos');
+                }
+            } else if (genero === 'feminino') {
+                if (genAtual === 'masculino') {
+                    res = res.replace(/o$/, 'a').replace(/os$/, 'as').replace(/ão$/, 'ã').replace(/ãos$/, 'ães');
+                }
             }
         }
 

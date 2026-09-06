@@ -2,7 +2,7 @@
 // Brutopolis
 // =============================================================================
 
-const BrutopolisVersion = "0.123.21";
+const BrutopolisVersion = "0.123.22";
 const BrutopolisVersionName = "Who may ascend the mountain of the LORD? Who may stand in his holy place?";
 
 // WASM replaced by Pure JS Renderer
@@ -261,6 +261,12 @@ function initSimWorker() {
         }
         if (Array.isArray(data.events) && data.events.length > 0) {
           appendWorldEvents(data.events);
+        }
+        if (Array.isArray(data.tileUpdates) && data.tileUpdates.length > 0 && world) {
+          for (const t of data.tileUpdates) {
+            world.setTile(t.x, t.y, t.tile);
+          }
+          if (rctRenderer) rctRenderer.lastBuiltCamTileX = -9999;
         }
         break;
       }
