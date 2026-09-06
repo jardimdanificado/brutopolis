@@ -3913,31 +3913,43 @@ export function getClanBlueprintTiles(group) {
     }
   }
 
-  // Register existing central plaza civic structures with full footprints
+  // Staged Civic Progression:
+  // Phase 1: Warehouse & Campfire (Dawn of Settlement)
   const whFp = 2;
   markOccupied(whX, whY, whFp, whFp, "warehouse");
 
-  if (wellX !== undefined && wellY !== undefined) markOccupied(wellX, wellY, 1, 1, "well");
-  if (campfireX !== undefined && campfireY !== undefined) markOccupied(campfireX, campfireY, 1, 1, "campfire");
+  if (cfX !== undefined && cfY !== undefined) markOccupied(cfX, cfY, 1, 1, "campfire");
 
-  const shX = slaughterhouseEnt ? slaughterhouseEnt.x : (plaza?.slaughterhouse?.x ?? (whX - 3));
-  const shY = slaughterhouseEnt ? slaughterhouseEnt.y : (plaza?.slaughterhouse?.y ?? (whY - 2));
-  markOccupied(shX, shY, 2, 2, "slaughterhouse");
+  const hasWarehouseBuiltOrStarted = !!warehouseEnt;
+  const hasCampfireBuiltOrStarted = !!campfireEnt;
 
-  const kitX = kitchenEnt ? kitchenEnt.x : (plaza?.kitchen?.x ?? (whX + 3));
-  const kitY = kitchenEnt ? kitchenEnt.y : (plaza?.kitchen?.y ?? (whY + 2));
-  markOccupied(kitX, kitY, 2, 2, "kitchen");
-
-  const artX = artisanHutEnt ? artisanHutEnt.x : (plaza?.artisan_hut?.x ?? (whX - 2));
-  const artY = artisanHutEnt ? artisanHutEnt.y : (plaza?.artisan_hut?.y ?? (whY + 3));
-  markOccupied(artX, artY, 2, 2, "artisan_hut");
-
-  // Leader Palace in Plaza (3x3 Footprint) - Every village must have one!
+  // Phase 2: Leader Palace (Only once base campfire/warehouse exist)
   const leaderIdVal = group.leaderId || (members.length > 0 ? members[0] : null);
-  if (plaza?.leader_house) {
+  if (hasWarehouseBuiltOrStarted && plaza?.leader_house) {
     const lhX = plaza.leader_house.x;
     const lhY = plaza.leader_house.y;
     markOccupied(lhX, lhY, 3, 3, "leader_house", { ownerId: leaderIdVal, isLeaderHouse: true });
+  }
+
+  // Phase 3: Water Well & Communal Kitchen (Only after warehouse is completed)
+  const isWhCompleted = warehouseEnt?.properties?.warehouse?.isCompleted;
+  if (isWhCompleted) {
+    if (wellX !== undefined && wellY !== undefined) markOccupied(wellX, wellY, 1, 1, "well");
+    const kitX = kitchenEnt ? kitchenEnt.x : (plaza?.kitchen?.x ?? (whX + 3));
+    const kitY = kitchenEnt ? kitchenEnt.y : (plaza?.kitchen?.y ?? (whY + 2));
+    markOccupied(kitX, kitY, 2, 2, "kitchen");
+  }
+
+  // Phase 4: Slaughterhouse & Artisan Hut (Town stage - after well and kitchen exist)
+  const hasWellDone = wellEnt?.properties?.well?.isCompleted;
+  if (isWhCompleted && (hasWellDone || wellEnt)) {
+    const shX = slaughterhouseEnt ? slaughterhouseEnt.x : (plaza?.slaughterhouse?.x ?? (whX - 3));
+    const shY = slaughterhouseEnt ? slaughterhouseEnt.y : (plaza?.slaughterhouse?.y ?? (whY - 2));
+    markOccupied(shX, shY, 2, 2, "slaughterhouse");
+
+    const artX = artisanHutEnt ? artisanHutEnt.x : (plaza?.artisan_hut?.x ?? (whX - 2));
+    const artY = artisanHutEnt ? artisanHutEnt.y : (plaza?.artisan_hut?.y ?? (whY + 3));
+    markOccupied(artX, artY, 2, 2, "artisan_hut");
   }
 
   // Register existing entities in claimed zones with full multi-tile footprints
@@ -4022,9 +4034,37 @@ export function getClanBlueprintTiles(group) {
   // Prioritize the clan leader so the 3x3 Leader Palace is always planned first
   const orderedMembers = [...members].sort((a, b) => (a === group.leaderId ? -1 : (b === group.leaderId ? 1 : 0)));
 
-  // Count existing built or in-progress houses to avoid flooding the map with hundreds of unbuilt blueprints
+  // Count how many constructions are already currently in-progress and uncompleted
+  let currentUncompletedCount = 0;
+  for (const e of entityRegistry.values()) {
+    if (!e.destroyed && isTileInClaimedZones(e.x, e.y, group.claimedZones)) {
+      if ((e.properties?.house && !e.properties.house.isCompleted) ||
+          (e.properties?.warehouse && !e.properties.warehouse.isCompleted) ||
+          (e.properties?.campfire && e.isConstructed === false) ||
+          (e.properties?.well && !e.properties.well.isCompleted) ||
+          (e.properties?.kitchen && !e.properties.kitchen.isCompleted) ||
+          (e.properties?.slaughterhouse && !e.properties.slaughterhouse.isCompleted) ||
+          (e.properties?.artisan_hut && !e.properties.artisan_hut.isCompleted)) {
+        currentUncompletedCount++;
+      }
+    }
+  }
+
+  // Count active builders carrying building materials or capable of building
+  let activeBuilders = 0;
+  for (const mid of members) {
+    const m = entityRegistry.get(mid);
+    if (m && !m.destroyed && m.properties?.life?.energy > 0) {
+      if (m.properties?.species === "human" || m.properties?.species === "elf" || m.properties?.species === "dwarf" || m.properties?.species === "orc") {
+        activeBuilders++;
+      }
+    }
+  }
+  activeBuilders = Math.max(1, activeBuilders);
+
+  // If clan already has ongoing constructions and not enough builders, DO NOT plan more houses
+  const allowedUnbuiltAhead = currentUncompletedCount > 0 ? 1 : Math.min(2, Math.ceil(activeBuilders / 2));
   let newPlannedHousesCount = 0;
-  const maxUnbuiltPlannedHouses = 3; // Throttle to 3 unbuilt planned houses at any time
 
   for (let mIdx = 0; mIdx < orderedMembers.length; mIdx++) {
     const ownerId = orderedMembers[mIdx];
@@ -4038,7 +4078,7 @@ export function getClanBlueprintTiles(group) {
       }
 
       // If already planned several houses ahead of actual builders, pause planning more until those are built
-      if (!isLeader && newPlannedHousesCount >= maxUnbuiltPlannedHouses) {
+      if (!isLeader && newPlannedHousesCount >= allowedUnbuiltAhead) {
         continue;
       }
 
@@ -4662,8 +4702,13 @@ export function getGroupConstructions(group, entities = null) {
 
     if (!isGroupStruct) continue;
 
-    const tk = `${e.x}_${e.y}`;
-    seenTileKeys.add(tk);
+    const fpW = e.properties?.leaderHouse ? 3 : ((e.properties?.warehouse || e.properties?.kitchen || e.properties?.slaughterhouse || e.properties?.artisan_hut) ? 2 : (e.properties?.house?.footprintW || 1));
+    const fpH = e.properties?.leaderHouse ? 3 : ((e.properties?.warehouse || e.properties?.kitchen || e.properties?.slaughterhouse || e.properties?.artisan_hut) ? 2 : (e.properties?.house?.footprintH || 1));
+    for (let fx = 0; fx < fpW; fx++) {
+      for (let fy = 0; fy < fpH; fy++) {
+        seenTileKeys.add(`${e.x + fx}_${e.y + fy}`);
+      }
+    }
 
     if (e.properties?.house) {
       const h = e.properties.house;
@@ -4877,6 +4922,11 @@ export function getGroupConstructions(group, entities = null) {
       ownerId: bp.ownerId,
       ownerName: bp.ownerId ? (getEntityById(bp.ownerId)?.properties?.name || `Member #${bp.ownerId}`) : "Communal"
     });
+
+    // If clan already has ongoing constructions, cap planned list so it only displays the immediate next priority
+    if (inProgress.length > 0 && planned.length >= 1) {
+      break;
+    }
   }
 
   return { inProgress, completed, planned };
@@ -9470,7 +9520,9 @@ export function createLocomotionProp() {
 
               if (needsThisMat && buildType) {
                 const dist = Math.abs(e.x - ent.x) + Math.abs(e.y - ent.y);
-                const weightDist = isOwn ? dist * 0.01 : dist * 0.04;
+                // All builders swarm on incomplete constructions together based on proximity and urgency (communal priority)
+                const isCommunalPriority = (buildType === "warehouse" || buildType === "campfire");
+                const weightDist = isCommunalPriority ? dist * 0.01 : dist * 0.02;
                 if (weightDist < minBuildDist) {
                   minBuildDist = weightDist;
                   targetBuild = { x: e.x, y: e.y, type: buildType, footprintW: (buildType === "warehouse" || buildType === "kitchen" || buildType === "slaughterhouse" || buildType === "artisan_hut" ? 2 : 1), footprintH: (buildType === "warehouse" || buildType === "kitchen" || buildType === "slaughterhouse" || buildType === "artisan_hut" ? 2 : 1) };
@@ -9500,9 +9552,9 @@ export function createLocomotionProp() {
 
                 if (needsThisMat) {
                   const dist = Math.abs(bp.x - ent.x) + Math.abs(bp.y - ent.y);
-                  const isOwnHouse = (bp.ownerId === ent.id);
                   const isLeaderPlot = bp.isLeaderHouse || bp.type === "leader_house";
-                  const weightDist = isLeaderPlot ? dist * 0.05 : (isOwnHouse ? dist * 0.08 : dist * 0.30);
+                  // All builders cooperate on blueprints equally, prioritizing leader plot first
+                  const weightDist = isLeaderPlot ? dist * 0.05 : dist * 0.10;
                   if (weightDist < minBuildDist) {
                     minBuildDist = weightDist;
                     targetBuild = { x: bp.x, y: bp.y, type: bp.type, isLeaderHouse: isLeaderPlot, footprintW: isLeaderPlot ? 3 : (bp.footprintW || 1), footprintH: isLeaderPlot ? 3 : (bp.footprintH || 1), ownerId: bp.ownerId };

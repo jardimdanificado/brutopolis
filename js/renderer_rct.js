@@ -124,7 +124,7 @@ function getEntityBounds(e) {
   const isDoor = !!e.properties?.door;
   const isHouse = !e.properties.brain && (!!e.properties.house || !!e.properties.leaderHouse || r.skin === "Overworld_House.png" || e.properties.name?.includes("Casa") || e.properties.name?.includes("Manor") || e.properties.name?.includes("Villa") || e.properties.name?.includes("Chalet") || e.properties.name?.includes("Cottage") || e.properties.name?.includes("Cabin") || e.properties.name?.includes("Hut") || e.properties.name?.includes("Lodge") || e.properties.name?.includes("Ranch") || e.properties.name?.includes("Palácio") || e.properties.name?.includes("Castelo") || e.properties.name?.includes("Hall") || e.properties.name?.includes("Grange") || e.properties.name?.includes("Citadel"));
   const isWall = !isDoor && !isHouse && (e.properties?.structure || r?.skin?.startsWith("Wall_") || e.properties?.name?.includes("Muralha") || e.properties?.name?.includes("Wall"));
-  const isPlantOrFlora = !e.properties?.edible && !e.properties?.resourceType && !e.properties?.item && !e.properties?.weapon && !e.properties?.armor && !e.properties?.material;
+  const isPlantOrFlora = !e.properties?.brain && !e.properties?.mouth && !e.properties?.terrestrial && !e.properties?.edible && !e.properties?.resourceType && !e.properties?.item && !e.properties?.weapon && !e.properties?.armor && !e.properties?.material;
   const isCactus = isPlantOrFlora && (e.properties?.species === "cactus" || e.properties?.name?.toLowerCase().includes("cactus") || e.properties?.name?.toLowerCase().includes("cacto"));
   const isCherry = isPlantOrFlora && (e.properties?.species === "cherry_blossom" || e.properties?.name?.toLowerCase().includes("cerejeira") || e.properties?.name?.toLowerCase().includes("sakura"));
   const isBirch = isPlantOrFlora && (e.properties?.species === "birch" || e.properties?.name?.toLowerCase().includes("bétula") || e.properties?.name?.toLowerCase().includes("betula"));
@@ -4883,7 +4883,7 @@ export class RCT3DRenderer {
       const isArtisanHut = !e.properties.brain && !isRoad && !isWarehouse && !isSlaughterhouse && !isKitchen && !isWell && (!!e.properties.artisan_hut || e.properties.name?.includes("Artesão") || e.properties.name?.includes("Cabana do Construtor"));
       const isDoor = !e.properties.brain && !isWarehouse && !isSlaughterhouse && !isKitchen && !isWell && !isArtisanHut && !isTorch && !isCampfire && !isRoad && !!e.properties.door;
 
-      const isPlantOrFlora = !e.properties.edible && !e.properties.resourceType && !e.properties.item && !e.properties.weapon && !e.properties.armor && !e.properties.material;
+      const isPlantOrFlora = !e.properties.brain && !e.properties.mouth && !e.properties.terrestrial && !e.properties.edible && !e.properties.resourceType && !e.properties.item && !e.properties.weapon && !e.properties.armor && !e.properties.material;
       const isCactus = isPlantOrFlora && (e.properties.species === "cactus" || e.properties.name?.toLowerCase().includes("cactus") || e.properties.name?.toLowerCase().includes("cacto"));
       const isCherry = isPlantOrFlora && (e.properties.species === "cherry_blossom" || e.properties.name?.toLowerCase().includes("cerejeira") || e.properties.name?.toLowerCase().includes("sakura"));
       const isBirch = isPlantOrFlora && (e.properties.species === "birch" || e.properties.name?.toLowerCase().includes("bétula") || e.properties.name?.toLowerCase().includes("betula"));
@@ -6265,7 +6265,7 @@ export class RCT3DRenderer {
       const isArtisanHut = !e.properties.brain && !isRoad && !isWarehouse && !isSlaughterhouse && !isKitchen && !isWell && (!!e.properties.artisan_hut || e.properties.name?.includes("Artesão") || e.properties.name?.includes("Cabana do Construtor"));
       const isDoor = !e.properties.brain && !isWarehouse && !isSlaughterhouse && !isKitchen && !isWell && !isArtisanHut && !isTorch && !isCampfire && !isRoad && !!e.properties.door;
 
-      const isPlantOrFlora = !e.properties.edible && !e.properties.resourceType && !e.properties.item && !e.properties.weapon && !e.properties.armor && !e.properties.material;
+      const isPlantOrFlora = !e.properties.brain && !e.properties.mouth && !e.properties.terrestrial && !e.properties.edible && !e.properties.resourceType && !e.properties.item && !e.properties.weapon && !e.properties.armor && !e.properties.material;
       const isCactus = isPlantOrFlora && (e.properties.species === "cactus" || e.properties.name?.toLowerCase().includes("cactus") || e.properties.name?.toLowerCase().includes("cacto"));
       const isCherry = isPlantOrFlora && (e.properties.species === "cherry_blossom" || e.properties.name?.toLowerCase().includes("cerejeira") || e.properties.name?.toLowerCase().includes("sakura"));
       const isBirch = isPlantOrFlora && (e.properties.species === "birch" || e.properties.name?.toLowerCase().includes("bétula") || e.properties.name?.toLowerCase().includes("betula"));

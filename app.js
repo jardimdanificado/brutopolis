@@ -2,7 +2,7 @@
 // Brutopolis
 // =============================================================================
 
-const BrutopolisVersion = "0.124.1";
+const BrutopolisVersion = "0.124.2";
 const BrutopolisVersionName = "Who may ascend the mountain of the LORD? Who may stand in his holy place?";
 
 // WASM replaced by Pure JS Renderer
@@ -3241,7 +3241,7 @@ function renderDossierModal() {
     drawText8x8(clanLabel, mx + 240, my + 70, isClanHover ? "#ffd700" : "#d3869b", 1);
     if (hasClan) {
       registerClickableRegion(mx + 240, my + 66, clanLabel.length * 8, 14, () => {
-        inspectingGroup = groups.find(g => g.id === props.group.id) || props.group;
+        inspectingGroup = getAllGroups().find(g => g.id === props.group.id) || props.group;
         groupDetailTab = "ZONES";
         currentMode = "GROUPS";
         modalScroll = 0;
