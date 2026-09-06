@@ -23,6 +23,27 @@ function analisar(p1, p2) {
     };
 }
 
+export function classificarPalavra(str) {
+    if (!str) return 'neutro';
+    const s = str.toLowerCase();
+    // terminações fortemente femininas
+    if (/(ção|são|ssão|dade|tude|ice|ez|eza|agem|ância|ência|aria|eria)$/.test(s))
+        return 'feminino';
+
+    // terminações fortemente masculinas
+    if (/(mento|ismo|ado|eiro|ário|ório)$/.test(s))
+        return 'masculino';
+
+    // flexão explícita
+    if (/(o|os|ão|ãos)$/.test(s))
+        return 'masculino';
+
+    if (/(a|as|ã|ãs|ães)$/.test(s))
+        return 'feminino';
+
+    return 'neutro';
+}
+
 export const vocabulario = {
     "combinar": (p1, p2, modo = 'preciso', genero = '') => {
         p1 = sanitizar(p1);

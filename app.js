@@ -2,7 +2,7 @@
 // Brutopolis
 // =============================================================================
 
-const BrutopolisVersion = "0.123.27";
+const BrutopolisVersion = "0.124.1";
 const BrutopolisVersionName = "Who may ascend the mountain of the LORD? Who may stand in his holy place?";
 
 // WASM replaced by Pure JS Renderer
@@ -57,6 +57,7 @@ import {
   setZoneSize,
   getMoodLabel,
   getGroupStockpile,
+  getGroupConstructions,
   setActiveWorld
 } from "./js/properties.js";
 
@@ -952,9 +953,11 @@ let inspectingDiplomacyGroup = null; // Clan inspected for diplomacy relations m
 let inspectingPoliticalHistoryGroup = null; // Clan inspected for political chronicles modal
 let inspectingElectionRecord = null; // Election record inspected in election inspector
 let inspectingDiplomaticMission = null; // Diplomatic mission inspected
+let inspectingDiplomaticHistory = null; // { groupA, groupB } for pairwise diplomatic chronicles
 let diplomacyModalScroll = 0;
 let politicalModalScroll = 0;
 let electionModalScroll = 0;
+let diplomaticHistoryScroll = 0;
 let groupDetailTab = "ZONES"; // Active tab in clan dossier: "ZONES", "STOCKPILE", "MEMBERS", "POLITICS", "HISTORY"
 let dossierTab = "OVERVIEW"; // Active tab in creature dossier: "OVERVIEW", "AFFINITIES", "OFFSPRING", "CHRONICLE"
 let familyTreeZoom = 1.0; // Zoom factor for graphical family tree
@@ -1914,6 +1917,8 @@ canvas.addEventListener("wheel", (e) => {
     const scrollStep = (e.deltaY < 0) ? -2 : 2;
     if (inspectingElectionRecord) {
       electionModalScroll = Math.max(0, electionModalScroll + scrollStep);
+    } else if (inspectingDiplomaticHistory) {
+      diplomaticHistoryScroll = Math.max(0, diplomaticHistoryScroll + scrollStep);
     } else if (inspectingPoliticalHistoryGroup) {
       politicalModalScroll = Math.max(0, politicalModalScroll + scrollStep);
     } else if (inspectingDiplomacyGroup) {
@@ -1949,6 +1954,14 @@ canvas.addEventListener("wheel", (e) => {
 }, { passive: false });
 
 window.addEventListener("keydown", (e) => {
+  // If typing inside an input field or textarea (e.g. entity search bar), do not trigger game hotkeys
+  if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) {
+    if (e.code === "Escape") {
+      e.target.blur();
+    }
+    return;
+  }
+
   keysDown.add(e.code);
 
   if (currentMode === "TITLE") {
@@ -2515,10 +2528,39 @@ function getFamilyTreeData(targetId) {
     }
   }
 
+  // Godparent
+  const godparentId = props.godparentId;
+  const godparent = getEnt(godparentId);
+  const godparentRole = props.godparentRole || ((godparent?.properties?.genitalia?.type === "vagina" || godparent?.properties?.genitalia?.type === "female" || godparent?.properties?.gender === "female") ? "madrinha" : "padrinho");
+
+  // Godchildren
+  const godchildrenIds = props.godchildrenIds || [];
+  const godchildren = [];
+  const checkedGodchildIds = new Set();
+  for (const gcid of godchildrenIds) {
+    const gc = getEnt(gcid);
+    if (gc && !checkedGodchildIds.has(gcid)) {
+      checkedGodchildIds.add(gcid);
+      godchildren.push(gc);
+    }
+  }
+  if (entityRegistry) {
+    for (const ent of entityRegistry.values()) {
+      if (checkedGodchildIds.has(ent.id)) continue;
+      if (ent.properties?.godparentId === targetId) {
+        checkedGodchildIds.add(ent.id);
+        godchildren.push(ent);
+      }
+    }
+  }
+
   const res = {
     target,
     father,
     mother,
+    godparent,
+    godparentRole,
+    godchildren,
     patGrandpa,
     patGrandma,
     matGrandpa,
@@ -2634,6 +2676,26 @@ function renderFamilyTab(mx, my, mw, mh, target) {
   if (treeData.grandchildren.length > 0) {
     const gEntries = treeData.grandchildren.map(gc => ({ role: `GRANDCHILD`, ent: gc.entity }));
     sections.push({ title: `GRANDCHILDREN (${treeData.grandchildren.length})`, members: gEntries });
+  }
+
+  // 9. Godparent (Padrinho / Madrinha) & Godchildren (Afilhados / Afilhadas)
+  // Essential family bond - independent of current mood, affinities or interpersonal conflict
+  if (treeData.godparent) {
+    const gpRoleUpper = (treeData.godparentRole || "PADRINHO").toUpperCase();
+    sections.push({
+      title: `GODPARENT / ${gpRoleUpper} (SACRED KINSHIP)`,
+      members: [{ role: gpRoleUpper, ent: treeData.godparent }]
+    });
+  }
+  if (treeData.godchildren && treeData.godchildren.length > 0) {
+    const gchildren = treeData.godchildren.map(gc => {
+      const isFem = gc.properties?.genitalia?.type === "vagina" || gc.properties?.genitalia?.type === "female" || gc.properties?.gender === "female";
+      return { role: isFem ? "AFILHADA" : "AFILHADO", ent: gc };
+    });
+    sections.push({
+      title: `GODCHILDREN / AFILHADOS (${gchildren.length})`,
+      members: gchildren
+    });
   }
 
   // Flatten for scrolling
@@ -3336,6 +3398,19 @@ function renderDossierModal() {
       } else {
         drawText8x8("PARTNER: Single", mx + 435, lineageY + 30, "#7c7c7c", 1);
       }
+
+      // Godparent display
+      if (props.godparentId) {
+        const gp = entityRegistry.get(props.godparentId);
+        const gpName = (gp?.properties?.name || `Entity #${props.godparentId}`).toUpperCase().slice(0, 10);
+        const gpLabel = (props.godparentRole || "PADRINHO").toUpperCase();
+        drawText8x8(`${gpLabel.slice(0, 3)}:`, mx + 680, lineageY + 30, "#ffd700", 1);
+        drawNESButton(mx + 715, lineageY + 24, 90, 22, gpName, false, false);
+        registerClickableRegion(mx + 715, lineageY + 24, 90, 22, () => {
+          lastSelectedId = props.godparentId;
+          modalScroll = 0;
+        });
+      }
     }
 
     // 3. Vital Gauges
@@ -3783,8 +3858,15 @@ function updateEntitySearchInputVisibility() {
 
       entitySearchInput.addEventListener("input", (e) => {
         entitySearchTerm = e.target.value.toLowerCase();
+        modalScroll = 0;
         _entitiesFilterCache.filter = ""; // Invalidate cache
       });
+
+      entitySearchInput.addEventListener("wheel", (e) => {
+        e.preventDefault();
+        const scrollStep = (e.deltaY < 0) ? -2 : 2;
+        modalScroll = Math.max(0, modalScroll + scrollStep);
+      }, { passive: false });
 
       const gameContainer = document.getElementById("game-container");
       if (gameContainer) gameContainer.appendChild(entitySearchInput);
@@ -4041,6 +4123,12 @@ function renderGroupsModal() {
   });
 
   // Modal Sub-Views
+  if (inspectingLogEvent) {
+    renderLogDetailView(mx, my, mw, mh, inspectingLogEvent);
+    ctx.restore();
+    return;
+  }
+
   if (inspectingElectionRecord) {
     renderElectionInspector(mx, my, mw, mh, inspectingElectionRecord);
     ctx.restore();
@@ -4059,14 +4147,14 @@ function renderGroupsModal() {
     return;
   }
 
-  if (inspectingDiplomacyGroup) {
-    renderDiplomacyModal(mx, my, mw, mh, inspectingDiplomacyGroup);
+  if (inspectingDiplomaticHistory) {
+    renderDiplomaticHistoryModal(mx, my, mw, mh, inspectingDiplomaticHistory);
     ctx.restore();
     return;
   }
 
-  if (inspectingLogEvent) {
-    renderLogDetailView(mx, my, mw, mh, inspectingLogEvent);
+  if (inspectingDiplomacyGroup) {
+    renderDiplomacyModal(mx, my, mw, mh, inspectingDiplomacyGroup);
     ctx.restore();
     return;
   }
@@ -4286,11 +4374,12 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
     inspectingFromCreature = false;
   });
 
-  // Top Tabs: [ZONES] [STOCKPILE] [MEMBERS] [POLITICS] [HISTORY]
+  // Top Tabs: [ZONES] [STOCKPILE] [MEMBERS] [BUILDINGS] [POLITICS] [HISTORY]
   const tabs = [
     { id: "ZONES", label: `ZONES (${g.claimedZones?.length || 0})` },
     { id: "STOCKPILE", label: `STOCKPILE${_clanDossierCache.stockpile ? ` (${_clanDossierCache.stockpile.totalCount})` : ""}` },
     { id: "MEMBERS", label: `MEMBERS (${livingMembers.length}/${g.members.length})` },
+    { id: "BUILDINGS", label: "BUILDINGS" },
     { id: "POLITICS", label: "POLITICS" },
     { id: "HISTORY", label: `HISTORY${_clanDossierCache.history ? ` (${_clanDossierCache.history.length})` : ""}` }
   ];
@@ -4489,7 +4578,88 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
   }
 
   // -------------------------------------------------------------------------
-  // TAB 4: POLITICS
+  // TAB 4: BUILDINGS (Construction Management, In-Progress & Completed)
+  // -------------------------------------------------------------------------
+  else if (groupDetailTab === "BUILDINGS") {
+    drawNESBox(mx + 12, contentY, mw - 24, contentH);
+
+    const bData = getGroupConstructions(g, entities);
+    const totalCount = bData.inProgress.length + bData.completed.length + bData.planned.length;
+
+    drawText8x8(`CLAN CONSTRUCTIONS & SETTLEMENT PROJECTS (${totalCount} TOTAL):`, mx + 20, contentY + 12, "#ffd700", 1);
+    drawText8x8(`STATUS: [IN PROGRESS: ${bData.inProgress.length} | COMPLETED: ${bData.completed.length} | PLANNED: ${bData.planned.length}]`, mx + 20, contentY + 28, "#3cbcfc", 1);
+
+    const buildSections = [];
+    if (bData.inProgress.length > 0) {
+      buildSections.push({ title: `CONSTRUCTIONS IN PROGRESS (${bData.inProgress.length})`, items: bData.inProgress, isUnderway: true });
+    }
+    if (bData.completed.length > 0) {
+      buildSections.push({ title: `COMPLETED STRUCTURES (${bData.completed.length})`, items: bData.completed, isUnderway: false });
+    }
+    if (bData.planned.length > 0) {
+      buildSections.push({ title: `PLANNED BLUEPRINTS (${bData.planned.length})`, items: bData.planned, isPlanned: true });
+    }
+
+    const flatBuildRows = [];
+    for (const sec of buildSections) {
+      flatBuildRows.push({ isHeader: true, title: sec.title });
+      for (const it of sec.items) {
+        flatBuildRows.push({ isHeader: false, data: it, isUnderway: sec.isUnderway, isPlanned: sec.isPlanned });
+      }
+    }
+
+    if (flatBuildRows.length === 0) {
+      drawText8x8("NO BUILDINGS OR CONSTRUCTION PROJECTS RECORDED FOR THIS CLAN.", mx + 20, contentY + 54, "#bcbcbc", 1);
+    } else {
+      const rowH = 28;
+      const visibleCount = Math.floor((contentH - 52) / rowH);
+      const maxScroll = Math.max(0, flatBuildRows.length - visibleCount);
+      modalScroll = Math.max(0, Math.min(maxScroll, modalScroll));
+
+      let curY = contentY + 46;
+      for (let i = modalScroll; i < Math.min(flatBuildRows.length, modalScroll + visibleCount); i++) {
+        const row = flatBuildRows[i];
+        if (row.isHeader) {
+          drawText8x8(`▼ ${row.title}`, mx + 20, curY + 6, "#f8b800", 1);
+        } else {
+          const it = row.data;
+          const isHover = mouseX >= mx + 16 && mouseX <= mx + mw - 16 && mouseY >= curY && mouseY <= curY + rowH - 2;
+          if (isHover) {
+            ctx.fillStyle = "#181828";
+            ctx.fillRect(mx + 16, curY, mw - 32, rowH - 2);
+          }
+
+          const posStr = `[${Math.floor(it.x)},${Math.floor(it.y)}]`;
+          if (row.isUnderway) {
+            const wStr = `W:${it.woodCurrent || 0}/${it.woodCost || 0}`;
+            const sStr = `S:${it.stoneCurrent || 0}/${it.stoneCost || 0}`;
+            const bStr = (it.boneCost || 0) > 0 ? ` B:${it.boneCurrent || 0}/${it.boneCost || 0}` : "";
+            const pct = Math.round((it.progress || 0) * 100);
+            const ownerStr = it.ownerName ? ` (${it.ownerName})` : "";
+            drawText8x8(`⏳ [${it.type.toUpperCase()}] ${posStr}${ownerStr} - ${pct}% [${wStr} ${sStr}${bStr}]`, mx + 24, curY + 6, "#ffd700", 1);
+          } else if (row.isPlanned) {
+            const ownerStr = it.ownerName ? ` (${it.ownerName})` : "";
+            drawText8x8(`📐 [${it.type.toUpperCase()}] ${posStr}${ownerStr} - WAITING FOR MATERIALS`, mx + 24, curY + 6, "#bcbcbc", 1);
+          } else {
+            const ownerStr = it.ownerName ? ` (${it.ownerName})` : "";
+            drawText8x8(`✓ [${it.type.toUpperCase()}] ${posStr}${ownerStr} - OPERATIONAL`, mx + 24, curY + 6, "#58d854", 1);
+          }
+
+          // FOCUS Button
+          const itX = it.x;
+          const itY = it.y;
+          drawNESButton(mx + mw - 85, curY + 2, 65, 20, "FOCUS", false, false);
+          registerClickableRegion(mx + mw - 85, curY + 2, 65, 20, () => {
+            focusLocation(itX, itY, 2.5);
+          });
+        }
+        curY += rowH;
+      }
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // TAB 5: POLITICS
   // -------------------------------------------------------------------------
   else if (groupDetailTab === "POLITICS") {
     drawNESBox(mx + 12, contentY, mw - 24, contentH);
@@ -4715,6 +4885,13 @@ function renderDiplomacyModal(mx, my, mw, mh, g) {
 
     const curOG = og;
 
+    // Button: CHRONICLES
+    drawNESButton(mx + mw - 280, curY + 10, 85, 22, "CHRONICLES", false, false);
+    registerClickableRegion(mx + mw - 280, curY + 10, 85, 22, () => {
+      inspectingDiplomaticHistory = { groupA: g, groupB: curOG };
+      diplomaticHistoryScroll = 0;
+    });
+
     // Button: DOSSIER
     drawNESButton(mx + mw - 190, curY + 10, 80, 22, "DOSSIER", false, false);
     registerClickableRegion(mx + mw - 190, curY + 10, 80, 22, () => {
@@ -4928,6 +5105,157 @@ function renderDiplomaticMissionModal(mx, my, mw, mh, ev) {
       }
       curY += 12;
     }
+  }
+}
+
+/**
+ * Modal Sub-View: Chronicles / History of Relations Between Groups
+ */
+function renderDiplomaticHistoryModal(mx, my, mw, mh, data) {
+  const gA = data?.groupA;
+  const gB = data?.groupB;
+  if (!gA || !gB) {
+    inspectingDiplomaticHistory = null;
+    return;
+  }
+
+  const nameA = (gA.name || "CLAN A").toUpperCase();
+  const nameB = (gB.name || "CLAN B").toUpperCase();
+  drawText8x8(`CHRONICLES: ${nameA} <-> ${nameB}`, mx + 16, my + 14, "#ffd700", 1);
+
+  // Scroll Buttons
+  drawNESButton(mx + mw - 230, my + 6, 32, 24, "▲", false, false);
+  registerClickableRegion(mx + mw - 230, my + 6, 32, 24, () => {
+    diplomaticHistoryScroll = Math.max(0, diplomaticHistoryScroll - 2);
+  });
+  drawNESButton(mx + mw - 190, my + 6, 32, 24, "▼", false, false);
+  registerClickableRegion(mx + mw - 190, my + 6, 32, 24, () => {
+    diplomaticHistoryScroll = Math.max(0, diplomaticHistoryScroll + 2);
+  });
+
+  // Back Button
+  drawNESButton(mx + mw - 150, my + 6, 140, 24, "< DIPLOMACY", false, false);
+  registerClickableRegion(mx + mw - 150, my + 6, 140, 24, () => {
+    inspectingDiplomaticHistory = null;
+  });
+
+  // Top Status Bar
+  const topH = 32;
+  drawNESBox(mx + 12, my + 36, mw - 24, topH);
+  const score = (gA.relations && gA.relations[gB.id] !== undefined) ? gA.relations[gB.id] : 0;
+  const isWar = (gA.wars && gA.wars.includes(gB.id)) || (gB.wars && gB.wars.includes(gA.id));
+  const status = isWar ? "AT WAR" : (score < -50 ? "HOSTILE" : (score < 0 ? "UNFRIENDLY" : (score > 50 ? "ALLIED" : "NEUTRAL")));
+  const statusCol = isWar ? "#ff2040" : (score < -50 ? "#e40058" : (score < 0 ? "#ffaa00" : (score > 50 ? "#58d854" : "#ffffff")));
+
+  drawText8x8(`Current Relation: ${Math.round(score)}/100 [${status}]`, mx + 24, my + 48, statusCol, 1);
+  drawText8x8(`${nameA} (Pop: ${gA.members?.length || 0})  vs  ${nameB} (Pop: ${gB.members?.length || 0})`, mx + 280, my + 48, "#bcbcbc", 1);
+
+  const contentY = my + 36 + topH + 8;
+  const contentH = (my + mh - 12) - contentY;
+  drawNESBox(mx + 12, contentY, mw - 24, contentH);
+
+  // Gather mutual history entries
+  const polA = (gA.politicalHistory || []).filter(e => e.targetGroupId === gB.id || e.initiatorGroupId === gB.id);
+  const polB = (gB.politicalHistory || []).filter(e => e.targetGroupId === gA.id || e.initiatorGroupId === gA.id);
+
+  // Combine and de-duplicate
+  const combined = [];
+  const seenKeys = new Set();
+
+  for (const ev of [...polA, ...polB]) {
+    const key = `${ev.tick}_${ev.type}_${ev.title || ""}`;
+    if (!seenKeys.has(key)) {
+      seenKeys.add(key);
+      combined.push(ev);
+    }
+  }
+
+  // Also include relevant major world events involving members of both clans
+  const gAMembers = new Set(gA.members || []);
+  const gBMembers = new Set(gB.members || []);
+  const relevantWorldEvents = (allEvents || []).filter(ev => {
+    const pId = ev.primaryEntityId !== null && ev.primaryEntityId !== undefined ? ev.primaryEntityId : (ev.metadata?.attackerId || ev.metadata?.primaryId);
+    const sId = ev.secondaryEntityId !== null && ev.secondaryEntityId !== undefined ? ev.secondaryEntityId : (ev.metadata?.targetId || ev.metadata?.secondaryId);
+    if (!pId || !sId) return false;
+    const pInA = gAMembers.has(pId);
+    const pInB = gBMembers.has(pId);
+    const sInA = gAMembers.has(sId);
+    const sInB = gBMembers.has(sId);
+    return (pInA && sInB) || (pInB && sInA);
+  });
+
+  for (const wev of relevantWorldEvents) {
+    const key = `world_${wev.id}`;
+    if (!seenKeys.has(key)) {
+      seenKeys.add(key);
+      combined.push({
+        type: wev.type,
+        title: `CLAN CLASH: [${wev.type}]`,
+        description: wev.description,
+        tick: wev.tick,
+        timestamp: wev.timestamp,
+        isWorldEvent: true,
+        rawEvent: wev
+      });
+    }
+  }
+
+  // Sort chronologically descending (newest first)
+  combined.sort((a, b) => (b.tick || 0) - (a.tick || 0));
+
+  if (combined.length === 0) {
+    drawText8x8("NO BILATERAL HISTORY OR DIRECT ENCOUNTERS RECORDED BETWEEN THESE TWO CLANS YET.", mx + 24, contentY + 24, "#bcbcbc", 1);
+    return;
+  }
+
+  const rowH = 34;
+  const visibleCount = Math.floor((contentH - 24) / rowH);
+  const maxScroll = Math.max(0, combined.length - visibleCount);
+  diplomaticHistoryScroll = Math.max(0, Math.min(maxScroll, diplomaticHistoryScroll));
+
+  let curY = contentY + 12;
+  for (let i = diplomaticHistoryScroll; i < Math.min(combined.length, diplomaticHistoryScroll + visibleCount); i++) {
+    const ev = combined[i];
+    const isHover = mouseX >= mx + 16 && mouseX <= mx + mw - 16 && mouseY >= curY - 2 && mouseY <= curY + rowH - 4;
+    if (isHover) {
+      ctx.fillStyle = "#181828";
+      ctx.fillRect(mx + 16, curY - 2, mw - 32, rowH - 2);
+    }
+
+    const typeCol = ev.type === "WAR_DECLARED" ? "#ff2040" : ev.type === "DIPLOMATIC_MISSION" ? "#3cbcfc" : ev.type === "DEATH" || ev.type === "ATTACK" ? "#e40058" : "#ffd700";
+    const typeBadge = `[${ev.type || "EVENT"}]`;
+    const tickStr = ev.tick !== undefined ? `(Tick ${ev.tick})` : "";
+
+    drawText8x8(`${typeBadge} ${ev.title || "BILATERAL EVENT"} ${tickStr}`, mx + 24, curY + 2, typeCol, 1);
+    const maxChars = Math.floor((mw - 180) / 8);
+    const descShort = (ev.description || "").length > maxChars ? (ev.description || "").slice(0, maxChars - 3) + "..." : (ev.description || "");
+    drawText8x8(descShort, mx + 24, curY + 16, "#e0e0e0", 1);
+
+    const curEv = ev;
+    if (curEv.isWorldEvent && curEv.rawEvent) {
+      drawNESButton(mx + mw - 110, curY + 4, 90, 22, "INSPECT", false, false);
+      registerClickableRegion(mx + mw - 110, curY + 4, 90, 22, () => {
+        inspectingLogEvent = curEv.rawEvent;
+      });
+    } else if (curEv.type === "DIPLOMATIC_MISSION" && curEv.missionReport) {
+      drawNESButton(mx + mw - 130, curY + 4, 110, 22, "MISSION REPORT", false, false);
+      registerClickableRegion(mx + mw - 130, curY + 4, 110, 22, () => {
+        inspectingDiplomaticMission = { ...curEv };
+      });
+    } else {
+      drawNESButton(mx + mw - 110, curY + 4, 90, 22, "INSPECT", false, false);
+      registerClickableRegion(mx + mw - 110, curY + 4, 90, 22, () => {
+        inspectingLogEvent = {
+          id: curEv.id || 0,
+          type: curEv.type || "POLITICS",
+          tick: curEv.tick || 0,
+          description: curEv.description || curEv.title || "Evento Diplomático",
+          location: curEv.location || null
+        };
+      });
+    }
+
+    curY += rowH;
   }
 }
 

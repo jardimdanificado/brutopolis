@@ -583,6 +583,7 @@ function processWarDeclarations(group, allGroups, tick) {
 
   for (const [targetId, score] of Object.entries(group.relations)) {
     const tid = Number(targetId);
+    // War declaration if relations are intensely hostile (< -50)
     if (score < -50 && !group.wars.includes(tid)) {
       if (Math.random() < 0.005) {
         group.wars.push(tid);
@@ -609,6 +610,42 @@ function processWarDeclarations(group, allGroups, tick) {
             targetGroupName: targetGroup.name
           });
         }
+      }
+    }
+
+    // Peace Treaty / Armistice if relations have recovered (> -20)
+    if (score > -20 && group.wars.includes(tid)) {
+      group.wars = group.wars.filter(id => id !== tid);
+      const targetGroup = allGroups.find(g => g.id === tid);
+      if (targetGroup && targetGroup.wars) {
+        targetGroup.wars = targetGroup.wars.filter(id => id !== group.id);
+      }
+      const targetName = targetGroup ? targetGroup.name : `Clã #${tid}`;
+      const desc = `Tratado de Paz assinado! As relações entre ${group.name} e ${targetName} melhoraram e a guerra chegou ao fim.`;
+      recordWorldEvent({
+        opcode: OP_DIPLOMATIC_MISSION,
+        primaryEntityId: group.leaderId,
+        secondaryEntityId: targetGroup?.leaderId || null,
+        location: { x: 0, y: 0 },
+        description: desc,
+        tick,
+        metadata: { groupName: group.name, targetName }
+      });
+      addPoliticalHistoryEntry(group, {
+        type: "PEACE_TREATY",
+        title: `Tratado de Paz`,
+        description: desc,
+        targetGroupId: tid,
+        targetGroupName: targetName
+      });
+      if (targetGroup) {
+        addPoliticalHistoryEntry(targetGroup, {
+          type: "PEACE_TREATY",
+          title: `Tratado de Paz`,
+          description: desc,
+          targetGroupId: group.id,
+          targetGroupName: group.name
+        });
       }
     }
   }
@@ -645,9 +682,9 @@ function annexRuins(group, tick) {
           }
         }
         
-        const desc = `O clã ${group.name} encontrou ruínas antigas e anexou a zona [${currentZone}] ao seu território!`;
+        const desc = `O clã ${group.name} explorou as ruínas da zona (${currentZone.replace("_", ", ")}) e anexou o território ao seu domínio!`;
         recordWorldEvent({
-          opcode: OP_DIPLOMATIC_MISSION,
+          opcode: OP_LEADER_CHANGED,
           primaryEntityId: e.id,
           location: { x: e.x, y: e.y },
           description: desc,
@@ -666,29 +703,42 @@ function annexRuins(group, tick) {
 
 function handleGroupDissolution(group, tick) {
   group.dissolved = true;
-  const world = getCurrentWorld();
+  group.wars = [];
+  group._plannedRoads = [];
+  group._plannedStoneRoads = [];
+  group._cachedBlueprint = [];
+  group._housePlots = {};
 
-  const wasAtWar = group.wars && group.wars.length > 0;
-  
-  if (!wasAtWar && world) {
+  const world = getCurrentWorld();
+  if (world) {
     if (!world.ruinedZones) world.ruinedZones = [];
-    world.ruinedZones.push(...(group.claimedZones || []));
+    if (group.claimedZones && group.claimedZones.length > 0) {
+      for (const zk of group.claimedZones) {
+        if (!world.ruinedZones.includes(zk)) {
+          world.ruinedZones.push(zk);
+        }
+      }
+    }
     
     if (world.entities) {
       for (const e of world.entities) {
-        if (e && !e.destroyed && e.properties?.groupId === group.id) {
+        if (e && !e.destroyed && (e.properties?.groupId === group.id || e.properties?.group?.id === group.id)) {
           if (e.properties.house?.isLeaderHouse) {
             e.properties.name = "Escombros do Palácio";
             if (e.properties.structure) e.properties.structure.condition = 0;
             if (e.properties.render) {
               e.properties.render.skin = "Feature_Rocks_Small.png";
             }
+          } else if (e.properties.house && !e.properties.house.isCompleted) {
+            // Cancel unfinished orphan building sites
+            e.properties.name = "Escombros de Construção Abandonada";
+            if (e.properties.structure) e.properties.structure.condition = 0;
           }
         }
       }
     }
 
-    const desc = `O clã ${group.name} foi totalmente dizimado por causas naturais e suas terras agora são RUÍNAS. A Torre da Política desmoronou em escombros.`;
+    const desc = `O clã ${group.name} foi totalmente dissolvido e suas terras agora são RUÍNAS. As construções foram abandonadas aos escombros.`;
     recordWorldEvent({
       opcode: OP_LEADER_CHANGED,
       primaryEntityId: group.leaderId,

@@ -2080,19 +2080,53 @@ export function createArmProp(side = "left", quality = 1.0, condition = 100, max
 // --- Unique Name & Lineage Generator via Vocabulário Library ---
 const usedBabyNames = new Set();
 
-export function getRandomVocabWord() {
+export function classificarGenero(str) {
+  if (!str) return "neutro";
+  const s = str.toLowerCase();
+  // terminações fortemente femininas
+  if (/(ção|são|ssão|dade|tude|ice|ez|eza|agem|ância|ência|aria|eria)$/.test(s))
+    return "feminino";
+
+  // terminações fortemente masculinas
+  if (/(mento|ismo|ado|eiro|ário|ório)$/.test(s))
+    return "masculino";
+
+  // flexão explícita
+  if (/(o|os|ão|ãos)$/.test(s))
+    return "masculino";
+
+  if (/(a|as|ã|ãs|ães)$/.test(s))
+    return "feminino";
+
+  return "neutro";
+}
+
+export function getRandomVocabWord(genderPreference = "") {
   const words = vocabulario.palavras;
-  if (!words || words.length === 0) return "Pioneiro";
-  for (let i = 0; i < 60; i++) {
+  if (!words || words.length === 0) return genderPreference === "female" || genderPreference === "feminino" ? "Pioneira" : "Pioneiro";
+
+  const targetGen = (genderPreference === "female" || genderPreference === "feminino" || genderPreference === "feminino-apenas")
+    ? "feminino"
+    : (genderPreference === "male" || genderPreference === "masculino" || genderPreference === "masculino-apenas")
+      ? "masculino"
+      : (genderPreference === "neutro" ? "neutro" : "");
+
+  for (let i = 0; i < 90; i++) {
     const raw = words[Math.floor(Math.random() * words.length)];
     if (raw && typeof raw === "string") {
       const clean = raw.trim().replace(/[^a-zA-ZáéíóúâêôãõçÁÉÍÓÚÂÊÔÃÕÇ]/g, "");
       if (clean.length >= 3 && clean.length <= 12) {
+        if (targetGen) {
+          const gen = classificarGenero(clean);
+          if (gen !== targetGen && gen !== "neutro") {
+            continue;
+          }
+        }
         return clean.charAt(0).toUpperCase() + clean.slice(1).toLowerCase();
       }
     }
   }
-  return "Pioneiro";
+  return targetGen === "feminino" ? "Pioneira" : "Pioneiro";
 }
 
 export function getMotherSurname(mother) {
@@ -2101,7 +2135,7 @@ export function getMotherSurname(mother) {
   // Extract from name if name contains a surname
   const rawName = (mother.properties?.name || "").replace(/,\s*the\s+\w+/i, "").trim();
   const parts = rawName.split(/\s+/);
-  if (parts.length >= 2 && !["Jr", "Jr.", "the", "Filho", "Filha", "Matriarch", "Explorer", "Builder", "Miner", "Hunter", "Farmer"].includes(parts[parts.length - 1])) {
+  if (parts.length >= 2 && !["Jr", "Jr.", "the", "Filho", "Filha", "afilhado", "afilhada", "Matriarch", "Explorer", "Builder", "Miner", "Hunter", "Farmer"].includes(parts[parts.length - 1])) {
     mother.properties.surname = parts[parts.length - 1];
     return mother.properties.surname;
   }
@@ -2117,23 +2151,23 @@ export function generateBabyName(mother, father = null, babyGender = "male", ent
   let firstName = "";
   let isTribute = false;
   let tributeTargetName = null;
+  let godparentEntity = null;
   let isFilho = false;
   let isFilha = false;
+  const genderKey = babyGender === "female" ? "feminino" : "masculino";
 
   // 1. Check special filho / filha inheritance (chance ~12%)
   if (babyGender === "male" && father && Math.random() < 0.12) {
-    const fatherRaw = (father.properties.name || "Pai").replace(/,\s*the\s+\w+/i, "").replace(/\s+filho\b/i, "").replace(/\s+Jr\.?/i, "").trim();
+    const fatherRaw = (father.properties.name || "Pai").replace(/,\s*the\s+\w+/i, "").replace(/\s+filho\b/i, "").replace(/\s+afilhado\b/i, "").replace(/\s+Jr\.?/i, "").trim();
     const fatherFirstName = fatherRaw.split(/\s+/)[0];
-    const surname = father.properties.surname || motherSurname;
     if (fatherFirstName && fatherFirstName.length >= 2) {
       firstName = `${fatherFirstName} filho`;
       isFilho = true;
       tributeTargetName = father.properties.name;
     }
   } else if (babyGender === "female" && Math.random() < 0.12) {
-    const motherRaw = (mother.properties.name || "Mae").replace(/,\s*the\s+\w+/i, "").replace(/\s+filha\b/i, "").replace(/\s+Jr\.?/i, "").trim();
+    const motherRaw = (mother.properties.name || "Mae").replace(/,\s*the\s+\w+/i, "").replace(/\s+filha\b/i, "").replace(/\s+afilhada\b/i, "").replace(/\s+Jr\.?/i, "").trim();
     const motherFirstName = motherRaw.split(/\s+/)[0];
-    const surname = motherSurname;
     if (motherFirstName && motherFirstName.length >= 2) {
       firstName = `${motherFirstName} filha`;
       isFilha = true;
@@ -2160,19 +2194,23 @@ export function generateBabyName(mother, father = null, babyGender = "male", ent
     if (bestPartner && Math.random() < 0.35) {
       const friendRaw = (bestPartner.properties.name || "Friend")
         .replace(/,\s*the\s+\w+/i, "")
+        .replace(/\s+afilhad[oa]\b/i, "")
+        .replace(/\s+filh[oa]\b/i, "")
         .replace(/\s+Jr\.?/i, "")
         .trim();
       const friendFirstName = friendRaw.split(/\s+/)[0];
       if (friendFirstName && friendFirstName.length >= 2) {
-        firstName = `${friendFirstName} Jr.`;
+        const tributeSuffix = babyGender === "female" ? "afilhada" : "afilhado";
+        firstName = `${friendFirstName} ${tributeSuffix}`;
         isTribute = true;
         tributeTargetName = bestPartner.properties.name;
+        godparentEntity = bestPartner;
       }
     }
   }
 
   if (!firstName) {
-    firstName = getRandomVocabWord();
+    firstName = getRandomVocabWord(genderKey);
   }
 
   let finalName = `${firstName} ${motherSurname}`.trim();
@@ -2181,12 +2219,12 @@ export function generateBabyName(mother, father = null, babyGender = "male", ent
   let attempts = 0;
   while ((usedBabyNames.has(finalName) || (entities && entities.some(e => !e.destroyed && e.properties?.name === finalName))) && attempts < 25) {
     attempts++;
-    const extraWord = getRandomVocabWord();
+    const extraWord = getRandomVocabWord(genderKey);
     if (isFilho || isFilha || isTribute) {
       finalName = `${firstName} ${extraWord} ${motherSurname}`.trim();
     } else {
       try {
-        const combined = vocabulario.combinar(firstName, extraWord, 'eufonia');
+        const combined = vocabulario.combinar(firstName, extraWord, 'eufonia', genderKey);
         finalName = `${combined.charAt(0).toUpperCase() + combined.slice(1)} ${motherSurname}`;
       } catch (e) {
         finalName = `${firstName} ${extraWord} ${motherSurname}`.trim();
@@ -2201,6 +2239,7 @@ export function generateBabyName(mother, father = null, babyGender = "male", ent
     isFilho,
     isFilha,
     tributeTo: tributeTargetName,
+    godparent: godparentEntity,
     surname: motherSurname
   };
 }
@@ -2208,25 +2247,28 @@ export function generateBabyName(mother, father = null, babyGender = "male", ent
 const usedGlobalNames = new Set();
 const usedWeaponNames = new Set();
 
-export function generateUniqueCreatureName(roleTitle = "Creature", species = "human") {
-  const firstName = getRandomVocabWord();
+export function generateUniqueCreatureName(roleTitle = "Creature", species = "human", gender = "male") {
+  const genderKey = gender === "female" ? "feminino" : "masculino";
+  const firstName = getRandomVocabWord(genderKey);
   const surname = getRandomVocabWord();
-  let candidate = species === "human"
-    ? `${firstName} ${surname}, the ${roleTitle}`
-    : `${firstName} the ${roleTitle}`;
+  let candidate = species === "human" || species === "elf" || species === "dwarf" || species === "orc" || species === "goblin" || species === "kobold" || species === "lizardfolk" || species === "catfolk" || species === "centaur"
+    ? `${firstName} ${surname}`
+    : `${firstName}`;
 
   let attempts = 0;
   while (usedGlobalNames.has(candidate) && attempts < 30) {
     attempts++;
-    const extra = getRandomVocabWord();
+    const extra = getRandomVocabWord(genderKey);
     try {
-      const combined = vocabulario.combinar(firstName, extra, 'eufonia');
+      const combined = vocabulario.combinar(firstName, extra, 'eufonia', genderKey);
       const cFirst = combined.charAt(0).toUpperCase() + combined.slice(1);
-      candidate = species === "human"
-        ? `${cFirst} ${surname}, the ${roleTitle}`
-        : `${cFirst} the ${roleTitle}`;
+      candidate = species === "human" || species === "elf" || species === "dwarf" || species === "orc" || species === "goblin" || species === "kobold" || species === "lizardfolk" || species === "catfolk" || species === "centaur"
+        ? `${cFirst} ${surname}`
+        : `${cFirst}`;
     } catch (e) {
-      candidate = `${firstName} ${extra} ${surname}, the ${roleTitle}`;
+      candidate = species === "human" || species === "elf" || species === "dwarf" || species === "orc" || species === "goblin" || species === "kobold" || species === "lizardfolk" || species === "catfolk" || species === "centaur"
+        ? `${firstName} ${extra} ${surname}`
+        : `${firstName} ${extra}`;
     }
   }
 
@@ -2444,6 +2486,22 @@ export function createGenitaliaProp(type = "penis", isPregnant = false) {
             }
           }
 
+          // Godparent (Padrinho / Madrinha) & Godchild (Afilhado / Afilhada) permanent family bond
+          if (nameInfo.godparent && !nameInfo.godparent.destroyed) {
+            const gp = nameInfo.godparent;
+            const gpIsFemale = gp.properties?.genitalia?.type === "vagina" || gp.properties?.genitalia?.type === "female" || gp.properties?.gender === "female";
+            const gpRole = gpIsFemale ? "madrinha" : "padrinho";
+            baby.properties.godparentId = gp.id;
+            baby.properties.godparentRole = gpRole;
+
+            if (!gp.properties.godchildrenIds) {
+              gp.properties.godchildrenIds = [];
+            }
+            if (!gp.properties.godchildrenIds.includes(baby.id)) {
+              gp.properties.godchildrenIds.push(baby.id);
+            }
+          }
+
           entities.push(baby);
 
           recordWorldEvent({
@@ -2458,7 +2516,9 @@ export function createGenitaliaProp(type = "penis", isPregnant = false) {
               primaryName: ent.properties.name,
               secondaryName: baby.properties.name,
               fatherId: father?.id || null,
-              fatherName: father?.properties.name || null
+              fatherName: father?.properties.name || null,
+              godparentId: nameInfo.godparent?.id || null,
+              godparentName: nameInfo.godparent?.properties?.name || null
             }
           });
         }
@@ -3962,6 +4022,10 @@ export function getClanBlueprintTiles(group) {
   // Prioritize the clan leader so the 3x3 Leader Palace is always planned first
   const orderedMembers = [...members].sort((a, b) => (a === group.leaderId ? -1 : (b === group.leaderId ? 1 : 0)));
 
+  // Count existing built or in-progress houses to avoid flooding the map with hundreds of unbuilt blueprints
+  let newPlannedHousesCount = 0;
+  const maxUnbuiltPlannedHouses = 3; // Throttle to 3 unbuilt planned houses at any time
+
   for (let mIdx = 0; mIdx < orderedMembers.length; mIdx++) {
     const ownerId = orderedMembers[mIdx];
     const isLeader = (ownerId === group.leaderId);
@@ -3970,6 +4034,11 @@ export function getClanBlueprintTiles(group) {
       const vacantTile = tiles.find(t => (!t.ownerId || !memberSet.has(t.ownerId)) && (isLeader ? t.type === "leader_house" : t.type === "house"));
       if (vacantTile) {
         vacantTile.ownerId = ownerId;
+        continue;
+      }
+
+      // If already planned several houses ahead of actual builders, pause planning more until those are built
+      if (!isLeader && newPlannedHousesCount >= maxUnbuiltPlannedHouses) {
         continue;
       }
 
@@ -4104,6 +4173,7 @@ export function getClanBlueprintTiles(group) {
 
       if (chosenPlot) {
         markOccupied(chosenPlot.x, chosenPlot.y, houseFpW, houseFpH, isLeaderPlot ? "leader_house" : "house", { ownerId, isLeaderHouse: isLeaderPlot });
+        if (!isLeaderPlot) newPlannedHousesCount++;
 
         // Connect house doorstep to nearest street with a short direct spur
         if (group._plannedRoads && group._plannedRoads.length > 0) {
@@ -4567,6 +4637,249 @@ export function getGroupStockpile(group, entities) {
     items,
     breakdown: { ground: groundCount, members: memberCount, storage: storageCount }
   };
+}
+
+/**
+ * Returns comprehensive building and construction metrics for a group,
+ * categorizing completed structures, in-progress projects, and planned blueprints.
+ * Automatically handles orphan reassignment if original builder/owner perished.
+ */
+export function getGroupConstructions(group, entities = null) {
+  if (!group) return { inProgress: [], completed: [], planned: [] };
+
+  const ents = entities || Array.from(entityRegistry.values());
+  const blueprint = getClanBlueprintTiles(group);
+  const claimedZones = group.claimedZones || [];
+
+  const inProgress = [];
+  const completed = [];
+  const seenTileKeys = new Set();
+
+  for (const e of ents) {
+    if (e.destroyed) continue;
+    const isGroupStruct = (e.properties?.groupId === group.id || e.properties?.group?.id === group.id) ||
+      (isTileInClaimedZones(e.x, e.y, claimedZones) && (e.properties?.house || e.properties?.warehouse || e.properties?.well || e.properties?.slaughterhouse || e.properties?.kitchen || e.properties?.artisan_hut || e.properties?.campfire || e.properties?.door || (e.properties?.structure && !e.properties.edible)));
+
+    if (!isGroupStruct) continue;
+
+    const tk = `${e.x}_${e.y}`;
+    seenTileKeys.add(tk);
+
+    if (e.properties?.house) {
+      const h = e.properties.house;
+      const wCost = h.woodCost ?? 3;
+      const sCost = h.stoneCost ?? 2;
+      const bCost = h.boneCost ?? 0;
+      const wCur = h.woodCurrent || 0;
+      const sCur = h.stoneCurrent || 0;
+      const bCur = h.boneCurrent || 0;
+      const isDone = !!h.isCompleted;
+
+      // Check if owner died or is missing
+      const owner = h.ownerId ? getEntityById(h.ownerId) : null;
+      const isOwnerAlive = owner && !owner.destroyed && owner.properties?.life?.energy > 0;
+      if (!isOwnerAlive) {
+        // Reassign to homeless member of group
+        const existingHouses = ents.filter(ex => !ex.destroyed && ex.properties.house?.ownerId && ex !== e);
+        const housedIds = new Set(existingHouses.map(ex => ex.properties.house.ownerId));
+        const homeless = (group.members || []).map(id => getEntityById(id)).find(m => m && !m.destroyed && m.properties?.life?.energy > 0 && !housedIds.has(m.id));
+        if (homeless) {
+          h.ownerId = homeless.id;
+          h.ownerName = homeless.properties.name;
+          e.properties.name = h.isLeaderHouse ? `Grand Palace of ${homeless.properties.name}` : `Cottage of ${homeless.properties.name}`;
+        }
+      }
+
+      const item = {
+        entity: e,
+        id: e.id,
+        x: e.x,
+        y: e.y,
+        type: h.isLeaderHouse ? "Leader Palace" : "Dwelling House",
+        name: e.properties.name || "House",
+        isCompleted: isDone,
+        woodCurrent: wCur,
+        woodCost: wCost,
+        stoneCurrent: sCur,
+        stoneCost: sCost,
+        boneCurrent: bCur,
+        boneCost: bCost,
+        progress: isDone ? 1.0 : Math.min(0.99, (wCur + sCur + bCur) / Math.max(1, wCost + sCost + bCost)),
+        ownerId: h.ownerId,
+        ownerName: h.ownerName || (h.ownerId ? (getEntityById(h.ownerId)?.properties?.name || `Citizen #${h.ownerId}`) : "Unassigned")
+      };
+      if (isDone) completed.push(item);
+      else inProgress.push(item);
+    } else if (e.properties?.warehouse) {
+      const wh = e.properties.warehouse;
+      const isDone = !!wh.isCompleted;
+      const item = {
+        entity: e,
+        id: e.id,
+        x: e.x,
+        y: e.y,
+        type: "Grand Stockpile",
+        name: e.properties.name || "Warehouse",
+        isCompleted: isDone,
+        woodCurrent: wh.woodCurrent || 0,
+        woodCost: wh.woodCost || 2,
+        stoneCurrent: wh.stoneCurrent || 0,
+        stoneCost: wh.stoneCost || 2,
+        progress: isDone ? 1.0 : Math.min(0.99, ((wh.woodCurrent || 0) + (wh.stoneCurrent || 0)) / Math.max(1, (wh.woodCost || 2) + (wh.stoneCost || 2)))
+      };
+      if (isDone) completed.push(item);
+      else inProgress.push(item);
+    } else if (e.properties?.well) {
+      const wl = e.properties.well;
+      const isDone = !!wl.isCompleted;
+      const item = {
+        entity: e,
+        id: e.id,
+        x: e.x,
+        y: e.y,
+        type: "Village Water Well",
+        name: e.properties.name || "Well",
+        isCompleted: isDone,
+        woodCurrent: wl.woodCurrent || 0,
+        woodCost: wl.woodCost || 2,
+        stoneCurrent: wl.stoneCurrent || 0,
+        stoneCost: wl.stoneCost || 4,
+        progress: isDone ? 1.0 : Math.min(0.99, ((wl.woodCurrent || 0) + (wl.stoneCurrent || 0)) / Math.max(1, (wl.woodCost || 2) + (wl.stoneCost || 4)))
+      };
+      if (isDone) completed.push(item);
+      else inProgress.push(item);
+    } else if (e.properties?.slaughterhouse) {
+      const sh = e.properties.slaughterhouse;
+      const isDone = !!sh.isCompleted;
+      const item = {
+        entity: e,
+        id: e.id,
+        x: e.x,
+        y: e.y,
+        type: "Slaughterhouse",
+        name: e.properties.name || "Slaughterhouse",
+        isCompleted: isDone,
+        woodCurrent: sh.woodCurrent || 0,
+        woodCost: sh.woodCost || 3,
+        stoneCurrent: sh.stoneCurrent || 0,
+        stoneCost: sh.stoneCost || 2,
+        progress: isDone ? 1.0 : Math.min(0.99, ((sh.woodCurrent || 0) + (sh.stoneCurrent || 0)) / Math.max(1, (sh.woodCost || 3) + (sh.stoneCost || 2)))
+      };
+      if (isDone) completed.push(item);
+      else inProgress.push(item);
+    } else if (e.properties?.kitchen) {
+      const kit = e.properties.kitchen;
+      const isDone = !!kit.isCompleted;
+      const item = {
+        entity: e,
+        id: e.id,
+        x: e.x,
+        y: e.y,
+        type: "Communal Kitchen",
+        name: e.properties.name || "Kitchen",
+        isCompleted: isDone,
+        woodCurrent: kit.woodCurrent || 0,
+        woodCost: kit.woodCost || 2,
+        stoneCurrent: kit.stoneCurrent || 0,
+        stoneCost: kit.stoneCost || 3,
+        progress: isDone ? 1.0 : Math.min(0.99, ((kit.woodCurrent || 0) + (kit.stoneCurrent || 0)) / Math.max(1, (kit.woodCost || 2) + (kit.stoneCost || 3)))
+      };
+      if (isDone) completed.push(item);
+      else inProgress.push(item);
+    } else if (e.properties?.artisan_hut) {
+      const art = e.properties.artisan_hut;
+      const isDone = !!art.isCompleted;
+      const item = {
+        entity: e,
+        id: e.id,
+        x: e.x,
+        y: e.y,
+        type: "Artisan Hut",
+        name: e.properties.name || "Artisan Hut",
+        isCompleted: isDone,
+        woodCurrent: art.woodCurrent || 0,
+        woodCost: art.woodCost || 6,
+        stoneCurrent: art.stoneCurrent || 0,
+        stoneCost: art.stoneCost || 4,
+        progress: isDone ? 1.0 : Math.min(0.99, ((art.woodCurrent || 0) + (art.stoneCurrent || 0)) / Math.max(1, (art.woodCost || 6) + (art.stoneCost || 4)))
+      };
+      if (isDone) completed.push(item);
+      else inProgress.push(item);
+    } else if (e.properties?.campfire) {
+      const isDone = e.isConstructed !== false;
+      const item = {
+        entity: e,
+        id: e.id,
+        x: e.x,
+        y: e.y,
+        type: "Campfire",
+        name: e.properties.name || "Campfire",
+        isCompleted: isDone,
+        woodCurrent: e.woodCurrent || (isDone ? 2 : 0),
+        woodCost: e.woodCost || 2,
+        progress: isDone ? 1.0 : ((e.woodCurrent || 0) / Math.max(1, e.woodCost || 2))
+      };
+      if (isDone) completed.push(item);
+      else inProgress.push(item);
+    }
+  }
+
+  // Check unbuilt blueprints (planned real structures: houses, civic buildings, campfires)
+  const planned = [];
+  const plannedSeenFootprints = new Set();
+
+  for (const bp of blueprint) {
+    // Only report bona fide building structures (exclude generic road/wall/gate tiles from building log)
+    const validBuildingTypes = new Set(["house", "leader_house", "warehouse", "well", "kitchen", "slaughterhouse", "artisan_hut", "campfire"]);
+    if (!validBuildingTypes.has(bp.type)) continue;
+
+    const fpW = bp.footprintW || (bp.type === "leader_house" ? 3 : (bp.type === "warehouse" || bp.type === "kitchen" || bp.type === "slaughterhouse" || bp.type === "artisan_hut" ? 2 : 1));
+    const fpH = bp.footprintH || (bp.type === "leader_house" ? 3 : (bp.type === "warehouse" || bp.type === "kitchen" || bp.type === "slaughterhouse" || bp.type === "artisan_hut" ? 2 : 1));
+
+    // Check if any tile of this structure is already built or in-progress
+    let alreadyStartedOrBuilt = false;
+    for (let fx = 0; fx < fpW; fx++) {
+      for (let fy = 0; fy < fpH; fy++) {
+        if (seenTileKeys.has(`${bp.x + fx}_${bp.y + fy}`)) {
+          alreadyStartedOrBuilt = true;
+          break;
+        }
+      }
+      if (alreadyStartedOrBuilt) break;
+    }
+    if (alreadyStartedOrBuilt) continue;
+
+    // Deduplicate multi-tile blueprint footprints
+    const originKey = `${bp.x}_${bp.y}`;
+    if (plannedSeenFootprints.has(originKey)) continue;
+    for (let fx = 0; fx < fpW; fx++) {
+      for (let fy = 0; fy < fpH; fy++) {
+        plannedSeenFootprints.add(`${bp.x + fx}_${bp.y + fy}`);
+      }
+    }
+
+    const typeLabels = {
+      "house": "Dwelling House",
+      "leader_house": "Leader Palace",
+      "warehouse": "Grand Stockpile",
+      "well": "Village Water Well",
+      "kitchen": "Communal Kitchen",
+      "slaughterhouse": "Slaughterhouse",
+      "artisan_hut": "Artisan Hut",
+      "campfire": "Campfire"
+    };
+
+    planned.push({
+      x: bp.x,
+      y: bp.y,
+      type: typeLabels[bp.type] || bp.type,
+      name: `Planned ${typeLabels[bp.type] || bp.type}`,
+      ownerId: bp.ownerId,
+      ownerName: bp.ownerId ? (getEntityById(bp.ownerId)?.properties?.name || `Member #${bp.ownerId}`) : "Communal"
+    });
+  }
+
+  return { inProgress, completed, planned };
 }
 
 export function tryJoinGroup(candidate, group, entities, sponsor = null) {
@@ -9107,15 +9420,16 @@ export function createLocomotionProp() {
           const completedHousesCount = getGroupCompletedHouseCount(group);
           const allMembersHoused = completedHousesCount >= Math.max(1, livingClanMembers.length);
 
-          // Priority 2.0: Own House (Top Personal Priority) -> Other Houses -> Settlement Infrastructure
-          for (const bp of blueprint) {
-            if (bp.type === "house" || bp.type === "leader_house") {
-              const houseEnt = getEntityAtTileByProp(bp.x, bp.y, "house");
+          // Priority 2.0: FIRST prioritize existing unfinished in-progress structures in territory!
+          for (const e of entities) {
+            if (!e.destroyed && isTileInClaimedZones(e.x, e.y, group.claimedZones)) {
               let needsThisMat = false;
-              if (!houseEnt) {
-                needsThisMat = true;
-              } else if (!houseEnt.properties.house?.isCompleted) {
-                const h = houseEnt.properties.house;
+              let buildType = null;
+              let isOwn = false;
+
+              if (e.properties.house && !e.properties.house.isCompleted) {
+                buildType = "house";
+                const h = e.properties.house;
                 const wCost = h.woodCost ?? 3;
                 const sCost = h.stoneCost ?? 2;
                 const bCost = h.boneCost ?? 0;
@@ -9123,164 +9437,199 @@ export function createLocomotionProp() {
                 if (heldResType === "stone" && (h.stoneCurrent || 0) < sCost) needsThisMat = true;
                 if (heldResType === "bone" && (h.boneCurrent || 0) < bCost) needsThisMat = true;
                 if (!needsThisMat && ((h.woodCurrent || 0) < wCost || (h.stoneCurrent || 0) < sCost || (h.boneCurrent || 0) < bCost)) needsThisMat = true;
+                isOwn = (h.ownerId === ent.id || h.partnerId === ent.id);
+              } else if (e.properties.warehouse && !e.properties.warehouse.isCompleted) {
+                buildType = "warehouse";
+                const wh = e.properties.warehouse;
+                if (heldResType === "wood" && (wh.woodCurrent || 0) < (wh.woodCost || 2)) needsThisMat = true;
+                if ((heldResType === "stone" || heldResType === "bone") && (wh.stoneCurrent || 0) < (wh.stoneCost || 2)) needsThisMat = true;
+              } else if (e.properties.well && !e.properties.well.isCompleted) {
+                buildType = "well";
+                const wl = e.properties.well;
+                if (heldResType === "wood" && (wl.woodCurrent || 0) < (wl.woodCost || 2)) needsThisMat = true;
+                if ((heldResType === "stone" || heldResType === "bone") && (wl.stoneCurrent || 0) < (wl.stoneCost || 4)) needsThisMat = true;
+              } else if (e.properties.slaughterhouse && !e.properties.slaughterhouse.isCompleted) {
+                buildType = "slaughterhouse";
+                const sh = e.properties.slaughterhouse;
+                if (heldResType === "wood" && (sh.woodCurrent || 0) < (sh.woodCost || 3)) needsThisMat = true;
+                if ((heldResType === "stone" || heldResType === "bone") && (sh.stoneCurrent || 0) < (sh.stoneCost || 2)) needsThisMat = true;
+              } else if (e.properties.kitchen && !e.properties.kitchen.isCompleted) {
+                buildType = "kitchen";
+                const kit = e.properties.kitchen;
+                if (heldResType === "wood" && (kit.woodCurrent || 0) < (kit.woodCost || 2)) needsThisMat = true;
+                if ((heldResType === "stone" || heldResType === "bone") && (kit.stoneCurrent || 0) < (kit.stoneCost || 3)) needsThisMat = true;
+              } else if (e.properties.artisan_hut && !e.properties.artisan_hut.isCompleted) {
+                buildType = "artisan_hut";
+                const art = e.properties.artisan_hut;
+                if (heldResType === "wood" && (art.woodCurrent || 0) < (art.woodCost || 6)) needsThisMat = true;
+                if ((heldResType === "stone" || heldResType === "bone") && (art.stoneCurrent || 0) < (art.stoneCost || 4)) needsThisMat = true;
+              } else if (e.properties.campfire && e.isConstructed === false) {
+                buildType = "campfire";
+                if (heldResType === "wood" && (e.woodCurrent || 0) < (e.woodCost || 2)) needsThisMat = true;
               }
 
-              if (needsThisMat) {
-                const dist = Math.abs(bp.x - ent.x) + Math.abs(bp.y - ent.y);
-                const isOwnHouse = (bp.ownerId === ent.id);
-                const isLeaderPlot = bp.isLeaderHouse || bp.type === "leader_house";
-                const weightDist = isLeaderPlot ? dist * 0.02 : (isOwnHouse ? dist * 0.05 : dist * 0.25);
+              if (needsThisMat && buildType) {
+                const dist = Math.abs(e.x - ent.x) + Math.abs(e.y - ent.y);
+                const weightDist = isOwn ? dist * 0.01 : dist * 0.04;
                 if (weightDist < minBuildDist) {
                   minBuildDist = weightDist;
-                  targetBuild = { x: bp.x, y: bp.y, type: bp.type, isLeaderHouse: isLeaderPlot, footprintW: isLeaderPlot ? 3 : (bp.footprintW || 1), footprintH: isLeaderPlot ? 3 : (bp.footprintH || 1), ownerId: bp.ownerId };
-                }
-              }
-            } else if (bp.type === "warehouse") {
-              const wh = getEntityAtTileByProp(bp.x, bp.y, "warehouse");
-              let needsThisMat = false;
-              if (!wh) {
-                needsThisMat = true;
-              } else if (!wh.properties.warehouse?.isCompleted) {
-                const w = wh.properties.warehouse;
-                const wCost = w.woodCost ?? 2;
-                const sCost = w.stoneCost ?? 2;
-                if (heldResType === "wood" && (w.woodCurrent || 0) < wCost) needsThisMat = true;
-                if ((heldResType === "stone" || heldResType === "bone") && (w.stoneCurrent || 0) < sCost) needsThisMat = true;
-              }
-
-              if (needsThisMat) {
-                const dist = Math.abs(bp.x - ent.x) + Math.abs(bp.y - ent.y);
-                const weightDist = dist * 0.50;
-                if (weightDist < minBuildDist) {
-                  minBuildDist = weightDist;
-                  targetBuild = { x: bp.x, y: bp.y, type: "warehouse" };
-                }
-              }
-            } else if (bp.type === "campfire") {
-              const cf = getEntityAtTileByProp(bp.x, bp.y, "campfire");
-              let needsThisMat = false;
-              if (!cf) {
-                if (heldResType === "wood") needsThisMat = true;
-              } else if (cf.isConstructed === false) {
-                const wCost = cf.woodCost ?? 3;
-                if (heldResType === "wood" && (cf.woodCurrent || 0) < wCost) needsThisMat = true;
-              }
-
-              if (needsThisMat) {
-                const dist = Math.abs(bp.x - ent.x) + Math.abs(bp.y - ent.y);
-                const weightDist = dist * 0.60;
-                if (weightDist < minBuildDist) {
-                  minBuildDist = weightDist;
-                  targetBuild = { x: bp.x, y: bp.y, type: "campfire" };
-                }
-              }
-            } else if (bp.type === "well") {
-              const wl = getEntityAtTileByProp(bp.x, bp.y, "well");
-              let needsThisMat = false;
-              if (!wl) {
-                needsThisMat = true;
-              } else if (!wl.properties.well?.isCompleted) {
-                const w = wl.properties.well;
-                const wCost = w.woodCost ?? 2;
-                const sCost = w.stoneCost ?? 4;
-                if (heldResType === "wood" && (w.woodCurrent || 0) < wCost) needsThisMat = true;
-                if ((heldResType === "stone" || heldResType === "bone") && (w.stoneCurrent || 0) < sCost) needsThisMat = true;
-              }
-
-              if (needsThisMat) {
-                const dist = Math.abs(bp.x - ent.x) + Math.abs(bp.y - ent.y);
-                const weightDist = dist * 0.60;
-                if (weightDist < minBuildDist) {
-                  minBuildDist = weightDist;
-                  targetBuild = { x: bp.x, y: bp.y, type: "well" };
-                }
-              }
-            } else if (bp.type === "slaughterhouse") {
-              const sh = getEntityAtTileByProp(bp.x, bp.y, "slaughterhouse");
-              let needsThisMat = false;
-              if (!sh) {
-                needsThisMat = true;
-              } else if (!sh.properties.slaughterhouse?.isCompleted) {
-                const s = sh.properties.slaughterhouse;
-                const wCost = s.woodCost ?? 3;
-                const sCost = s.stoneCost ?? 2;
-                if (heldResType === "wood" && (s.woodCurrent || 0) < wCost) needsThisMat = true;
-                if ((heldResType === "stone" || heldResType === "bone") && (s.stoneCurrent || 0) < sCost) needsThisMat = true;
-              }
-
-              if (needsThisMat) {
-                const dist = Math.abs(bp.x - ent.x) + Math.abs(bp.y - ent.y);
-                const weightDist = dist * 0.70;
-                if (weightDist < minBuildDist) {
-                  minBuildDist = weightDist;
-                  targetBuild = { x: bp.x, y: bp.y, type: "slaughterhouse" };
-                }
-              }
-            } else if (bp.type === "kitchen") {
-              const kit = getEntityAtTileByProp(bp.x, bp.y, "kitchen");
-              let needsThisMat = false;
-              if (!kit) {
-                needsThisMat = true;
-              } else if (!kit.properties.kitchen?.isCompleted) {
-                const k = kit.properties.kitchen;
-                const wCost = k.woodCost ?? 2;
-                const sCost = k.stoneCost ?? 3;
-                if (heldResType === "wood" && (k.woodCurrent || 0) < wCost) needsThisMat = true;
-                if ((heldResType === "stone" || heldResType === "bone") && (k.stoneCurrent || 0) < sCost) needsThisMat = true;
-              }
-
-              if (needsThisMat) {
-                const dist = Math.abs(bp.x - ent.x) + Math.abs(bp.y - ent.y);
-                const weightDist = dist * 0.70;
-                if (weightDist < minBuildDist) {
-                  minBuildDist = weightDist;
-                  targetBuild = { x: bp.x, y: bp.y, type: "kitchen" };
-                }
-              }
-            } else if (bp.type === "artisan_hut") {
-              const art = getEntityAtTileByProp(bp.x, bp.y, "artisan_hut");
-              let needsThisMat = false;
-              if (!art) {
-                needsThisMat = true;
-              } else if (!art.properties.artisan_hut?.isCompleted) {
-                const a = art.properties.artisan_hut;
-                const wCost = a.woodCost ?? 6;
-                const sCost = a.stoneCost ?? 4;
-                if (heldResType === "wood" && (a.woodCurrent || 0) < wCost) needsThisMat = true;
-                if ((heldResType === "stone" || heldResType === "bone") && (a.stoneCurrent || 0) < sCost) needsThisMat = true;
-              }
-
-              if (needsThisMat) {
-                const dist = Math.abs(bp.x - ent.x) + Math.abs(bp.y - ent.y);
-                const weightDist = dist * 0.70;
-                if (weightDist < minBuildDist) {
-                  minBuildDist = weightDist;
-                  targetBuild = { x: bp.x, y: bp.y, type: "artisan_hut" };
+                  targetBuild = { x: e.x, y: e.y, type: buildType, footprintW: (buildType === "warehouse" || buildType === "kitchen" || buildType === "slaughterhouse" || buildType === "artisan_hut" ? 2 : 1), footprintH: (buildType === "warehouse" || buildType === "kitchen" || buildType === "slaughterhouse" || buildType === "artisan_hut" ? 2 : 1) };
                 }
               }
             }
           }
 
-          // Check any existing unfinished house in territory
-          for (const e of entities) {
-            if (!e.destroyed && e.properties.house && !e.properties.house.isCompleted && isTileInClaimedZones(e.x, e.y, group.claimedZones)) {
-              const h = e.properties.house;
-              const wCost = h.woodCost ?? 3;
-              const sCost = h.stoneCost ?? 2;
-              const bCost = h.boneCost ?? 0;
-              let needsThisMat = false;
-              if (heldResType === "wood" && (h.woodCurrent || 0) < wCost) needsThisMat = true;
-              if (heldResType === "stone" && (h.stoneCurrent || 0) < sCost) needsThisMat = true;
-              if (heldResType === "bone" && (h.boneCurrent || 0) < bCost) needsThisMat = true;
-              if (!needsThisMat && ((h.woodCurrent || 0) < wCost || (h.stoneCurrent || 0) < sCost || (h.boneCurrent || 0) < bCost)) needsThisMat = true;
+          // Priority 2.1: If no existing structure is in-progress, break ground on unstarted blueprints
+          if (!targetBuild) {
+            for (const bp of blueprint) {
+              if (bp.type === "house" || bp.type === "leader_house") {
+                const houseEnt = getEntityAtTileByProp(bp.x, bp.y, "house");
+                let needsThisMat = false;
+                if (!houseEnt) {
+                  needsThisMat = true;
+                } else if (!houseEnt.properties.house?.isCompleted) {
+                  const h = houseEnt.properties.house;
+                  const wCost = h.woodCost ?? 3;
+                  const sCost = h.stoneCost ?? 2;
+                  const bCost = h.boneCost ?? 0;
+                  if (heldResType === "wood" && (h.woodCurrent || 0) < wCost) needsThisMat = true;
+                  if (heldResType === "stone" && (h.stoneCurrent || 0) < sCost) needsThisMat = true;
+                  if (heldResType === "bone" && (h.boneCurrent || 0) < bCost) needsThisMat = true;
+                  if (!needsThisMat && ((h.woodCurrent || 0) < wCost || (h.stoneCurrent || 0) < sCost || (h.boneCurrent || 0) < bCost)) needsThisMat = true;
+                }
 
-              if (needsThisMat) {
-                const dist = Math.abs(e.x - ent.x) + Math.abs(e.y - ent.y);
-                const isOwn = (h.ownerId === ent.id || h.partnerId === ent.id);
-                const weightDist = isOwn ? dist * 0.05 : dist * 0.25;
-                if (weightDist < minBuildDist) {
-                  minBuildDist = weightDist;
-                  targetBuild = { x: e.x, y: e.y, type: "house" };
+                if (needsThisMat) {
+                  const dist = Math.abs(bp.x - ent.x) + Math.abs(bp.y - ent.y);
+                  const isOwnHouse = (bp.ownerId === ent.id);
+                  const isLeaderPlot = bp.isLeaderHouse || bp.type === "leader_house";
+                  const weightDist = isLeaderPlot ? dist * 0.05 : (isOwnHouse ? dist * 0.08 : dist * 0.30);
+                  if (weightDist < minBuildDist) {
+                    minBuildDist = weightDist;
+                    targetBuild = { x: bp.x, y: bp.y, type: bp.type, isLeaderHouse: isLeaderPlot, footprintW: isLeaderPlot ? 3 : (bp.footprintW || 1), footprintH: isLeaderPlot ? 3 : (bp.footprintH || 1), ownerId: bp.ownerId };
+                  }
+                }
+              } else if (bp.type === "warehouse") {
+                const wh = getEntityAtTileByProp(bp.x, bp.y, "warehouse");
+                let needsThisMat = false;
+                if (!wh) {
+                  needsThisMat = true;
+                } else if (!wh.properties.warehouse?.isCompleted) {
+                  const w = wh.properties.warehouse;
+                  const wCost = w.woodCost ?? 2;
+                  const sCost = w.stoneCost ?? 2;
+                  if (heldResType === "wood" && (w.woodCurrent || 0) < wCost) needsThisMat = true;
+                  if ((heldResType === "stone" || heldResType === "bone") && (w.stoneCurrent || 0) < sCost) needsThisMat = true;
+                }
+
+                if (needsThisMat) {
+                  const dist = Math.abs(bp.x - ent.x) + Math.abs(bp.y - ent.y);
+                  const weightDist = dist * 0.50;
+                  if (weightDist < minBuildDist) {
+                    minBuildDist = weightDist;
+                    targetBuild = { x: bp.x, y: bp.y, type: "warehouse" };
+                  }
+                }
+              } else if (bp.type === "campfire") {
+                const cf = getEntityAtTileByProp(bp.x, bp.y, "campfire");
+                let needsThisMat = false;
+                if (!cf) {
+                  if (heldResType === "wood") needsThisMat = true;
+                } else if (cf.isConstructed === false) {
+                  const wCost = cf.woodCost ?? 3;
+                  if (heldResType === "wood" && (cf.woodCurrent || 0) < wCost) needsThisMat = true;
+                }
+
+                if (needsThisMat) {
+                  const dist = Math.abs(bp.x - ent.x) + Math.abs(bp.y - ent.y);
+                  const weightDist = dist * 0.60;
+                  if (weightDist < minBuildDist) {
+                    minBuildDist = weightDist;
+                    targetBuild = { x: bp.x, y: bp.y, type: "campfire" };
+                  }
+                }
+              } else if (bp.type === "well") {
+                const wl = getEntityAtTileByProp(bp.x, bp.y, "well");
+                let needsThisMat = false;
+                if (!wl) {
+                  needsThisMat = true;
+                } else if (!wl.properties.well?.isCompleted) {
+                  const w = wl.properties.well;
+                  const wCost = w.woodCost ?? 2;
+                  const sCost = w.stoneCost ?? 4;
+                  if (heldResType === "wood" && (w.woodCurrent || 0) < wCost) needsThisMat = true;
+                  if ((heldResType === "stone" || heldResType === "bone") && (w.stoneCurrent || 0) < sCost) needsThisMat = true;
+                }
+
+                if (needsThisMat) {
+                  const dist = Math.abs(bp.x - ent.x) + Math.abs(bp.y - ent.y);
+                  const weightDist = dist * 0.60;
+                  if (weightDist < minBuildDist) {
+                    minBuildDist = weightDist;
+                    targetBuild = { x: bp.x, y: bp.y, type: "well" };
+                  }
+                }
+              } else if (bp.type === "slaughterhouse") {
+                const sh = getEntityAtTileByProp(bp.x, bp.y, "slaughterhouse");
+                let needsThisMat = false;
+                if (!sh) {
+                  needsThisMat = true;
+                } else if (!sh.properties.slaughterhouse?.isCompleted) {
+                  const s = sh.properties.slaughterhouse;
+                  const wCost = s.woodCost ?? 3;
+                  const sCost = s.stoneCost ?? 2;
+                  if (heldResType === "wood" && (s.woodCurrent || 0) < wCost) needsThisMat = true;
+                  if ((heldResType === "stone" || heldResType === "bone") && (s.stoneCurrent || 0) < sCost) needsThisMat = true;
+                }
+
+                if (needsThisMat) {
+                  const dist = Math.abs(bp.x - ent.x) + Math.abs(bp.y - ent.y);
+                  const weightDist = dist * 0.70;
+                  if (weightDist < minBuildDist) {
+                    minBuildDist = weightDist;
+                    targetBuild = { x: bp.x, y: bp.y, type: "slaughterhouse" };
+                  }
+                }
+              } else if (bp.type === "kitchen") {
+                const kit = getEntityAtTileByProp(bp.x, bp.y, "kitchen");
+                let needsThisMat = false;
+                if (!kit) {
+                  needsThisMat = true;
+                } else if (!kit.properties.kitchen?.isCompleted) {
+                  const k = kit.properties.kitchen;
+                  const wCost = k.woodCost ?? 2;
+                  const sCost = k.stoneCost ?? 3;
+                  if (heldResType === "wood" && (k.woodCurrent || 0) < wCost) needsThisMat = true;
+                  if ((heldResType === "stone" || heldResType === "bone") && (k.stoneCurrent || 0) < sCost) needsThisMat = true;
+                }
+
+                if (needsThisMat) {
+                  const dist = Math.abs(bp.x - ent.x) + Math.abs(bp.y - ent.y);
+                  const weightDist = dist * 0.70;
+                  if (weightDist < minBuildDist) {
+                    minBuildDist = weightDist;
+                    targetBuild = { x: bp.x, y: bp.y, type: "kitchen" };
+                  }
+                }
+              } else if (bp.type === "artisan_hut") {
+                const art = getEntityAtTileByProp(bp.x, bp.y, "artisan_hut");
+                let needsThisMat = false;
+                if (!art) {
+                  needsThisMat = true;
+                } else if (!art.properties.artisan_hut?.isCompleted) {
+                  const a = art.properties.artisan_hut;
+                  const wCost = a.woodCost ?? 6;
+                  const sCost = a.stoneCost ?? 4;
+                  if (heldResType === "wood" && (a.woodCurrent || 0) < wCost) needsThisMat = true;
+                  if ((heldResType === "stone" || heldResType === "bone") && (a.stoneCurrent || 0) < sCost) needsThisMat = true;
+                }
+
+                if (needsThisMat) {
+                  const dist = Math.abs(bp.x - ent.x) + Math.abs(bp.y - ent.y);
+                  const weightDist = dist * 0.70;
+                  if (weightDist < minBuildDist) {
+                    minBuildDist = weightDist;
+                    targetBuild = { x: bp.x, y: bp.y, type: "artisan_hut" };
+                  }
                 }
               }
             }
@@ -10960,7 +11309,7 @@ export function createCreatureFromArchetype(speciesKey, x, y, customOpts = {}) {
     const chosenRole = customOpts.role || roles[Math.floor(Math.random() * roles.length)];
     const customName = customOpts.name;
 
-    naming = customName ? { fullName: customName, surname: customName.split(" ")[1] || getRandomVocabWord() } : generateUniqueCreatureName(chosenRole, normKey);
+    naming = customName ? { fullName: customName, surname: customName.split(" ")[1] || getRandomVocabWord(gender === "female" ? "feminino" : "masculino") } : generateUniqueCreatureName(chosenRole, normKey, gender);
     usedGlobalNames.add(naming.fullName);
 
     let skin = isFemale ? "Human_Normal_F.png" : "Human_Normal_M.png";
@@ -11523,7 +11872,7 @@ export function createCreatureFromArchetype(speciesKey, x, y, customOpts = {}) {
       flesh: { condition: 100, maxCondition: 100, nutrition: 1100, foodType: "meat" }
     };
   } else {
-    naming = generateUniqueCreatureName("Creature", normKey);
+    naming = generateUniqueCreatureName("Creature", normKey, gender);
     entProps = {
       name: naming.fullName,
       surname: naming.surname,
