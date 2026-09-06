@@ -619,6 +619,7 @@ export function resetEngineTicks() {
   nextEntityId = 1;
   entityRegistry.clear();
   deceasedEntityRegistry.clear();
+  globalThis._lastSyncedDeceasedCount = 0;
   spatialGrid.clear();
   tileEntityMap.clear();
   globalWallCoords.clear();

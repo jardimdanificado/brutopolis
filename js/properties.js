@@ -749,7 +749,6 @@ export const HOUSE_STYLES = [
   { id: "sunken_atrium_villa", label: "Sunken Atrium Oasis Villa", skin: "Overworld_House.png", color: 0xffb47850, woodCost: 3, stoneCost: 3, condition: 21000, floorsCount: 2, footprint: "3x3", yardType: "Open-Air Garden Atrium & Colonnade" },
   { id: "minaret_hermitage", label: "Domed Spire Hermitage", skin: "Overworld_House.png", color: 0xfff5f5dc, woodCost: 1, stoneCost: 3, condition: 14500, floorsCount: 5, footprint: "1x1", yardType: "High Lookout Observatory & Dome" },
   { id: "barbican_manor", label: "Twin-Tower Barbican Manor", skin: "Overworld_House.png", color: 0xff968278, woodCost: 3, stoneCost: 4, condition: 26000, floorsCount: 3, footprint: "4x2", yardType: "Fortified Curtain Ramparts & Gateyard" },
-  { id: "crescent_hall", label: "Crescent Amphitheater Hall", skin: "Overworld_House.png", color: 0xffcd853f, woodCost: 3, stoneCost: 2, condition: 18000, floorsCount: 2, footprint: "3x2", yardType: "Curved Timber Colonnade & Forum" },
   { id: "cruciform_grange", label: "Cruciform Cross Manor", skin: "Overworld_House.png", color: 0xfff0e6d2, woodCost: 4, stoneCost: 3, condition: 23000, floorsCount: 3, footprint: "3x3", yardType: "Crosswing Courtyards & Dual Hearths" }
 ];
 

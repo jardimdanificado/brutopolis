@@ -107,6 +107,7 @@ export class World {
     const outCenter = { x: 256, y: 256 };
     world_gen_generate(this.map, { ...cfg, seed }, outCenter);
     this.spawnCenter = outCenter;
+    this.groups = []; // Clear groups
     this.clock.reset();
     return outCenter;
   }

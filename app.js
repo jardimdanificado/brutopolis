@@ -2,7 +2,7 @@
 // Brutopolis
 // =============================================================================
 
-const BrutopolisVersion = "0.123.23";
+const BrutopolisVersion = "0.123.26";
 const BrutopolisVersionName = "Who may ascend the mountain of the LORD? Who may stand in his holy place?";
 
 // WASM replaced by Pure JS Renderer
@@ -159,6 +159,9 @@ function initSimWorker() {
 
     switch (data.type) {
       case "WORLD_INIT": {
+        resetEngineTicks();
+        entities = [];
+
         if (!world) {
           world = new World(data.preset || 0, data.seed || 1337);
         }
@@ -1079,6 +1082,7 @@ const _logsFilterCache = {
 const _entitiesFilterCache = {
   filter: null,
   speciesFilter: null,
+  searchTerm: null,
   entityCount: -1,
   list: []
 };
@@ -1405,6 +1409,8 @@ function parseZoneCoords(zoneStr) {
 
 // Registry Filters & Selection
 let entityFilter = "ALL";
+let entitySearchTerm = "";
+let entitySearchInput = null;
 let groupSelectedIdx = 0;
 let logFilter = "ALL";
 
@@ -3259,7 +3265,7 @@ function renderDossierModal() {
     drawText8x8(clanLabel, mx + 240, my + 70, isClanHover ? "#ffd700" : "#d3869b", 1);
     if (hasClan) {
       registerClickableRegion(mx + 240, my + 66, clanLabel.length * 8, 14, () => {
-        inspectingGroup = props.group;
+        inspectingGroup = groups.find(g => g.id === props.group.id) || props.group;
         groupDetailTab = "ZONES";
         currentMode = "GROUPS";
         modalScroll = 0;
@@ -3760,6 +3766,7 @@ function getFilteredEntities() {
   if (
     _entitiesFilterCache.filter === entityFilter &&
     _entitiesFilterCache.speciesFilter === speciesFilter &&
+    _entitiesFilterCache.searchTerm === entitySearchTerm &&
     _entitiesFilterCache.entityCount === entities.length
   ) {
     return _entitiesFilterCache.list;
@@ -3767,6 +3774,23 @@ function getFilteredEntities() {
 
   const result = entities.filter(e => {
     if (e.destroyed) return false;
+
+    if (entitySearchTerm) {
+      const searchStr = entitySearchTerm;
+      const idStr = String(e.id);
+      const nameStr = (e.properties.name || "").toLowerCase();
+      const roleStr = (e.properties.role || "").toLowerCase();
+      const speciesStr = (e.properties.species || "").toLowerCase();
+      const resStr = (e.properties.resourceType || "").toLowerCase();
+      if (!idStr.includes(searchStr) &&
+        !nameStr.includes(searchStr) &&
+        !roleStr.includes(searchStr) &&
+        !speciesStr.includes(searchStr) &&
+        !resStr.includes(searchStr)) {
+        return false;
+      }
+    }
+
     if (entityFilter === "SPECIES") {
       return (e.properties?.species || "").toLowerCase() === speciesFilter.toLowerCase();
     }
@@ -3816,9 +3840,59 @@ function getFilteredEntities() {
 
   _entitiesFilterCache.filter = entityFilter;
   _entitiesFilterCache.speciesFilter = speciesFilter;
+  _entitiesFilterCache.searchTerm = entitySearchTerm;
   _entitiesFilterCache.entityCount = entities.length;
   _entitiesFilterCache.list = result;
   return result;
+}
+
+function updateEntitySearchInputVisibility() {
+  if (currentMode === "ENTITIES") {
+    const isMobile = CANVAS_WIDTH <= 680;
+    const mx = isMobile ? 6 : 30;
+    const my = isMobile ? 36 : 40;
+    const mw = isMobile ? CANVAS_WIDTH - 12 : CANVAS_WIDTH - 60;
+
+    if (!entitySearchInput) {
+      entitySearchInput = document.createElement("input");
+      entitySearchInput.type = "text";
+      entitySearchInput.placeholder = "Search entities...";
+      entitySearchInput.style.position = "absolute";
+      entitySearchInput.style.zIndex = "1000";
+      entitySearchInput.style.background = "#222";
+      entitySearchInput.style.color = "#fff";
+      entitySearchInput.style.border = "2px solid #555";
+      entitySearchInput.style.padding = "4px 8px";
+      entitySearchInput.style.fontFamily = "'JetBrains Mono', monospace";
+      entitySearchInput.style.fontSize = "14px";
+      entitySearchInput.style.outline = "none";
+
+      entitySearchInput.addEventListener("input", (e) => {
+        entitySearchTerm = e.target.value.toLowerCase();
+        _entitiesFilterCache.filter = ""; // Invalidate cache
+      });
+
+      const gameContainer = document.getElementById("game-container");
+      if (gameContainer) gameContainer.appendChild(entitySearchInput);
+      else document.body.appendChild(entitySearchInput);
+    }
+
+    entitySearchInput.style.display = "block";
+    const canvasRect = canvas.getBoundingClientRect();
+    const scaleX = canvasRect.width / CANVAS_WIDTH;
+    const scaleY = canvasRect.height / CANVAS_HEIGHT;
+
+    // Position near the top right of the modal, below the X button
+    entitySearchInput.style.left = (canvasRect.left + (mx + mw - 230) * scaleX) + "px";
+    entitySearchInput.style.top = (canvasRect.top + (my + 8) * scaleY) + "px";
+    entitySearchInput.style.width = (180 * scaleX) + "px";
+  } else {
+    if (entitySearchInput) {
+      entitySearchInput.style.display = "none";
+      entitySearchTerm = "";
+      entitySearchInput.value = "";
+    }
+  }
 }
 
 function renderEntitiesModal() {
@@ -4174,9 +4248,10 @@ function renderGroupsModal() {
 
     const maxClanChars = Math.max(8, Math.floor((cardW - 130) / 8));
     drawText8x8((g.name || "CLAN").slice(0, maxClanChars).toUpperCase(), cardX + 30, cardY + 12, gFgColor, 1);
-    drawText8x8(`${livingMembers}/${g.members.length} ALIVE`, cardX + cardW - 90, cardY + 12, "#58d854", 1);
+    const membersArr = g.members || [];
+    drawText8x8(`${livingMembers}/${membersArr.length} ALIVE`, cardX + cardW - 90, cardY + 12, "#58d854", 1);
 
-    const leaderName = leaderEnt ? leaderEnt.properties.name.slice(0, 16) : `#${g.members[0]}`;
+    const leaderName = leaderEnt ? leaderEnt.properties.name.slice(0, 16) : (membersArr.length > 0 ? `#${membersArr[0]}` : "NONE");
     drawText8x8(`LEADER: ${leaderName.toUpperCase()}`, cardX + 8, cardY + 30, "#ffffff", 1);
     drawText8x8(`ZONES: ${g.claimedZones?.length || 0} | STOCK: ${stockpile.totalCount}`, cardX + 8, cardY + 44, "#bcbcbc", 1);
 
@@ -7307,6 +7382,8 @@ function frame(time) {
 
   const dt = lastTime > 0 ? (time - lastTime) * 0.001 : 0.016;
   lastTime = time;
+
+  updateEntitySearchInputVisibility();
 
   // Enforce crisp nearest-neighbor pixel rendering (no bilinear filtering)
   ctx.imageSmoothingEnabled = false;

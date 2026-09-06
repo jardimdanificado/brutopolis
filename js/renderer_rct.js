@@ -1367,71 +1367,7 @@ function createBarbicanManorRoofGeo() {
   return mergeBufferGeometries(parts);
 }
 
-// 28. Crescent Amphitheater Hall (2-Story Semi-Curved Portico, 3x2 Footprint: X [-1.5..1.5], Z [-1.0..1.0])
-function createCrescentAmphitheaterWallGeo() {
-  const parts = [];
-  // Curved amphitheater seating/arc curving from X=-1.35 to X=+1.35 toward front (Z >= 0)
-  // Outer semicircular curved wall (radius 1.35, centered at 0, 0)
-  const baseArc = new THREE.CylinderGeometry(1.35, 1.40, 1.85, 24, 1, false, Math.PI, Math.PI);
-  baseArc.translate(0, 0.925, 0);
-  parts.push(baseArc);
 
-  // Flat back chord wall closing the rear diameter on 1st floor (at Z = 0)
-  const backWall1 = new THREE.BoxGeometry(2.70, 1.85, 0.22);
-  backWall1.translate(0, 0.925, 0);
-  parts.push(backWall1);
-
-  // Flat stage floor inside amphitheater
-  const floor1 = new THREE.CylinderGeometry(1.35, 1.35, 0.12, 24, 1, false, Math.PI, Math.PI);
-  floor1.translate(0, 0.06, 0);
-  parts.push(floor1);
-
-  // Second floor curved tier
-  const f2Arc = new THREE.CylinderGeometry(1.22, 1.28, 1.75, 24, 1, false, Math.PI, Math.PI);
-  f2Arc.translate(0, 2.725, 0);
-  parts.push(f2Arc);
-
-  // Flat back chord wall closing the diameter on 2nd floor
-  const backWall2 = new THREE.BoxGeometry(2.44, 1.75, 0.20);
-  backWall2.translate(0, 2.725, 0);
-  parts.push(backWall2);
-
-  // Upper stage tier floor
-  const floor2 = new THREE.CylinderGeometry(1.24, 1.24, 0.10, 24, 1, false, Math.PI, Math.PI);
-  floor2.translate(0, 1.85, 0);
-  parts.push(floor2);
-
-  // Colonnade pillars along the curved front portico (theta from PI to 2*PI, i.e. Z >= 0)
-  for (let a = Math.PI + 0.25; a < Math.PI * 2 - 0.2; a += 0.52) {
-    const px = Math.cos(a) * 1.32;
-    const pz = Math.sin(a) * 1.32;
-    const col = new THREE.CylinderGeometry(0.08, 0.10, 3.60, 6);
-    col.translate(px, 1.80, pz);
-    parts.push(col);
-  }
-  return mergeBufferGeometries(parts);
-}
-function createCrescentAmphitheaterRoofGeo() {
-  const parts = [];
-  // Semicircular conical roof dome over the arc (theta from PI to 2*PI, matching the arc)
-  const roofDome = new THREE.ConeGeometry(1.38, 1.55, 24, 1, false, Math.PI, Math.PI);
-  roofDome.translate(0, 4.30, 0);
-  parts.push(roofDome);
-
-  // Triangular gable closing the rear diameter of the semicircular roof cone
-  const gableShape = new THREE.Shape();
-  gableShape.moveTo(-1.38, 0);
-  gableShape.lineTo(1.38, 0);
-  gableShape.lineTo(0, 1.55);
-  gableShape.closePath();
-  const gableGeo = new THREE.ExtrudeGeometry(gableShape, { depth: 0.20, bevelEnabled: false });
-  // Extrude along Z: translate so it sits flush along the Z=0 plane and upright along Y
-  gableGeo.rotateY(Math.PI);
-  gableGeo.translate(0, 3.525, 0.10);
-  parts.push(gableGeo);
-
-  return mergeBufferGeometries(parts);
-}
 
 // 29. Cruciform Cross Manor (3-Story Intersecting Wings, 3x3 Footprint)
 function createCruciformGrangeWallGeo() {
@@ -3668,7 +3604,6 @@ export class RCT3DRenderer {
       createSunkenAtriumVillaWallGeo(),
       createMinaretHermitageWallGeo(),
       createBarbicanManorWallGeo(),
-      createCrescentAmphitheaterWallGeo(),
       createCruciformGrangeWallGeo()
     ];
     const houseRoofGeos = [
@@ -3700,7 +3635,6 @@ export class RCT3DRenderer {
       createSunkenAtriumVillaRoofGeo(),
       createMinaretHermitageRoofGeo(),
       createBarbicanManorRoofGeo(),
-      createCrescentAmphitheaterRoofGeo(),
       createCruciformGrangeRoofGeo()
     ];
 
