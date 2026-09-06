@@ -685,7 +685,7 @@ export function amputateLimb(entity, propKey, prop, entitiesArray, world) {
   if (!entity || !entity.properties[propKey]) return;
   if (propKey === "brain" || propKey.includes("brain") || prop?.cannotAmputate || prop?.isBrain) return;
 
-  const partName = prop.name || propKey;
+  const partName = propKey;
   delete entity.properties[propKey];
 
   // Add amputated stump property with heavy bleed and trauma energy drain
@@ -1041,7 +1041,7 @@ export function compileEntityEffects(entity) {
   }
   
   // High-priority combat override
-  if (entity.combatFlash > 0 || entity.emote === 8 || entity.properties.health?.current < entity.properties.health?.max) {
+  if (entity.combatFlash > 0 || entity.emote === 8 || (entity.properties.brain && entity.properties.brain.condition < (entity.properties.brain.maxCondition || 100))) {
     lodInterval = 1; 
   }
 
@@ -1162,8 +1162,6 @@ export function tickEntities(entities, dt, world) {
       explosionReason = "BRAIN_COLLAPSE";
     } else if (!props.brain && props.life && props.life.energy <= 0) {
       // Plants/Flora without brains die when energy runs out
-      isDead = true;
-    } else if (props.health && props.health.current <= 0) {
       isDead = true;
     }
 

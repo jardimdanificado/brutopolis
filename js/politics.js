@@ -44,7 +44,7 @@ export function isAlive(id) {
   const e = getEntityById(id);
   if (!e || e.destroyed) return false;
   if (e.properties?.life?.isDead) return false;
-  if (e.properties?.health && e.properties.health.current <= 0) return false;
+  if (e.properties?.brain && e.properties.brain.condition <= 0) return false;
   return true;
 }
 
@@ -93,15 +93,19 @@ function getValidCandidates(group, excludeIds = []) {
 function getVoterMood(e) {
   if (!e || !e.properties) return 0;
   let mood = 0;
+  const brain = e.properties.brain;
+  if (brain) {
+    const brainRatio = (brain.condition || 100) / (brain.maxCondition || 100);
+    if (brainRatio < 0.4) mood -= 35;
+    else if (brainRatio > 0.8) mood += 15;
+  }
   const life = e.properties.life;
   if (life) {
-    const hpRatio = (life.hp || 1) / (life.maxHp || 1);
-    if (hpRatio < 0.4) mood -= 35;
-    else if (hpRatio > 0.8) mood += 15;
-
-    const energy = life.energy || 2000;
-    if (energy < 800) mood -= 35;
-    else if (energy > 3000) mood += 20;
+    const energy = life.energy !== undefined ? life.energy : 2000;
+    const maxEnergy = life.max || 4000;
+    const energyRatio = energy / maxEnergy;
+    if (energyRatio < 0.25 || energy < 800) mood -= 35;
+    else if (energyRatio > 0.75 || energy > 3000) mood += 20;
   }
   const bladder = e.properties.bladder;
   if (bladder && bladder.level > 1000) mood -= 20;

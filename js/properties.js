@@ -174,9 +174,7 @@ export function createTerrestrialProp() {
  */
 export function createScatologicalProp() {
   return {
-    name: "Escatológico",
-    description: "Sente prazer ao consumir dejetos e admira criaturas com hábitos semelhantes.",
-    effect(ent, dt) {}
+    description: "Sente prazer ao consumir dejetos e admira criaturas com hábitos semelhantes."
   };
 }
 
@@ -557,22 +555,6 @@ export function createTraitorProp() {
     name: "Traíra",
     type: "traitor",
     description: "Dissimulado e infiel. Tende a trair parceiros, furtar itens alheios e mentir sem culpa."
-  };
-}
-
-export function createStressedProp() {
-  return {
-    name: "Estressado",
-    type: "stressed",
-    description: "Ansioso e impaciente. Reage negativamente a conflitos com maior perda de humor."
-  };
-}
-
-export function createCalmProp() {
-  return {
-    name: "Calmo",
-    type: "calm",
-    description: "Sereno e amigável. Tem alta paciência, boa diplomacia e bônus em conversas."
   };
 }
 
@@ -1462,12 +1444,10 @@ export function applyRandomPersonalityPerks(ent, isFemale = null) {
     p.traira = createTraitorProp();
   }
 
-  // Estressado / Calmo
-  const rMood = Math.random();
-  if (rMood < 0.16) {
-    p.estressado = createStressedProp();
-  } else if (rMood < 0.32) {
-    p.calmo = createCalmProp();
+  // Mentiroso (Liar)
+  const rLiar = Math.random();
+  if (rLiar < 0.15) {
+    p.liar = createLiarProp("manipulator", 0.85);
   }
 
   // Outros traços preexistentes
@@ -1654,7 +1634,6 @@ export function createBrainProp(maxPath = 16, personality = { bravery: 0.7, curi
   const objCap = isExplorer ? Infinity : Math.max(4, Math.floor(quality * 8));
 
   return {
-    name: "Cérebro",
     isBrain: true,
     cannotAmputate: true,
     quality,
@@ -2707,33 +2686,6 @@ export function createBruiseProp(duration = 30.0, severity = 1) {
         delete ent.properties.bruise;
       }
     }
-  };
-}
-
-/**
- * Temporary Concussion (Concussão cerebral temporária que debuffa cognição e humor)
- */
-export function createConcussionProp(duration = 45.0) {
-  return {
-    duration,
-    remaining: duration,
-    effect(ent, dt) {
-      this.remaining -= dt;
-      if (this.remaining <= 0) {
-        delete ent.properties.concussion;
-      }
-    }
-  };
-}
-
-/**
- * Permanent Scar (Cicatriz permanente de batalha duradoura)
- */
-export function createScarProp(location = "torso", name = "Blade Scar") {
-  return {
-    location,
-    name,
-    effect() {}
   };
 }
 
@@ -7560,17 +7512,6 @@ let freeArm = null; for (const k in ent.properties) { const p = ent.properties[k
   };
 }
 
-// Aliases for compatibility
-export function createMinerProp() { return createGroupMemberProp(); }
-export function createBuilderProp() { return createGroupMemberProp(); }
-export function createCrafterProp() { return createGroupMemberProp(); }
-export function createButcherProp() { return createGroupMemberProp(); }
-export function createCookProp() { return createGroupMemberProp(); }
-export function createHaulerProp() { return createGroupMemberProp(); }
-export function createFarmerProp() { return createGroupMemberProp(); }
-export function createHunterProp() { return createGroupMemberProp(); }
-export function createExplorerProp() { return createGroupMemberProp(); }
-
 /**
  * Wood Item
  */
@@ -7641,28 +7582,6 @@ export function createBoneItem(x, y, ownerName = "Creature") {
     x,
     y
   );
-}
-
-/**
- * Violent Trait (+25% Attack Damage, admires violence and gains affinity with creatures dealing damage nearby)
- */
-export function createViolentProp() {
-  return {
-    name: "violent",
-    damageMultiplier: 1.25,
-    effect(ent, dt) {}
-  };
-}
-
-/**
- * Pacifist Trait (-30% Attack Damage, flees combat, abhors violence and loses affinity with creatures dealing damage nearby)
- */
-export function createPacifistProp() {
-  return {
-    name: "pacifist",
-    damageMultiplier: 0.70,
-    effect(ent, dt) {}
-  };
 }
 
 // ---------------------------------------------------------------------------
@@ -7852,9 +7771,6 @@ export function createCombatProp(attackInterval = 1.2, aggroRange = 3) {
       // 3. Apply Direct Damage to HP / Brain
       if (target.properties.brain) {
         target.properties.brain.condition = Math.max(0, target.properties.brain.condition - Math.round(netDamage * 0.45));
-      }
-      if (target.properties.health) {
-        target.properties.health.current -= netDamage;
       }
 
       // Fast, simplified amputation (only check 4 main limbs to avoid object iterations)
@@ -10899,13 +10815,6 @@ export function createDeepRootProp(waterGain = 20.0, energyGain = 12.0) {
 }
 
 /**
- * Surface Roots: Deprecated / Disabled to preserve simulation performance
- */
-export function createSurfaceRootProp() {
-  return null;
-}
-
-/**
  * Fruiting (Generates Edible Fruits with Seeds at Low Frequency with Density Limit)
  */
 export function createFruitingProp(interval = 400.0, seedType = "small", species = "oak", initialTimer = null) {
@@ -11023,20 +10932,6 @@ export function createRegenerationProp(rate = 1.0, amount = 30) {
           ent.properties.life.max,
           ent.properties.life.energy + amount
         );
-      }
-    }
-  };
-}
-
-export function createBurnProp(rate = 0.5, damage = 40) {
-  return {
-    rate,
-    effect(ent) {
-      if (ent.properties.life) {
-        ent.properties.life.energy = Math.max(0, ent.properties.life.energy - damage);
-      }
-      if (ent.properties.brain) {
-        ent.properties.brain.condition = Math.max(0, ent.properties.brain.condition - Math.round(damage * 0.35));
       }
     }
   };

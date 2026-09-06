@@ -750,9 +750,6 @@ export class Renderer {
         } else if (e.properties.life) {
           hp = e.properties.life.energy;
           maxHp = e.properties.life.max;
-        } else if (e.properties.health) {
-          hp = e.properties.health.current;
-          maxHp = e.properties.health.max;
         }
 
         if (maxHp > 0 && hp < maxHp && hp > 0) {

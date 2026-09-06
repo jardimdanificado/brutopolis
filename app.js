@@ -2,7 +2,7 @@
 // Brutopolis
 // =============================================================================
 
-const BrutopolisVersion = "0.123.26";
+const BrutopolisVersion = "0.123.27";
 const BrutopolisVersionName = "Who may ascend the mountain of the LORD? Who may stand in his holy place?";
 
 // WASM replaced by Pure JS Renderer
@@ -53,92 +53,6 @@ import {
   eventsById
 } from "./js/event_log.js";
 import {
-  createLifeProp,
-  createTerrestrialProp,
-  createAquaticProp,
-  createFlyingProp,
-  createStomachProp,
-  createBladderProp,
-  createKidneyProp,
-  createBrainProp,
-  createWingsProp,
-  createPawProp,
-  createDeepRootProp,
-  createSurfaceRootProp,
-  createTerrainPreferenceProp,
-  createParasitesProp,
-  createBodyRegenerationProp,
-  createCombatProp,
-  createBurnProp,
-  createViolentProp,
-  createPacifistProp,
-  createCreatureFromArchetype,
-  createHuman,
-  createElf,
-  createDwarf,
-  createOrc,
-  createBoar,
-  createDeer,
-  createSpider,
-  createKnight,
-  createArcher,
-  createCat,
-  createBat,
-  createDragon,
-  createWolf,
-  createBear,
-  createGoblin,
-  createSeaSerpent,
-  createScorpion,
-  createLizard,
-  createAlpineShrub,
-  createMountainGoat,
-  createCapybara,
-  createCow,
-  createChicken,
-  createDuck,
-  createFrog,
-  createRabbit,
-  createKobold,
-  createLizardfolk,
-  createCatfolk,
-  createCentaur,
-  createWoodItem,
-  createStoneItem,
-  createMouthProp,
-  createCommunicationProp,
-  createCrafterProp,
-  createMinerProp,
-  createBuilderProp,
-  createGroup,
-  createGroupMemberProp,
-  isTileInClaimedZones,
-  createBruiseProp,
-  createConcussionProp,
-  createScarProp,
-  createOakTree,
-  createWillowTree,
-  createPineTree,
-  createCactus,
-  createWaterLily,
-  createSeaweed,
-  createFruit,
-  createSeedEntity,
-  createHumanMiner,
-  createHumanBuilder,
-  createHumanCrafter,
-  createHumanFarmer,
-  createHumanMatriarch,
-  createHumanHunter,
-  createHumanExplorer,
-  createStoneWallEntity,
-  createWaterWellEntity,
-  createRoadEntity,
-  createFarmerProp,
-  createScatologicalProp,
-  createEmbarkParty,
-  rebindEntityMethods,
-  currentZoneSize,
   getZoneSize,
   setZoneSize,
   getMoodLabel,
@@ -3359,7 +3273,7 @@ function renderDossierModal() {
       const perks = [];
       if (props.skeptic) perks.push("SKEPTIC");
       if (props.gullible) perks.push("GULLIBLE");
-      if (props.schizophrenic) perks.push("SCHIZOPHRENIC");
+      if (props.traira) perks.push("TRAITOR");
       if (props.liar) perks.push(props.liar.type === "believer" ? "BELIEVER" : "LIAR");
 
       const orientStr = props.homosexual ? "HOMOSEXUAL" : props.bisexual ? "BISEXUAL" : "HETEROSEXUAL";
@@ -4492,7 +4406,7 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
   }
 
   // -------------------------------------------------------------------------
-  // TAB 3: MEMBERS (Roster, Roles, HP, Hand Items, Inspect & Focus)
+  // TAB 3: MEMBERS (Roster, Roles, Energy, Hand Items, Inspect & Focus)
   // -------------------------------------------------------------------------
   else if (groupDetailTab === "MEMBERS") {
     drawNESBox(mx + 12, contentY, mw - 24, contentH);
@@ -4523,7 +4437,7 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
       const statusBadge = isAlive ? "" : " [DECEASED]";
       const mName = m?.properties?.name ? `${m.properties.name.toUpperCase()}${leaderBadge}${statusBadge}` : `MEMBER #${mid}${statusBadge}`;
       const mRole = m ? (m.properties.role || (m.properties.species === "item" ? "ITEM" : m.properties.species) || (m.properties.resourceType ? "ITEM" : "UNKNOWN")).toUpperCase() : "-";
-      const hpStr = isAlive && m?.properties.life ? `${Math.round(m.properties.life.energy)}HP` : (isAlive ? "LIVE" : "DEAD");
+      const energyStr = isAlive && m?.properties.life ? `${Math.round(m.properties.life.energy)} ENG` : (isAlive ? "LIVE" : "DEAD");
       const posStr = m && m.x !== undefined && m.y !== undefined ? `[${Math.floor(m.x)},${Math.floor(m.y)}]` : "-";
 
       // Held items
@@ -4540,7 +4454,7 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
       const cursorPrefix = isSelected || isHover ? "▶" : "•";
       const nameColor = isSelected ? "#f8b800" : (isAlive ? "#ffffff" : "#9c5050");
       const maxChars = Math.floor((mw - 36 - actionWidth) / 8);
-      const mText = `${cursorPrefix} ${mName} [${mRole}] ${hpStr} ${posStr} | ${heldStr}`;
+      const mText = `${cursorPrefix} ${mName} [${mRole}] ${energyStr} ${posStr} | ${heldStr}`;
       drawText8x8(mText.slice(0, maxChars), mx + 20, rosterY + 5, nameColor, 1);
 
       const curMid = mid;
@@ -6115,7 +6029,7 @@ function renderHoverTooltip() {
   drawText8x8(`SP:${(hoveredEnt.properties.species || "-").toUpperCase()}`, tx + 8, ty + 24, "#ffffff", 1);
 
   if (hoveredEnt.properties.life) {
-    drawNESProgressBar(tx + 8, ty + 36, tw - 16, 12, hoveredEnt.properties.life.energy, hoveredEnt.properties.life.max || 100, "HP", "#58d854");
+    drawNESProgressBar(tx + 8, ty + 36, tw - 16, 12, hoveredEnt.properties.life.energy, hoveredEnt.properties.life.max || 100, "ENERGY", "#58d854");
   } else {
     drawText8x8("ITEM / RESOURCE", tx + 8, ty + 38, "#3cbcfc", 1);
   }
@@ -6285,7 +6199,7 @@ function renderCreatureSummaryBox() {
   drawText8x8(`${speciesStr} | ${clanStr}`, bx + 8, by + 20, "#3cbcfc", 1);
 
   if (ent.properties.life && isCreature) {
-    drawNESProgressBar(bx + 8, by + 32, bw - 16, 12, ent.properties.life.energy, ent.properties.life.max || 100, "HP", "#58d854");
+    drawNESProgressBar(bx + 8, by + 32, bw - 16, 12, ent.properties.life.energy, ent.properties.life.max || 100, "ENERGY", "#58d854");
   } else {
     const info = ent.properties.edible ? `FOOD +${ent.properties.edible.nutrition}` : (ent.properties.resourceType ? `RESOURCE: ${ent.properties.resourceType.toUpperCase()}` : "ITEM / OBJECT");
     drawText8x8(info, bx + 8, by + 34, "#a0e0a0", 1);
