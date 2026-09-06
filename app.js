@@ -2,7 +2,7 @@
 // Brutopolis
 // =============================================================================
 
-const BrutopolisVersion = "0.123.22";
+const BrutopolisVersion = "0.123.23";
 const BrutopolisVersionName = "Who may ascend the mountain of the LORD? Who may stand in his holy place?";
 
 // WASM replaced by Pure JS Renderer
@@ -1629,6 +1629,7 @@ function startNewGame(scenarioPreset = null, customSeed = null) {
   const startY = 512;
   if (renderer) renderer.setCamera(startX, startY, zoomFactor);
   if (rctRenderer) {
+    rctRenderer.clear();
     rctRenderer.setCamera(startX, startY, zoomFactor);
     if (lastSelectedId > 0) rctRenderer.selectEntity(lastSelectedId);
   }
@@ -1689,6 +1690,7 @@ function generateConfiguredWorld() {
   const startY = 256;
   renderer.setCamera(startX, startY, zoomFactor);
   if (rctRenderer) {
+    rctRenderer.clear();
     rctRenderer.setCamera(startX, startY, zoomFactor);
     if (lastSelectedId > 0) rctRenderer.selectEntity(lastSelectedId);
   }
@@ -1731,6 +1733,7 @@ function resetWorld(presetId = 0) {
   const startY = 256;
   renderer.setCamera(startX, startY, zoomFactor);
   if (rctRenderer) {
+    rctRenderer.clear();
     rctRenderer.setCamera(startX, startY, zoomFactor);
   }
   currentMode = "MAP";

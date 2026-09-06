@@ -4643,6 +4643,40 @@ export class RCT3DRenderer {
   setPaused(p) { this.isPaused = !!p; }
   isSimPaused() { return this.isPaused; }
 
+  clear() {
+    this.lastBuiltCamTileX = -9999;
+    this.lastBuiltCamTileY = -9999;
+    this.lastInstCamTileX = -9999;
+    this.lastInstCamTileY = -9999;
+    this._forceInstUpdate = true;
+    
+    // Clear all children from Terrain and Water groups
+    while(this.terrainGroup.children.length > 0){ 
+      const m = this.terrainGroup.children[0];
+      this.terrainGroup.remove(m); 
+      if (m.geometry) m.geometry.dispose();
+    }
+    while(this.waterGroup.children.length > 0){ 
+      const m = this.waterGroup.children[0];
+      this.waterGroup.remove(m); 
+      if (m.geometry) m.geometry.dispose();
+    }
+
+    if (this.entitySprites) {
+      for (const spr of this.entitySprites.values()) {
+        this.entityGroup.remove(spr);
+      }
+      this.entitySprites.clear();
+    }
+    
+    if (this.floatingUiSprites) {
+      for (const spr of this.floatingUiSprites.values()) {
+        this.floatingUiGroup.remove(spr);
+      }
+      this.floatingUiSprites.clear();
+    }
+  }
+
   setCamera(x, y, zoom) {
     if (typeof x === "number" && !isNaN(x)) {
       this.camX = Math.max(0, Math.min(MAP_WIDTH, x));
