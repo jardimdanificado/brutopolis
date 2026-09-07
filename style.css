@@ -79,3 +79,36 @@ html, body {
   z-index: 2;
   pointer-events: auto;
 }
+
+/* NES Retro Styled Search Input for Entities & Dictionaries */
+#entity-search-input {
+  position: absolute;
+  z-index: 1000;
+  background-color: #000000;
+  color: #ffd700;
+  border: 2px solid #555555;
+  box-shadow: inset 1px 1px 0px #111, inset -1px -1px 0px #222;
+  padding: 4px 8px;
+  font-family: 'Press Start 2P', 'VT323', monospace;
+  font-size: 10px;
+  line-height: 1.2;
+  letter-spacing: 1px;
+  outline: none;
+  text-transform: uppercase;
+  caret-color: #ffd700;
+  box-sizing: border-box;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+#entity-search-input:focus {
+  border-color: #f8b800;
+  box-shadow: 0 0 6px rgba(248, 184, 0, 0.6), inset 1px 1px 0px #000;
+}
+
+#entity-search-input::placeholder {
+  color: #777788;
+  font-family: 'Press Start 2P', 'VT323', monospace;
+  font-size: 9px;
+  text-transform: uppercase;
+  opacity: 0.8;
+}

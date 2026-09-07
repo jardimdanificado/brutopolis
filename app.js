@@ -2,7 +2,7 @@
 // Brutopolis
 // =============================================================================
 
-const BrutopolisVersion = "0.125.2";
+const BrutopolisVersion = "0.125.5";
 const BrutopolisVersionName = "And there was war in heaven: Michael and his angels fought against the dragon;";
 
 // WASM replaced by Pure JS Renderer
@@ -61,6 +61,12 @@ import {
   getGroupConstructions,
   setActiveWorld
 } from "./js/properties.js";
+import {
+  t,
+  setLanguage,
+  getCurrentLanguage,
+  SUPPORTED_LANGUAGES
+} from "./js/i18n.js";
 
 // Initialize Web Worker for Background Simulation Thread
 let simWorker = null;
@@ -966,7 +972,8 @@ let politicalModalScroll = 0;
 let electionModalScroll = 0;
 let diplomaticHistoryScroll = 0;
 let warPanelScroll = 0;
-let warPanelTab = "WARS"; // "WARS", "WARRIORS", "PACIFISTS", "VICTIMS", "EVENTS"
+let warPanelTab = "WARS"; // Global tabs: "WARS", "WARRIORS", "PACIFISTS", "VICTIMS", "EVENTS"
+let warDossierTab = "OVERVIEW"; // Single War tabs: "OVERVIEW", "WARRIORS", "VICTIMS", "PACIFISTS", "TIMELINE"
 let inspectingWarRecord = null; // Specific war inspected in war panel
 let inspectingSurname = null; // Surname string inspected in surname tree modal
 let surnameTreeZoom = 1.0;
@@ -2131,12 +2138,27 @@ window.addEventListener("keydown", (e) => {
       editorTool = null;
       editorActiveSpawner = null;
       isPainting = false;
+    } else if (inspectingLogEvent) {
+      inspectingLogEvent = null;
     } else if (inspectingBattle) {
       inspectingBattle = null;
     } else if (inspectingRelationship) {
       inspectingRelationship = null;
-    } else if (inspectingLogEvent) {
-      inspectingLogEvent = null;
+    } else if (inspectingSurname) {
+      inspectingSurname = null;
+    } else if (inspectingElectionRecord) {
+      inspectingElectionRecord = null;
+    } else if (inspectingDiplomaticMission) {
+      inspectingDiplomaticMission = null;
+    } else if (inspectingDiplomaticHistory) {
+      inspectingDiplomaticHistory = null;
+    } else if (inspectingDiplomacyGroup) {
+      inspectingDiplomacyGroup = null;
+    } else if (inspectingPoliticalHistoryGroup) {
+      inspectingPoliticalHistoryGroup = null;
+    } else if (inspectingWarRecord) {
+      inspectingWarRecord = null;
+      warPanelScroll = 0;
     } else if (inspectingGroup) {
       inspectingGroup = null;
     } else if (currentMode === "TITLE") {
@@ -2266,12 +2288,12 @@ function renderTopHudBar() {
     drawText8x8(`${currentFps}FPS ${measuredTps}TPS`, 276, 13, "#bcbcbc", 1);
 
     // MENU / TITLE Button
-    drawNESButton(CANVAS_WIDTH - 64, 5, 56, 24, "MENU", false, false);
+    drawNESButton(CANVAS_WIDTH - 64, 5, 56, 24, t("MENU"), false, false);
     registerClickableRegion(CANVAS_WIDTH - 64, 5, 56, 24, returnToTitleScreen);
 
     // OPTIONS Button
     const isOptAct = currentMode === "OPTIONS";
-    drawNESButton(CANVAS_WIDTH - 150, 5, 80, 24, "OPTIONS", isOptAct, false);
+    drawNESButton(CANVAS_WIDTH - 150, 5, 80, 24, t("OPTIONS"), isOptAct, false);
     registerClickableRegion(CANVAS_WIDTH - 150, 5, 80, 24, () => {
       currentMode = currentMode === "OPTIONS" ? "MAP" : "OPTIONS";
       modalScroll = 0;
@@ -2279,7 +2301,7 @@ function renderTopHudBar() {
 
     if (is3DMode && rctRenderer) {
       const wireMode = rctRenderer.getWireframeModeName ? rctRenderer.getWireframeModeName() : (rctRenderer.isWireframe ? "ON" : "OFF");
-      const wireTxt = "WIRE:" + wireMode;
+      const wireTxt = t("WIRE_PREFIX") + (wireMode === "ON" ? t("ON") : wireMode === "OFF" ? t("OFF") : wireMode);
       const isWireActive = wireMode !== "OFF";
       drawNESButton(CANVAS_WIDTH - 230, 5, 74, 24, wireTxt, isWireActive, false);
       registerClickableRegion(CANVAS_WIDTH - 230, 5, 74, 24, () => rctRenderer.toggleWireframe());
@@ -2296,7 +2318,7 @@ function renderTopHudBar() {
     drawText8x8(`${currentFps}F ${measuredTps}T`, 100, 13, "#888888", 1);
 
     let topBtnX = CANVAS_WIDTH - 44;
-    drawNESButton(topBtnX, 5, 38, 24, "MENU", false, false);
+    drawNESButton(topBtnX, 5, 38, 24, t("MENU"), false, false);
     registerClickableRegion(topBtnX, 5, 38, 24, returnToTitleScreen);
     topBtnX -= 42;
 
@@ -2306,7 +2328,7 @@ function renderTopHudBar() {
     topBtnX -= 42;
 
     const isOptAct = currentMode === "OPTIONS";
-    drawNESButton(topBtnX, 5, 38, 24, "OPT", isOptAct, false);
+    drawNESButton(topBtnX, 5, 38, 24, t("OPTIONS_SHORT"), isOptAct, false);
     registerClickableRegion(topBtnX, 5, 38, 24, () => {
       currentMode = currentMode === "OPTIONS" ? "MAP" : "OPTIONS";
       modalScroll = 0;
@@ -2315,7 +2337,7 @@ function renderTopHudBar() {
 
     if (is3DMode && rctRenderer) {
       const fullWorldActive = rctRenderer.isFullWorldMode ? rctRenderer.isFullWorldMode() : false;
-      const fullTxt = fullWorldActive ? "FULL" : "CHUNK";
+      const fullTxt = fullWorldActive ? t("TOTAL") : t("CHUNK");
       drawNESButton(topBtnX, 5, 42, 24, fullTxt, fullWorldActive, false);
       registerClickableRegion(topBtnX, 5, 42, 24, () => rctRenderer.toggleFullWorld());
       topBtnX -= 46;
@@ -2328,7 +2350,7 @@ function renderTopHudBar() {
 
       const wireMode = rctRenderer.getWireframeModeName ? rctRenderer.getWireframeModeName() : (rctRenderer.isWireframe ? "ON" : "OFF");
       const isWireActive = wireMode !== "OFF";
-      drawNESButton(topBtnX, 5, 42, 24, "WIRE", isWireActive, false);
+      drawNESButton(topBtnX, 5, 42, 24, t("WIRE_SHORT"), isWireActive, false);
       registerClickableRegion(topBtnX, 5, 42, 24, () => rctRenderer.toggleWireframe());
     }
   }
@@ -2341,13 +2363,13 @@ function renderBottomToolbar() {
 
   if (!isMobile) {
     const buttons = [
-      { label: "DOSSIER", mode: "INSPECT" },
-      { label: "ENTITIES", mode: "ENTITIES" },
-      { label: "GROUPS", mode: "GROUPS" },
-      { label: "WARS", mode: "WARS" },
-      { label: "LOGS", mode: "LOGS" },
+      { label: t("DOSSIER"), mode: "INSPECT" },
+      { label: t("ENTITIES"), mode: "ENTITIES" },
+      { label: t("CLANS"), mode: "GROUPS" },
+      { label: t("WARS"), mode: "WARS" },
+      { label: t("LOGS"), mode: "LOGS" },
       {
-        label: "EDITOR",
+        label: t("EDITOR"),
         isEditorBtn: true,
         action: () => {
           isEditorOpen = !isEditorOpen;
@@ -2361,7 +2383,7 @@ function renderBottomToolbar() {
         }
       },
       {
-        label: "MAP",
+        label: t("MAP"),
         isMapBtn: true,
         action: () => {
           toggle3DMode();
@@ -2405,9 +2427,9 @@ function renderBottomToolbar() {
 
     // RUN / PAUSE Button
     const pauseBtnX = plusX + 26;
-    const pauseTxt = isPaused ? "PAUSE" : "RUN";
-    drawNESButton(pauseBtnX, CANVAS_HEIGHT - 30, 56, 24, pauseTxt, !isPaused, isPaused);
-    registerClickableRegion(pauseBtnX, CANVAS_HEIGHT - 30, 56, 24, togglePause);
+    const pauseTxt = isPaused ? t("PAUSED") : t("RUNNING");
+    drawNESButton(pauseBtnX, CANVAS_HEIGHT - 30, 68, 24, pauseTxt, !isPaused, isPaused);
+    registerClickableRegion(pauseBtnX, CANVAS_HEIGHT - 30, 68, 24, togglePause);
 
     // Coordinates [X, Y] on bottom right
     if (world) {
@@ -2418,12 +2440,12 @@ function renderBottomToolbar() {
   } else {
     // Mobile Navigation Bar (5 thumb-friendly tabs)
     const mobTabs = [
-      { label: "DOSSIER", mode: "INSPECT" },
-      { label: "ENTITIES", mode: "ENTITIES" },
-      { label: "CLANS", mode: "GROUPS" },
-      { label: "LOGS", mode: "LOGS" },
+      { label: t("DOSSIER"), mode: "INSPECT" },
+      { label: t("ENTITIES"), mode: "ENTITIES" },
+      { label: t("CLANS"), mode: "GROUPS" },
+      { label: t("LOGS"), mode: "LOGS" },
       {
-        label: "EDIT",
+        label: t("EDITOR"),
         isEditorBtn: true,
         action: () => {
           isEditorOpen = !isEditorOpen;
@@ -2476,7 +2498,7 @@ function renderBottomToolbar() {
 
       drawNESButton(pillX + 62, pillY + 3, 22, 22, "+", false, false);
       registerClickableRegion(pillX + 62, pillY + 3, 22, 22, increaseSimSpeed);
-      const pTxt = isPaused ? "PAUSE" : "RUN";
+      const pTxt = isPaused ? "PAUSA" : "RODA";
       drawNESButton(pillX + 90, pillY + 3, 68, 22, pTxt, !isPaused, isPaused);
       registerClickableRegion(pillX + 90, pillY + 3, 68, 22, togglePause);
     }
@@ -2884,10 +2906,10 @@ function renderFamilyTab(mx, my, mw, mh, target) {
   // 1. Marriage / Partnership
   const partnerList = [];
   if (currentPartner) {
-    partnerList.push({ role: "CURRENT PARTNER / SPOUSE", ent: currentPartner });
+    partnerList.push({ role: "CÔNJUGE / PARCEIRO ATUAL", ent: currentPartner });
   }
   if (partnerList.length > 0) {
-    sections.push({ title: "MARRIAGE & PARTNERSHIP", members: partnerList });
+    sections.push({ title: "CASAMENTO & PARCERIA", members: partnerList });
   }
 
   // 2. Extramarital Affairs / Lovers
@@ -2899,18 +2921,18 @@ function renderFamilyTab(mx, my, mw, mh, target) {
     if (val >= 60 && target.properties?.monogamy) {
       const oEnt = entityRegistry.get(oId);
       if (oEnt && !oEnt.destroyed) {
-        affairs.push({ role: "LOVER / AFFAIR", ent: oEnt });
+        affairs.push({ role: "AMANTE / CASO", ent: oEnt });
       }
     }
   }
   if (affairs.length > 0) {
-    sections.push({ title: "EXTRAMARITAL AFFAIRS & LOVERS", members: affairs });
+    sections.push({ title: "CASOS EXTRACONJUGAIS & AMANTES", members: affairs });
   }
 
   // 3. Ex-Partners / Separations
   const exPartners = [];
   if (exPartners.length > 0) {
-    sections.push({ title: "EX-PARTNERS & SEPARATIONS", members: exPartners });
+    sections.push({ title: "EX-PARCEIROS & SEPARAÇÕES", members: exPartners });
   }
 
   // 4. Children (Legitimate vs Bastards)
@@ -2922,37 +2944,37 @@ function renderFamilyTab(mx, my, mw, mh, target) {
 
     if (currentPartner) {
       if (fId === currentPartner.id || mId === currentPartner.id) {
-        legitimate.push({ role: "LEGITIMATE CHILD", ent: child });
+        legitimate.push({ role: "FILHO(A) LEGÍTIMO(A)", ent: child });
       } else {
-        bastards.push({ role: "BASTARD CHILD", ent: child });
+        bastards.push({ role: "FILHO(A) BASTARDO(A)", ent: child });
       }
     } else {
-      legitimate.push({ role: "CHILD", ent: child });
+      legitimate.push({ role: "FILHO(A)", ent: child });
     }
   }
 
   if (legitimate.length > 0) {
-    sections.push({ title: `LEGITIMATE OFFSPRING (${legitimate.length})`, members: legitimate });
+    sections.push({ title: `DESCENDENTES LEGÍTIMOS (${legitimate.length})`, members: legitimate });
   }
   if (bastards.length > 0) {
-    sections.push({ title: `BASTARD CHILDREN (${bastards.length})`, members: bastards });
+    sections.push({ title: `FILHOS BASTARDOS (${bastards.length})`, members: bastards });
   }
 
   // 5. Parents
   const parents = [];
-  if (treeData.father) parents.push({ role: "FATHER", ent: treeData.father });
-  if (treeData.mother) parents.push({ role: "MOTHER", ent: treeData.mother });
+  if (treeData.father) parents.push({ role: "PAI", ent: treeData.father });
+  if (treeData.mother) parents.push({ role: "MÃE", ent: treeData.mother });
   if (parents.length > 0) {
-    sections.push({ title: "PARENTS (GENERATION -1)", members: parents });
+    sections.push({ title: "PAIS (GERAÇÃO -1)", members: parents });
   }
 
   // 6. Siblings
   const siblings = [];
   for (const sib of treeData.siblings) {
-    siblings.push({ role: "SIBLING", ent: sib });
+    siblings.push({ role: "IRMÃO(Ã)", ent: sib });
   }
   if (siblings.length > 0) {
-    sections.push({ title: `SIBLINGS (${siblings.length})`, members: siblings });
+    sections.push({ title: `IRMÃOS (${siblings.length})`, members: siblings });
   }
 
   // 7. Ancestors (Grandparents and Beyond)
@@ -2961,7 +2983,7 @@ function renderFamilyTab(mx, my, mw, mh, target) {
     for (let g = -2; g >= infiniteData.minGen; g--) {
       const list = infiniteData.tiers.get(g) || [];
       if (list.length > 0) {
-        const title = g === -2 ? `GRANDPARENTS (GEN -2)` : (g === -3 ? `GREAT-GRANDPARENTS (GEN -3)` : `ANCESTORS (GEN ${g})`);
+        const title = g === -2 ? `AVÓS (GER -2)` : (g === -3 ? `BISAVÓS (GER -3)` : `ANCESTRAIS (GER ${g})`);
         sections.push({
           title: `${title} (${list.length})`,
           members: list.map(n => ({ role: n.role, ent: n.ent }))
@@ -2975,7 +2997,7 @@ function renderFamilyTab(mx, my, mw, mh, target) {
     for (let g = 2; g <= infiniteData.maxGen; g++) {
       const list = infiniteData.tiers.get(g) || [];
       if (list.length > 0) {
-        const title = g === 2 ? `GRANDCHILDREN (GEN +2)` : (g === 3 ? `GREAT-GRANDCHILDREN (GEN +3)` : `DESCENDANTS (GEN +${g})`);
+        const title = g === 2 ? `NETOS (GER +2)` : (g === 3 ? `BISNETOS (GER +3)` : `DESCENDENTES (GER +${g})`);
         sections.push({
           title: `${title} (${list.length})`,
           members: list.map(n => ({ role: n.role, ent: n.ent }))
@@ -2985,11 +3007,10 @@ function renderFamilyTab(mx, my, mw, mh, target) {
   }
 
   // 9. Godparent (Padrinho / Madrinha) & Godchildren (Afilhados / Afilhadas)
-  // Essential family bond - independent of current mood, affinities or interpersonal conflict
   if (treeData.godparent) {
     const gpRoleUpper = (treeData.godparentRole || "PADRINHO").toUpperCase();
     sections.push({
-      title: `GODPARENT / ${gpRoleUpper} (SACRED KINSHIP)`,
+      title: `${gpRoleUpper} (PARENTESCO SAGRADO)`,
       members: [{ role: gpRoleUpper, ent: treeData.godparent }]
     });
   }
@@ -2999,7 +3020,7 @@ function renderFamilyTab(mx, my, mw, mh, target) {
       return { role: isFem ? "AFILHADA" : "AFILHADO", ent: gc };
     });
     sections.push({
-      title: `GODCHILDREN / AFILHADOS (${gchildren.length})`,
+      title: `AFILHADOS (${gchildren.length})`,
       members: gchildren
     });
   }
@@ -3027,11 +3048,11 @@ function renderFamilyTab(mx, my, mw, mh, target) {
       const m = item.data;
       const ent = m.ent;
       const isAlive = ent && !ent.destroyed && ent.properties?.life?.energy > 0;
-      const statusBadge = isAlive ? "[ALIVE]" : "[DECEASED]";
+      const statusBadge = isAlive ? `[${t("STATUS_ALIVE")}]` : `[${t("DECEASED")}]`;
       const statusCol = isAlive ? "#58d854" : "#9c5050";
 
-      const clanName = (ent.properties?.group?.name || "SOLITARY").toUpperCase();
-      const entName = (ent.properties?.name || `CREATURE #${ent.id}`).toUpperCase();
+      const clanName = (ent.properties?.group?.name || t("CLAN_SOLITARY")).toUpperCase();
+      const entName = (ent.properties?.name || `${t("DOSSIER")} #${ent.id}`).toUpperCase();
       const roleBadge = `[${m.role}]`;
 
       const isHover = mouseX >= mx + 16 && mouseX <= mx + mw - 16 && mouseY >= curY && mouseY <= curY + rowH;
@@ -3045,17 +3066,17 @@ function renderFamilyTab(mx, my, mw, mh, target) {
       const cursorPrefix = isSelected || isHover ? "▶" : "•";
       const nameCol = isSelected ? "#ffd700" : (isAlive ? "#ffffff" : "#9c5050");
 
-      const lineStr = `${cursorPrefix} ${roleBadge} ${entName} • CLAN: [${clanName}] • ${statusBadge}`;
-      const actionWidth = isAlive ? 165 : 85;
+      const lineStr = `${cursorPrefix} ${roleBadge} ${entName} • ${t("CLAN_PREFIX")} [${clanName}] • ${statusBadge}`;
+      const actionWidth = isAlive ? 175 : 95;
       const maxChars = Math.floor((mw - 36 - actionWidth) / 8);
       drawText8x8(lineStr.slice(0, maxChars), mx + 24, curY + 6, nameCol, 1);
 
       const curId = ent.id;
 
       // INSPECT Button
-      const inspectBtnX = isAlive ? mx + mw - 165 : mx + mw - 85;
-      drawNESButton(inspectBtnX, curY + 1, 75, 20, "INSPECT", false, false);
-      registerClickableRegion(inspectBtnX, curY + 1, 75, 20, () => {
+      const inspectBtnX = isAlive ? mx + mw - 175 : mx + mw - 95;
+      drawNESButton(inspectBtnX, curY + 1, 85, 20, t("INSPECT"), false, false);
+      registerClickableRegion(inspectBtnX, curY + 1, 85, 20, () => {
         lastSelectedId = curId;
         dossierTab = "OVERVIEW";
         modalScroll = 0;
@@ -3063,7 +3084,7 @@ function renderFamilyTab(mx, my, mw, mh, target) {
 
       // FOCUS Button (for living members)
       if (isAlive) {
-        drawNESButton(mx + mw - 85, curY + 1, 75, 20, "FOCUS", false, false);
+        drawNESButton(mx + mw - 85, curY + 1, 75, 20, t("FOCUS"), false, false);
         registerClickableRegion(mx + mw - 85, curY + 1, 75, 20, () => {
           focusEntityAndFollow(ent);
         });
@@ -3093,7 +3114,7 @@ function renderGraphicalFamilyTreeTab(mx, my, mw, mh, target) {
   drawNESBox(mx + 10, contentY, mw - 20, contentH);
 
   const totalMembersCount = treeData.nodes.size;
-  drawText8x8(`FAMILY PEDIGREE: ${totalMembersCount} RELATIVES (CLICK NODE TO RE-CENTER):`, mx + 20, contentY + 10, "#ffd700", 1);
+  drawText8x8(`${t("FAMILY_GENEALOGY")}: ${totalMembersCount} ${t("PARENTS_COUNT")}:`, mx + 20, contentY + 10, "#ffd700", 1);
 
   // Zoom Controls Bar at Top Right of Box
   const zoomPct = Math.round(familyTreeZoom * 100);
@@ -3107,7 +3128,7 @@ function renderGraphicalFamilyTreeTab(mx, my, mw, mh, target) {
     familyTreeZoom = Math.min(3.0, Number((familyTreeZoom + 0.15).toFixed(2)));
   });
 
-  drawNESButton(mx + mw - 155, contentY + 6, 125, 20, `RESET (${zoomPct}%)`, false, false);
+  drawNESButton(mx + mw - 155, contentY + 6, 125, 20, `${t("RESET")} (${zoomPct}%)`, false, false);
   registerClickableRegion(mx + mw - 155, contentY + 6, 125, 20, () => {
     familyTreeZoom = 1.0;
     familyTreePanX = 0;
@@ -3156,17 +3177,17 @@ function renderGraphicalFamilyTreeTab(mx, my, mw, mh, target) {
 
     // Name (Red if deceased, White/Gold if alive)
     const nameCol = isTarget ? "#ffd700" : (isAlive ? "#ffffff" : "#9c5050");
-    const nameStr = (ent.properties?.name || `CREATURE #${ent.id}`).toUpperCase();
+    const nameStr = (ent.properties?.name || `${t("DOSSIER")} #${ent.id}`).toUpperCase();
     const maxChars = Math.floor((cardW - 12) / 8);
     drawText8x8(nameStr.slice(0, maxChars), cx + 6, cy + 20, nameCol, 1);
 
     // Clan & Status
-    const statusBadge = isAlive ? "[ALIVE]" : "[DEAD]";
+    const statusBadge = isAlive ? `[${t("STATUS_ALIVE")}]` : `[${t("STATUS_DEAD")}]`;
     const statusCol = isAlive ? "#58d854" : "#9c5050";
     drawText8x8(statusBadge, cx + 6, cy + 34, statusCol, 1);
 
-    const clanStr = (ent.properties?.group?.name || "SOLITARY").slice(0, 8).toUpperCase();
-    drawText8x8(`CLAN:${clanStr}`, cx + 58, cy + 34, "#bcbcbc", 1);
+    const clanStr = (ent.properties?.group?.name || t("CLAN_SOLITARY")).slice(0, 8).toUpperCase();
+    drawText8x8(`${t("CLAN_PREFIX")}${clanStr}`, cx + 58, cy + 34, "#bcbcbc", 1);
 
     ctx.restore();
 
@@ -3232,7 +3253,7 @@ function renderGraphicalFamilyTreeTab(mx, my, mw, mh, target) {
     const node = pos.node;
     drawNodeCard(pos.x, pos.y, node.ent, node.role, !!node.isTarget, !!node.isPartner);
     if (node.isTarget && treeData.partner) {
-      drawText8x8("💍", pos.x + cardW + 2, pos.y + cardH / 2 - 4, "#ffd700", 1);
+      drawText8x8("[M]", pos.x + cardW + 2, pos.y + cardH / 2 - 4, "#ffd700", 1);
     }
   }
 
@@ -3251,27 +3272,27 @@ function renderPastOwnersTab(mx, my, mw, mh, target) {
   const contentH = (my + mh - 12) - contentY;
   drawNESBox(mx + 10, contentY, mw - 20, contentH);
 
-  drawText8x8("PAST RESIDENTS & TENANCY CHRONICLE FOR THIS STRUCTURE:", mx + 20, contentY + 12, "#ffd700", 1);
+  drawText8x8(`${t("STRUCTURE_HISTORY")}:`, mx + 20, contentY + 12, "#ffd700", 1);
 
   // Top Section: Current Floor Occupants
   const floors = house.floors || [];
   let curY = contentY + 32;
 
-  drawText8x8("CURRENT RESIDENT FAMILIES (BY FLOOR):", mx + 20, curY, "#3cbcfc", 1);
+  drawText8x8(`${t("CURRENT_RESIDENTS_FLOOR")}:`, mx + 20, curY, "#3cbcfc", 1);
   curY += 16;
 
   for (const fl of floors) {
     const flOwner = fl.ownerId ? (getEntityById(fl.ownerId) || entityRegistry?.get(fl.ownerId)) : null;
     const flPartner = fl.partnerId ? (getEntityById(fl.partnerId) || entityRegistry?.get(fl.partnerId)) : null;
-    const oName = flOwner?.properties?.name ? flOwner.properties.name.toUpperCase() : (fl.ownerId ? `#${fl.ownerId}` : "VACANT");
+    const oName = flOwner?.properties?.name ? flOwner.properties.name.toUpperCase() : (fl.ownerId ? `#${fl.ownerId}` : t("VACANT"));
     const pName = flPartner?.properties?.name ? ` & ${flPartner.properties.name.toUpperCase()}` : "";
 
-    const flBadge = `[${fl.label || `FLOOR ${fl.floorNumber}`}]`;
+    const flBadge = `[${fl.label || `${t("FLOOR_LABEL")} ${fl.floorNumber}`}]`;
     drawText8x8(`${flBadge}: ${oName}${pName}`, mx + 24, curY + 4, flOwner ? "#ffffff" : "#888888", 1);
 
     if (flOwner) {
       const oId = fl.ownerId;
-      drawNESButton(mx + mw - 100, curY, 80, 18, "INSPECT", false, false);
+      drawNESButton(mx + mw - 100, curY, 80, 18, t("INSPECT"), false, false);
       registerClickableRegion(mx + mw - 100, curY, 80, 18, () => {
         lastSelectedId = oId;
         dossierTab = "OVERVIEW";
@@ -3283,12 +3304,12 @@ function renderPastOwnersTab(mx, my, mw, mh, target) {
   }
 
   curY += 12;
-  drawText8x8("HISTORICAL PAST OWNERS & FORMER RESIDENTS:", mx + 20, curY, "#ffd700", 1);
+  drawText8x8(`${t("PAST_OWNERS_HISTORY")}:`, mx + 20, curY, "#ffd700", 1);
   curY += 16;
 
   const pastOwners = house.pastOwners || [];
   if (pastOwners.length === 0) {
-    drawText8x8("NO FORMER RESIDENTS RECORDED. FOUNDED BY CURRENT OCCUPANTS.", mx + 24, curY + 10, "#bcbcbc", 1);
+    drawText8x8(t("NO_PAST_RESIDENTS"), mx + 24, curY + 10, "#bcbcbc", 1);
   } else {
     for (let i = modalScroll; i < pastOwners.length; i++) {
       if (curY > contentY + contentH - 24) break;
@@ -3297,9 +3318,9 @@ function renderPastOwnersTab(mx, my, mw, mh, target) {
       const isAlive = pEnt && !pEnt.destroyed && pEnt.properties?.life?.energy > 0;
       const statusCol = isAlive ? "#58d854" : "#9c5050";
 
-      const timeStr = `[D${po.startDay || 0} - D${po.endDay || "NOW"}]`;
-      const nameStr = (po.ownerName || `OWNER #${po.ownerId}`).toUpperCase();
-      const reasonStr = `(${po.reason || "DECEASED"})`;
+      const timeStr = `[D${po.startDay || 0} - D${po.endDay || t("CURRENT_OCCUPANT")}]`;
+      const nameStr = (po.ownerName || `${t("OWNER")} #${po.ownerId}`).toUpperCase();
+      const reasonStr = `(${po.reason === "DECEASED" ? t("DECEASED") : (po.reason || t("DECEASED"))})`;
 
       drawText8x8(timeStr, mx + 24, curY + 4, "#bcbcbc", 1);
       drawText8x8(nameStr, mx + 160, curY + 4, statusCol, 1);
@@ -3307,7 +3328,7 @@ function renderPastOwnersTab(mx, my, mw, mh, target) {
 
       if (po.ownerId) {
         const pId = po.ownerId;
-        drawNESButton(mx + mw - 100, curY, 80, 18, "INSPECT", false, false);
+        drawNESButton(mx + mw - 100, curY, 80, 18, t("INSPECT"), false, false);
         registerClickableRegion(mx + mw - 100, curY, 80, 18, () => {
           lastSelectedId = pId;
           dossierTab = "OVERVIEW";
@@ -3374,12 +3395,12 @@ function renderDossierModal() {
   const target = getEntityById(lastSelectedId) || entityRegistry.get(lastSelectedId);
 
   if (!target) {
-    drawText8x8("NO CREATURE SELECTED", mx + 20, my + 30, "#f8b800", 1);
-    drawText8x8("CLICK ON MAP OR PRESS [TAB] TO SELECT.", mx + 20, my + 50, "#ffffff", 1);
+    drawText8x8(t("NO_CREATURE_SELECTED"), mx + 20, my + 30, "#f8b800", 1);
+    drawText8x8(t("CLICK_MAP_TAB_SELECT"), mx + 20, my + 50, "#ffffff", 1);
 
     const isFree1P = isFirstPersonMode && perspectiveEntityId === null;
-    drawNESButton(mx + 20, my + 70, 140, 30, "FREE 1P FLIGHT", isFree1P, false);
-    registerClickableRegion(mx + 20, my + 70, 140, 30, () => {
+    drawNESButton(mx + 20, my + 70, 150, 30, t("FREE_1P"), isFree1P, false);
+    registerClickableRegion(mx + 20, my + 70, 150, 30, () => {
       toggleFirstPersonMode(null);
     });
 
@@ -3388,33 +3409,33 @@ function renderDossierModal() {
   }
 
   const props = target.properties || {};
-  const name = (props.name || `ENTITY #${target.id}`).toUpperCase();
-  const species = (props.species === "item" ? "ITEM" : props.species || (props.resourceType ? "ITEM" : "UNKNOWN")).toUpperCase();
-  const groupName = (props.group?.name || "SOLITARY").toUpperCase();
+  const name = (props.name || `${t("ENTITIES")} #${target.id}`).toUpperCase();
+  const species = (props.species === "item" ? t("FILTER_ITEMS") : props.species || (props.resourceType ? t("FILTER_ITEMS") : t("UNKNOWN"))).toUpperCase();
+  const groupName = (props.group?.name || t("NONE")).toUpperCase();
 
   // Title
-  drawText8x8(`DOSSIER: ${name} (#${target.id})`, mx + 16, my + 14, "#f8b800", 1);
+  drawText8x8(`${t("DOSSIER")}: ${name} (#${target.id})`, mx + 16, my + 14, "#f8b800", 1);
 
   // Action Buttons
   if (!target.destroyed) {
     const is3PAct = isThirdPersonMode && perspectiveEntityId === target.id;
-    drawNESButton(mx + mw - 455, my + 6, 120, 24, "3RD PERSON (3P)", is3PAct, false);
+    drawNESButton(mx + mw - 455, my + 6, 120, 24, t("PERSPECTIVE_3P"), is3PAct, false);
     registerClickableRegion(mx + mw - 455, my + 6, 120, 24, () => {
       toggleThirdPersonMode(target.id);
     });
 
     const is1PAct = isFirstPersonMode && perspectiveEntityId === target.id;
-    drawNESButton(mx + mw - 325, my + 6, 120, 24, "1ST PERSON (1P)", is1PAct, false);
+    drawNESButton(mx + mw - 325, my + 6, 120, 24, t("PERSPECTIVE_1P"), is1PAct, false);
     registerClickableRegion(mx + mw - 325, my + 6, 120, 24, () => {
       toggleFirstPersonMode(target.id);
     });
 
-    drawNESButton(mx + mw - 195, my + 6, 75, 24, "FOCUS", false, false);
+    drawNESButton(mx + mw - 195, my + 6, 75, 24, t("FOCUS"), false, false);
     registerClickableRegion(mx + mw - 195, my + 6, 75, 24, () => {
       focusEntityAndFollow(target);
     });
 
-    drawNESButton(mx + mw - 112, my + 6, 75, 24, "KILL", false, true);
+    drawNESButton(mx + mw - 112, my + 6, 75, 24, t("KILL"), false, true);
     registerClickableRegion(mx + mw - 112, my + 6, 75, 24, () => {
       if (simWorker) {
         simWorker.postMessage({ type: "KILL_ENTITY", entityId: target.id });
@@ -3447,24 +3468,25 @@ function renderDossierModal() {
 
   // Modal Tabs Bar
   const tabs = [
-    { id: "OVERVIEW", label: "OVERVIEW" },
-    ...(isHouse ? [{ id: "PAST_OWNERS", label: `PAST OWNERS (${props.house.pastOwners?.length || 0})` }] : []),
+    { id: "OVERVIEW", label: t("VIEW") },
+    ...(isHouse ? [{ id: "PAST_OWNERS", label: `DONOS ANTERIORES (${props.house.pastOwners?.length || 0})` }] : []),
     ...(isCreature ? [
-      { id: "FAMILY", label: "FAMILY" },
-      { id: "TREE", label: "FAMILY TREE" },
-      { id: "AFFINITIES", label: `AFFINITIES (${knownAffinities.length})` },
-      { id: "BATTLES", label: `BATTLES${_dossierCache.lastBattlesCount ? ` (${_dossierCache.lastBattlesCount})` : ""}` }
+      { id: "FAMILY", label: t("FAMILY") },
+      { id: "TREE", label: t("TREE") },
+      { id: "AFFINITIES", label: `${t("TAB_AFFINITIES")} (${knownAffinities.length})` },
+      { id: "BATTLES", label: `${t("TAB_BATTLES")}${_dossierCache.lastBattlesCount ? ` (${_dossierCache.lastBattlesCount})` : ""}` }
     ] : []),
-    { id: "CHRONICLE", label: `CHRONICLE${_dossierCache.lastEventsCount ? ` (${_dossierCache.lastEventsCount})` : ""}` }
+    { id: "CHRONICLE", label: `${t("TAB_CHRONICLE")}${_dossierCache.lastEventsCount ? ` (${_dossierCache.lastEventsCount})` : ""}` }
   ];
 
   let tabX = mx + 16;
-  for (const t of tabs) {
-    const isAct = dossierTab === t.id;
-    const tabW = t.label.length * 8 + 14;
-    drawNESButton(tabX, my + 36, tabW, 22, t.label, isAct, false);
+  for (const tTab of tabs) {
+    const isAct = dossierTab === tTab.id;
+    const tabW = tTab.label.length * 8 + 14;
+    drawNESButton(tabX, my + 36, tabW, 22, tTab.label, isAct, false);
+    const tid = tTab.id;
     registerClickableRegion(tabX, my + 36, tabW, 22, () => {
-      dossierTab = t.id;
+      dossierTab = tid;
       modalScroll = 0;
     });
     tabX += tabW + 6;
@@ -3479,7 +3501,7 @@ function renderDossierModal() {
     drawNESBox(mx + 10, my + 62, mw - 20, topBoxH);
 
     // Interactive Clickable Species Link
-    const speciesLabel = `SPECIES: [${species}]`;
+    const speciesLabel = `${t("SP_LABEL")}: [${species}]`;
     const isSpeciesHover = mouseX >= mx + 20 && mouseX <= mx + 20 + speciesLabel.length * 8 && mouseY >= my + 66 && mouseY <= my + 80;
     drawText8x8(speciesLabel, mx + 20, my + 70, isSpeciesHover ? "#58d854" : "#3cbcfc", 1);
     registerClickableRegion(mx + 20, my + 66, speciesLabel.length * 8, 14, () => {
@@ -3491,7 +3513,7 @@ function renderDossierModal() {
 
     // Interactive Clickable Clan Link
     const hasClan = !!props.group;
-    const clanLabel = hasClan ? `CLAN: [${groupName}]` : `CLAN: ${groupName}`;
+    const clanLabel = hasClan ? `${t("CLAN_LABEL")}: [${groupName}]` : `${t("CLAN_LABEL")}: ${groupName}`;
     const isClanHover = hasClan && mouseX >= mx + 240 && mouseX <= mx + 240 + clanLabel.length * 8 && mouseY >= my + 66 && mouseY <= my + 80;
     drawText8x8(clanLabel, mx + 240, my + 70, isClanHover ? "#ffd700" : "#d3869b", 1);
     if (hasClan) {
@@ -3503,27 +3525,27 @@ function renderDossierModal() {
       });
     }
 
-    drawText8x8(`POS: [${Math.floor(target.x)},${Math.floor(target.y)}]`, mx + 490, my + 70, "#f8b800", 1);
+    drawText8x8(`${t("COL_POS")}: [${Math.floor(target.x)},${Math.floor(target.y)}]`, mx + 490, my + 70, "#f8b800", 1);
 
     const isAlive = !target.destroyed && props.life && props.life.energy > 0;
-    const statusTxt = isHouse ? (props.house.isCompleted ? "STATUS: BUILT" : "STATUS: UNDER CONSTRUCTION") : (isAlive ? "STATUS: LIVE" : "STATUS: DECEASED");
+    const statusTxt = isHouse ? (props.house.isCompleted ? `${t("STATUS_LABEL")}: ${t("STATUS_CONSTRUCTED")}` : `${t("STATUS_LABEL")}: ${t("STATUS_IN_CONSTRUCTION")}`) : (isAlive ? `${t("STATUS_LABEL")}: ${t("STATUS_ALIVE")}` : `${t("STATUS_LABEL")}: ${t("STATUS_DEAD")}`);
     const statusCol = isHouse ? "#3cbcfc" : (isAlive ? "#58d854" : "#f83800");
     drawText8x8(statusTxt, mx + 20, my + 86, statusCol, 1);
-    drawText8x8(`PROPERTIES: ${Object.keys(props).length}`, mx + 240, my + 86, "#bcbcbc", 1);
+    drawText8x8(`${t("PROPERTIES")}: ${Object.keys(props).length}`, mx + 240, my + 86, "#bcbcbc", 1);
 
     const domains = [];
-    if (props.terrestrial) domains.push("TERRESTRIAL");
-    if (props.aquatic) domains.push("AQUATIC");
-    if (props.flying) domains.push("FLYING");
-    const domainStr = domains.length > 0 ? domains.join("+") : (isHouse ? "STRUCTURE" : "STATIC");
-    drawText8x8(`DOMAIN: ${domainStr}`, mx + 440, my + 86, "#58d854", 1);
+    if (props.terrestrial) domains.push(t("TERRESTRIAL"));
+    if (props.aquatic) domains.push(t("AQUATIC"));
+    if (props.flying) domains.push(t("FLYING"));
+    const domainStr = domains.length > 0 ? domains.join("+") : (isHouse ? t("STRUCTURE") : t("STATIC"));
+    drawText8x8(`${t("DOMAIN")}: ${domainStr}`, mx + 440, my + 86, "#58d854", 1);
 
     // Row 3: House Link (for creatures) OR Architecture & Floor Summary (for houses/structures)
     if (isHouse) {
       const hFootprint = props.house.footprint || "2x1";
       const hFloorsCount = props.house.maxFloors || props.house.floors?.length || 2;
-      const hYard = props.house.yard?.type || "Courtyard & Garden";
-      drawText8x8(`ARCH: ${hFloorsCount}-STORY (${hFootprint}) | YARD: ${hYard.toUpperCase()}`, mx + 20, my + 102, "#ffd700", 1);
+      const hYard = props.house.yard?.type || "Yard";
+      drawText8x8(`${t("ARCHITECTURE")}: ${hFloorsCount} ${t("FLOORS")} (${hFootprint}) | ${t("YARD")}: ${hYard.toUpperCase()}`, mx + 20, my + 102, "#ffd700", 1);
 
       // Floor 1 & 2 quick inspection tags
       const f1 = props.house.floors?.[0];
@@ -3531,8 +3553,8 @@ function renderDossierModal() {
       const f1Owner = f1?.ownerId ? (getEntityById(f1.ownerId) || entityRegistry?.get(f1.ownerId)) : null;
       const f2Owner = f2?.ownerId ? (getEntityById(f2.ownerId) || entityRegistry?.get(f2.ownerId)) : null;
 
-      const f1Name = f1Owner?.properties?.name ? `1F: ${f1Owner.properties.name.toUpperCase()}` : "1F: VACANT";
-      const f2Name = f2Owner?.properties?.name ? `2F: ${f2Owner.properties.name.toUpperCase()}` : (hFloorsCount >= 2 ? "2F: VACANT" : "");
+      const f1Name = f1Owner?.properties?.name ? `${t("FLOOR_1")}: ${f1Owner.properties.name.toUpperCase()}` : `${t("FLOOR_1")}: ${t("VACANT")}`;
+      const f2Name = f2Owner?.properties?.name ? `${t("FLOOR_2")}: ${f2Owner.properties.name.toUpperCase()}` : (hFloorsCount >= 2 ? `${t("FLOOR_2")}: ${t("VACANT")}` : "");
 
       drawText8x8(f1Name, mx + 20, my + 118, f1Owner ? "#58d854" : "#888888", 1);
       if (f1Owner) {
@@ -3557,11 +3579,11 @@ function renderDossierModal() {
       // Inspecting a Creature: Look up Assigned Private House
       const house = getHouseForEntity(target.id);
       if (house) {
-        const houseName = (house.properties?.name || "HOUSE").toUpperCase();
+        const houseName = (house.properties?.name || t("HOUSE")).toUpperCase();
         const isOwner = house.properties?.house?.ownerId === target.id;
-        const roleTag = isOwner ? "OWNER" : "RESIDENT";
+        const roleTag = isOwner ? t("OWNER") : t("RESIDENT");
         const housePos = `[X:${Math.floor(house.x)}, Y:${Math.floor(house.y)}]`;
-        const houseLabel = `HOUSE: [${houseName} (${roleTag}) at ${housePos}]`;
+        const houseLabel = `${t("HOUSE")}: [${houseName} (${roleTag}) @ ${housePos}]`;
         const isHHover = mouseX >= mx + 20 && mouseX <= mx + 20 + houseLabel.length * 8 && mouseY >= my + 100 && mouseY <= my + 116;
 
         drawText8x8(houseLabel, mx + 20, my + 102, isHHover ? "#ffd700" : "#58d854", 1);
@@ -3572,7 +3594,7 @@ function renderDossierModal() {
           modalScroll = 0;
         });
       } else {
-        drawText8x8("HOUSE: NONE (HOMELESS / NOMAD)", mx + 20, my + 102, "#888888", 1);
+        drawText8x8(`${t("HOUSE")}: ${t("HOMELESS")}`, mx + 20, my + 102, "#888888", 1);
       }
     }
 
@@ -3582,10 +3604,10 @@ function renderDossierModal() {
     // Perks & Traits / Structure stats
     if (isHouse) {
       const struct = props.structure || {};
-      drawText8x8("STRUCTURE METRICS & MATERIALS:", mx + 20, lineageY + 8, "#f8b800", 1);
-      drawText8x8(`CONDITION: ${struct.condition || 0}/${struct.maxCondition || 10000}`, mx + 20, lineageY + 30, "#58d854", 1);
-      drawText8x8(`DEFENSE: ${struct.defense || 80}`, mx + 260, lineageY + 30, "#3cbcfc", 1);
-      drawText8x8(`STORAGE: ${props.house.foodStorage?.length || 0} FOOD ITEMS`, mx + 460, lineageY + 30, "#ffd700", 1);
+      drawText8x8(`${t("STRUCTURE_METRICS")}:`, mx + 20, lineageY + 8, "#f8b800", 1);
+      drawText8x8(`${t("CONDITION")}: ${struct.condition || 0}/${struct.maxCondition || 10000}`, mx + 20, lineageY + 30, "#58d854", 1);
+      drawText8x8(`${t("DEFENSE")}: ${struct.defense || 80}`, mx + 260, lineageY + 30, "#3cbcfc", 1);
+      drawText8x8(`${t("TAB_STOCKPILE")}: ${props.house.foodStorage?.length || 0} ${t("FOOD_STOCK")}`, mx + 460, lineageY + 30, "#ffd700", 1);
     } else {
       const perks = [];
       if (props.skeptic) perks.push("SKEPTIC");
@@ -3596,72 +3618,72 @@ function renderDossierModal() {
       const orientStr = props.homosexual ? "HOMOSEXUAL" : props.bisexual ? "BISEXUAL" : "HETEROSEXUAL";
       const orientCol = props.homosexual ? "#ff60a0" : props.bisexual ? "#d3869b" : "#3cbcfc";
 
-      drawText8x8("FAMILY & LINEAGE:", mx + 20, lineageY + 8, "#f8b800", 1);
-      drawText8x8(`ORIENTATION: ${orientStr}`, mx + 180, lineageY + 8, orientCol, 1);
+      drawText8x8(`${t("FAMILY_LINEAGE")}:`, mx + 20, lineageY + 8, "#f8b800", 1);
+      drawText8x8(`${t("ORIENTATION")}: ${orientStr}`, mx + 180, lineageY + 8, orientCol, 1);
       if (perks.length > 0) {
-        drawText8x8(`PERKS: [${perks.join(" | ")}]`, mx + 420, lineageY + 8, "#ffd700", 1);
+        drawText8x8(`${t("TRAITS")}: [${perks.join(" | ")}]`, mx + 420, lineageY + 8, "#ffd700", 1);
       }
 
       // Father
       const fatherId = props.fatherId !== undefined ? props.fatherId : props.life?.fatherId;
       if (fatherId !== null && fatherId !== undefined) {
         const father = entityRegistry.get(fatherId);
-        const fName = (father?.properties?.name || `Entity #${fatherId}`).toUpperCase().slice(0, 14);
-        drawText8x8("FATHER:", mx + 20, lineageY + 30, "#bcbcbc", 1);
-        drawNESButton(mx + 80, lineageY + 24, 130, 22, fName, false, false);
-        registerClickableRegion(mx + 80, lineageY + 24, 130, 22, () => {
+        const fName = (father?.properties?.name || `${t("ENTITIES")} #${fatherId}`).toUpperCase().slice(0, 14);
+        drawText8x8(`${t("FATHER")}:`, mx + 20, lineageY + 30, "#bcbcbc", 1);
+        drawNESButton(mx + 60, lineageY + 24, 130, 22, fName, false, false);
+        registerClickableRegion(mx + 60, lineageY + 24, 130, 22, () => {
           lastSelectedId = fatherId;
           modalScroll = 0;
         });
       } else {
-        drawText8x8("FATHER: Deus ex machina", mx + 20, lineageY + 30, "#7c7c7c", 1);
+        drawText8x8(`${t("FATHER")}: Deus ex machina`, mx + 20, lineageY + 30, "#7c7c7c", 1);
       }
 
       // Mother
       const motherId = props.motherId !== undefined ? props.motherId : props.life?.motherId;
       if (motherId !== null && motherId !== undefined) {
         const mother = entityRegistry.get(motherId);
-        const mName = (mother?.properties?.name || `Entity #${motherId}`).toUpperCase().slice(0, 14);
-        drawText8x8("MOTHER:", mx + 230, lineageY + 30, "#bcbcbc", 1);
-        drawNESButton(mx + 290, lineageY + 24, 130, 22, mName, false, false);
-        registerClickableRegion(mx + 290, lineageY + 24, 130, 22, () => {
+        const mName = (mother?.properties?.name || `${t("ENTITIES")} #${motherId}`).toUpperCase().slice(0, 14);
+        drawText8x8(`${t("MOTHER")}:`, mx + 210, lineageY + 30, "#bcbcbc", 1);
+        drawNESButton(mx + 250, lineageY + 24, 130, 22, mName, false, false);
+        registerClickableRegion(mx + 250, lineageY + 24, 130, 22, () => {
           lastSelectedId = motherId;
           modalScroll = 0;
         });
       } else {
-        drawText8x8("MOTHER: Deus ex machina", mx + 230, lineageY + 30, "#7c7c7c", 1);
+        drawText8x8(`${t("MOTHER")}: Deus ex machina`, mx + 210, lineageY + 30, "#7c7c7c", 1);
       }
 
       // Partner
       const partnerId = props.monogamy?.partnerId;
       if (partnerId) {
         const partner = entityRegistry.get(partnerId);
-        const pName = (partner?.properties?.name || `Entity #${partnerId}`).toUpperCase().slice(0, 10);
-        drawText8x8("PARTNER:", mx + 435, lineageY + 30, "#bcbcbc", 1);
-        drawNESButton(mx + 498, lineageY + 24, 90, 22, pName, false, false);
-        registerClickableRegion(mx + 498, lineageY + 24, 90, 22, () => {
+        const pName = (partner?.properties?.name || `${t("ENTITIES")} #${partnerId}`).toUpperCase().slice(0, 10);
+        drawText8x8(`${t("PARTNER")}:`, mx + 400, lineageY + 30, "#bcbcbc", 1);
+        drawNESButton(mx + 480, lineageY + 24, 90, 22, pName, false, false);
+        registerClickableRegion(mx + 480, lineageY + 24, 90, 22, () => {
           lastSelectedId = partnerId;
           modalScroll = 0;
         });
-        drawNESButton(mx + 592, lineageY + 24, 75, 22, "RELATION", false, false);
-        registerClickableRegion(mx + 592, lineageY + 24, 75, 22, () => {
+        drawNESButton(mx + 576, lineageY + 24, 75, 22, t("RELATION"), false, false);
+        registerClickableRegion(mx + 576, lineageY + 24, 75, 22, () => {
           const rel = getRelationshipSummary(target.id, partnerId, entityRegistry);
           if (rel) {
             inspectingRelationship = rel;
           }
         });
       } else {
-        drawText8x8("PARTNER: Single", mx + 435, lineageY + 30, "#7c7c7c", 1);
+        drawText8x8(`${t("PARTNER")}: ${t("SINGLE")}`, mx + 400, lineageY + 30, "#7c7c7c", 1);
       }
 
       // Godparent display
       if (props.godparentId) {
         const gp = entityRegistry.get(props.godparentId);
-        const gpName = (gp?.properties?.name || `Entity #${props.godparentId}`).toUpperCase().slice(0, 10);
-        const gpLabel = (props.godparentRole || "PADRINHO").toUpperCase();
-        drawText8x8(`${gpLabel.slice(0, 3)}:`, mx + 680, lineageY + 30, "#ffd700", 1);
-        drawNESButton(mx + 715, lineageY + 24, 90, 22, gpName, false, false);
-        registerClickableRegion(mx + 715, lineageY + 24, 90, 22, () => {
+        const gpName = (gp?.properties?.name || `${t("ENTITIES")} #${props.godparentId}`).toUpperCase().slice(0, 10);
+        const gpLabel = (props.godparentRole || t("GODPARENT")).toUpperCase();
+        drawText8x8(`${gpLabel.slice(0, 3)}:`, mx + 665, lineageY + 30, "#ffd700", 1);
+        drawNESButton(mx + 700, lineageY + 24, 90, 22, gpName, false, false);
+        registerClickableRegion(mx + 700, lineageY + 24, 90, 22, () => {
           lastSelectedId = props.godparentId;
           modalScroll = 0;
         });
@@ -3669,14 +3691,14 @@ function renderDossierModal() {
 
       // Surnames row & interactive Surname Tree button
       const sNames = Array.isArray(props.surnames) && props.surnames.length > 0 ? props.surnames : (props.surname ? [props.surname] : []);
-      const sText = sNames.length > 0 ? sNames.join(", ").toUpperCase() : "NONE (ANONYMOUS)";
-      drawText8x8(`SURNAMES (${sNames.length}): ${sText.slice(0, 60)}`, mx + 20, lineageY + 54, "#ffd700", 1);
+      const sText = sNames.length > 0 ? sNames.join(", ").toUpperCase() : t("ANONYMOUS");
+      drawText8x8(`${t("SURNAMES")} (${sNames.length}): ${sText.slice(0, 60)}`, mx + 20, lineageY + 54, "#ffd700", 1);
 
       if (sNames.length > 0) {
         let btnSurX = mx + 20 + Math.min(sText.slice(0, 60).length * 8 + 140, mw - 240);
         for (let si = 0; si < Math.min(sNames.length, 2); si++) {
           const s = sNames[si];
-          const bLabel = `[TREE: ${s.toUpperCase()}]`;
+          const bLabel = `[${t("TREE_BTN")}: ${s.toUpperCase()}]`;
           const bW = bLabel.length * 8 + 14;
           drawNESButton(btnSurX, lineageY + 48, bW, 20, bLabel, false, false);
           registerClickableRegion(btnSurX, lineageY + 48, bW, 20, () => {
@@ -3694,43 +3716,43 @@ function renderDossierModal() {
     // 3. Vital Gauges
     let gaugeY = lineageY + (isHouse ? 62 : 80);
     if (props.brain && typeof props.brain.condition === "number") {
-      drawNESProgressBar(mx + 10, gaugeY, mw - 20, 16, props.brain.condition, props.brain.maxCondition || 100, `VITAL HP (BRAIN INTEGRITY): ${Math.round(props.brain.condition)}/${props.brain.maxCondition || 100}`, "#f83800");
+      drawNESProgressBar(mx + 10, gaugeY, mw - 20, 16, props.brain.condition, props.brain.maxCondition || 100, `${t("VITAL_HP")}: ${Math.round(props.brain.condition)}/${props.brain.maxCondition || 100}`, "#f83800");
       gaugeY += 20;
     }
 
     if (props.life) {
       const isSleeping = props.life.isSleeping;
-      const sleepTag = isSleeping ? " [ASLEEP - RECOVERING]" : "";
-      drawNESProgressBar(mx + 10, gaugeY, mw - 20, 16, props.life.energy, props.life.max || 100, `METABOLIC ENERGY: ${Math.round(props.life.energy)}/${props.life.max || 100}${sleepTag}`, isSleeping ? "#3cbcfc" : "#58d854");
+      const sleepTag = isSleeping ? ` [${t("SLEEPING_RECOVERING")}]` : "";
+      drawNESProgressBar(mx + 10, gaugeY, mw - 20, 16, props.life.energy, props.life.max || 100, `${t("METABOLIC_ENERGY")}: ${Math.round(props.life.energy)}/${props.life.max || 100}${sleepTag}`, isSleeping ? "#3cbcfc" : "#58d854");
       gaugeY += 20;
     }
 
     if (props.stomach) {
       const fatUnits = props.stomach.fatUnits || 0;
       const maxFat = props.stomach.maxFatUnits || 6;
-      drawNESProgressBar(mx + 10, gaugeY, mw - 20, 16, fatUnits, maxFat, `BODY FAT RESERVES: ${fatUnits}/${maxFat} UNITS (AWAKE BACKUP)`, "#e4c858");
+      drawNESProgressBar(mx + 10, gaugeY, mw - 20, 16, fatUnits, maxFat, `${t("FAT_RESERVE")}: ${fatUnits}/${maxFat} ${t("UNITS")}`, "#e4c858");
       gaugeY += 20;
     }
 
     if (props.heart && typeof props.heart.condition === "number") {
-      drawNESProgressBar(mx + 10, gaugeY, mw - 20, 16, props.heart.condition, props.heart.maxCondition || 100, `HEART CONDITION: ${Math.round(props.heart.condition)}%`, "#e6194b");
+      drawNESProgressBar(mx + 10, gaugeY, mw - 20, 16, props.heart.condition, props.heart.maxCondition || 100, `${t("CARDIAC_COND")}: ${Math.round(props.heart.condition)}%`, "#e6194b");
       gaugeY += 20;
     }
 
     if (props.liver && typeof props.liver.condition === "number") {
-      drawNESProgressBar(mx + 10, gaugeY, mw - 20, 16, props.liver.condition, props.liver.maxCondition || 100, `LIVER CONDITION: ${Math.round(props.liver.condition)}%`, "#9a6324");
+      drawNESProgressBar(mx + 10, gaugeY, mw - 20, 16, props.liver.condition, props.liver.maxCondition || 100, `${t("HEPATIC_COND")}: ${Math.round(props.liver.condition)}%`, "#9a6324");
       gaugeY += 20;
     }
 
     if (props.bladder) {
-      drawNESProgressBar(mx + 10, gaugeY, mw - 20, 16, props.bladder.water, props.bladder.maxWater, "WATER BLADDER", "#0078f8");
+      drawNESProgressBar(mx + 10, gaugeY, mw - 20, 16, props.bladder.water, props.bladder.maxWater, t("WATER_BLADDER"), "#0078f8");
       gaugeY += 20;
     }
 
     if (props.brain && typeof props.brain.mood === "number") {
       const moodVal = props.brain.mood;
       const moodCol = moodVal >= 25 ? "#58d854" : moodVal >= -20 ? "#3cbcfc" : "#f83800";
-      drawNESProgressBar(mx + 10, gaugeY, mw - 20, 16, moodVal + 100, 200, `MOOD: ${getMoodLabel(moodVal).toUpperCase()}`, moodCol);
+      drawNESProgressBar(mx + 10, gaugeY, mw - 20, 16, moodVal + 100, 200, `${t("MOOD")}: ${getMoodLabel(moodVal).toUpperCase()}`, moodCol);
       gaugeY += 20;
     }
 
@@ -3800,7 +3822,7 @@ function renderDossierModal() {
     drawNESBox(mx + 10, listY, mw - 20, listH);
 
     if (knownAffinities.length === 0) {
-      drawText8x8("NO KNOWN CREATURE AFFINITIES IN MEMORY.", mx + 24, listY + 24, "#bcbcbc", 1);
+      drawText8x8(t("NO_AFFINITIES_RECORDED"), mx + 24, listY + 24, "#bcbcbc", 1);
     } else {
       const rowH = 26;
       const visibleRows = Math.floor((listH - 20) / rowH);
@@ -3820,16 +3842,16 @@ function renderDossierModal() {
         }
 
         const isOtherAlive = other && !other.destroyed && other.properties?.life?.energy > 0;
-        const statusBadge = isOtherAlive ? "[ALIVE]" : "[DEAD]";
+        const statusBadge = isOtherAlive ? `[${t("STATUS_ALIVE")}]` : `[${t("STATUS_DEAD")}]`;
         const statusCol = isOtherAlive ? "#58d854" : "#9c5050";
         drawText8x8(statusBadge, mx + 20, curY + 6, statusCol, 1);
 
-        const oName = (other?.properties?.name || `Entity #${otherId}`).slice(0, 20);
+        const oName = (other?.properties?.name || `${t("DOSSIER")} #${otherId}`).slice(0, 20);
         drawText8x8(oName, mx + 85, curY + 6, isOtherAlive ? "#ffffff" : "#9c5050", 1);
 
         // Relationship badge
         const isPartner = props.monogamy?.partnerId === otherId;
-        let relBadge = isPartner ? "LOVER" : affVal >= 60 ? "CLOSE FRIEND" : affVal >= 20 ? "FRIEND" : affVal <= -50 ? "ENEMY" : affVal <= -15 ? "RIVAL" : "NEUTRAL";
+        let relBadge = isPartner ? t("PARTNER") : affVal >= 60 ? t("ALLY") : affVal >= 20 ? t("ALLY") : affVal <= -50 ? t("HOSTILE") : affVal <= -15 ? t("UNFRIENDLY") : t("NEUTRAL");
         let relCol = isPartner ? "#ff60a0" : affVal >= 20 ? "#58d854" : affVal <= -15 ? "#f83800" : "#bcbcbc";
         drawText8x8(relBadge, mx + 260, curY + 6, relCol, 1);
 
@@ -3837,7 +3859,7 @@ function renderDossierModal() {
         drawNESProgressBar(mx + 410, curY + 2, 160, 18, affVal + 100, 200, `AFF: ${Math.round(affVal)}`, relCol);
 
         // Inspect Creature Button
-        drawNESButton(mx + mw - 175, curY + 2, 70, 20, "INSPECT", false, false);
+        drawNESButton(mx + mw - 175, curY + 2, 70, 20, t("INSPECT"), false, false);
         registerClickableRegion(mx + mw - 175, curY + 2, 70, 20, () => {
           lastSelectedId = otherId;
           dossierTab = "OVERVIEW";
@@ -3845,7 +3867,7 @@ function renderDossierModal() {
         });
 
         // Relationship Dossier Button (Opens in-depth mutual history & interactions between the two)
-        drawNESButton(mx + mw - 100, curY + 2, 85, 20, "RELATION", false, false);
+        drawNESButton(mx + mw - 100, curY + 2, 85, 20, t("RELATION"), false, false);
         registerClickableRegion(mx + mw - 100, curY + 2, 85, 20, () => {
           const rel = getRelationshipSummary(target.id, otherId, entityRegistry);
           if (rel) {
@@ -3880,7 +3902,7 @@ function renderDossierModal() {
     drawNESBox(mx + 10, listY, mw - 20, listH);
 
     if (creatureBattles.length === 0) {
-      drawText8x8("NO COMBAT BATTLES OR SKIRMISHES RECORDED FOR THIS CREATURE.", mx + 24, listY + 24, "#bcbcbc", 1);
+      drawText8x8(t("NO_CREATURE_BATTLES"), mx + 24, listY + 24, "#bcbcbc", 1);
     } else {
       const rowH = 34;
       const visibleRows = Math.floor((listH - 20) / rowH);
@@ -3898,12 +3920,12 @@ function renderDossierModal() {
 
         const ts = battle.timestamp ? `D${battle.timestamp.day} ${String(battle.timestamp.hour).padStart(2, "0")}:${String(battle.timestamp.minute).padStart(2, "0")}` : `T${battle.startTick}`;
         drawText8x8(ts, mx + 18, curY + 5, "#bcbcbc", 1);
-        drawText8x8(`[BATTLE #${battle.id}]`, mx + 110, curY + 5, "#f83800", 1);
+        drawText8x8(`[${t("FILTER_BATTLES")} #${battle.id}]`, mx + 110, curY + 5, "#f83800", 1);
 
-        const battleHeader = `${battle.name} • [${battle.combatants.length} FIGHTERS • ${Math.round(battle.totalDamage)} DMG]`;
+        const battleHeader = `${battle.name} • [${battle.combatants.length} ${t("COMBATANTS")} • ${Math.round(battle.totalDamage)} DMG]`;
         drawText8x8(battleHeader.slice(0, Math.floor((mw - 380) / 8)), mx + 245, curY + 5, "#ffd700", 1);
 
-        const causeShort = `TRIGGER: ${battle.triggerCause}`.slice(0, Math.floor((mw - 380) / 8));
+        const causeShort = `${t("CAUSE_TRIGGER")}: ${battle.triggerCause}`.slice(0, Math.floor((mw - 380) / 8));
         drawText8x8(causeShort, mx + 245, curY + 18, "#bcbcbc", 1);
 
         const curBattle = battle;
@@ -3912,7 +3934,7 @@ function renderDossierModal() {
           inspectingBattle = curBattle;
         });
 
-        drawNESButton(mx + mw - 95, curY + 4, 75, 22, "DOSSIER", false, false);
+        drawNESButton(mx + mw - 95, curY + 4, 75, 22, t("DOSSIER"), false, false);
         registerClickableRegion(mx + mw - 95, curY + 4, 75, 22, () => {
           inspectingBattle = curBattle;
         });
@@ -3941,7 +3963,7 @@ function renderDossierModal() {
     drawNESBox(mx + 10, listY, mw - 20, listH);
 
     if (creatureEvents.length === 0) {
-      drawText8x8("NO WORLD EVENTS RECORDED INVOLVING THIS CREATURE.", mx + 24, listY + 24, "#bcbcbc", 1);
+      drawText8x8(t("NO_CREATURE_EVENTS"), mx + 24, listY + 24, "#bcbcbc", 1);
     } else {
       const rowH = 34; // Expanded row height for multi-line readable long descriptions
       const visibleRows = Math.floor((listH - 20) / rowH);
@@ -3963,15 +3985,15 @@ function renderDossierModal() {
           const targetName = ev.metadata?.targetName || ev.metadata?.victimName || ev.metadata?.secondaryName || (targetId ? (entityRegistry?.get(targetId)?.properties?.name || `Entity #${targetId}`) : null);
 
           const tipLines = [
-            `Type: [${ev.type}] (Event #${ev.id})`,
-            `Time: Day ${ev.timestamp?.day || 0} at ${String(ev.timestamp?.hour || 0).padStart(2, "0")}:${String(ev.timestamp?.minute || 0).padStart(2, "0")} (Tick ${ev.tick})`,
-            ev.location ? `Coordinates: [X: ${Math.floor(ev.location.x)}, Y: ${Math.floor(ev.location.y)}]` : "Coordinates: Global / Ambient",
-            actorName ? `Actor/Attacker: ${actorName}${actorId !== null && actorId !== undefined ? ` (ID: #${actorId})` : ""}` : (actorId !== null && actorId !== undefined ? `Actor ID: #${actorId}` : null),
-            targetName ? `Target/Victim: ${targetName}${targetId !== null && targetId !== undefined ? ` (ID: #${targetId})` : ""}` : (targetId !== null && targetId !== undefined ? `Target ID: #${targetId}` : null),
-            ev.metadata?.hitPartName ? `Hit: ${ev.metadata.hitPartName} (${Math.round(ev.metadata.totalDamage || ev.metadata.netDamage || 0)} DMG)` : null,
-            ev.metadata?.causedByBattleId ? `Succumbed to Battle #${ev.metadata.causedByBattleId} Wounds` : null
+            `${t("TIP_TYPE")} [${ev.type}] (${t("EVENT_SHORT", { id: ev.id })})`,
+            `${t("TIP_TIME")} ${t("DAY")} ${ev.timestamp?.day || 0} (${t("TICK")} ${ev.tick})`,
+            ev.location ? `${t("TIP_COORDINATES")} [X: ${Math.floor(ev.location.x)}, Y: ${Math.floor(ev.location.y)}]` : `${t("TIP_COORDINATES")} ${t("TIP_GLOBAL")}`,
+            actorName ? `${t("TIP_ACTOR")} ${actorName}${actorId !== null && actorId !== undefined ? ` (ID: #${actorId})` : ""}` : (actorId !== null && actorId !== undefined ? `${t("TIP_ACTOR_ID")} #${actorId}` : null),
+            targetName ? `${t("TIP_TARGET")} ${targetName}${targetId !== null && targetId !== undefined ? ` (ID: #${targetId})` : ""}` : (targetId !== null && targetId !== undefined ? `${t("TIP_TARGET_ID")} #${targetId}` : null),
+            ev.metadata?.hitPartName ? `${t("TIP_HIT")} ${ev.metadata.hitPartName} (${Math.round(ev.metadata.totalDamage || ev.metadata.netDamage || 0)} ${t("TIP_DMG")})` : null,
+            ev.metadata?.causedByBattleId ? t("TIP_SUCCUMBED", { id: ev.metadata.causedByBattleId }) : null
           ].filter(Boolean);
-          setHoverTooltip(`Creature Event #${ev.id}`, tipLines);
+          setHoverTooltip(t("CREATURE_EVENT", { id: ev.id }), tipLines);
         }
 
         const ts = ev.timestamp ? `D${ev.timestamp.day} ${String(ev.timestamp.hour).padStart(2, "0")}:${String(ev.timestamp.minute).padStart(2, "0")}` : `T${ev.tick}`;
@@ -4001,7 +4023,7 @@ function renderDossierModal() {
 
         // MAP Jump
         if (ev.location) {
-          drawNESButton(mx + mw - 165, curY + 6, 45, 20, "MAP", false, false);
+          drawNESButton(mx + mw - 165, curY + 6, 45, 20, t("MAP"), false, false);
           registerClickableRegion(mx + mw - 165, curY + 6, 45, 20, () => {
             if (renderer) {
               renderer.setCamera(ev.location.x, ev.location.y, renderer.getCameraZoom());
@@ -4011,7 +4033,7 @@ function renderDossierModal() {
         }
 
         // INSPECT Detail
-        drawNESButton(mx + mw - 110, curY + 6, 90, 20, "INSPECT", false, false);
+        drawNESButton(mx + mw - 110, curY + 6, 90, 20, t("INSPECT"), false, false);
         registerClickableRegion(mx + mw - 110, curY + 6, 90, 20, () => {
           inspectingLogEvent = curEv;
           inspectingFromCreature = true;
@@ -4122,17 +4144,11 @@ function updateEntitySearchInputVisibility() {
 
     if (!entitySearchInput) {
       entitySearchInput = document.createElement("input");
+      entitySearchInput.id = "entity-search-input";
       entitySearchInput.type = "text";
-      entitySearchInput.placeholder = "Search entities...";
-      entitySearchInput.style.position = "absolute";
-      entitySearchInput.style.zIndex = "1000";
-      entitySearchInput.style.background = "#222";
-      entitySearchInput.style.color = "#fff";
-      entitySearchInput.style.border = "2px solid #555";
-      entitySearchInput.style.padding = "4px 8px";
-      entitySearchInput.style.fontFamily = "'JetBrains Mono', monospace";
-      entitySearchInput.style.fontSize = "14px";
-      entitySearchInput.style.outline = "none";
+      entitySearchInput.placeholder = t("SEARCH_PLACEHOLDER");
+      entitySearchInput.autocomplete = "off";
+      entitySearchInput.spellcheck = false;
 
       entitySearchInput.addEventListener("input", (e) => {
         entitySearchTerm = e.target.value.toLowerCase();
@@ -4151,6 +4167,7 @@ function updateEntitySearchInputVisibility() {
       else document.body.appendChild(entitySearchInput);
     }
 
+    entitySearchInput.placeholder = t("SEARCH_PLACEHOLDER");
     entitySearchInput.style.display = "block";
     const canvasRect = canvas.getBoundingClientRect();
     const scaleX = canvasRect.width / CANVAS_WIDTH;
@@ -4160,6 +4177,7 @@ function updateEntitySearchInputVisibility() {
     entitySearchInput.style.left = (canvasRect.left + (mx + mw - 230) * scaleX) + "px";
     entitySearchInput.style.top = (canvasRect.top + (my + 8) * scaleY) + "px";
     entitySearchInput.style.width = (180 * scaleX) + "px";
+    entitySearchInput.style.fontSize = Math.max(9, Math.round(10 * scaleY)) + "px";
   } else {
     if (entitySearchInput) {
       entitySearchInput.style.display = "none";
@@ -4193,26 +4211,36 @@ function renderEntitiesModal() {
 
   const list = getFilteredEntities();
   const titleStr = (entityFilter === "SPECIES" && speciesFilter)
-    ? `ENTITIES: SPECIES [${speciesFilter.toUpperCase()}] (${list.length})`
-    : `ENTITIES (${list.length})`;
+    ? `${t("ENTITIES")}: ${t("SP_LABEL")} [${speciesFilter.toUpperCase()}] (${list.length})`
+    : `${t("ENTITIES")} (${list.length})`;
   drawText8x8(titleStr, mx + 16, my + 14, "#f8b800", 1);
 
   // Expanded Filter Buttons
-  const baseFilters = ["ALL", "COLONISTS", "BEASTS", "CORPSES", "BUILDINGS", "FOOD & MEALS", "EQUIP", "FLORA", "ITEMS"];
+  const baseFilterDefs = [
+    { key: "ALL", label: t("FILTER_ALL") },
+    { key: "COLONISTS", label: t("FILTER_COLONISTS") },
+    { key: "BEASTS", label: t("FILTER_BEASTS") },
+    { key: "CORPSES", label: t("FILTER_CORPSES") },
+    { key: "BUILDINGS", label: t("FILTER_BUILDINGS") },
+    { key: "FOOD & MEALS", label: t("FILTER_FOOD") },
+    { key: "EQUIP", label: t("FILTER_EQUIP") },
+    { key: "FLORA", label: t("FILTER_FLORA") },
+    { key: "ITEMS", label: t("FILTER_ITEMS") }
+  ];
   const filters = (entityFilter === "SPECIES" && speciesFilter)
-    ? [`SPECIES: ${speciesFilter.toUpperCase()}`, ...baseFilters]
-    : baseFilters;
+    ? [{ key: "SPECIES", label: `${t("SP_LABEL")}: ${speciesFilter.toUpperCase()}` }, ...baseFilterDefs]
+    : baseFilterDefs;
 
   let fx = mx + 16;
   for (const f of filters) {
-    const isSpeciesTab = f.startsWith("SPECIES:");
-    const isAct = isSpeciesTab ? (entityFilter === "SPECIES") : (entityFilter === f);
-    const flabel = isMobile ? (isSpeciesTab ? speciesFilter.slice(0, 4).toUpperCase() : f.slice(0, 3)) : f;
+    const isSpeciesTab = f.key === "SPECIES";
+    const isAct = entityFilter === f.key;
+    const flabel = isMobile ? (isSpeciesTab ? speciesFilter.slice(0, 4).toUpperCase() : f.label.slice(0, 3)) : f.label;
     const btnW = isMobile ? Math.floor((mw - 32) / filters.length) : Math.max(52, flabel.length * 8 + 12);
     drawNESButton(fx, my + 36, btnW, 22, flabel, isAct, false);
     registerClickableRegion(fx, my + 36, btnW, 22, () => {
       if (!isSpeciesTab) {
-        entityFilter = f;
+        entityFilter = f.key;
         speciesFilter = "";
       }
       modalScroll = 0;
@@ -4227,18 +4255,18 @@ function renderEntitiesModal() {
 
   // Column Headers
   if (!isMobile) {
-    drawText8x8("ID", mx + 20, tableY + 12, "#f8b800", 1);
-    drawText8x8("NAME", mx + 70, tableY + 12, "#f8b800", 1);
-    drawText8x8("SPECIES", mx + 225, tableY + 12, "#f8b800", 1);
-    drawText8x8("POS", mx + 315, tableY + 12, "#f8b800", 1);
-    drawText8x8("HP", mx + 400, tableY + 12, "#f8b800", 1);
-    drawText8x8("STATUS", mx + 455, tableY + 12, "#f8b800", 1);
-    drawText8x8("CLAN", mx + 515, tableY + 12, "#f8b800", 1);
+    drawText8x8(t("COL_ID"), mx + 20, tableY + 12, "#f8b800", 1);
+    drawText8x8(t("COL_NAME"), mx + 70, tableY + 12, "#f8b800", 1);
+    drawText8x8(t("COL_SPECIES"), mx + 225, tableY + 12, "#f8b800", 1);
+    drawText8x8(t("COL_POS"), mx + 315, tableY + 12, "#f8b800", 1);
+    drawText8x8(t("COL_HP"), mx + 400, tableY + 12, "#f8b800", 1);
+    drawText8x8(t("COL_STATUS"), mx + 455, tableY + 12, "#f8b800", 1);
+    drawText8x8(t("COL_CLAN"), mx + 515, tableY + 12, "#f8b800", 1);
   } else {
-    drawText8x8("ID", mx + 18, tableY + 12, "#f8b800", 1);
-    drawText8x8("NAME", mx + 64, tableY + 12, "#f8b800", 1);
-    drawText8x8("HP", mx + mw - 116, tableY + 12, "#f8b800", 1);
-    drawText8x8("STATUS", mx + mw - 68, tableY + 12, "#f8b800", 1);
+    drawText8x8(t("COL_ID"), mx + 18, tableY + 12, "#f8b800", 1);
+    drawText8x8(t("COL_NAME"), mx + 64, tableY + 12, "#f8b800", 1);
+    drawText8x8(t("COL_HP"), mx + mw - 116, tableY + 12, "#f8b800", 1);
+    drawText8x8(t("COL_STATUS"), mx + mw - 68, tableY + 12, "#f8b800", 1);
   }
 
   ctx.strokeStyle = "#ffffff";
@@ -4261,21 +4289,21 @@ function renderEntitiesModal() {
     const isHover = mouseX >= mx + 12 && mouseX <= mx + mw - 12 && mouseY >= rowY - 4 && mouseY <= rowY + 16;
 
     if (isSelected || isHover) {
-      ctx.fillStyle = isSelected ? "#222244" : "#181818";
+      ctx.fillStyle = isSelected ? "#222244" : "#181828";
       ctx.fillRect(mx + 12, rowY - 4, mw - 24, rowH);
     }
 
     const cursorPrefix = isSelected || isHover ? "▶" : " ";
     const brainHp = ent.properties.brain ? Math.round(ent.properties.brain.condition) : (ent.properties.life ? Math.round(ent.properties.life.energy) : "-");
     const isSleeping = ent.properties.life?.isSleeping;
-    const statusStr = ent.properties.life ? (isSleeping ? "SLEEP" : (!ent.destroyed ? "LIVE" : "DEAD")) : "ITEM";
+    const statusStr = ent.properties.life ? (isSleeping ? t("STATUS_SLEEP") : (!ent.destroyed ? t("STATUS_ALIVE") : t("STATUS_DEAD"))) : "ITEM";
     const statusCol = ent.properties.life ? (isSleeping ? "#3cbcfc" : (!ent.destroyed ? "#58d854" : "#f83800")) : "#f8b800";
 
     const curEnt = ent;
 
     if (!isMobile) {
       drawText8x8(`${cursorPrefix}#${ent.id}`, mx + 16, rowY + 3, isSelected || isHover ? "#f8b800" : "#ffffff", 1);
-      drawText8x8((ent.properties.name || "ENTITY").slice(0, 18).toUpperCase(), mx + 70, rowY + 3, "#ffffff", 1);
+      drawText8x8((ent.properties.name || "ENTIDADE").slice(0, 18).toUpperCase(), mx + 70, rowY + 3, "#ffffff", 1);
       drawText8x8((ent.properties.species || "-").slice(0, 10).toUpperCase(), mx + 225, rowY + 3, "#3cbcfc", 1);
       drawText8x8(`[${Math.floor(ent.x)},${Math.floor(ent.y)}]`, mx + 315, rowY + 3, "#bcbcbc", 1);
       drawText8x8(String(brainHp), mx + 400, rowY + 3, "#f83800", 1);
@@ -4285,7 +4313,7 @@ function renderEntitiesModal() {
 
       // INSPECT Button
       const inspectBtnX = mx + mw - 145;
-      drawNESButton(inspectBtnX, rowY - 1, 65, 18, "INSPECT", false, false);
+      drawNESButton(inspectBtnX, rowY - 1, 65, 18, t("INSPECT"), false, false);
       registerClickableRegion(inspectBtnX, rowY - 1, 65, 18, () => {
         lastSelectedId = curEnt.id;
         dossierTab = "OVERVIEW";
@@ -4294,7 +4322,7 @@ function renderEntitiesModal() {
 
       // FOCUS Button
       const focusBtnX = mx + mw - 75;
-      drawNESButton(focusBtnX, rowY - 1, 60, 18, "FOCUS", false, false);
+      drawNESButton(focusBtnX, rowY - 1, 60, 18, t("FOCUS"), false, false);
       registerClickableRegion(focusBtnX, rowY - 1, 60, 18, () => {
         focusEntityAndFollow(curEnt);
       });
@@ -4308,7 +4336,7 @@ function renderEntitiesModal() {
     } else {
       drawText8x8(`${cursorPrefix}#${ent.id}`, mx + 16, rowY + 3, isSelected || isHover ? "#f8b800" : "#ffffff", 1);
       const maxMobileName = Math.max(8, Math.floor((mw - 190) / 8));
-      drawText8x8((ent.properties.name || "ENTITY").slice(0, maxMobileName).toUpperCase(), mx + 64, rowY + 3, "#ffffff", 1);
+      drawText8x8((ent.properties.name || "ENTIDADE").slice(0, maxMobileName).toUpperCase(), mx + 64, rowY + 3, "#ffffff", 1);
       drawText8x8(String(brainHp), mx + mw - 116, rowY + 3, "#f83800", 1);
       drawText8x8(statusStr, mx + mw - 68, rowY + 3, statusCol, 1);
 
@@ -4463,11 +4491,11 @@ function renderGroupsModal() {
   }
 
   const groups = getAllGroups();
-  const titleStr = isMobile ? `CLANS (${groups.length})` : `CLANS & FACTIONS (${groups.length}) - SELECT TO INSPECT`;
+  const titleStr = isMobile ? `${t("CLANS")} (${groups.length})` : t("CLANS_SELECT_PROMPT", { count: groups.length });
   drawText8x8(titleStr, mx + 16, my + 14, "#f8b800", 1);
 
   if (groups.length === 0) {
-    drawText8x8("NO FACTIONS FOUNDED YET.", mx + 20, my + 50, "#ffffff", 1);
+    drawText8x8(t("NO_FACTIONS_FOUNDED"), mx + 20, my + 50, "#ffffff", 1);
     ctx.restore();
     return;
   }
@@ -4533,19 +4561,19 @@ function renderGroupsModal() {
     }
 
     const maxClanChars = Math.max(8, Math.floor((cardW - 130) / 8));
-    drawText8x8((g.name || "CLAN").slice(0, maxClanChars).toUpperCase(), cardX + 30, cardY + 12, gFgColor, 1);
+    drawText8x8((g.name || t("CLANS")).slice(0, maxClanChars).toUpperCase(), cardX + 30, cardY + 12, gFgColor, 1);
     const membersArr = g.members || [];
-    drawText8x8(`${livingMembers}/${membersArr.length} ALIVE`, cardX + cardW - 90, cardY + 12, "#58d854", 1);
+    drawText8x8(`${livingMembers}/${membersArr.length} ${t("ALIVE_MEMBERS")}`, cardX + cardW - 90, cardY + 12, "#58d854", 1);
 
-    const leaderName = leaderEnt ? leaderEnt.properties.name.slice(0, 16) : (membersArr.length > 0 ? `#${membersArr[0]}` : "NONE");
-    drawText8x8(`LEADER: ${leaderName.toUpperCase()}`, cardX + 8, cardY + 30, "#ffffff", 1);
-    drawText8x8(`ZONES: ${g.claimedZones?.length || 0} | STOCK: ${stockpile.totalCount}`, cardX + 8, cardY + 44, "#bcbcbc", 1);
+    const leaderName = leaderEnt ? leaderEnt.properties.name.slice(0, 16) : (membersArr.length > 0 ? `#${membersArr[0]}` : t("NONE"));
+    drawText8x8(`${t("LEADER")}: ${leaderName.toUpperCase()}`, cardX + 8, cardY + 30, "#ffffff", 1);
+    drawText8x8(`${t("TAB_ZONES")}: ${g.claimedZones?.length || 0} | ${t("TAB_STOCKPILE")}: ${stockpile.totalCount}`, cardX + 8, cardY + 44, "#bcbcbc", 1);
 
     // Action buttons inside card
     const btnW = Math.floor((cardW - 24) / 3);
     const curG = g;
 
-    drawNESButton(cardX + 8, cardY + 56, btnW, 16, "DETAILS", false, false);
+    drawNESButton(cardX + 8, cardY + 56, btnW, 16, t("DETAILS"), false, false);
     registerClickableRegion(cardX + 8, cardY + 56, btnW, 16, () => {
       inspectingGroup = curG;
       groupDetailTab = "ZONES";
@@ -4553,7 +4581,7 @@ function renderGroupsModal() {
     });
 
     const isViewing = visualizedGroupId === g.id;
-    drawNESButton(cardX + 8 + btnW + 4, cardY + 56, btnW, 16, isViewing ? "ZONE*" : "ZONE", isViewing, false);
+    drawNESButton(cardX + 8 + btnW + 4, cardY + 56, btnW, 16, isViewing ? `${t("ZONE")}*` : t("ZONE"), isViewing, false);
     registerClickableRegion(cardX + 8 + btnW + 4, cardY + 56, btnW, 16, () => {
       visualizedGroupId = (visualizedGroupId === g.id) ? null : g.id;
       if (visualizedGroupId !== null) {
@@ -4571,7 +4599,7 @@ function renderGroupsModal() {
       }
     });
 
-    drawNESButton(cardX + 8 + (btnW + 4) * 2, cardY + 56, btnW, 16, "LEADER", false, false);
+    drawNESButton(cardX + 8 + (btnW + 4) * 2, cardY + 56, btnW, 16, t("LEADER"), false, false);
     registerClickableRegion(cardX + 8 + (btnW + 4) * 2, cardY + 56, btnW, 16, () => {
       if (leaderEnt) focusEntityAndFollow(leaderEnt);
     });
@@ -4581,7 +4609,7 @@ function renderGroupsModal() {
 }
 
 /**
- * Full-screen Clan Dossier: divided into 3 dedicated tabs (ZONES, STOCKPILE, MEMBERS) + HISTORY.
+ * Full-screen Clan Dossier: divided into dedicated tabs + HISTORY.
  */
 function renderGroupDetailView(mx, my, mw, mh, g) {
   const latestGroup = (world?.groups && world.groups.find(wg => wg.id === g.id)) || getAllGroups().find(wg => wg.id === g.id);
@@ -4647,7 +4675,7 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
     }
   }
 
-  drawText8x8(`CLAN DOSSIER: ${(g.name || "CLAN").toUpperCase()}`, mx + 44, my + 14, gFgColor, 1);
+  drawText8x8(`${t("CLAN_DOSSIER")}: ${(g.name || "CLÃ").toUpperCase()}`, mx + 44, my + 14, gFgColor, 1);
 
   // Close X Button: Always returns to MAP
   drawNESButton(mx + mw - 32, my + 6, 26, 24, "X", false, true);
@@ -4658,22 +4686,22 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
     inspectingFromCreature = false;
   });
 
-  // Top Tabs: [ZONES] [STOCKPILE] [MEMBERS] [BUILDINGS] [POLITICS] [HISTORY]
+  // Top Tabs: [ZONAS] [ESTOQUE] [MEMBROS] [CONSTRUÇÕES] [POLÍTICA] [HISTÓRICO]
   const tabs = [
-    { id: "ZONES", label: `ZONES (${g.claimedZones?.length || 0})` },
-    { id: "STOCKPILE", label: `STOCKPILE${_clanDossierCache.stockpile ? ` (${_clanDossierCache.stockpile.totalCount})` : ""}` },
-    { id: "MEMBERS", label: `MEMBERS (${livingMembers.length}/${g.members.length})` },
-    { id: "BUILDINGS", label: "BUILDINGS" },
-    { id: "POLITICS", label: "POLITICS" },
-    { id: "HISTORY", label: `HISTORY${_clanDossierCache.history ? ` (${_clanDossierCache.history.length})` : ""}` }
+    { id: "ZONES", label: `${t("TAB_ZONES")} (${g.claimedZones?.length || 0})` },
+    { id: "STOCKPILE", label: `${t("TAB_STOCKPILE")}${_clanDossierCache.stockpile ? ` (${_clanDossierCache.stockpile.totalCount})` : ""}` },
+    { id: "MEMBERS", label: `${t("TAB_MEMBERS")} (${livingMembers.length}/${g.members.length})` },
+    { id: "BUILDINGS", label: t("TAB_CONSTRUCTIONS") },
+    { id: "POLITICS", label: t("TAB_POLITICS") },
+    { id: "HISTORY", label: `${t("TAB_HISTORY")}${_clanDossierCache.history ? ` (${_clanDossierCache.history.length})` : ""}` }
   ];
 
   let tabX = mx + 16;
-  for (const t of tabs) {
-    const isAct = groupDetailTab === t.id;
-    const tabW = t.label.length * 8 + 14;
-    drawNESButton(tabX, my + 32, tabW, 24, t.label, isAct, false);
-    const tid = t.id;
+  for (const tTab of tabs) {
+    const isAct = groupDetailTab === tTab.id;
+    const tabW = tTab.label.length * 8 + 14;
+    drawNESButton(tabX, my + 32, tabW, 24, tTab.label, isAct, false);
+    const tid = tTab.id;
     registerClickableRegion(tabX, my + 32, tabW, 24, () => {
       groupDetailTab = tid;
       modalScroll = 0;
@@ -4682,8 +4710,8 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
   }
 
   // Top Action Buttons on the right
-  drawNESButton(mx + mw - 240, my + 32, 105, 24, "MAP TERRITORY", false, false);
-  registerClickableRegion(mx + mw - 240, my + 32, 105, 24, () => {
+  drawNESButton(mx + mw - 250, my + 32, 115, 24, t("MAP_TERRITORY"), false, false);
+  registerClickableRegion(mx + mw - 250, my + 32, 115, 24, () => {
     visualizedGroupId = (visualizedGroupId === g.id) ? null : g.id;
     if (visualizedGroupId !== null) {
       let sumX = 0, sumY = 0, count = 0;
@@ -4700,7 +4728,7 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
     }
   });
 
-  drawNESButton(mx + mw - 130, my + 32, 115, 24, "FOCUS LEADER", false, false);
+  drawNESButton(mx + mw - 130, my + 32, 115, 24, "FOCAR LÍDER", false, false);
   registerClickableRegion(mx + mw - 130, my + 32, 115, 24, () => {
     if (leaderEnt) focusEntityAndFollow(leaderEnt);
   });
@@ -4709,13 +4737,13 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
   const contentH = (my + mh - 12) - contentY;
 
   // -------------------------------------------------------------------------
-  // TAB 1: ZONES (Territory, Claimed Macro-Zones, Blueprints & Rooms)
+  // TAB 1: ZONES (Território, Macro-Zonas Reivindicadas)
   // -------------------------------------------------------------------------
   if (groupDetailTab === "ZONES") {
     drawNESBox(mx + 12, contentY, mw - 24, contentH);
 
     const totalTiles = (g.claimedZones?.length || 0) * 64;
-    drawText8x8(`CLAIMED TERRITORY: ${g.claimedZones?.length || 0} ZONES (${totalTiles} TILES)`, mx + 20, contentY + 12, "#ffd700", 1);
+    drawText8x8(`${t("CLAIMED_TERRITORY")}: ${g.claimedZones?.length || 0} ${t("TAB_ZONES")} (${totalTiles} TILES)`, mx + 20, contentY + 12, "#ffd700", 1);
 
     const zones = g.claimedZones || [];
     const rowH = 26;
@@ -4727,19 +4755,19 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
     let curY = contentY + 34;
 
     if (zones.length === 0) {
-      drawText8x8("NO TERRITORY CURRENTLY CLAIMED BY THIS CLAN.", mx + 20, curY + 6, "#bcbcbc", 1);
+      drawText8x8(t("NONE"), mx + 20, curY + 6, "#bcbcbc", 1);
     } else {
       for (let i = modalScroll; i < Math.min(totalItems, modalScroll + visibleCount); i++) {
         // Render Zone Card
         const zk = zones[i];
         const c = parseZoneCoords(zk);
-        const zStr = c ? `ZONE ${zk} [X:${c.minX}..${c.maxX}, Y:${c.minY}..${c.maxY}] (CENTER: [${c.centerX}, ${c.centerY}])` : `ZONE ${zk}`;
+        const zStr = c ? `${t("ZONE")} ${zk} [X:${c.minX}..${c.maxX}, Y:${c.minY}..${c.maxY}] (${t("COL_POS")}: [${c.centerX}, ${c.centerY}])` : `${t("ZONE")} ${zk}`;
 
         drawText8x8(`• ${zStr}`, mx + 20, curY + 6, "#ffffff", 1);
 
         if (c) {
           const curC = c;
-          drawNESButton(mx + mw - 95, curY + 2, 70, 20, "FOCUS", false, false);
+          drawNESButton(mx + mw - 95, curY + 2, 70, 20, t("FOCUS"), false, false);
           registerClickableRegion(mx + mw - 95, curY + 2, 70, 20, () => {
             focusLocation(curC.centerX, curC.centerY, 2.0);
           });
@@ -4756,12 +4784,12 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
   else if (groupDetailTab === "STOCKPILE") {
     drawNESBox(mx + 12, contentY, mw - 24, contentH);
 
-    drawText8x8(`TOTAL STOCKPILE (${stockpile.totalCount} ITEMS AVAILABLE):`, mx + 20, contentY + 12, "#ffd700", 1);
-    drawText8x8(`BREAKDOWN: [TERRITORY GROUND: ${stockpile.breakdown.ground} | WITH MEMBERS: ${stockpile.breakdown.members} | IN STORAGE: ${stockpile.breakdown.storage}]`, mx + 20, contentY + 28, "#3cbcfc", 1);
+    drawText8x8(`${t("STOCKPILE_TOTAL")} (${stockpile.totalCount}):`, mx + 20, contentY + 12, "#ffd700", 1);
+    drawText8x8(`${t("DISTRIBUTION")}: [${t("GROUND")}: ${stockpile.breakdown.ground} | ${t("WITH_MEMBERS")}: ${stockpile.breakdown.members} | ${t("STORAGE")}: ${stockpile.breakdown.storage}]`, mx + 20, contentY + 28, "#3cbcfc", 1);
 
     const stockEntries = Object.entries(stockpile.items);
     if (stockEntries.length === 0) {
-      drawText8x8("NO RESOURCES OR ITEMS IN STOCKPILE CURRENTLY.", mx + 20, contentY + 54, "#bcbcbc", 1);
+      drawText8x8(t("NO_RESOURCE_STOCK"), mx + 20, contentY + 54, "#bcbcbc", 1);
     } else {
       const rowH = 24;
       const visibleCount = Math.floor((contentH - 52) / rowH);
@@ -4784,7 +4812,7 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
   else if (groupDetailTab === "MEMBERS") {
     drawNESBox(mx + 12, contentY, mw - 24, contentH);
 
-    drawText8x8(`MEMBER ROSTER (${livingMembers.length}/${g.members.length} ALIVE):`, mx + 20, contentY + 12, "#ffd700", 1);
+    drawText8x8(`${t("MEMBERS_ROSTER")} (${livingMembers.length}/${g.members.length} ${t("ALIVE_MEMBERS")}):`, mx + 20, contentY + 12, "#ffd700", 1);
 
     const rowH = 26;
     const visibleCount = Math.floor((contentH - 36) / rowH);
@@ -4801,32 +4829,32 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
       const isHover = mouseX >= mx + 12 && mouseX <= mx + mw - 12 && mouseY >= rosterY - 2 && mouseY <= rosterY + rowH - 4;
 
       if (isSelected || isHover) {
-        ctx.fillStyle = isSelected ? "#222244" : "#181818";
+        ctx.fillStyle = isSelected ? "#222244" : "#181828";
         ctx.fillRect(mx + 12, rosterY - 2, mw - 24, rowH);
       }
 
       const isLeader = (m && m.id === g.leaderId);
-      const leaderBadge = isLeader ? " [LEADER]" : "";
-      const statusBadge = isAlive ? "" : " [DECEASED]";
-      const mName = m?.properties?.name ? `${m.properties.name.toUpperCase()}${leaderBadge}${statusBadge}` : `MEMBER #${mid}${statusBadge}`;
-      const mRole = m ? (m.properties.role || (m.properties.species === "item" ? "ITEM" : m.properties.species) || (m.properties.resourceType ? "ITEM" : "UNKNOWN")).toUpperCase() : "-";
-      const energyStr = isAlive && m?.properties.life ? `${Math.round(m.properties.life.energy)} ENG` : (isAlive ? "LIVE" : "DEAD");
+      const leaderBadge = isLeader ? ` [${t("LEADER")}]` : "";
+      const statusBadge = isAlive ? "" : ` [${t("DECEASED")}]`;
+      const mName = m?.properties?.name ? `${m.properties.name.toUpperCase()}${leaderBadge}${statusBadge}` : `${t("MEMBERS_ROSTER")} #${mid}${statusBadge}`;
+      const mRole = m ? (m.properties.role || (m.properties.species === "item" ? t("FILTER_ITEMS") : m.properties.species) || (m.properties.resourceType ? t("FILTER_ITEMS") : t("UNKNOWN"))).toUpperCase() : "-";
+      const energyStr = isAlive && m?.properties.life ? `${Math.round(m.properties.life.energy)} ENG` : (isAlive ? t("STATUS_ALIVE") : t("STATUS_DEAD"));
       const posStr = m && m.x !== undefined && m.y !== undefined ? `[${Math.floor(m.x)},${Math.floor(m.y)}]` : "-";
 
       // Held items
-      let heldStr = "HANDS: EMPTY";
+      let heldStr = t("HANDS_EMPTY");
       if (m && isAlive) {
         const left = m.properties.arm_left?.heldItem;
         const right = m.properties.arm_right?.heldItem;
         const held = [];
         if (left) held.push(`L:${left.resourceType || left.name || "ITEM"}`);
         if (right) held.push(`R:${right.resourceType || right.name || "ITEM"}`);
-        if (held.length > 0) heldStr = held.join(" | ").toUpperCase();
+        if (held.length > 0) heldStr = `${t("HANDS")}: ` + held.join(" | ").toUpperCase();
       }
 
       const cursorPrefix = isSelected || isHover ? "▶" : "•";
-      const nameColor = isSelected ? "#f8b800" : (isAlive ? "#ffffff" : "#9c5050");
-      const maxChars = Math.floor((mw - 36 - actionWidth) / 8);
+      const nameColor = isLeader ? "#ffd700" : (isAlive ? "#ffffff" : "#888888");
+      const maxChars = Math.max(8, Math.floor((mw - actionWidth - 40) / 8));
       const mText = `${cursorPrefix} ${mName} [${mRole}] ${energyStr} ${posStr} | ${heldStr}`;
       drawText8x8(mText.slice(0, maxChars), mx + 20, rosterY + 5, nameColor, 1);
 
@@ -4840,9 +4868,9 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
         currentMode = "INSPECT";
       });
 
-      // INSPECT Button (for all members, alive or deceased)
+      // INSPECT Button
       const inspectBtnX = isAlive ? mx + mw - 165 : mx + mw - 85;
-      drawNESButton(inspectBtnX, rosterY + 1, 75, 20, "INSPECT", false, false);
+      drawNESButton(inspectBtnX, rosterY + 1, 75, 20, t("INSPECT"), false, false);
       registerClickableRegion(inspectBtnX, rosterY + 1, 75, 20, () => {
         lastSelectedId = curMid;
         dossierTab = "OVERVIEW";
@@ -4851,7 +4879,7 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
 
       // FOCUS Button (for living members)
       if (isAlive && curM) {
-        drawNESButton(mx + mw - 85, rosterY + 1, 75, 20, "FOCUS", false, false);
+        drawNESButton(mx + mw - 85, rosterY + 1, 75, 20, t("FOCUS"), false, false);
         registerClickableRegion(mx + mw - 85, rosterY + 1, 75, 20, () => {
           focusEntityAndFollow(curM);
         });
@@ -4870,18 +4898,18 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
     const bData = getGroupConstructions(g, entities);
     const totalCount = bData.inProgress.length + bData.completed.length + bData.planned.length;
 
-    drawText8x8(`CLAN CONSTRUCTIONS & SETTLEMENT PROJECTS (${totalCount} TOTAL):`, mx + 20, contentY + 12, "#ffd700", 1);
-    drawText8x8(`STATUS: [IN PROGRESS: ${bData.inProgress.length} | COMPLETED: ${bData.completed.length} | PLANNED: ${bData.planned.length}]`, mx + 20, contentY + 28, "#3cbcfc", 1);
+    drawText8x8(`${t("CLAN_PROJECTS_TOTAL")} (${totalCount}):`, mx + 20, contentY + 12, "#ffd700", 1);
+    drawText8x8(`${t("STATUS_LABEL")}: [${t("IN_PROGRESS")}: ${bData.inProgress.length} | ${t("COMPLETED")}: ${bData.completed.length} | ${t("PLANNED")}: ${bData.planned.length}]`, mx + 20, contentY + 28, "#3cbcfc", 1);
 
     const buildSections = [];
     if (bData.inProgress.length > 0) {
-      buildSections.push({ title: `CONSTRUCTIONS IN PROGRESS (${bData.inProgress.length})`, items: bData.inProgress, isUnderway: true });
+      buildSections.push({ title: `${t("IN_PROGRESS")} (${bData.inProgress.length})`, items: bData.inProgress, isUnderway: true });
     }
     if (bData.completed.length > 0) {
-      buildSections.push({ title: `COMPLETED STRUCTURES (${bData.completed.length})`, items: bData.completed, isUnderway: false });
+      buildSections.push({ title: `${t("COMPLETED")} (${bData.completed.length})`, items: bData.completed, isUnderway: false });
     }
     if (bData.planned.length > 0) {
-      buildSections.push({ title: `PLANNED BLUEPRINTS (${bData.planned.length})`, items: bData.planned, isPlanned: true });
+      buildSections.push({ title: `${t("PLANNED")} (${bData.planned.length})`, items: bData.planned, isPlanned: true });
     }
 
     const flatBuildRows = [];
@@ -4893,46 +4921,42 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
     }
 
     if (flatBuildRows.length === 0) {
-      drawText8x8("NO BUILDINGS OR CONSTRUCTION PROJECTS RECORDED FOR THIS CLAN.", mx + 20, contentY + 54, "#bcbcbc", 1);
+      drawText8x8(t("NO_CONSTRUCTIONS_REG"), mx + 20, contentY + 54, "#bcbcbc", 1);
     } else {
       const rowH = 28;
       const visibleCount = Math.floor((contentH - 52) / rowH);
       const maxScroll = Math.max(0, flatBuildRows.length - visibleCount);
       modalScroll = Math.max(0, Math.min(maxScroll, modalScroll));
 
-      let curY = contentY + 46;
+      let curY = contentY + 54;
       for (let i = modalScroll; i < Math.min(flatBuildRows.length, modalScroll + visibleCount); i++) {
         const row = flatBuildRows[i];
+
         if (row.isHeader) {
-          drawText8x8(`▼ ${row.title}`, mx + 20, curY + 6, "#f8b800", 1);
+          drawText8x8(`▼ ${row.title}`, mx + 20, curY + 6, "#ffd700", 1);
         } else {
           const it = row.data;
-          const isHover = mouseX >= mx + 16 && mouseX <= mx + mw - 16 && mouseY >= curY && mouseY <= curY + rowH - 2;
-          if (isHover) {
-            ctx.fillStyle = "#181828";
-            ctx.fillRect(mx + 16, curY, mw - 32, rowH - 2);
-          }
+          const posStr = `[${it.x},${it.y}]`;
 
-          const posStr = `[${Math.floor(it.x)},${Math.floor(it.y)}]`;
           if (row.isUnderway) {
-            const wStr = `W:${it.woodCurrent || 0}/${it.woodCost || 0}`;
-            const sStr = `S:${it.stoneCurrent || 0}/${it.stoneCost || 0}`;
-            const bStr = (it.boneCost || 0) > 0 ? ` B:${it.boneCurrent || 0}/${it.boneCost || 0}` : "";
+            const wStr = `M:${it.woodCurrent || 0}/${it.woodCost || 0}`;
+            const sStr = `P:${it.stoneCurrent || 0}/${it.stoneCost || 0}`;
+            const bStr = (it.boneCost || 0) > 0 ? ` O:${it.boneCurrent || 0}/${it.boneCost || 0}` : "";
             const pct = Math.round((it.progress || 0) * 100);
             const ownerStr = it.ownerName ? ` (${it.ownerName})` : "";
-            drawText8x8(`⏳ [${it.type.toUpperCase()}] ${posStr}${ownerStr} - ${pct}% [${wStr} ${sStr}${bStr}]`, mx + 24, curY + 6, "#ffd700", 1);
+            drawText8x8(`[*] [${it.type.toUpperCase()}] ${posStr}${ownerStr} - ${pct}% [${wStr} ${sStr}${bStr}]`, mx + 24, curY + 6, "#ffd700", 1);
           } else if (row.isPlanned) {
             const ownerStr = it.ownerName ? ` (${it.ownerName})` : "";
-            drawText8x8(`📐 [${it.type.toUpperCase()}] ${posStr}${ownerStr} - WAITING FOR MATERIALS`, mx + 24, curY + 6, "#bcbcbc", 1);
+            drawText8x8(`[-] [${it.type.toUpperCase()}] ${posStr}${ownerStr} - ${t("IN_PROGRESS")}`, mx + 24, curY + 6, "#bcbcbc", 1);
           } else {
             const ownerStr = it.ownerName ? ` (${it.ownerName})` : "";
-            drawText8x8(`✓ [${it.type.toUpperCase()}] ${posStr}${ownerStr} - OPERATIONAL`, mx + 24, curY + 6, "#58d854", 1);
+            drawText8x8(`[OK] [${it.type.toUpperCase()}] ${posStr}${ownerStr} - ${t("COMPLETED")}`, mx + 24, curY + 6, "#58d854", 1);
           }
 
           // FOCUS Button
           const itX = it.x;
           const itY = it.y;
-          drawNESButton(mx + mw - 85, curY + 2, 65, 20, "FOCUS", false, false);
+          drawNESButton(mx + mw - 85, curY + 2, 65, 20, t("FOCUS"), false, false);
           registerClickableRegion(mx + mw - 85, curY + 2, 65, 20, () => {
             focusLocation(itX, itY, 2.5);
           });
@@ -4948,15 +4972,15 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
   else if (groupDetailTab === "POLITICS") {
     drawNESBox(mx + 12, contentY, mw - 24, contentH);
     const leaderEnt = g.leaderId ? getEntityById(g.leaderId) : null;
-    const leaderStr = leaderEnt ? (leaderEnt.properties?.life?.isDead ? `(DECEASED) ${leaderEnt.properties.name}` : leaderEnt.properties.name) : "N/A";
+    const leaderStr = leaderEnt ? (leaderEnt.properties?.life?.isDead ? `(${t("DECEASED")}) ${leaderEnt.properties.name}` : leaderEnt.properties.name) : "N/D";
 
-    drawText8x8(`GOVERNMENT SYSTEM`, mx + 20, contentY + 12, "#ffd700", 1);
-    drawText8x8(`Type:   ${g.govType || "UNKNOWN"}`, mx + 30, contentY + 28, "#3cbcfc", 1);
-    drawText8x8(`Gender: ${g.govGender || "UNKNOWN"}`, mx + 30, contentY + 42, "#3cbcfc", 1);
+    drawText8x8(t("GOVERNMENT_SYSTEM"), mx + 20, contentY + 12, "#ffd700", 1);
+    drawText8x8(`${t("TYPE")}:   ${g.govType || t("UNKNOWN")}`, mx + 30, contentY + 28, "#3cbcfc", 1);
+    drawText8x8(`${t("GENDER")}: ${g.govGender || t("UNKNOWN")}`, mx + 30, contentY + 42, "#3cbcfc", 1);
 
     // Political Chronicles & Elections Button
     const polHistCount = g.politicalHistory?.length || 0;
-    drawNESButton(mx + 20, contentY + 62, 270, 24, `POLITICAL CHRONICLES (${polHistCount})`, false, false);
+    drawNESButton(mx + 20, contentY + 62, 270, 24, `${t("POLITICAL_CHRONICLES")} (${polHistCount})`, false, false);
     registerClickableRegion(mx + 20, contentY + 62, 270, 24, () => {
       inspectingPoliticalHistoryGroup = g;
       politicalModalScroll = 0;
@@ -4964,7 +4988,7 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
 
     // Diplomatic Relations Button
     const relCount = g.relations ? Object.keys(g.relations).length : 0;
-    drawNESButton(mx + 20, contentY + 92, 270, 24, `DIPLOMATIC RELATIONS (${relCount})`, false, false);
+    drawNESButton(mx + 20, contentY + 92, 270, 24, `${t("DIPLOMATIC_RELATIONS")} (${relCount})`, false, false);
     registerClickableRegion(mx + 20, contentY + 92, 270, 24, () => {
       inspectingDiplomacyGroup = g;
       diplomacyModalScroll = 0;
@@ -4972,19 +4996,19 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
 
     // War Room (Painel de Guerra) Button
     const warCount = (world?.wars || []).filter(w => w.groupAId === g.id || w.groupBId === g.id).length;
-    drawNESButton(mx + 20, contentY + 122, 270, 24, `WAR ROOM / GUERRAS (${warCount})`, false, false);
+    drawNESButton(mx + 20, contentY + 122, 270, 24, `${t("WAR_ROOM_BTN")} (${warCount})`, false, false);
     registerClickableRegion(mx + 20, contentY + 122, 270, 24, () => {
       currentMode = "WARS";
       warPanelScroll = 0;
       warPanelTab = "WARS";
     });
 
-    drawText8x8(`POLITICAL LEADERSHIP & POSTS`, mx + 310, contentY + 12, "#ffd700", 1);
+    drawText8x8(`LIDERANÇA POLÍTICA & CARGOS`, mx + 310, contentY + 12, "#ffd700", 1);
 
     // High Leader
-    drawText8x8(`High Leader: ${leaderStr}`, mx + 320, contentY + 28, "#58d854", 1);
+    drawText8x8(`Líder Supremo: ${leaderStr}`, mx + 320, contentY + 28, "#58d854", 1);
     if (leaderEnt) {
-      drawNESButton(mx + mw - 95, contentY + 24, 65, 18, "INSPECT", false, false);
+      drawNESButton(mx + mw - 95, contentY + 24, 65, 18, "INSPEC", false, false);
       registerClickableRegion(mx + mw - 95, contentY + 24, 65, 18, () => {
         lastSelectedId = leaderEnt.id;
         dossierTab = "OVERVIEW";
@@ -4992,15 +5016,15 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
       });
     }
 
-    const dLabels = ["Trade", "War", "Alliances", "Interior", "Expansion", "Chief Diplomat"];
+    const dLabels = ["Comércio", "Guerra", "Alianças", "Interior", "Expansão", "Chefe Diplomático"];
     let dipY = contentY + 46;
     for (let i = 0; i < 6; i++) {
       const lbl = dLabels[i];
       if (g.govType === "AUTOCRACY") {
-        const aStr = leaderEnt ? `[AUTOCRAT] ${leaderEnt.properties?.name || "Líder"}` : "[AUTOCRAT] Líder";
-        drawText8x8(`Diplomat (${lbl}): ${aStr}`, mx + 320, dipY + 4, "#3cbcfc", 1);
+        const aStr = leaderEnt ? `[AUTOCRATA] ${leaderEnt.properties?.name || "Líder"}` : "[AUTOCRATA] Líder";
+        drawText8x8(`Diplomata (${lbl}): ${aStr}`, mx + 320, dipY + 4, "#3cbcfc", 1);
         if (leaderEnt) {
-          drawNESButton(mx + mw - 95, dipY, 65, 18, "INSPECT", false, false);
+          drawNESButton(mx + mw - 95, dipY, 65, 18, "INSPEC", false, false);
           const lId = g.leaderId;
           registerClickableRegion(mx + mw - 95, dipY, 65, 18, () => {
             lastSelectedId = lId;
@@ -5011,11 +5035,11 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
       } else {
         const dId = g.diplomats && g.diplomats.length > i ? g.diplomats[i] : null;
         const dEnt = dId ? getEntityById(dId) : null;
-        const dStr = dEnt ? (dEnt.properties?.life?.isDead ? `(DECEASED) ${dEnt.properties.name}` : dEnt.properties.name) : "VACANT";
+        const dStr = dEnt ? (dEnt.properties?.life?.isDead ? `(FALECIDO) ${dEnt.properties.name}` : dEnt.properties.name) : "VAGO";
         const dCol = dEnt ? "#d0d0e0" : "#7b7b88";
-        drawText8x8(`Diplomat (${lbl}): ${dStr}`, mx + 320, dipY + 4, dCol, 1);
+        drawText8x8(`Diplomata (${lbl}): ${dStr}`, mx + 320, dipY + 4, dCol, 1);
         if (dEnt) {
-          drawNESButton(mx + mw - 95, dipY, 65, 18, "INSPECT", false, false);
+          drawNESButton(mx + mw - 95, dipY, 65, 18, "INSPEC", false, false);
           const curDId = dId;
           registerClickableRegion(mx + mw - 95, dipY, 65, 18, () => {
             lastSelectedId = curDId;
@@ -5029,15 +5053,15 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
   }
 
   // -------------------------------------------------------------------------
-  // TAB 5: HISTORY (Chronological Clan & Member Event Log - Newest on Top!)
+  // TAB 6: HISTORY (Chronological Clan & Member Event Log - Newest on Top!)
   // -------------------------------------------------------------------------
   else if (groupDetailTab === "HISTORY") {
     drawNESBox(mx + 12, contentY, mw - 24, contentH);
 
-    drawText8x8("CHRONOLOGICAL CLAN EVENT HISTORY & PARTICIPANTS LOG:", mx + 20, contentY + 12, "#ffd700", 1);
+    drawText8x8(`${t("TAB_HISTORY")}:`, mx + 20, contentY + 12, "#ffd700", 1);
 
     if (groupEvents.length === 0) {
-      drawText8x8("NO HISTORICAL EVENTS RECORDED FOR THIS CLAN YET.", mx + 20, contentY + 40, "#bcbcbc", 1);
+      drawText8x8(t("NO_HISTORICAL_EVENTS"), mx + 20, contentY + 40, "#bcbcbc", 1);
     } else {
       // Sort newest on top (b.id - a.id / b.tick - a.tick)
       const eventsSorted = groupEvents.slice().sort((a, b) => (b.tick !== a.tick ? b.tick - a.tick : b.id - a.id));
@@ -5060,15 +5084,15 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
           const targetName = ev.metadata?.targetName || ev.metadata?.victimName || ev.metadata?.secondaryName || (targetId ? (entityRegistry?.get(targetId)?.properties?.name || `Entity #${targetId}`) : null);
 
           const tipLines = [
-            `Type: [${ev.type}] (Event #${ev.id})`,
-            `Time: Day ${ev.timestamp?.day || 0} at ${String(ev.timestamp?.hour || 0).padStart(2, "0")}:${String(ev.timestamp?.minute || 0).padStart(2, "0")} (Tick ${ev.tick})`,
-            ev.location ? `Coordinates: [X: ${Math.floor(ev.location.x)}, Y: ${Math.floor(ev.location.y)}]` : "Coordinates: Global / Ambient",
-            actorName ? `Actor/Attacker: ${actorName}${actorId !== null && actorId !== undefined ? ` (ID: #${actorId})` : ""}` : (actorId !== null && actorId !== undefined ? `Actor ID: #${actorId}` : null),
-            targetName ? `Target/Victim: ${targetName}${targetId !== null && targetId !== undefined ? ` (ID: #${targetId})` : ""}` : (targetId !== null && targetId !== undefined ? `Target ID: #${targetId}` : null),
-            ev.metadata?.hitPartName ? `Hit: ${ev.metadata.hitPartName} (${Math.round(ev.metadata.totalDamage || ev.metadata.netDamage || 0)} DMG)` : null,
-            ev.metadata?.causedByBattleId ? `Succumbed to Battle #${ev.metadata.causedByBattleId} Wounds` : null
+            `${t("TIP_TYPE")} [${ev.type}] (${t("EVENT_SHORT", { id: ev.id })})`,
+            `${t("TIP_TIME")} ${t("DAY")} ${ev.timestamp?.day || 0} (${t("TICK")} ${ev.tick})`,
+            ev.location ? `${t("TIP_COORDINATES")} [X: ${Math.floor(ev.location.x)}, Y: ${Math.floor(ev.location.y)}]` : `${t("TIP_COORDINATES")} ${t("TIP_GLOBAL")}`,
+            actorName ? `${t("TIP_ACTOR")} ${actorName}${actorId !== null && actorId !== undefined ? ` (ID: #${actorId})` : ""}` : (actorId !== null && actorId !== undefined ? `${t("TIP_ACTOR_ID")} #${actorId}` : null),
+            targetName ? `${t("TIP_TARGET")} ${targetName}${targetId !== null && targetId !== undefined ? ` (ID: #${targetId})` : ""}` : (targetId !== null && targetId !== undefined ? `${t("TIP_TARGET_ID")} #${targetId}` : null),
+            ev.metadata?.hitPartName ? `${t("TIP_HIT")} ${ev.metadata.hitPartName} (${Math.round(ev.metadata.totalDamage || ev.metadata.netDamage || 0)} ${t("TIP_DMG")})` : null,
+            ev.metadata?.causedByBattleId ? t("TIP_SUCCUMBED", { id: ev.metadata.causedByBattleId }) : null
           ].filter(Boolean);
-          setHoverTooltip(`Clan Event #${ev.id}`, tipLines);
+          setHoverTooltip(t("CLAN_EVENT", { id: ev.id }), tipLines);
         }
 
         const typeCol = ev.type === "DEATH" ? "#f83800" : ev.type === "ATTACK" ? "#f8b800" : ev.type === "AMPUTATION" ? "#d3869b" : ev.type === "BIRTH" ? "#58d854" : ev.type === "RELATION" ? "#f878f8" : "#3cbcfc";
@@ -5090,14 +5114,14 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
         });
 
         // Inspect Button
-        drawNESButton(mx + mw - 160, logY - 1, 72, 20, "INSPECT", false, false);
+        drawNESButton(mx + mw - 160, logY - 1, 72, 20, t("INSPECT"), false, false);
         registerClickableRegion(mx + mw - 160, logY - 1, 72, 20, () => {
           inspectingLogEvent = curEv;
         });
 
         // Focus Location Button
         if (curEv.location) {
-          drawNESButton(mx + mw - 80, logY - 1, 60, 20, "MAP", false, false);
+          drawNESButton(mx + mw - 80, logY - 1, 60, 20, t("MAP"), false, false);
           registerClickableRegion(mx + mw - 80, logY - 1, 60, 20, () => {
             focusLocation(curEv.location.x, curEv.location.y, 2.0);
           });
@@ -5114,10 +5138,10 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
  */
 function renderDiplomacyModal(mx, my, mw, mh, g) {
   const gFgColor = g.color ? `#${(g.color & 0xffffff).toString(16).padStart(6, "0")}` : "#f8b800";
-  drawText8x8(`DIPLOMATIC RELATIONS: ${(g.name || "CLAN").toUpperCase()}`, mx + 16, my + 14, gFgColor, 1);
+  drawText8x8(`${t("DIPLOMATIC_RELATIONS")}: ${(g.name || t("CLAN_LABEL")).toUpperCase()}`, mx + 16, my + 14, gFgColor, 1);
 
   // Back Button
-  drawNESButton(mx + mw - 150, my + 6, 110, 24, "< DOSSIER", false, false);
+  drawNESButton(mx + mw - 150, my + 6, 110, 24, t("DOSSIER_BTN"), false, false);
   registerClickableRegion(mx + mw - 150, my + 6, 110, 24, () => {
     inspectingDiplomacyGroup = null;
   });
@@ -5137,7 +5161,7 @@ function renderDiplomacyModal(mx, my, mw, mh, g) {
   const allOtherGroups = getAllGroups().filter(og => og.id !== g.id);
 
   if (allOtherGroups.length === 0) {
-    drawText8x8("NO OTHER CLANS DISCOVERED IN THE WORLD YET.", mx + 24, contentY + 24, "#bcbcbc", 1);
+    drawText8x8(t("NO_OTHER_CLANS"), mx + 24, contentY + 24, "#bcbcbc", 1);
     return;
   }
 
@@ -5151,7 +5175,7 @@ function renderDiplomacyModal(mx, my, mw, mh, g) {
     const og = allOtherGroups[i];
     const score = (g.relations && g.relations[og.id] !== undefined) ? g.relations[og.id] : 0;
     const isWar = (g.wars && g.wars.includes(og.id)) || (og.wars && og.wars.includes(g.id));
-    const status = isWar ? "AT WAR" : (score < -50 ? "HOSTILE" : (score < 0 ? "UNFRIENDLY" : (score > 50 ? "ALLIED" : "NEUTRAL")));
+    const status = isWar ? t("IN_WAR") : (score < -50 ? t("HOSTILE") : (score < 0 ? t("UNFRIENDLY") : (score > 50 ? t("ALLY") : t("NEUTRAL"))));
     const statusCol = isWar ? "#ff2040" : (score < -50 ? "#e40058" : (score < 0 ? "#ffaa00" : (score > 50 ? "#58d854" : "#ffffff")));
 
     const isHover = mouseX >= mx + 16 && mouseX <= mx + mw - 16 && mouseY >= curY - 2 && mouseY <= curY + rowH - 4;
@@ -5161,14 +5185,14 @@ function renderDiplomacyModal(mx, my, mw, mh, g) {
     }
 
     const oLeaderEnt = og.leaderId ? getEntityById(og.leaderId) : null;
-    const oLeaderStr = oLeaderEnt ? (oLeaderEnt.properties?.name || "Líder Desconhecido") : "Sem Líder";
+    const oLeaderStr = oLeaderEnt ? (oLeaderEnt.properties?.name || `${t("LEADER")} ${t("UNKNOWN")}`) : t("NONE");
 
     // Clan Name & Details
-    drawText8x8(`CLAN: ${og.name.toUpperCase()}`, mx + 24, curY + 4, "#ffd700", 1);
-    drawText8x8(`Leader: ${oLeaderStr} | Members: ${og.members?.length || 0} | Gov: ${og.govType || "UNKNOWN"} (${og.govGender || "NEUTRAL"})`, mx + 24, curY + 18, "#d0d0e0", 1);
+    drawText8x8(`${t("CLAN_PREFIX")} ${og.name.toUpperCase()}`, mx + 24, curY + 4, "#ffd700", 1);
+    drawText8x8(`${t("LEADER")}: ${oLeaderStr} | ${t("TAB_MEMBERS")}: ${og.members?.length || 0} | ${t("GOVERNMENT_LABEL")}: ${og.govType || t("UNKNOWN")}`, mx + 24, curY + 18, "#d0d0e0", 1);
 
     // Relation Score & Status
-    drawText8x8(`Relation: ${Math.round(score)}/100 [${status}]`, mx + 24, curY + 30, statusCol, 1);
+    drawText8x8(`${t("CURRENT_RELATION")}: ${Math.round(score)}/100 [${status}]`, mx + 24, curY + 30, statusCol, 1);
 
     // Mini Relation Progress Bar
     const barX = mx + 290;
@@ -5186,23 +5210,23 @@ function renderDiplomacyModal(mx, my, mw, mh, g) {
 
     const curOG = og;
 
-    // Button: CHRONICLES
-    drawNESButton(mx + mw - 280, curY + 10, 85, 22, "CHRONICLES", false, false);
+    // Button: CRÔNICAS
+    drawNESButton(mx + mw - 280, curY + 10, 85, 22, t("TAB_CHRONICLE"), false, false);
     registerClickableRegion(mx + mw - 280, curY + 10, 85, 22, () => {
       inspectingDiplomaticHistory = { groupA: g, groupB: curOG };
       diplomaticHistoryScroll = 0;
     });
 
-    // Button: DOSSIER
-    drawNESButton(mx + mw - 190, curY + 10, 80, 22, "DOSSIER", false, false);
+    // Button: DOSSIÊ
+    drawNESButton(mx + mw - 190, curY + 10, 80, 22, t("DOSSIER"), false, false);
     registerClickableRegion(mx + mw - 190, curY + 10, 80, 22, () => {
       inspectingGroup = curOG;
       inspectingDiplomacyGroup = null;
     });
 
-    // Button: LEADER
+    // Button: LÍDER
     if (oLeaderEnt) {
-      drawNESButton(mx + mw - 100, curY + 10, 80, 22, "LEADER", false, false);
+      drawNESButton(mx + mw - 100, curY + 10, 80, 22, t("LEADER"), false, false);
       const oLId = og.leaderId;
       registerClickableRegion(mx + mw - 100, curY + 10, 80, 22, () => {
         lastSelectedId = oLId;
@@ -5228,16 +5252,21 @@ function renderPoliticalHistoryModal(mx, my, mw, mh, g) {
     return true;
   });
 
-  drawText8x8(`POLITICAL CHRONICLES: ${(g.name || "CLAN").toUpperCase()} (${rawPolHistory.length} EVENTS)`, mx + 16, my + 14, gFgColor, 1);
+    drawText8x8(`${t("POLITICAL_CHRONICLES")}: ${(g.name || t("CLAN_LABEL")).toUpperCase()} (${rawPolHistory.length} ${t("TAB_WAR_EVENTS")})`, mx + 16, my + 14, gFgColor, 1);
 
-  // Filter Tabs: [ALL] [ELECTIONS] [WARS] [DIPLOMACY]
-  const filterTabs = ["ALL", "ELECTIONS", "WARS", "DIPLOMACY"];
+  // Filter Tabs: [TODOS] [ELEIÇÕES] [GUERRAS] [DIPLOMACIA]
+  const filterTabs = [
+    { id: "ALL", label: t("FILTER_ALL") },
+    { id: "ELECTIONS", label: t("TAB_POLITICS") },
+    { id: "WARS", label: t("WARS") },
+    { id: "DIPLOMACY", label: t("DIPLOMACY_BTN").replace("< ", "") }
+  ];
   let fX = mx + 16;
   for (const f of filterTabs) {
-    const isAct = politicalHistoryFilter === f;
-    const fw = f.length * 8 + 10;
-    drawNESButton(fX, my + 32, fw, 20, f, isAct, false);
-    const fid = f;
+    const isAct = politicalHistoryFilter === f.id;
+    const fw = f.label.length * 8 + 10;
+    drawNESButton(fX, my + 32, fw, 20, f.label, isAct, false);
+    const fid = f.id;
     registerClickableRegion(fX, my + 32, fw, 20, () => {
       politicalHistoryFilter = fid;
       politicalModalScroll = 0;
@@ -5256,7 +5285,7 @@ function renderPoliticalHistoryModal(mx, my, mw, mh, g) {
   });
 
   // Back Button
-  drawNESButton(mx + mw - 150, my + 6, 110, 24, "< DOSSIER", false, false);
+  drawNESButton(mx + mw - 150, my + 6, 110, 24, t("DOSSIER_BTN"), false, false);
   registerClickableRegion(mx + mw - 150, my + 6, 110, 24, () => {
     inspectingPoliticalHistoryGroup = null;
   });
@@ -5274,7 +5303,7 @@ function renderPoliticalHistoryModal(mx, my, mw, mh, g) {
   drawNESBox(mx + 12, contentY, mw - 24, contentH);
 
   if (polHistory.length === 0) {
-    drawText8x8("NO POLITICAL EVENTS FOUND FOR CURRENT FILTER.", mx + 24, contentY + 24, "#bcbcbc", 1);
+    drawText8x8(t("NO_POLITICAL_EVENTS"), mx + 24, contentY + 24, "#bcbcbc", 1);
     return;
   }
 
@@ -5293,17 +5322,17 @@ function renderPoliticalHistoryModal(mx, my, mw, mh, g) {
     }
 
     const typeCol = ev.type === "ELECTION" ? "#58d854" : ev.type === "WAR_DECLARED" ? "#ff2040" : ev.type === "LEADER_DEATH" ? "#e40058" : ev.type === "DIPLOMATIC_MISSION" ? "#3cbcfc" : "#ffd700";
-    const typeBadge = `[${ev.type || "EVENT"}]`;
+    const typeBadge = `[${ev.type || "EVENTO"}]`;
     const tickStr = ev.tick !== undefined ? `(Tick ${ev.tick})` : "";
 
-    drawText8x8(`${typeBadge} ${ev.title || "POLITICAL EVENT"} ${tickStr}`, mx + 24, curY + 2, typeCol, 1);
+    drawText8x8(`${typeBadge} ${ev.title || "EVENTO POLÍTICO"} ${tickStr}`, mx + 24, curY + 2, typeCol, 1);
     drawText8x8(ev.description || "", mx + 24, curY + 16, "#e0e0e0", 1);
 
     const curEv = ev;
 
     // Action button if it is an election
     if (ev.type === "ELECTION") {
-      drawNESButton(mx + mw - 150, curY + 4, 130, 22, "INSPECT VOTES", false, false);
+      drawNESButton(mx + mw - 150, curY + 4, 130, 22, t("INSPECT_VOTES"), false, false);
       registerClickableRegion(mx + mw - 150, curY + 4, 130, 22, () => {
         const foundElec = (g.elections || []).find(el => el.id === curEv.electionId) || (g.elections ? g.elections[0] : null);
         if (foundElec) {
@@ -5312,12 +5341,12 @@ function renderPoliticalHistoryModal(mx, my, mw, mh, g) {
         }
       });
     } else if (ev.type === "DIPLOMATIC_MISSION" && ev.missionReport) {
-      drawNESButton(mx + mw - 150, curY + 4, 130, 22, "INSPECT MISSION", false, false);
+      drawNESButton(mx + mw - 150, curY + 4, 130, 22, t("VIEW_MISSION"), false, false);
       registerClickableRegion(mx + mw - 150, curY + 4, 130, 22, () => {
         inspectingDiplomaticMission = { ...ev };
       });
     } else if (ev.winnerId) {
-      drawNESButton(mx + mw - 95, curY + 4, 75, 22, "INSPECT", false, false);
+      drawNESButton(mx + mw - 95, curY + 4, 75, 22, t("INSPECT"), false, false);
       const wId = ev.winnerId;
       registerClickableRegion(mx + mw - 95, curY + 4, 75, 22, () => {
         lastSelectedId = wId;
@@ -5325,7 +5354,7 @@ function renderPoliticalHistoryModal(mx, my, mw, mh, g) {
         currentMode = "INSPECT";
       });
     } else if (ev.targetGroupId) {
-      drawNESButton(mx + mw - 95, curY + 4, 75, 22, "CLAN", false, false);
+      drawNESButton(mx + mw - 95, curY + 4, 75, 22, t("CLAN_LABEL"), false, false);
       const tGId = ev.targetGroupId;
       registerClickableRegion(mx + mw - 95, curY + 4, 75, 22, () => {
         const tGrp = getAllGroups().find(og => og.id === tGId);
@@ -5340,10 +5369,10 @@ function renderPoliticalHistoryModal(mx, my, mw, mh, g) {
 function renderDiplomaticMissionModal(mx, my, mw, mh, ev) {
   const isSuccess = ev.missionReport?.success;
   const col = isSuccess ? "#58d854" : "#ff2040";
-  drawText8x8(`DIPLOMATIC MISSION REPORT`, mx + 16, my + 14, col, 1);
+  drawText8x8(t("DIPLOMATIC_MISSION_REPORT"), mx + 16, my + 14, col, 1);
 
   // Back Button
-  drawNESButton(mx + mw - 170, my + 6, 130, 24, "< CHRONICLES", false, false);
+  drawNESButton(mx + mw - 170, my + 6, 130, 24, t("CHRONICLES_BTN"), false, false);
   registerClickableRegion(mx + mw - 170, my + 6, 130, 24, () => {
     inspectingDiplomaticMission = null;
   });
@@ -5362,14 +5391,14 @@ function renderDiplomaticMissionModal(mx, my, mw, mh, ev) {
   drawNESBox(mx + 12, contentY, mw - 24, contentH);
 
   let curY = contentY + 16;
-  drawText8x8(`RESULT: ${isSuccess ? "SUCCESS" : "FAILURE"}`, mx + 24, curY, col, 1);
+  drawText8x8(`${t("RESULT_LABEL")}: ${isSuccess ? t("SUCCESS") : t("FAILURE")}`, mx + 24, curY, col, 1);
   curY += 16;
-  drawText8x8(`EVENT: ${ev.title || ""}`, mx + 24, curY, "#f8b800", 1);
+  drawText8x8(`${t("EVENT_LABEL")}: ${ev.title || ""}`, mx + 24, curY, "#f8b800", 1);
   curY += 16;
   if (ev.missionReport && ev.missionReport.startTick) {
-    drawText8x8(`START TICK: ${ev.missionReport.startTick} | END TICK: ${ev.missionReport.endTick || ev.tick || 0}`, mx + 24, curY, "#bcbcbc", 1);
+    drawText8x8(`${t("START_TICK")}: ${ev.missionReport.startTick} | ${t("END_TICK")}: ${ev.missionReport.endTick || ev.tick || 0}`, mx + 24, curY, "#bcbcbc", 1);
   } else {
-    drawText8x8(`TICK: ${ev.tick || 0}`, mx + 24, curY, "#bcbcbc", 1);
+    drawText8x8(`${t("TICK")}: ${ev.tick || 0}`, mx + 24, curY, "#bcbcbc", 1);
   }
   curY += 24;
 
@@ -5391,11 +5420,11 @@ function renderDiplomaticMissionModal(mx, my, mw, mh, ev) {
 
   if (ev.missionReport) {
     const report = ev.missionReport;
-    drawText8x8(`RELATIONS CHANGE: ${report.relationChange > 0 ? "+" : ""}${report.relationChange}`, mx + 24, curY, report.relationChange >= 0 ? "#58d854" : "#ff2040", 1);
+    drawText8x8(`${t("RELATION_CHANGE")}: ${report.relationChange > 0 ? "+" : ""}${report.relationChange}`, mx + 24, curY, report.relationChange >= 0 ? "#58d854" : "#ff2040", 1);
     curY += 24;
 
     if (report.skillsShared && report.skillsShared.length > 0) {
-      drawText8x8(`KNOWLEDGE SHARED:`, mx + 24, curY, "#3cbcfc", 1);
+      drawText8x8(`${t("KNOWLEDGE_SHARED")}:`, mx + 24, curY, "#3cbcfc", 1);
       curY += 12;
       for (const s of report.skillsShared) {
         let line = "";
@@ -5412,7 +5441,7 @@ function renderDiplomaticMissionModal(mx, my, mw, mh, ev) {
     }
 
     if (report.locationsShared && report.locationsShared.length > 0) {
-      drawText8x8(`LOCATIONS REVEALED:`, mx + 24, curY, "#3cbcfc", 1);
+      drawText8x8(`${t("LOCATIONS_REVEALED")}:`, mx + 24, curY, "#3cbcfc", 1);
       curY += 12;
       for (const l of report.locationsShared) {
         let line = "";
@@ -5429,7 +5458,7 @@ function renderDiplomaticMissionModal(mx, my, mw, mh, ev) {
     }
 
     if (report.giftsExchanged && report.giftsExchanged.length > 0) {
-      drawText8x8(`GIFTS EXCHANGED:`, mx + 24, curY, "#f8b800", 1);
+      drawText8x8(`${t("GIFTS_EXCHANGED")}:`, mx + 24, curY, "#f8b800", 1);
       curY += 12;
       for (const g of report.giftsExchanged) {
         let line = "";
@@ -5458,9 +5487,9 @@ function renderDiplomaticHistoryModal(mx, my, mw, mh, data) {
     return;
   }
 
-  const nameA = (gA.name || "CLAN A").toUpperCase();
-  const nameB = (gB.name || "CLAN B").toUpperCase();
-  drawText8x8(`CHRONICLES: ${nameA} <-> ${nameB}`, mx + 16, my + 14, "#ffd700", 1);
+  const nameA = (gA.name || "CLÃ A").toUpperCase();
+  const nameB = (gB.name || "CLÃ B").toUpperCase();
+  drawText8x8(`${t("TAB_CHRONICLE")}: ${nameA} <-> ${nameB}`, mx + 16, my + 14, "#ffd700", 1);
 
   // Scroll Buttons
   drawNESButton(mx + mw - 265, my + 6, 32, 24, "▲", false, false);
@@ -5473,7 +5502,7 @@ function renderDiplomaticHistoryModal(mx, my, mw, mh, data) {
   });
 
   // Back Button
-  drawNESButton(mx + mw - 185, my + 6, 145, 24, "< DIPLOMACY", false, false);
+  drawNESButton(mx + mw - 185, my + 6, 145, 24, t("DIPLOMACY_BTN"), false, false);
   registerClickableRegion(mx + mw - 185, my + 6, 145, 24, () => {
     inspectingDiplomaticHistory = null;
   });
@@ -5492,10 +5521,10 @@ function renderDiplomaticHistoryModal(mx, my, mw, mh, data) {
   drawNESBox(mx + 12, my + 36, mw - 24, topH);
   const score = (gA.relations && gA.relations[gB.id] !== undefined) ? gA.relations[gB.id] : 0;
   const isWar = (gA.wars && gA.wars.includes(gB.id)) || (gB.wars && gB.wars.includes(gA.id));
-  const status = isWar ? "AT WAR" : (score < -50 ? "HOSTILE" : (score < 0 ? "UNFRIENDLY" : (score > 50 ? "ALLIED" : "NEUTRAL")));
+  const status = isWar ? t("IN_WAR") : (score < -50 ? t("HOSTILE") : (score < 0 ? t("UNFRIENDLY") : (score > 50 ? t("ALLY") : t("NEUTRAL"))));
   const statusCol = isWar ? "#ff2040" : (score < -50 ? "#e40058" : (score < 0 ? "#ffaa00" : (score > 50 ? "#58d854" : "#ffffff")));
 
-  drawText8x8(`Current Relation: ${Math.round(score)}/100 [${status}]`, mx + 24, my + 48, statusCol, 1);
+  drawText8x8(`${t("CURRENT_RELATION")}: ${Math.round(score)}/100 [${status}]`, mx + 24, my + 48, statusCol, 1);
   drawText8x8(`${nameA} (Pop: ${gA.members?.length || 0})  vs  ${nameB} (Pop: ${gB.members?.length || 0})`, mx + 280, my + 48, "#bcbcbc", 1);
 
   const contentY = my + 36 + topH + 8;
@@ -5538,7 +5567,7 @@ function renderDiplomaticHistoryModal(mx, my, mw, mh, data) {
       seenKeys.add(key);
       combined.push({
         type: wev.type,
-        title: `CLAN CLASH: [${wev.type}]`,
+        title: `CONFRONTO ENTRE CLÃS: [${wev.type}]`,
         description: wev.description,
         tick: wev.tick,
         timestamp: wev.timestamp,
@@ -5552,7 +5581,7 @@ function renderDiplomaticHistoryModal(mx, my, mw, mh, data) {
   combined.sort((a, b) => (b.tick || 0) - (a.tick || 0));
 
   if (combined.length === 0) {
-    drawText8x8("NO BILATERAL HISTORY OR DIRECT ENCOUNTERS RECORDED BETWEEN THESE TWO CLANS YET.", mx + 24, contentY + 24, "#bcbcbc", 1);
+    drawText8x8(t("NO_BILATERAL_HISTORY"), mx + 24, contentY + 24, "#bcbcbc", 1);
     return;
   }
 
@@ -5571,27 +5600,27 @@ function renderDiplomaticHistoryModal(mx, my, mw, mh, data) {
     }
 
     const typeCol = ev.type === "WAR_DECLARED" ? "#ff2040" : ev.type === "DIPLOMATIC_MISSION" ? "#3cbcfc" : ev.type === "DEATH" || ev.type === "ATTACK" ? "#e40058" : "#ffd700";
-    const typeBadge = `[${ev.type || "EVENT"}]`;
+    const typeBadge = `[${ev.type || "EVENTO"}]`;
     const tickStr = ev.tick !== undefined ? `(Tick ${ev.tick})` : "";
 
-    drawText8x8(`${typeBadge} ${ev.title || "BILATERAL EVENT"} ${tickStr}`, mx + 24, curY + 2, typeCol, 1);
+    drawText8x8(`${typeBadge} ${ev.title || "EVENTO BILATERAL"} ${tickStr}`, mx + 24, curY + 2, typeCol, 1);
     const maxChars = Math.floor((mw - 180) / 8);
     const descShort = (ev.description || "").length > maxChars ? (ev.description || "").slice(0, maxChars - 3) + "..." : (ev.description || "");
     drawText8x8(descShort, mx + 24, curY + 16, "#e0e0e0", 1);
 
     const curEv = ev;
     if (curEv.isWorldEvent && curEv.rawEvent) {
-      drawNESButton(mx + mw - 110, curY + 4, 90, 22, "INSPECT", false, false);
+      drawNESButton(mx + mw - 110, curY + 4, 90, 22, t("INSPECT"), false, false);
       registerClickableRegion(mx + mw - 110, curY + 4, 90, 22, () => {
         inspectingLogEvent = curEv.rawEvent;
       });
     } else if (curEv.type === "DIPLOMATIC_MISSION" && curEv.missionReport) {
-      drawNESButton(mx + mw - 130, curY + 4, 110, 22, "MISSION REPORT", false, false);
+      drawNESButton(mx + mw - 130, curY + 4, 110, 22, t("MISSION_REPORT_BTN"), false, false);
       registerClickableRegion(mx + mw - 130, curY + 4, 110, 22, () => {
         inspectingDiplomaticMission = { ...curEv };
       });
     } else {
-      drawNESButton(mx + mw - 110, curY + 4, 90, 22, "INSPECT", false, false);
+      drawNESButton(mx + mw - 110, curY + 4, 90, 22, t("INSPECT"), false, false);
       registerClickableRegion(mx + mw - 110, curY + 4, 90, 22, () => {
         inspectingLogEvent = {
           id: curEv.id || 0,
@@ -5611,10 +5640,10 @@ function renderDiplomaticHistoryModal(mx, my, mw, mh, data) {
  * Modal Sub-View: Full Election Forensic Ledger & Voter Justifications
  */
 function renderElectionInspector(mx, my, mw, mh, elec) {
-  drawText8x8(`ELECTION INSPECTOR: ${(elec.roleTitle || "LEADERSHIP").toUpperCase()} - ${(elec.groupName || "CLAN").toUpperCase()}`, mx + 16, my + 14, "#58d854", 1);
+  drawText8x8(`${t("ELECTION_INSPECTOR")}: ${(elec.roleTitle || t("LEADERSHIP_ROLE")).toUpperCase()} - ${(elec.groupName || t("CLAN_LABEL")).toUpperCase()}`, mx + 16, my + 14, "#58d854", 1);
 
   // Back Button
-  drawNESButton(mx + mw - 170, my + 6, 130, 24, "< CHRONICLES", false, false);
+  drawNESButton(mx + mw - 170, my + 6, 130, 24, t("CHRONICLES_BTN"), false, false);
   registerClickableRegion(mx + mw - 170, my + 6, 130, 24, () => {
     inspectingElectionRecord = null;
   });
@@ -5631,14 +5660,14 @@ function renderElectionInspector(mx, my, mw, mh, elec) {
   // Top Summary Card
   const topH = 74;
   drawNESBox(mx + 12, my + 36, mw - 24, topH);
-  drawText8x8(`Government: ${elec.govType} (${elec.govGender}) | Election Tick: ${elec.tick}`, mx + 24, my + 44, "#3cbcfc", 1);
-  drawText8x8(`WINNER: ${elec.winnerName} (${elec.winnerVotes} votes, ${elec.winnerPercent}% of valid votes)`, mx + 24, my + 58, "#58d854", 1);
-  drawText8x8(`Participation: ${elec.totalVotesCast}/${elec.totalEligible} eligible voters | Blanks: ${elec.blankVotes} | Abstentions: ${elec.abstentions}`, mx + 24, my + 72, "#ffd700", 1);
+  drawText8x8(`${t("GOVERNMENT_LABEL")}: ${elec.govType} | ${t("ELECTION_TICK")}: ${elec.tick}`, mx + 24, my + 44, "#3cbcfc", 1);
+  drawText8x8(`${t("WINNER_LABEL")}: ${elec.winnerName} (${elec.winnerVotes} ${t("VOTES")}, ${elec.winnerPercent}% ${t("VALID_VOTES")})`, mx + 24, my + 58, "#58d854", 1);
+  drawText8x8(`${t("TURNOUT_LABEL")}: ${elec.totalVotesCast}/${elec.totalEligible} ${t("ELIGIBLE_VOTERS")} | ${t("BLANK_VOTES")}: ${elec.blankVotes} | ${t("ABSTENTIONS")}: ${elec.abstentions}`, mx + 24, my + 72, "#ffd700", 1);
 
   if (elec.winnerId) {
-    drawNESButton(mx + mw - 160, my + 52, 130, 22, "INSPECT WINNER", false, false);
+    drawNESButton(mx + mw - 170, my + 52, 140, 22, t("INSPECT_WINNER"), false, false);
     const winId = elec.winnerId;
-    registerClickableRegion(mx + mw - 160, my + 52, 130, 22, () => {
+    registerClickableRegion(mx + mw - 170, my + 52, 140, 22, () => {
       lastSelectedId = winId;
       dossierTab = "OVERVIEW";
       currentMode = "INSPECT";
@@ -5651,7 +5680,7 @@ function renderElectionInspector(mx, my, mw, mh, elec) {
   // Left Column: Candidates Ranking
   const leftW = Math.min(260, Math.floor((mw - 32) * 0.36));
   drawNESBox(mx + 12, bottomY, leftW, bottomH);
-  drawText8x8(`CANDIDATES RANKING:`, mx + 20, bottomY + 10, "#ffd700", 1);
+  drawText8x8(`${t("CANDIDATES_RANKING")}:`, mx + 20, bottomY + 10, "#ffd700", 1);
 
   let rankY = bottomY + 26;
   const rankList = elec.ranking || [];
@@ -5660,11 +5689,11 @@ function renderElectionInspector(mx, my, mw, mh, elec) {
     const isWin = r === 0 && c.votes > 0;
     const nameCol = isWin ? "#58d854" : "#ffffff";
     drawText8x8(`#${r + 1} ${c.name}`, mx + 20, rankY, nameCol, 1);
-    drawText8x8(`${c.votes} votes (${c.percent}%)`, mx + 20, rankY + 12, "#bcbcbc", 1);
+    drawText8x8(`${c.votes} ${t("VOTES")} (${c.percent}%)`, mx + 20, rankY + 12, "#bcbcbc", 1);
 
     // Inspect candidate button
     const cId = c.id;
-    drawNESButton(mx + leftW - 40, rankY + 2, 34, 18, "VIEW", false, false);
+    drawNESButton(mx + leftW - 40, rankY + 2, 34, 18, t("VIEW"), false, false);
     registerClickableRegion(mx + leftW - 40, rankY + 2, 34, 18, () => {
       lastSelectedId = cId;
       dossierTab = "OVERVIEW";
@@ -5680,10 +5709,10 @@ function renderElectionInspector(mx, my, mw, mh, elec) {
   drawNESBox(rightX, bottomY, rightW, bottomH);
 
   const voters = elec.voterDetails || [];
-  drawText8x8(`VOTER LEDGER & JUSTIFICATIONS (${voters.length} CITIZENS):`, rightX + 10, bottomY + 10, "#ffd700", 1);
+  drawText8x8(`${t("VOTING_LEDGER_REASONS")} (${voters.length} ${t("CITIZENS")}):`, rightX + 10, bottomY + 10, "#ffd700", 1);
 
   if (voters.length === 0) {
-    drawText8x8("NO INDIVIDUAL VOTER RECORDS FOR THIS ELECTION.", rightX + 10, bottomY + 30, "#bcbcbc", 1);
+    drawText8x8(t("NO_INDIVIDUAL_VOTES"), rightX + 10, bottomY + 30, "#bcbcbc", 1);
   } else {
     const rowH = 34;
     const visibleCount = Math.floor((bottomH - 26) / rowH);
@@ -5700,7 +5729,7 @@ function renderElectionInspector(mx, my, mw, mh, elec) {
       }
 
       const moodCol = v.voterMood < -20 ? "#ff2040" : (v.voterMood > 20 ? "#58d854" : "#ffffff");
-      const moodStr = `[Mood: ${v.voterMood >= 0 ? "+" : ""}${Math.round(v.voterMood || 0)}]`;
+      const moodStr = `[${t("HUMOR")}: ${v.voterMood >= 0 ? "+" : ""}${Math.round(v.voterMood || 0)}]`;
       const targetCol = v.isBlank ? "#bcbcbc" : (v.isAbstain ? "#e40058" : "#58d854");
 
       drawText8x8(`• ${v.voterName} -> ${v.votedForName} ${moodStr}`, rightX + 10, vY, targetCol, 1);
@@ -5708,8 +5737,8 @@ function renderElectionInspector(mx, my, mw, mh, elec) {
 
       // Button to inspect voter
       const voterId = v.voterId;
-      drawNESButton(rightX + rightW - 55, vY + 2, 45, 18, "CITIZEN", false, false);
-      registerClickableRegion(rightX + rightW - 55, vY + 2, 45, 18, () => {
+      drawNESButton(rightX + rightW - 65, vY + 2, 55, 18, t("CITIZEN_BTN"), false, false);
+      registerClickableRegion(rightX + rightW - 65, vY + 2, 55, 18, () => {
         lastSelectedId = voterId;
         dossierTab = "OVERVIEW";
         currentMode = "INSPECT";
@@ -5730,7 +5759,7 @@ function renderSurnameTreeModal(mx, my, mw, mh, surname) {
   }
 
   const sUpper = surname.toUpperCase();
-  drawText8x8(`SURNAME TREE: [${sUpper}] (LINEAGE OF PROGENITOR)`, mx + 16, my + 14, "#ffd700", 1);
+  drawText8x8(`ÁRVORE DO SOBRENOME: [${sUpper}] (LINHAGEM DO PROGENITOR)`, mx + 16, my + 14, "#ffd700", 1);
 
   // Zoom Controls Bar at Top Right of Box
   const zoomPct = Math.round(surnameTreeZoom * 100);
@@ -5752,7 +5781,7 @@ function renderSurnameTreeModal(mx, my, mw, mh, surname) {
   });
 
   // Back Button
-  drawNESButton(mx + mw - 105, my + 6, 68, 24, "< BACK", false, false);
+  drawNESButton(mx + mw - 105, my + 6, 68, 24, "< VOLTAR", false, false);
   registerClickableRegion(mx + mw - 105, my + 6, 68, 24, () => {
     inspectingSurname = null;
   });
@@ -5782,7 +5811,7 @@ function renderSurnameTreeModal(mx, my, mw, mh, surname) {
   }
 
   if (surnameMembers.length === 0) {
-    drawText8x8(`NO CREATURES FOUND CARRYING SURNAME '${sUpper}'.`, mx + 24, contentY + 24, "#bcbcbc", 1);
+    drawText8x8(`NENHUMA CRIATURA ENCONTRADA COM O SOBRENOME '${sUpper}'.`, mx + 24, contentY + 24, "#bcbcbc", 1);
     return;
   }
 
@@ -5867,20 +5896,20 @@ function renderSurnameTreeModal(mx, my, mw, mh, surname) {
     ctx.lineWidth = isProgenitor || isHover ? 2 : 1;
     ctx.strokeRect(cx, cy, cardW, cardH);
 
-    const roleTag = isProgenitor ? "PROGENITOR" : `GEN +${genMap.get(ent.id) || 0}`;
+    const roleTag = isProgenitor ? "PROGENITOR" : `GER +${genMap.get(ent.id) || 0}`;
     drawText8x8(`[${roleTag}]`, cx + 6, cy + 6, isProgenitor ? "#ffd700" : "#3cbcfc", 1);
 
     const nameCol = isProgenitor ? "#ffd700" : (isAlive ? "#ffffff" : "#9c5050");
-    const nameStr = (ent.properties?.name || `CREATURE #${ent.id}`).toUpperCase();
+    const nameStr = (ent.properties?.name || `CRIATURA #${ent.id}`).toUpperCase();
     const maxChars = Math.floor((cardW - 12) / 8);
     drawText8x8(nameStr.slice(0, maxChars), cx + 6, cy + 20, nameCol, 1);
 
-    const statusBadge = isAlive ? "[ALIVE]" : "[DEAD]";
+    const statusBadge = isAlive ? "[VIVO]" : "[MORTO]";
     const statusCol = isAlive ? "#58d854" : "#9c5050";
     drawText8x8(statusBadge, cx + 6, cy + 34, statusCol, 1);
 
-    const clanStr = (ent.properties?.group?.name || "SOLITARY").slice(0, 8).toUpperCase();
-    drawText8x8(`CLAN:${clanStr}`, cx + 58, cy + 34, "#bcbcbc", 1);
+    const clanStr = (ent.properties?.group?.name || "SOLITÁRIO").slice(0, 8).toUpperCase();
+    drawText8x8(`CLÃ:${clanStr}`, cx + 58, cy + 34, "#bcbcbc", 1);
 
     ctx.restore();
 
@@ -5948,18 +5977,36 @@ function renderSurnameTreeModal(mx, my, mw, mh, surname) {
 
 /**
  * Modal Sub-View: War Room & Chronicles of War (Active & Historic Conflicts)
+ * Separated cleanly into Global War Hall vs Single War Dossier View.
  */
 function renderWarPanelModal(mx, my, mw, mh) {
-  drawText8x8(`WAR ROOM & HISTORIC CONFLICTS (PAINEL DE GUERRA)`, mx + 16, my + 14, "#ff2040", 1);
+  if (inspectingWarRecord) {
+    renderSingleWarDossier(mx, my, mw, mh, inspectingWarRecord);
+  } else {
+    renderGlobalWarsView(mx, my, mw, mh);
+  }
+}
+
+/**
+ * VIEW A: Global War Hall (Visão Geral de Conflitos Mundiais)
+ */
+function renderGlobalWarsView(mx, my, mw, mh) {
+  drawText8x8(t("WARS_TITLE"), mx + 16, my + 14, "#ff2040", 1);
 
   // Tabs: [WARS] [WARRIORS] [PACIFISTS] [VICTIMS] [EVENTS]
-  const tabs = ["WARS", "WARRIORS", "PACIFISTS", "VICTIMS", "EVENTS"];
+  const tabs = [
+    { id: "WARS", label: t("TAB_CONFLICTS") },
+    { id: "WARRIORS", label: t("TAB_WARRIORS") },
+    { id: "PACIFISTS", label: t("TAB_PACIFISTS") },
+    { id: "VICTIMS", label: t("TAB_VICTIMS") },
+    { id: "EVENTS", label: t("TAB_WAR_EVENTS") }
+  ];
   let tX = mx + 16;
-  for (const t of tabs) {
-    const isAct = warPanelTab === t;
-    const tw = t.length * 8 + 14;
-    drawNESButton(tX, my + 32, tw, 22, t, isAct, false);
-    const tid = t;
+  for (const tTab of tabs) {
+    const isAct = warPanelTab === tTab.id;
+    const tw = tTab.label.length * 8 + 14;
+    drawNESButton(tX, my + 32, tw, 22, tTab.label, isAct, false);
+    const tid = tTab.id;
     registerClickableRegion(tX, my + 32, tw, 22, () => {
       warPanelTab = tid;
       warPanelScroll = 0;
@@ -5990,14 +6037,14 @@ function renderWarPanelModal(mx, my, mw, mh) {
 
   const wars = (world && Array.isArray(world.wars)) ? world.wars : [];
 
-  // TAB 1: WARS LIST
+  // GLOBAL TAB 1: CONFLITOS (WARS LIST)
   if (warPanelTab === "WARS") {
     if (wars.length === 0) {
-      drawText8x8("NO WARS HAVE BEEN RECORDED IN THIS WORLD YET. PEACE REIGNS.", mx + 24, contentY + 24, "#58d854", 1);
+      drawText8x8(t("NO_WARS_RECORDED"), mx + 24, contentY + 24, "#58d854", 1);
       return;
     }
 
-    const rowH = 48;
+    const rowH = 50;
     const visibleCount = Math.floor((contentH - 24) / rowH);
     const maxScroll = Math.max(0, wars.length - visibleCount);
     warPanelScroll = Math.max(0, Math.min(maxScroll, warPanelScroll));
@@ -6012,7 +6059,7 @@ function renderWarPanelModal(mx, my, mw, mh) {
       }
 
       const isAct = w.status === "ACTIVE";
-      const statusBadge = isAct ? "[ACTIVE WAR]" : `[CONCLUDED: ${w.status}]`;
+      const statusBadge = isAct ? `[${t("WAR_ACTIVE")}]` : `[${t("WAR_ENDED")}: ${w.status}]`;
       const statusCol = isAct ? "#ff2040" : (w.status === "DECISIVE_VICTORY" ? "#ffd700" : "#58d854");
 
       const durTicks = (w.endTick || currentTick) - (w.startTick || 0);
@@ -6022,14 +6069,14 @@ function renderWarPanelModal(mx, my, mw, mh) {
       const warriorCount = Object.keys(w.warriors || {}).length;
       const pacifistCount = Object.keys(w.pacifists || {}).length;
       const victimCount = Object.keys(w.victims || {}).length;
-      const winnerStr = w.winnerName ? ` • Winner: ${w.winnerName}` : "";
-      drawText8x8(`Combatants: ${warriorCount} | Pacifists: ${pacifistCount} | Casualties/Victims: ${victimCount} | Events: ${(w.eventIds || []).length}${winnerStr}`, mx + 24, curY + 20, "#bcbcbc", 1);
+      const winnerStr = w.winnerName ? ` • ${t("WAR_WINNER")}: ${w.winnerName}` : "";
+      drawText8x8(`${t("TAB_WARRIORS")}: ${warriorCount} | ${t("TAB_PACIFISTS")}: ${pacifistCount} | ${t("TAB_VICTIMS")}: ${victimCount} | ${t("TAB_WAR_EVENTS")}: ${(w.eventIds || []).length}${winnerStr}`, mx + 24, curY + 22, "#bcbcbc", 1);
 
       const curWar = w;
-      drawNESButton(mx + mw - 140, curY + 8, 120, 24, "INSPECT WAR", false, false);
-      registerClickableRegion(mx + mw - 140, curY + 8, 120, 24, () => {
+      drawNESButton(mx + mw - 160, curY + 8, 140, 26, t("VIEW_DOSSIER"), false, false);
+      registerClickableRegion(mx + mw - 160, curY + 8, 140, 26, () => {
         inspectingWarRecord = curWar;
-        warPanelTab = "WARRIORS";
+        warDossierTab = "OVERVIEW";
         warPanelScroll = 0;
       });
 
@@ -6037,13 +6084,10 @@ function renderWarPanelModal(mx, my, mw, mh) {
     }
   }
 
-  // TAB 2: WARRIORS RANKING
+  // GLOBAL TAB 2: TOP GUERREIROS MUNDIAIS
   else if (warPanelTab === "WARRIORS") {
-    // Gather warriors from selected war or all wars
     const warriorMap = new Map();
-    const targetWars = inspectingWarRecord ? [inspectingWarRecord] : wars;
-
-    for (const w of targetWars) {
+    for (const w of wars) {
       for (const [wId, entry] of Object.entries(w.warriors || {})) {
         if (!warriorMap.has(wId)) {
           warriorMap.set(wId, { ...entry });
@@ -6059,19 +6103,10 @@ function renderWarPanelModal(mx, my, mw, mh) {
     const warriorList = Array.from(warriorMap.values());
     warriorList.sort((a, b) => (b.damageDealt + b.kills * 50 + b.battles * 10) - (a.damageDealt + a.kills * 50 + a.battles * 10));
 
-    const scopeTitle = inspectingWarRecord ? `FOR WAR: ${inspectingWarRecord.groupAName} VS ${inspectingWarRecord.groupBName}` : "ALL-TIME WORLD WARS";
-    drawText8x8(`TOP WARRIORS (MAIORES GUERREIROS) - ${scopeTitle}:`, mx + 24, contentY + 10, "#ffd700", 1);
-
-    if (inspectingWarRecord) {
-      drawNESButton(mx + mw - 140, contentY + 6, 120, 20, "< ALL WARS", false, false);
-      registerClickableRegion(mx + mw - 140, contentY + 6, 120, 20, () => {
-        inspectingWarRecord = null;
-        warPanelScroll = 0;
-      });
-    }
+    drawText8x8(`${t("TOP_WARRIORS_RANKING")}:`, mx + 24, contentY + 10, "#ffd700", 1);
 
     if (warriorList.length === 0) {
-      drawText8x8("NO COMBAT DAMAGE RECORDED IN SELECTED WARS YET.", mx + 24, contentY + 36, "#bcbcbc", 1);
+      drawText8x8(t("NO_WAR_DAMAGE"), mx + 24, contentY + 36, "#bcbcbc", 1);
       return;
     }
 
@@ -6084,14 +6119,14 @@ function renderWarPanelModal(mx, my, mw, mh) {
     for (let i = warPanelScroll; i < Math.min(warriorList.length, warPanelScroll + visibleCount); i++) {
       const wr = warriorList[i];
       const rank = i + 1;
-      const rankBadge = rank === 1 ? "🥇 #1" : (rank === 2 ? "🥈 #2" : (rank === 3 ? "🥉 #3" : `#${rank}`));
+      const rankBadge = `#${rank}`;
       const rCol = rank <= 3 ? "#ffd700" : "#ffffff";
 
       drawText8x8(`${rankBadge} ${wr.name.toUpperCase()} (${wr.groupName})`, mx + 24, curY + 2, rCol, 1);
-      drawText8x8(`⚔️ Battles: ${wr.battles} | 💥 Total Damage: ${wr.damageDealt} DMG | 💀 Kills: ${wr.kills}`, mx + 24, curY + 16, "#ff6060", 1);
+      drawText8x8(`${t("BATTLES_COUNT")}: ${wr.battles} | ${t("DAMAGE_TOTAL")}: ${wr.damageDealt} DMG | ${t("KILLS_COUNT")}: ${wr.kills}`, mx + 24, curY + 16, "#ff6060", 1);
 
       const entId = Number(wr.id);
-      drawNESButton(mx + mw - 110, curY + 4, 90, 22, "INSPECT", false, false);
+      drawNESButton(mx + mw - 110, curY + 4, 90, 22, t("INSPECT"), false, false);
       registerClickableRegion(mx + mw - 110, curY + 4, 90, 22, () => {
         lastSelectedId = entId;
         dossierTab = "OVERVIEW";
@@ -6102,12 +6137,10 @@ function renderWarPanelModal(mx, my, mw, mh) {
     }
   }
 
-  // TAB 3: PACIFISTS RANKING
+  // GLOBAL TAB 3: TOP PACIFISTAS MUNDIAIS
   else if (warPanelTab === "PACIFISTS") {
     const pacMap = new Map();
-    const targetWars = inspectingWarRecord ? [inspectingWarRecord] : wars;
-
-    for (const w of targetWars) {
+    for (const w of wars) {
       for (const [pId, entry] of Object.entries(w.pacifists || {})) {
         if (!pacMap.has(pId)) {
           pacMap.set(pId, { ...entry });
@@ -6123,19 +6156,10 @@ function renderWarPanelModal(mx, my, mw, mh) {
     const pacList = Array.from(pacMap.values());
     pacList.sort((a, b) => (b.relationBoost * 2 + b.diplomaticMissions * 15 + b.positiveInteractions * 5) - (a.relationBoost * 2 + a.diplomaticMissions * 15 + a.positiveInteractions * 5));
 
-    const scopeTitle = inspectingWarRecord ? `FOR WAR: ${inspectingWarRecord.groupAName} VS ${inspectingWarRecord.groupBName}` : "ALL-TIME WORLD WARS";
-    drawText8x8(`TOP PACIFISTS & PEACEMAKERS (MAIORES PACIFISTAS) - ${scopeTitle}:`, mx + 24, contentY + 10, "#58d854", 1);
-
-    if (inspectingWarRecord) {
-      drawNESButton(mx + mw - 140, contentY + 6, 120, 20, "< ALL WARS", false, false);
-      registerClickableRegion(mx + mw - 140, contentY + 6, 120, 20, () => {
-        inspectingWarRecord = null;
-        warPanelScroll = 0;
-      });
-    }
+    drawText8x8(`${t("TOP_PACIFISTS_RANKING")}:`, mx + 24, contentY + 10, "#58d854", 1);
 
     if (pacList.length === 0) {
-      drawText8x8("NO DIPLOMATIC MISSIONS OR PEACEMAKING RECORDED IN SELECTED WARS YET.", mx + 24, contentY + 36, "#bcbcbc", 1);
+      drawText8x8(t("NO_PEACE_MISSIONS"), mx + 24, contentY + 36, "#bcbcbc", 1);
       return;
     }
 
@@ -6148,14 +6172,14 @@ function renderWarPanelModal(mx, my, mw, mh) {
     for (let i = warPanelScroll; i < Math.min(pacList.length, warPanelScroll + visibleCount); i++) {
       const pc = pacList[i];
       const rank = i + 1;
-      const rankBadge = rank === 1 ? "🕊️ #1" : (rank === 2 ? "🕊️ #2" : (rank === 3 ? "🕊️ #3" : `#${rank}`));
+      const rankBadge = `#${rank}`;
       const rCol = rank <= 3 ? "#58d854" : "#ffffff";
 
       drawText8x8(`${rankBadge} ${pc.name.toUpperCase()} (${pc.groupName})`, mx + 24, curY + 2, rCol, 1);
-      drawText8x8(`🤝 Peace Interactions: ${pc.positiveInteractions} | 📜 Missions: ${pc.diplomaticMissions} | 💖 Rel Boost: +${pc.relationBoost}`, mx + 24, curY + 16, "#3cbcfc", 1);
+      drawText8x8(`${t("PEACE_ACTS")}: ${pc.positiveInteractions} | ${t("MISSIONS_COUNT")}: ${pc.diplomaticMissions} | Rel Boost: +${pc.relationBoost}`, mx + 24, curY + 16, "#3cbcfc", 1);
 
       const entId = Number(pc.id);
-      drawNESButton(mx + mw - 110, curY + 4, 90, 22, "INSPECT", false, false);
+      drawNESButton(mx + mw - 110, curY + 4, 90, 22, t("INSPECT"), false, false);
       registerClickableRegion(mx + mw - 110, curY + 4, 90, 22, () => {
         lastSelectedId = entId;
         dossierTab = "OVERVIEW";
@@ -6166,20 +6190,15 @@ function renderWarPanelModal(mx, my, mw, mh) {
     }
   }
 
-  // TAB 4: VICTIMS & CASUALTIES (VÍTIMAS DE GUERRA)
+  // GLOBAL TAB 4: TODAS AS VÍTIMAS
   else if (warPanelTab === "VICTIMS") {
     const victimMap = new Map();
-    const targetWars = inspectingWarRecord ? [inspectingWarRecord] : wars;
-
-    for (const w of targetWars) {
-      // 1. Direct recorded victims dictionary
+    for (const w of wars) {
       for (const [vId, entry] of Object.entries(w.victims || {})) {
         if (!victimMap.has(vId)) {
           victimMap.set(vId, { ...entry });
         }
       }
-
-      // 2. Historical DEATH events registered in this war's eventIds
       if (typeof allEvents !== "undefined" && Array.isArray(allEvents) && Array.isArray(w.eventIds)) {
         for (const eid of w.eventIds) {
           const ev = (typeof eventsById !== "undefined" && eventsById.get) ? eventsById.get(eid) : allEvents.find(e => e.id === eid);
@@ -6189,16 +6208,15 @@ function renderWarPanelModal(mx, my, mw, mh) {
               const vicEnt = (typeof getEntityById === "function") ? getEntityById(vicId) : null;
               const killerId = ev.secondaryEntityId || ev.metadata?.killerId || null;
               const killerEnt = killerId ? ((typeof getEntityById === "function") ? getEntityById(killerId) : null) : null;
-              const gName = vicEnt?.properties?.group?.name || (vicId && w.groupAId ? (w.groupAName) : "Unknown Clan");
 
               victimMap.set(String(vicId), {
                 id: vicId,
-                name: ev.metadata?.victimName || ev.metadata?.name || vicEnt?.properties?.name || `Victim #${vicId}`,
-                groupName: vicEnt?.properties?.group?.name || ev.metadata?.groupName || "War Faction",
+                name: ev.metadata?.victimName || ev.metadata?.name || vicEnt?.properties?.name || `${t("TAB_VICTIMS")} #${vicId}`,
+                groupName: vicEnt?.properties?.group?.name || ev.metadata?.groupName || t("CLAN_LABEL"),
                 species: ev.metadata?.species || vicEnt?.properties?.species || "humanoid",
                 killerId: killerId,
-                killerName: ev.metadata?.killerName || killerEnt?.properties?.name || (killerId ? `Fighter #${killerId}` : "Battlefield Wounds"),
-                killerGroupName: killerEnt?.properties?.group?.name || "Opposing Forces",
+                killerName: ev.metadata?.killerName || killerEnt?.properties?.name || (killerId ? `Combatente #${killerId}` : "Ferimentos de Guerra"),
+                killerGroupName: killerEnt?.properties?.group?.name || "Clã Oponente",
                 deathTick: ev.tick || 0,
                 eventId: ev.id
               });
@@ -6211,19 +6229,10 @@ function renderWarPanelModal(mx, my, mw, mh) {
     const victimList = Array.from(victimMap.values());
     victimList.sort((a, b) => (b.deathTick || 0) - (a.deathTick || 0));
 
-    const scopeTitle = inspectingWarRecord ? `FOR WAR: ${inspectingWarRecord.groupAName} VS ${inspectingWarRecord.groupBName}` : "ALL-TIME WAR CASUALTIES";
-    drawText8x8(`WAR CASUALTIES & FALLEN (VÍTIMAS DA GUERRA) - ${scopeTitle}:`, mx + 24, contentY + 10, "#ff4444", 1);
-
-    if (inspectingWarRecord) {
-      drawNESButton(mx + mw - 140, contentY + 6, 120, 20, "< ALL WARS", false, false);
-      registerClickableRegion(mx + mw - 140, contentY + 6, 120, 20, () => {
-        inspectingWarRecord = null;
-        warPanelScroll = 0;
-      });
-    }
+    drawText8x8(`${t("VICTIMS_CASUALTIES_GLOBAL")} (${victimList.length} ${t("DEATHS")}):`, mx + 24, contentY + 10, "#ff4444", 1);
 
     if (victimList.length === 0) {
-      drawText8x8("NO CASUALTIES OR FALLEN RECORDED IN SELECTED CONFLICTS YET.", mx + 24, contentY + 36, "#bcbcbc", 1);
+      drawText8x8(t("NO_CASUALTIES_WARS"), mx + 24, contentY + 36, "#bcbcbc", 1);
       return;
     }
 
@@ -6241,11 +6250,11 @@ function renderWarPanelModal(mx, my, mw, mh) {
         ctx.fillRect(mx + 16, curY - 2, mw - 32, rowH - 2);
       }
 
-      drawText8x8(`💀 [TICK ${vic.deathTick || 0}] ${vic.name.toUpperCase()} (${vic.groupName})`, mx + 24, curY + 2, "#ff5050", 1);
-      drawText8x8(`Slain by: ${vic.killerName} (${vic.killerGroupName}) | Species: ${vic.species}`, mx + 24, curY + 18, "#bcbcbc", 1);
+      drawText8x8(`[TICK ${vic.deathTick || 0}] ${vic.name.toUpperCase()} (${vic.groupName})`, mx + 24, curY + 2, "#ff5050", 1);
+      drawText8x8(`${t("KILLED_BY")}: ${vic.killerName} (${vic.killerGroupName}) | ${t("SP_LABEL")}: ${vic.species}`, mx + 24, curY + 18, "#bcbcbc", 1);
 
       const entId = Number(vic.id);
-      drawNESButton(mx + mw - 110, curY + 6, 90, 22, "INSPECT", false, false);
+      drawNESButton(mx + mw - 110, curY + 6, 90, 22, t("INSPECT"), false, false);
       registerClickableRegion(mx + mw - 110, curY + 6, 90, 22, () => {
         lastSelectedId = entId;
         dossierTab = "OVERVIEW";
@@ -6256,27 +6265,20 @@ function renderWarPanelModal(mx, my, mw, mh) {
     }
   }
 
-  // TAB 5: WAR TIMELINE / EVENTS
+  // GLOBAL TAB 5: EVENTOS GLOBAIS DE GUERRA
   else if (warPanelTab === "EVENTS") {
-    let evIds = [];
-    if (inspectingWarRecord) {
-      evIds = inspectingWarRecord.eventIds || [];
-    } else {
-      const s = new Set();
-      for (const w of wars) {
-        for (const eid of (w.eventIds || [])) s.add(eid);
-      }
-      evIds = Array.from(s);
+    const s = new Set();
+    for (const w of wars) {
+      for (const eid of (w.eventIds || [])) s.add(eid);
     }
-
+    const evIds = Array.from(s);
     const warEvents = (allEvents || []).filter(e => evIds.includes(e.id));
     warEvents.sort((a, b) => (b.tick || 0) - (a.tick || 0));
 
-    const scopeTitle = inspectingWarRecord ? `FOR WAR: ${inspectingWarRecord.groupAName} VS ${inspectingWarRecord.groupBName}` : "ALL-TIME WAR TIMELINE";
-    drawText8x8(`WAR EVENTS CHRONICLE (${warEvents.length} EVENTS) - ${scopeTitle}:`, mx + 24, contentY + 10, "#ffd700", 1);
+    drawText8x8(`${t("GLOBAL_WAR_CHRONICLE")} (${warEvents.length} ${t("TAB_WAR_EVENTS")}):`, mx + 24, contentY + 10, "#ffd700", 1);
 
     if (warEvents.length === 0) {
-      drawText8x8("NO REGISTERED WORLD EVENTS FOR THIS WAR TIMELINE YET.", mx + 24, contentY + 36, "#bcbcbc", 1);
+      drawText8x8(t("NO_GLOBAL_WAR_EVENTS"), mx + 24, contentY + 36, "#bcbcbc", 1);
       return;
     }
 
@@ -6292,7 +6294,313 @@ function renderWarPanelModal(mx, my, mw, mh) {
       drawText8x8(`[TICK ${ev.tick}] [${ev.type}] ${ev.description}`, mx + 24, curY + 4, typeCol, 1);
 
       const curEv = ev;
-      drawNESButton(mx + mw - 110, curY + 2, 90, 20, "INSPECT", false, false);
+      drawNESButton(mx + mw - 110, curY + 2, 90, 20, t("INSPECT"), false, false);
+      registerClickableRegion(mx + mw - 110, curY + 2, 90, 20, () => {
+        inspectingLogEvent = curEv;
+      });
+
+      curY += rowH;
+    }
+  }
+}
+
+/**
+ * VIEW B: Dedicated Single War Dossier (Dossiê Detalhado de uma Guerra)
+ */
+function renderSingleWarDossier(mx, my, mw, mh, war) {
+  // Top Header with Back button and Status
+  const isAct = war.status === "ACTIVE";
+  const statusBadge = isAct ? t("WAR_ACTIVE") : `${t("WAR_ENDED")} (${war.status})`;
+  const statusCol = isAct ? "#ff2040" : (war.status === "DECISIVE_VICTORY" ? "#ffd700" : "#58d854");
+  const durTicks = (war.endTick || currentTick) - (war.startTick || 0);
+
+  drawText8x8(`${t("WAR_DOSSIER")}: ${war.groupAName.toUpperCase()} VS ${war.groupBName.toUpperCase()}`, mx + 16, my + 14, "#ffd700", 1);
+  drawText8x8(`[${statusBadge}] • ${t("TIME")}: ${durTicks} TICKS`, mx + 16, my + 28, statusCol, 1);
+
+  // Dedicated War Dossier Tabs: [VISÃO GERAL] [GUERREIROS] [VÍTIMAS] [PACIFISTAS] [CRÔNICA]
+  const dossierTabs = [
+    { id: "OVERVIEW", label: t("VIEW") },
+    { id: "WARRIORS", label: `${t("TAB_WARRIORS")} (${Object.keys(war.warriors || {}).length})` },
+    { id: "VICTIMS", label: `${t("TAB_VICTIMS")} (${Object.keys(war.victims || {}).length})` },
+    { id: "PACIFISTS", label: `${t("TAB_PACIFISTS")} (${Object.keys(war.pacifists || {}).length})` },
+    { id: "TIMELINE", label: `${t("TAB_WAR_TIMELINE")} (${(war.eventIds || []).length})` }
+  ];
+
+  let tX = mx + 16;
+  for (const tTab of dossierTabs) {
+    const isTabAct = warDossierTab === tTab.id;
+    const tw = tTab.label.length * 8 + 14;
+    drawNESButton(tX, my + 44, tw, 22, tTab.label, isTabAct, false);
+    const tid = tTab.id;
+    registerClickableRegion(tX, my + 44, tw, 22, () => {
+      warDossierTab = tid;
+      warPanelScroll = 0;
+    });
+    tX += tw + 6;
+  }
+
+  // "< VOLTAR" to All Wars button
+  drawNESButton(mx + mw - 250, my + 6, 120, 24, t("ALL_WARS"), false, false);
+  registerClickableRegion(mx + mw - 250, my + 6, 120, 24, () => {
+    inspectingWarRecord = null;
+    warPanelScroll = 0;
+  });
+
+  // Scroll Buttons
+  drawNESButton(mx + mw - 110, my + 6, 32, 24, "▲", false, false);
+  registerClickableRegion(mx + mw - 110, my + 6, 32, 24, () => {
+    warPanelScroll = Math.max(0, warPanelScroll - 2);
+  });
+  drawNESButton(mx + mw - 70, my + 6, 32, 24, "▼", false, false);
+  registerClickableRegion(mx + mw - 70, my + 6, 32, 24, () => {
+    warPanelScroll = Math.max(0, warPanelScroll + 2);
+  });
+
+  // [X] Close Button (closes war panel)
+  drawNESButton(mx + mw - 32, my + 6, 26, 24, "X", false, true);
+  registerClickableRegion(mx + mw - 32, my + 6, 26, 24, () => {
+    currentMode = "MAP";
+    inspectingWarRecord = null;
+  });
+
+  const contentY = my + 72;
+  const contentH = (my + mh - 12) - contentY;
+  drawNESBox(mx + 12, contentY, mw - 24, contentH);
+
+  // DOSSIER TAB 1: VISÃO GERAL / PLACAR
+  if (warDossierTab === "OVERVIEW") {
+    // Top Scoreboard
+    const boxW = Math.floor((mw - 60) / 2);
+    const boxH = 110;
+
+    // Clan A Box
+    drawNESBox(mx + 20, contentY + 12, boxW, boxH);
+    drawText8x8(`[A]: ${war.groupAName.toUpperCase()}`, mx + 30, contentY + 22, "#ff5050", 1);
+    const warriorsA = Object.values(war.warriors || {}).filter(w => w.groupName === war.groupAName);
+    const victimsA = Object.values(war.victims || {}).filter(v => v.groupName === war.groupAName);
+    const dmgA = warriorsA.reduce((sum, w) => sum + (w.damageDealt || 0), 0);
+    const killsA = warriorsA.reduce((sum, w) => sum + (w.kills || 0), 0);
+    drawText8x8(`${t("COMBATANTS")}: ${warriorsA.length} | ${t("CASUALTIES")}: ${victimsA.length}`, mx + 30, contentY + 42, "#ffffff", 1);
+    drawText8x8(`${t("DAMAGE_INFLICTED")}: ${dmgA} DMG | ${t("ENEMIES_KILLED")}: ${killsA}`, mx + 30, contentY + 62, "#ffd700", 1);
+    if (war.winnerName === war.groupAName) {
+      drawText8x8(t("WAR_WINNER"), mx + 30, contentY + 84, "#58d854", 1);
+    }
+
+    // Clan B Box
+    drawNESBox(mx + 28 + boxW, contentY + 12, boxW, boxH);
+    drawText8x8(`[B]: ${war.groupBName.toUpperCase()}`, mx + 38 + boxW, contentY + 22, "#3cbcfc", 1);
+    const warriorsB = Object.values(war.warriors || {}).filter(w => w.groupName === war.groupBName);
+    const victimsB = Object.values(war.victims || {}).filter(v => v.groupName === war.groupBName);
+    const dmgB = warriorsB.reduce((sum, w) => sum + (w.damageDealt || 0), 0);
+    const killsB = warriorsB.reduce((sum, w) => sum + (w.kills || 0), 0);
+    drawText8x8(`${t("COMBATANTS")}: ${warriorsB.length} | ${t("CASUALTIES")}: ${victimsB.length}`, mx + 38 + boxW, contentY + 42, "#ffffff", 1);
+    drawText8x8(`${t("DAMAGE_INFLICTED")}: ${dmgB} DMG | ${t("ENEMIES_KILLED")}: ${killsB}`, mx + 38 + boxW, contentY + 62, "#ffd700", 1);
+    if (war.winnerName === war.groupBName) {
+      drawText8x8(t("WAR_WINNER"), mx + 38 + boxW, contentY + 84, "#58d854", 1);
+    }
+
+    // War Details Summary Table
+    const sumY = contentY + 134;
+    drawText8x8(`${t("WAR_GENERAL_STATS")}:`, mx + 24, sumY, "#ffd700", 1);
+    drawText8x8(`• ${t("START")}: Tick ${war.startTick || 0}${war.endTick ? ` | ${t("END")}: Tick ${war.endTick}` : ` | ${t("STATUS_LABEL")}: ${t("STATUS_IN_PROGRESS")}`}`, mx + 24, sumY + 20, "#ffffff", 1);
+    drawText8x8(`• ${t("TOTAL_CASUALTIES_REG")}: ${Object.keys(war.victims || {}).length}`, mx + 24, sumY + 36, "#ff6060", 1);
+    drawText8x8(`• ${t("PEACE_ATTEMPTS_REG")}: ${Object.keys(war.pacifists || {}).length}`, mx + 24, sumY + 52, "#58d854", 1);
+    drawText8x8(`• ${t("TOTAL_WAR_EVENTS_REG")}: ${(war.eventIds || []).length}`, mx + 24, sumY + 68, "#bcbcbc", 1);
+
+    // Quick Action Buttons
+    drawNESButton(mx + 24, sumY + 100, 160, 26, t("TAB_WARRIORS"), false, false);
+    registerClickableRegion(mx + 24, sumY + 100, 160, 26, () => {
+      warDossierTab = "WARRIORS";
+      warPanelScroll = 0;
+    });
+
+    drawNESButton(mx + 200, sumY + 100, 160, 26, t("TAB_VICTIMS"), false, false);
+    registerClickableRegion(mx + 200, sumY + 100, 160, 26, () => {
+      warDossierTab = "VICTIMS";
+      warPanelScroll = 0;
+    });
+
+    drawNESButton(mx + 376, sumY + 100, 160, 26, t("TAB_WAR_TIMELINE"), false, false);
+    registerClickableRegion(mx + 376, sumY + 100, 160, 26, () => {
+      warDossierTab = "TIMELINE";
+      warPanelScroll = 0;
+    });
+  }
+
+  // DOSSIER TAB 2: GUERREIROS DESTA GUERRA
+  else if (warDossierTab === "WARRIORS") {
+    const warriorList = Object.values(war.warriors || {});
+    warriorList.sort((a, b) => (b.damageDealt + b.kills * 50 + b.battles * 10) - (a.damageDealt + a.kills * 50 + a.battles * 10));
+
+    drawText8x8(`${t("TAB_WARRIORS")} (${warriorList.length}):`, mx + 24, contentY + 10, "#ffd700", 1);
+
+    if (warriorList.length === 0) {
+      drawText8x8(t("NO_COMBAT_DMG_REG"), mx + 24, contentY + 36, "#bcbcbc", 1);
+      return;
+    }
+
+    const rowH = 34;
+    const visibleCount = Math.floor((contentH - 44) / rowH);
+    const maxScroll = Math.max(0, warriorList.length - visibleCount);
+    warPanelScroll = Math.max(0, Math.min(maxScroll, warPanelScroll));
+
+    let curY = contentY + 34;
+    for (let i = warPanelScroll; i < Math.min(warriorList.length, warPanelScroll + visibleCount); i++) {
+      const wr = warriorList[i];
+      const rank = i + 1;
+      const rankBadge = `#${rank}`;
+      const rCol = rank <= 3 ? "#ffd700" : "#ffffff";
+
+      drawText8x8(`${rankBadge} ${wr.name.toUpperCase()} (${wr.groupName})`, mx + 24, curY + 2, rCol, 1);
+      drawText8x8(`${t("BATTLES_COUNT")}: ${wr.battles} | ${t("DAMAGE_TOTAL")}: ${wr.damageDealt} DMG | ${t("KILLS_COUNT")}: ${wr.kills}`, mx + 24, curY + 16, "#ff6060", 1);
+
+      const entId = Number(wr.id);
+      drawNESButton(mx + mw - 110, curY + 4, 90, 22, t("INSPECT"), false, false);
+      registerClickableRegion(mx + mw - 110, curY + 4, 90, 22, () => {
+        lastSelectedId = entId;
+        dossierTab = "OVERVIEW";
+        currentMode = "INSPECT";
+      });
+
+      curY += rowH;
+    }
+  }
+
+  // DOSSIER TAB 3: VÍTIMAS E BAIXAS DESTA GUERRA
+  else if (warDossierTab === "VICTIMS") {
+    const victimMap = new Map();
+    for (const [vId, entry] of Object.entries(war.victims || {})) {
+      if (!victimMap.has(vId)) victimMap.set(vId, { ...entry });
+    }
+    if (typeof allEvents !== "undefined" && Array.isArray(allEvents) && Array.isArray(war.eventIds)) {
+      for (const eid of war.eventIds) {
+        const ev = (typeof eventsById !== "undefined" && eventsById.get) ? eventsById.get(eid) : allEvents.find(e => e.id === eid);
+        if (ev && (ev.opcode === 2 || ev.type === "DEATH")) {
+          const vicId = ev.primaryEntityId;
+          if (vicId && !victimMap.has(String(vicId))) {
+            const vicEnt = (typeof getEntityById === "function") ? getEntityById(vicId) : null;
+            const killerId = ev.secondaryEntityId || ev.metadata?.killerId || null;
+            const killerEnt = killerId ? ((typeof getEntityById === "function") ? getEntityById(killerId) : null) : null;
+            victimMap.set(String(vicId), {
+              id: vicId,
+              name: ev.metadata?.victimName || ev.metadata?.name || vicEnt?.properties?.name || `${t("TAB_VICTIMS")} #${vicId}`,
+              groupName: vicEnt?.properties?.group?.name || ev.metadata?.groupName || t("CLAN_LABEL"),
+              species: ev.metadata?.species || vicEnt?.properties?.species || "humanoid",
+              killerId: killerId,
+              killerName: ev.metadata?.killerName || killerEnt?.properties?.name || (killerId ? `Combatente #${killerId}` : "Ferimentos de Batalha"),
+              killerGroupName: killerEnt?.properties?.group?.name || "Clã Oponente",
+              deathTick: ev.tick || 0,
+              eventId: ev.id
+            });
+          }
+        }
+      }
+    }
+
+    const victimList = Array.from(victimMap.values());
+    victimList.sort((a, b) => (b.deathTick || 0) - (a.deathTick || 0));
+
+    drawText8x8(`${t("WAR_CASUALTIES_VICTIMS")} (${victimList.length}):`, mx + 24, contentY + 10, "#ff4444", 1);
+
+    if (victimList.length === 0) {
+      drawText8x8(t("NO_CASUALTIES_REG"), mx + 24, contentY + 36, "#bcbcbc", 1);
+      return;
+    }
+
+    const rowH = 36;
+    const visibleCount = Math.floor((contentH - 44) / rowH);
+    const maxScroll = Math.max(0, victimList.length - visibleCount);
+    warPanelScroll = Math.max(0, Math.min(maxScroll, warPanelScroll));
+
+    let curY = contentY + 34;
+    for (let i = warPanelScroll; i < Math.min(victimList.length, warPanelScroll + visibleCount); i++) {
+      const vic = victimList[i];
+      const isHover = mouseX >= mx + 16 && mouseX <= mx + mw - 16 && mouseY >= curY - 2 && mouseY <= curY + rowH - 4;
+      if (isHover) {
+        ctx.fillStyle = "#221018";
+        ctx.fillRect(mx + 16, curY - 2, mw - 32, rowH - 2);
+      }
+
+      drawText8x8(`[TICK ${vic.deathTick || 0}] ${vic.name.toUpperCase()} (${vic.groupName})`, mx + 24, curY + 2, "#ff5050", 1);
+      drawText8x8(`${t("KILLED_BY")}: ${vic.killerName} (${vic.killerGroupName}) | ${t("SP_LABEL")}: ${vic.species}`, mx + 24, curY + 18, "#bcbcbc", 1);
+
+      const entId = Number(vic.id);
+      drawNESButton(mx + mw - 110, curY + 6, 90, 22, t("INSPECT"), false, false);
+      registerClickableRegion(mx + mw - 110, curY + 6, 90, 22, () => {
+        lastSelectedId = entId;
+        dossierTab = "OVERVIEW";
+        currentMode = "INSPECT";
+      });
+
+      curY += rowH;
+    }
+  }
+
+  // DOSSIER TAB 4: PACIFISTAS DESTA GUERRA
+  else if (warDossierTab === "PACIFISTS") {
+    const pacList = Object.values(war.pacifists || {});
+    pacList.sort((a, b) => (b.relationBoost * 2 + b.diplomaticMissions * 15 + b.positiveInteractions * 5) - (a.relationBoost * 2 + a.diplomaticMissions * 15 + a.positiveInteractions * 5));
+
+    drawText8x8(`${t("PACIFISTS_OF_WAR")} (${pacList.length}):`, mx + 24, contentY + 10, "#58d854", 1);
+
+    if (pacList.length === 0) {
+      drawText8x8(t("NO_PEACE_ACTS_REG"), mx + 24, contentY + 36, "#bcbcbc", 1);
+      return;
+    }
+
+    const rowH = 34;
+    const visibleCount = Math.floor((contentH - 44) / rowH);
+    const maxScroll = Math.max(0, pacList.length - visibleCount);
+    warPanelScroll = Math.max(0, Math.min(maxScroll, warPanelScroll));
+
+    let curY = contentY + 34;
+    for (let i = warPanelScroll; i < Math.min(pacList.length, warPanelScroll + visibleCount); i++) {
+      const pc = pacList[i];
+      const rank = i + 1;
+      const rankBadge = `#${rank}`;
+      const rCol = rank <= 3 ? "#58d854" : "#ffffff";
+
+      drawText8x8(`${rankBadge} ${pc.name.toUpperCase()} (${pc.groupName})`, mx + 24, curY + 2, rCol, 1);
+      drawText8x8(`${t("PEACE_ACTS")}: ${pc.positiveInteractions} | ${t("MISSIONS_COUNT")}: ${pc.diplomaticMissions} | Rel Boost: +${pc.relationBoost}`, mx + 24, curY + 16, "#3cbcfc", 1);
+
+      const entId = Number(pc.id);
+      drawNESButton(mx + mw - 110, curY + 4, 90, 22, t("INSPECT"), false, false);
+      registerClickableRegion(mx + mw - 110, curY + 4, 90, 22, () => {
+        lastSelectedId = entId;
+        dossierTab = "OVERVIEW";
+        currentMode = "INSPECT";
+      });
+
+      curY += rowH;
+    }
+  }
+
+  // DOSSIER TAB 5: LINHA DO TEMPO / EVENTOS DA GUERRA
+  else if (warDossierTab === "TIMELINE") {
+    const evIds = war.eventIds || [];
+    const warEvents = (allEvents || []).filter(e => evIds.includes(e.id));
+    warEvents.sort((a, b) => (b.tick || 0) - (a.tick || 0));
+
+    drawText8x8(`${t("TIMELINE_OF_WAR")} (${warEvents.length}):`, mx + 24, contentY + 10, "#ffd700", 1);
+
+    if (warEvents.length === 0) {
+      drawText8x8(t("NO_WAR_CHRONICLE_EVENTS"), mx + 24, contentY + 36, "#bcbcbc", 1);
+      return;
+    }
+
+    const rowH = 32;
+    const visibleCount = Math.floor((contentH - 44) / rowH);
+    const maxScroll = Math.max(0, warEvents.length - visibleCount);
+    warPanelScroll = Math.max(0, Math.min(maxScroll, warPanelScroll));
+
+    let curY = contentY + 34;
+    for (let i = warPanelScroll; i < Math.min(warEvents.length, warPanelScroll + visibleCount); i++) {
+      const ev = warEvents[i];
+      const typeCol = ev.type === "DEATH" ? "#ff2040" : (ev.type === "ATTACK" ? "#ffd700" : "#3cbcfc");
+      drawText8x8(`[TICK ${ev.tick}] [${ev.type}] ${ev.description}`, mx + 24, curY + 4, typeCol, 1);
+
+      const curEv = ev;
+      drawNESButton(mx + mw - 110, curY + 2, 90, 20, t("INSPECT"), false, false);
       registerClickableRegion(mx + mw - 110, curY + 2, 90, 20, () => {
         inspectingLogEvent = curEv;
       });
@@ -6493,20 +6801,31 @@ function renderLogsModal() {
 
   const list = getFilteredLogs();
   const titleStr = logFilter === "BATTLES"
-    ? `BATTLES & WAR FORENSICS (${list.length} BATTLES DETECTED)`
-    : `WORLD CHRONICLE LOG (${list.length} EVENTS)`;
+    ? `${t("BATTLES_FORENSICS")} (${list.length})`
+    : `${t("WORLD_CHRONICLES")} (${list.length})`;
   drawText8x8(titleStr, mx + 16, my + 14, "#f8b800", 1);
 
   // Filter Buttons
-  const filters = ["ALL", "BATTLES", "KILL", "ATTACK", "RELATION", "DIALOGUE", "AMPUTATION", "BIRTH", "DEATH", "BUILD"];
+  const filters = [
+    { id: "ALL", label: t("FILTER_ALL") },
+    { id: "BATTLES", label: t("FILTER_BATTLES") },
+    { id: "KILL", label: t("FILTER_KILLS") },
+    { id: "ATTACK", label: t("FILTER_ATTACKS") },
+    { id: "RELATION", label: t("FILTER_RELATIONS") },
+    { id: "DIALOGUE", label: t("FILTER_DIALOGUES") },
+    { id: "AMPUTATION", label: t("FILTER_AMPUTATIONS") },
+    { id: "BIRTH", label: t("FILTER_BIRTHS") },
+    { id: "DEATH", label: t("FILTER_DEATHS") },
+    { id: "BUILD", label: t("FILTER_BUILDS") }
+  ];
   let fx = mx + 16;
   for (const f of filters) {
     if (fx + 45 > mx + mw - 16) break;
-    const isAct = logFilter === f;
-    const flabel = isMobile ? f.slice(0, 4) : f;
+    const isAct = logFilter === f.id;
+    const flabel = isMobile ? f.label.slice(0, 4) : f.label;
     const fw = flabel.length * 8 + 14;
     drawNESButton(fx, my + 36, fw, 22, flabel, isAct, false);
-    const filterKey = f;
+    const filterKey = f.id;
     registerClickableRegion(fx, my + 36, fw, 22, () => {
       logFilter = filterKey;
       modalScroll = 0;
@@ -6524,7 +6843,7 @@ function renderLogsModal() {
     // BATTLES & WARS LIST
     // -------------------------------------------------------------------------
     if (list.length === 0) {
-      drawText8x8("NO COMBAT BATTLES OR SKIRMISHES RECORDED YET.", mx + 24, tableY + 24, "#bcbcbc", 1);
+      drawText8x8(t("NO_BATTLES_RECORDED"), mx + 24, tableY + 24, "#bcbcbc", 1);
     } else {
       const rowH = 34;
       const visibleRows = Math.floor((tableH - 20) / rowH);
@@ -6541,35 +6860,35 @@ function renderLogsModal() {
           ctx.fillRect(mx + 12, rowY, mw - 24, rowH - 2);
 
           const tipLines = [
-            `Location: [X:${battle.location.x}, Y:${battle.location.y}]`,
-            `Initiator: ${battle.initiator.name} (${battle.initiator.clan})`,
-            `Defender: ${battle.defender.name} (${battle.defender.clan})`,
-            `Trigger: ${battle.triggerCause}`,
-            `Strikes: ${battle.attacksCount}x | Damage: ${Math.round(battle.totalDamage)} HP`,
-            `Casualties: ${battle.amputations.length} amputations, ${battle.fatalities.length} fatalities`
+            `${t("TIP_LOCATION")} [X:${battle.location.x}, Y:${battle.location.y}]`,
+            `${t("TIP_INITIATOR")} ${battle.initiator.name} (${battle.initiator.clan})`,
+            `${t("TIP_DEFENDER")} ${battle.defender.name} (${battle.defender.clan})`,
+            `${t("TIP_TRIGGER")} ${battle.triggerCause}`,
+            `${t("TIP_STRIKES")} ${battle.attacksCount}x | ${t("TIP_DAMAGE")} ${Math.round(battle.totalDamage)} HP`,
+            `${t("TIP_CASUALTIES")} ${battle.amputations.length} ${t("TIP_AMPUTATIONS")}, ${battle.fatalities.length} ${t("TIP_DEATHS")}`
           ];
-          setHoverTooltip(`Battle #${battle.id}: ${battle.name}`, tipLines);
+          setHoverTooltip(t("BATTLE_EVENT", { id: battle.id, name: battle.name }), tipLines);
         }
 
         const ts = battle.timestamp ? `D${battle.timestamp.day} ${String(battle.timestamp.hour).padStart(2, "0")}:${String(battle.timestamp.minute).padStart(2, "0")}` : `T${battle.startTick}`;
         drawText8x8(ts, mx + 18, rowY + 5, "#bcbcbc", 1);
-        drawText8x8(`[BATTLE #${battle.id}]`, mx + 110, rowY + 5, "#f83800", 1);
+        drawText8x8(`[${t("BATTLE_BADGE", { id: battle.id })}]`, mx + 110, rowY + 5, "#f83800", 1);
 
-        const battleHeader = `${battle.name} • [${battle.combatants.length} FIGHTERS • ${Math.round(battle.totalDamage)} DMG]`;
+        const battleHeader = `${battle.name} • [${battle.combatants.length} ${t("FIGHTERS_LABEL")} • ${Math.round(battle.totalDamage)} ${t("DAMAGE_TOTAL")}]`;
         drawText8x8(battleHeader.slice(0, Math.floor((mw - 380) / 8)), mx + 245, rowY + 5, "#ffd700", 1);
 
-        const causeShort = `TRIGGER: ${battle.triggerCause}`.slice(0, Math.floor((mw - 380) / 8));
+        const causeShort = `${t("CAUSE_TRIGGER")}: ${battle.triggerCause}`.slice(0, Math.floor((mw - 380) / 8));
         drawText8x8(causeShort, mx + 245, rowY + 18, "#bcbcbc", 1);
 
         const curBattle = battle;
         // Inspect Button
-        drawNESButton(mx + mw - 170, rowY + 4, 80, 24, "INSPECT", false, false);
+        drawNESButton(mx + mw - 170, rowY + 4, 80, 24, t("INSPECT"), false, false);
         registerClickableRegion(mx + mw - 170, rowY + 4, 80, 24, () => {
           inspectingBattle = curBattle;
         });
 
         // Map Button
-        drawNESButton(mx + mw - 85, rowY + 4, 70, 24, "MAP", false, false);
+        drawNESButton(mx + mw - 85, rowY + 4, 70, 24, t("MAP"), false, false);
         registerClickableRegion(mx + mw - 85, rowY + 4, 70, 24, () => {
           focusLocation(curBattle.location.x, curBattle.location.y, 2.0);
         });
@@ -6602,19 +6921,19 @@ function renderLogsModal() {
 
         const actorId = ev.primaryEntityId !== null && ev.primaryEntityId !== undefined ? ev.primaryEntityId : (ev.metadata?.attackerId || ev.metadata?.killerId || ev.metadata?.primaryId);
         const targetId = ev.secondaryEntityId !== null && ev.secondaryEntityId !== undefined ? ev.secondaryEntityId : (ev.metadata?.targetId || ev.metadata?.victimId || ev.metadata?.secondaryId);
-        const actorName = ev.metadata?.attackerName || ev.metadata?.primaryName || (actorId ? (entityRegistry?.get(actorId)?.properties?.name || `Entity #${actorId}`) : null);
-        const targetName = ev.metadata?.targetName || ev.metadata?.victimName || ev.metadata?.secondaryName || (targetId ? (entityRegistry?.get(targetId)?.properties?.name || `Entity #${targetId}`) : null);
+        const actorName = ev.metadata?.attackerName || ev.metadata?.primaryName || (actorId ? (entityRegistry?.get(actorId)?.properties?.name || `Entidade #${actorId}`) : null);
+        const targetName = ev.metadata?.targetName || ev.metadata?.victimName || ev.metadata?.secondaryName || (targetId ? (entityRegistry?.get(targetId)?.properties?.name || `Entidade #${targetId}`) : null);
 
         const tipLines = [
-          `Type: [${ev.type}] (Event #${ev.id})`,
-          `Time: Day ${ev.timestamp?.day || 0} at ${String(ev.timestamp?.hour || 0).padStart(2, "0")}:${String(ev.timestamp?.minute || 0).padStart(2, "0")} (Tick ${ev.tick})`,
-          ev.location ? `Coordinates: [X: ${Math.floor(ev.location.x)}, Y: ${Math.floor(ev.location.y)}]` : "Coordinates: Global / Ambient",
-          actorName ? `Actor/Attacker: ${actorName}${actorId !== null && actorId !== undefined ? ` (ID: #${actorId})` : ""}` : (actorId !== null && actorId !== undefined ? `Actor ID: #${actorId}` : null),
-          targetName ? `Target/Victim: ${targetName}${targetId !== null && targetId !== undefined ? ` (ID: #${targetId})` : ""}` : (targetId !== null && targetId !== undefined ? `Target ID: #${targetId}` : null),
-          ev.metadata?.hitPartName ? `Hit: ${ev.metadata.hitPartName} (${Math.round(ev.metadata.totalDamage || ev.metadata.netDamage || 0)} DMG)` : null,
-          ev.metadata?.causedByBattleId ? `Succumbed to Battle #${ev.metadata.causedByBattleId} Wounds` : null
+          `${t("TIP_TYPE")} [${ev.type}] (${t("EVENT_SHORT", { id: ev.id })})`,
+          `${t("TIP_TIME")} ${t("DAY")} ${ev.timestamp?.day || 0} (${t("TICK")} ${ev.tick})`,
+          ev.location ? `${t("TIP_COORDINATES")} [X: ${Math.floor(ev.location.x)}, Y: ${Math.floor(ev.location.y)}]` : `${t("TIP_COORDINATES")} ${t("TIP_GLOBAL")}`,
+          actorName ? `${t("TIP_ACTOR")} ${actorName}${actorId !== null && actorId !== undefined ? ` (ID: #${actorId})` : ""}` : (actorId !== null && actorId !== undefined ? `${t("TIP_ACTOR_ID")} #${actorId}` : null),
+          targetName ? `${t("TIP_TARGET")} ${targetName}${targetId !== null && targetId !== undefined ? ` (ID: #${targetId})` : ""}` : (targetId !== null && targetId !== undefined ? `${t("TIP_TARGET_ID")} #${targetId}` : null),
+          ev.metadata?.hitPartName ? `${t("TIP_HIT")} ${ev.metadata.hitPartName} (${Math.round(ev.metadata.totalDamage || ev.metadata.netDamage || 0)} ${t("TIP_DMG")})` : null,
+          ev.metadata?.causedByBattleId ? t("TIP_SUCCUMBED", { id: ev.metadata.causedByBattleId }) : null
         ].filter(Boolean);
-        setHoverTooltip(`Event #${ev.id}`, tipLines);
+        setHoverTooltip(t("EVENT_SHORT", { id: ev.id }), tipLines);
       }
 
       const ts = ev.timestamp ? `D${ev.timestamp.day} ${String(ev.timestamp.hour).padStart(2, "0")}:${String(ev.timestamp.minute).padStart(2, "0")}` : `T${ev.tick}`;
@@ -6649,7 +6968,7 @@ function renderLogsModal() {
 }
 
 function renderBattleDetailView(mx, my, mw, mh, battle) {
-  drawText8x8(`BATTLE RECORD (#${battle.id}): ${battle.name}`, mx + 16, my + 14, "#f83800", 1);
+  drawText8x8(t("BATTLE_LOG_TITLE", { id: battle.id, name: battle.name }), mx + 16, my + 14, "#f83800", 1);
 
   // Close / Back button
   drawNESButton(mx + mw - 32, my + 6, 26, 24, "X", false, true);
@@ -6660,12 +6979,12 @@ function renderBattleDetailView(mx, my, mw, mh, battle) {
   // Top Summary Box
   drawNESBox(mx + 14, my + 38, mw - 28, 92);
 
-  const timeStr = `TIME: DAY ${battle.timestamp?.day || 0} (TICKS ${battle.startTick}..${battle.endTick})`;
+  const timeStr = `${t("TIME").toUpperCase()}: ${t("DAY").toUpperCase()} ${battle.timestamp?.day || 0} (${t("TICK").toUpperCase()}S ${battle.startTick}..${battle.endTick})`;
   drawText8x8(timeStr, mx + 26, my + 48, "#ffffff", 1);
-  drawText8x8(`LOCATION: [X: ${battle.location.x}, Y: ${battle.location.y}]`, mx + 340, my + 48, "#3cbcfc", 1);
+  drawText8x8(`${t("COORDINATES").toUpperCase()}: [X: ${battle.location.x}, Y: ${battle.location.y}]`, mx + 340, my + 48, "#3cbcfc", 1);
 
   // Initiator link
-  const initLabel = `INITIATOR: [${battle.initiator.name.toUpperCase()} (${battle.initiator.clan.toUpperCase()})]`;
+  const initLabel = `${t("INITIATOR")}: [${battle.initiator.name.toUpperCase()} (${battle.initiator.clan.toUpperCase()})]`;
   const isInitHover = mouseX >= mx + 26 && mouseX <= mx + 26 + initLabel.length * 8 && mouseY >= my + 64 && mouseY <= my + 78;
   drawText8x8(initLabel, mx + 26, my + 66, isInitHover ? "#ffd700" : "#58d854", 1);
   if (battle.initiator.id) {
@@ -6678,7 +6997,7 @@ function renderBattleDetailView(mx, my, mw, mh, battle) {
   }
 
   // Defender link
-  const defLabel = `DEFENDER: [${battle.defender.name.toUpperCase()} (${battle.defender.clan.toUpperCase()})]`;
+  const defLabel = `${t("DEFENDER")}: [${battle.defender.name.toUpperCase()} (${battle.defender.clan.toUpperCase()})]`;
   const isDefHover = mouseX >= mx + 380 && mouseX <= mx + 380 + defLabel.length * 8 && mouseY >= my + 64 && mouseY <= my + 78;
   drawText8x8(defLabel, mx + 380, my + 66, isDefHover ? "#ffd700" : "#3cbcfc", 1);
   if (battle.defender.id) {
@@ -6691,8 +7010,8 @@ function renderBattleDetailView(mx, my, mw, mh, battle) {
   }
 
   // Provocation / Estopim
-  drawText8x8(`CAUSE / TRIGGER: ${battle.triggerCause}`, mx + 26, my + 84, "#ffd700", 1);
-  drawText8x8(`TOTAL CASUALTIES: ${battle.amputations.length} AMPUTATIONS, ${battle.fatalities.length} FATALITIES • ${Math.round(battle.totalDamage)} TOTAL DAMAGE DEALT`, mx + 26, my + 102, "#f87858", 1);
+  drawText8x8(`${t("CAUSE_TRIGGER")}: ${battle.triggerCause}`, mx + 26, my + 84, "#ffd700", 1);
+  drawText8x8(`${t("TOTAL_CASUALTIES_LABEL")}: ${battle.amputations.length} ${t("AMPUTATIONS")}, ${battle.fatalities.length} ${t("DEATHS")} • ${Math.round(battle.totalDamage)} ${t("TOTAL_DAMAGE_DEALT")}`, mx + 26, my + 102, "#f87858", 1);
 
   // Combatants Roster & Strikes Timeline Split
   const splitY = my + 136;
@@ -6702,7 +7021,7 @@ function renderBattleDetailView(mx, my, mw, mh, battle) {
 
   // Left Box: Combatants Roster
   drawNESBox(mx + 14, splitY, halfW, splitH);
-  drawText8x8(`COMBATANTS PARTICIPATION (${battle.combatants.length}):`, mx + 24, splitY + 10, "#ffd700", 1);
+  drawText8x8(`${t("COMBATANTS_PARTICIPATING")} (${battle.combatants.length}):`, mx + 24, splitY + 10, "#ffd700", 1);
 
   let cY = splitY + 28;
   const cStart = Math.min(modalScroll, Math.max(0, battle.combatants.length - maxRows));
@@ -6710,15 +7029,15 @@ function renderBattleDetailView(mx, my, mw, mh, battle) {
     if (cY > splitY + splitH - 24) break;
     const c = battle.combatants[i];
     const isAlive = !c.isDead;
-    const statusBadge = isAlive ? "[ALIVE]" : "[DEAD]";
+    const statusBadge = isAlive ? `[${t("STATUS_ALIVE")}]` : `[${t("STATUS_DEAD")}]`;
     const statusCol = isAlive ? "#58d854" : "#f83800";
 
     drawText8x8(statusBadge, mx + 24, cY + 4, statusCol, 1);
     drawText8x8(`${c.name.slice(0, 16)} (${c.clan.slice(0, 10)})`, mx + 85, cY + 4, "#ffffff", 1);
-    drawText8x8(`${c.hitsDealt} HITS (${Math.round(c.damageDealt)} DMG)`, mx + halfW - 130, cY + 4, "#bcbcbc", 1);
+    drawText8x8(`${c.hitsDealt} ${t("HITS")} (${Math.round(c.damageDealt)} DMG)`, mx + halfW - 130, cY + 4, "#bcbcbc", 1);
 
     const curC = c;
-    drawNESButton(mx + halfW - 45, cY + 1, 40, 18, "VIEW", false, false);
+    drawNESButton(mx + halfW - 45, cY + 1, 40, 18, t("VIEW"), false, false);
     registerClickableRegion(mx + halfW - 45, cY + 1, 40, 18, () => {
       lastSelectedId = curC.id;
       currentMode = "INSPECT";
@@ -6730,7 +7049,7 @@ function renderBattleDetailView(mx, my, mw, mh, battle) {
 
   // Right Box: Timeline of Battle Events
   drawNESBox(mx + 14 + halfW + 6, splitY, halfW, splitH);
-  drawText8x8(`BATTLE TIMELINE (${battle.events.length} STRIKES/ACTIONS):`, mx + 24 + halfW + 6, splitY + 10, "#ffd700", 1);
+  drawText8x8(`${t("TIMELINE_ACTIONS")} (${battle.events.length} ${t("STRIKES_ACTIONS")}):`, mx + 24 + halfW + 6, splitY + 10, "#ffd700", 1);
 
   let eY = splitY + 28;
   const eStart = Math.min(modalScroll, Math.max(0, battle.events.length - maxRows));
@@ -6740,11 +7059,11 @@ function renderBattleDetailView(mx, my, mw, mh, battle) {
     const typeCol = ev.type === "DEATH" ? "#f83800" : ev.type === "AMPUTATION" ? "#e40058" : "#f8b800";
     drawText8x8(`[${ev.type}]`, mx + 24 + halfW + 6, eY + 4, typeCol, 1);
 
-    const desc = (ev.description || "Strike").slice(0, Math.floor((halfW - 80) / 8));
+    const desc = (ev.description || "Golpe").slice(0, Math.floor((halfW - 80) / 8));
     drawText8x8(desc, mx + 115 + halfW + 6, eY + 4, "#ffffff", 1);
 
     const curEv = ev;
-    drawNESButton(mx + halfW + halfW - 45, eY + 1, 36, 18, "LOG", false, false);
+    drawNESButton(mx + halfW + halfW - 45, eY + 1, 36, 18, "REG", false, false);
     registerClickableRegion(mx + halfW + halfW - 45, eY + 1, 36, 18, () => {
       inspectingLogEvent = curEv;
     });
@@ -6753,19 +7072,19 @@ function renderBattleDetailView(mx, my, mw, mh, battle) {
   }
 
   // Bottom Action Bar
-  drawNESButton(mx + 20, my + mh - 44, 180, 28, "JUMP TO BATTLE MAP", false, false);
+  drawNESButton(mx + 20, my + mh - 44, 180, 28, t("JUMP_TO_MAP"), false, false);
   registerClickableRegion(mx + 20, my + mh - 44, 180, 28, () => {
     focusLocation(battle.location.x, battle.location.y, 2.0);
   });
 
-  drawNESButton(mx + mw - 150, my + mh - 44, 130, 28, "BACK TO LOGS", false, false);
-  registerClickableRegion(mx + mw - 150, my + mh - 44, 130, 28, () => {
+  drawNESButton(mx + mw - 160, my + mh - 44, 140, 28, t("BACK_TO_LOGS"), false, false);
+  registerClickableRegion(mx + mw - 160, my + mh - 44, 140, 28, () => {
     inspectingBattle = null;
   });
 }
 
 function renderRelationshipModal(mx, my, mw, mh, rel) {
-  drawText8x8(`RELATIONSHIP DOSSIER: ${rel.entA.name.toUpperCase()} & ${rel.entB.name.toUpperCase()}`, mx + 16, my + 14, "#f8b800", 1);
+  drawText8x8(`${t("RELATIONSHIP_DOSSIER")}: ${rel.entA.name.toUpperCase()} & ${rel.entB.name.toUpperCase()}`, mx + 16, my + 14, "#f8b800", 1);
 
   // Close X Button
   drawNESButton(mx + mw - 32, my + 6, 26, 24, "X", false, true);
@@ -6776,21 +7095,21 @@ function renderRelationshipModal(mx, my, mw, mh, rel) {
   // Top Status Box
   drawNESBox(mx + 14, my + 38, mw - 28, 80);
 
-  drawText8x8(`SENTIMENT STATUS: ${rel.statusLabel}`, mx + 26, my + 50, rel.statusColor, 1);
-  drawText8x8(`MUTUAL AFFINITY SCORE: ${rel.affinityScore > 0 ? "+" : ""}${rel.affinityScore}`, mx + 380, my + 50, "#ffd700", 1);
+  drawText8x8(`${t("SENTIMENT_STATUS")}: ${rel.statusLabel}`, mx + 26, my + 50, rel.statusColor, 1);
+  drawText8x8(`${t("MUTUAL_AFFINITY")}: ${rel.affinityScore > 0 ? "+" : ""}${rel.affinityScore}`, mx + 380, my + 50, "#ffd700", 1);
 
   const b = rel.breakdown;
-  const breakStr = `KISSES: ${b.kisses} | HUGS: ${b.hugs} | PRAISES: ${b.praises} | INSULTS: ${b.insults} | ATTACKS: ${b.attacks} | FABRICATED LIES: ${b.lies}`;
+  const breakStr = `BEIJOS: ${b.kisses} | ABRAÇOS: ${b.hugs} | ELOGIOS: ${b.praises} | INSULTOS: ${b.insults} | ATAQUES: ${b.attacks} | MENTIRAS: ${b.lies}`;
   drawText8x8(breakStr, mx + 26, my + 72, "#3cbcfc", 1);
 
   // Chronological Mutual History Box
   const listY = my + 124;
   const listH = mh - 176;
   drawNESBox(mx + 14, listY, mw - 28, listH);
-  drawText8x8(`SHARED INTERACTION CHRONICLE (${rel.events.length} TOTAL INTERACTIONS):`, mx + 24, listY + 10, "#ffd700", 1);
+  drawText8x8(`${t("CHRONICLE_MUTUAL_INTERACTIONS")} (${rel.events.length} ${t("INTERACTIONS")}):`, mx + 24, listY + 10, "#ffd700", 1);
 
   if (rel.events.length === 0) {
-    drawText8x8("NO DIRECT SOCIAL INTERACTIONS RECORDED BETWEEN THESE TWO CREATURES.", mx + 24, listY + 34, "#bcbcbc", 1);
+    drawText8x8(t("NO_MUTUAL_INTERACTIONS"), mx + 24, listY + 34, "#bcbcbc", 1);
   } else {
     let curY = listY + 30;
     for (let i = 0; i < rel.events.length; i++) {
@@ -6804,7 +7123,7 @@ function renderRelationshipModal(mx, my, mw, mh, rel) {
       drawText8x8((ev.description || "").slice(0, Math.floor((mw - 220) / 8)), mx + 220, curY + 4, "#ffffff", 1);
 
       const curEv = ev;
-      drawNESButton(mx + mw - 70, curY + 1, 48, 18, "INSPECT", false, false);
+      drawNESButton(mx + mw - 70, curY + 1, 48, 18, t("INSPECT"), false, false);
       registerClickableRegion(mx + mw - 70, curY + 1, 48, 18, () => {
         inspectingLogEvent = curEv;
       });
@@ -6819,7 +7138,7 @@ function renderRelationshipModal(mx, my, mw, mh, rel) {
   }
 
   // Bottom Back Button
-  drawNESButton(mx + mw - 180, my + mh - 44, 160, 28, "BACK TO EVENT", false, false);
+  drawNESButton(mx + mw - 180, my + mh - 44, 160, 28, t("BACK_TO_EVENT"), false, false);
   registerClickableRegion(mx + mw - 180, my + mh - 44, 160, 28, () => {
     inspectingRelationship = null;
   });
@@ -6828,7 +7147,7 @@ function renderRelationshipModal(mx, my, mw, mh, rel) {
 function renderLogDetailView(mx, my, mw, mh, ev) {
   const typeColor = ev.type === "KILL" ? "#ff2040" : ev.type === "DEATH" ? "#9c5050" : ev.type === "ATTACK" ? "#f8b800" : ev.type === "AMPUTATION" ? "#e40058" : ev.type === "RELATION" ? "#d3869b" : ev.type === "DIALOGUE" ? "#3cbcfc" : ev.type === "BIRTH" ? "#f8b800" : ev.type === "LIE" ? "#fa5078" : ev.type === "SPROUT" ? "#58d854" : "#ffffff";
 
-  drawText8x8(`EVENT DETAIL (#${ev.id})`, mx + 16, my + 14, "#f8b800", 1);
+  drawText8x8(`${t("EVENT_DETAIL")} (#${ev.id})`, mx + 16, my + 14, "#f8b800", 1);
 
   // Close X Button
   drawNESButton(mx + mw - 32, my + 6, 26, 24, "X", false, true);
@@ -6838,26 +7157,26 @@ function renderLogDetailView(mx, my, mw, mh, ev) {
 
   const isLie = ev.opcode === 18 || ev.type === "LIE" || !!ev.metadata?.isLie;
   if (isLie) {
-    drawText8x8("[FABRICATED LIE]", mx + 190, my + 14, "#fa5078", 1);
+    drawText8x8(t("FABRICATED_LIE"), mx + 200, my + 14, "#fa5078", 1);
   }
 
   // Detail Container Box
   drawNESBox(mx + 14, my + 38, mw - 28, mh - 50);
 
-  drawText8x8(`EVENT TYPE: [${ev.type}]`, mx + 30, my + 56, typeColor, 1);
+  drawText8x8(`${t("EVENT_TYPE")}: [${ev.type}]`, mx + 30, my + 56, typeColor, 1);
 
-  const ts = ev.timestamp ? `DAY ${ev.timestamp.day} ${String(ev.timestamp.hour).padStart(2, "0")}:${String(ev.timestamp.minute).padStart(2, "0")}` : `TICK ${ev.tick}`;
-  drawText8x8(`TIME: ${ts}`, mx + 30, my + 76, "#ffffff", 1);
+  const ts = ev.timestamp ? `${t("DAY")} ${ev.timestamp.day} ${String(ev.timestamp.hour).padStart(2, "0")}:${String(ev.timestamp.minute).padStart(2, "0")}` : `${t("TICK")} ${ev.tick}`;
+  drawText8x8(`${t("TIME")}: ${ts}`, mx + 30, my + 76, "#ffffff", 1);
 
   if (ev.location) {
-    drawText8x8(`COORDINATES: [X: ${Math.floor(ev.location.x)}, Y: ${Math.floor(ev.location.y)}]`, mx + 30, my + 96, "#bcbcbc", 1);
+    drawText8x8(`${t("COORDINATES")}: [X: ${Math.floor(ev.location.x)}, Y: ${Math.floor(ev.location.y)}]`, mx + 30, my + 96, "#bcbcbc", 1);
   }
 
   let entButtonX = mx + 30;
   if (ev.primaryEntityId !== null && ev.primaryEntityId !== undefined) {
     const pEnt = entityRegistry.get(ev.primaryEntityId);
-    const pName = (pEnt?.properties?.name || `Entity #${ev.primaryEntityId}`).slice(0, 16);
-    drawNESButton(entButtonX, my + 114, 180, 22, `ACTOR: ${pName.toUpperCase()}`, false, false);
+    const pName = (pEnt?.properties?.name || `Entidade #${ev.primaryEntityId}`).slice(0, 16);
+    drawNESButton(entButtonX, my + 114, 180, 22, `${t("AUTHOR")}: ${pName.toUpperCase()}`, false, false);
     registerClickableRegion(entButtonX, my + 114, 180, 22, () => {
       lastSelectedId = ev.primaryEntityId;
       currentMode = "INSPECT";
@@ -6868,8 +7187,8 @@ function renderLogDetailView(mx, my, mw, mh, ev) {
 
   if (ev.secondaryEntityId !== null && ev.secondaryEntityId !== undefined) {
     const sEnt = entityRegistry.get(ev.secondaryEntityId);
-    const sName = (sEnt?.properties?.name || `Entity #${ev.secondaryEntityId}`).slice(0, 16);
-    drawNESButton(entButtonX, my + 114, 180, 22, `TARGET: ${sName.toUpperCase()}`, false, false);
+    const sName = (sEnt?.properties?.name || `Entidade #${ev.secondaryEntityId}`).slice(0, 16);
+    drawNESButton(entButtonX, my + 114, 180, 22, `${t("TARGET_LABEL")}: ${sName.toUpperCase()}`, false, false);
     registerClickableRegion(entButtonX, my + 114, 180, 22, () => {
       lastSelectedId = ev.secondaryEntityId;
       currentMode = "INSPECT";
@@ -6882,7 +7201,7 @@ function renderLogDetailView(mx, my, mw, mh, ev) {
   if (ev.primaryEntityId && ev.secondaryEntityId && ev.primaryEntityId !== ev.secondaryEntityId) {
     const pId = ev.primaryEntityId;
     const sId = ev.secondaryEntityId;
-    drawNESButton(entButtonX, my + 114, 180, 22, "RELATIONSHIP DOSSIER", false, false);
+    drawNESButton(entButtonX, my + 114, 180, 22, t("RELATION"), false, false);
     registerClickableRegion(entButtonX, my + 114, 180, 22, () => {
       const rel = getRelationshipSummary(pId, sId, entityRegistry);
       if (rel) {
@@ -6896,7 +7215,7 @@ function renderLogDetailView(mx, my, mw, mh, ev) {
   const citedId = ev.metadata?.referencedEventId || ev.metadata?.gossipedEventId || ev.metadata?.realEventId || ev.metadata?.citedEventId;
   if (citedId) {
     const citedEv = getEventById(citedId);
-    const citedLabel = isLie ? `ORIGINAL TRUTH #${citedId}` : `GOSSIP TOPIC #${citedId}`;
+    const citedLabel = isLie ? `${t("ORIGINAL_TRUTH")} #${citedId}` : `${t("GOSSYPED_SUBJECT")} #${citedId}`;
     drawNESButton(entButtonX, my + 114, 180, 22, citedLabel, false, false);
     registerClickableRegion(entButtonX, my + 114, 180, 22, () => {
       if (citedEv) {
@@ -6912,10 +7231,10 @@ function renderLogDetailView(mx, my, mw, mh, ev) {
 
   // Full Unwrapped Narrative Box
   drawNESBox(mx + 30, my + 145, mw - 60, narrativeBoxH);
-  drawText8x8("FULL NARRATIVE LOG:", mx + 42, my + 158, "#f8b800", 1);
+  drawText8x8(`${t("FULL_NARRATIVE")}:`, mx + 42, my + 158, "#f8b800", 1);
 
   const maxCharsPerLine = Math.floor((mw - 84) / 8);
-  const wrappedLines = wrapText8x8((ev.description || "NO DESCRIPTION RECORDED.").toUpperCase(), maxCharsPerLine);
+  const wrappedLines = wrapText8x8((ev.description || t("NO_DESCRIPTION_RECORDED")).toUpperCase(), maxCharsPerLine);
   let narrativeY = my + 176;
 
   for (const wline of wrappedLines) {
@@ -6929,7 +7248,7 @@ function renderLogDetailView(mx, my, mw, mh, ev) {
     const citeBoxY = my + 145 + narrativeBoxH + 10;
     const citeBoxH = 72;
     drawNESBox(mx + 30, citeBoxY, mw - 60, citeBoxH);
-    drawText8x8(`CITATIONS & CHRONICLES (${citations.length}):`, mx + 42, citeBoxY + 8, "#f8b800", 1);
+    drawText8x8(`${t("CITATIONS_CHRONICLES")} (${citations.length}):`, mx + 42, citeBoxY + 8, "#f8b800", 1);
 
     let curCiteY = citeBoxY + 24;
     for (let i = 0; i < citations.length; i++) {
@@ -6938,11 +7257,11 @@ function renderLogDetailView(mx, my, mw, mh, ev) {
       const cTypeCol = cev.type === "LIE" ? "#fa5078" : cev.type === "KILL" ? "#ff2040" : cev.type === "DIALOGUE" ? "#3cbcfc" : "#f8b800";
       drawText8x8(`${ts} [${cev.type}]`, mx + 42, curCiteY + 4, cTypeCol, 1);
 
-      const cdesc = (cev.description || "Event").slice(0, 44).toUpperCase();
+      const cdesc = (cev.description || "Evento").slice(0, 44).toUpperCase();
       drawText8x8(cdesc, mx + 175, curCiteY + 4, "#bcbcbc", 1);
 
       const curCev = cev;
-      drawNESButton(mx + mw - 140, curCiteY, 90, 18, "INSPECT", false, false);
+      drawNESButton(mx + mw - 140, curCiteY, 90, 18, t("INSPECT"), false, false);
       registerClickableRegion(mx + mw - 140, curCiteY, 90, 18, () => {
         inspectingLogEvent = curCev;
       });
@@ -6954,13 +7273,13 @@ function renderLogDetailView(mx, my, mw, mh, ev) {
 
   // Action Buttons inside Detail view
   if (ev.location) {
-    drawNESButton(mx + 30, my + mh - 70, 200, 30, "JUMP TO LOCATION", false, false);
+    drawNESButton(mx + 30, my + mh - 70, 200, 30, t("JUMP_TO_MAP"), false, false);
     registerClickableRegion(mx + 30, my + mh - 70, 200, 30, () => {
       focusLocation(ev.location.x, ev.location.y, 2.0);
     });
   }
 
-  const backLabel = inspectingFromCreature ? "BACK TO CREATURE" : ((currentMode === "GROUPS" || inspectingGroup) ? "BACK TO CLAN" : "BACK TO LOGS");
+  const backLabel = inspectingFromCreature ? t("BACK_TO_CREATURE") : ((currentMode === "GROUPS" || inspectingGroup) ? t("BACK_TO_CLAN") : (currentMode === "WARS" ? t("BACK_TO_WARS") : t("BACK_TO_RECORDS")));
   drawNESButton(mx + mw - 190, my + mh - 70, 160, 30, backLabel, false, false);
   registerClickableRegion(mx + mw - 190, my + mh - 70, 160, 30, () => {
     inspectingLogEvent = null;
@@ -6992,7 +7311,7 @@ function renderCompactEditorPanel() {
   drawNESBox(px, py, pw, ph);
 
   // 2. Header Title & Close Button
-  drawText8x8("MAP EDITOR", px + 10, py + 10, "#f8b800", 1);
+  drawText8x8(t("MAP_EDITOR"), px + 10, py + 10, "#f8b800", 1);
   drawNESButton(px + pw - 22, py + 6, 16, 16, "X", false, true);
   registerClickableRegion(px + pw - 22, py + 6, 16, 16, () => {
     isEditorOpen = false;
@@ -7001,14 +7320,14 @@ function renderCompactEditorPanel() {
     isPainting = false;
   });
 
-  // 3. Category Tabs: [TILE] [FLORA] [BUILD] [MOBS] [ITEM] [TOOL]
+  // 3. Category Tabs: [TERRENO] [FLORA] [OBRAS] [MOBS] [ITENS] [FERRAM]
   const tabs = [
-    { id: "TILES", label: "TILE" },
-    { id: "NATURE", label: "FLORA" },
-    { id: "BUILD", label: "BUILD" },
-    { id: "CREATURES", label: "MOBS" },
-    { id: "ITEMS", label: "ITEM" },
-    { id: "TOOLS", label: "TOOL" }
+    { id: "TILES", label: t("TAB_TILES") },
+    { id: "NATURE", label: t("TAB_NATURE") },
+    { id: "BUILD", label: t("TAB_BUILD") },
+    { id: "CREATURES", label: t("TAB_MOBS") },
+    { id: "ITEMS", label: t("TAB_ITEMS") },
+    { id: "TOOLS", label: t("TAB_TOOLS") }
   ];
 
   const tabW = Math.floor((pw - 24) / tabs.length);
@@ -7032,7 +7351,7 @@ function renderCompactEditorPanel() {
 
   // TAB 1: TILES (Terrains & Roads)
   if (editorTab === "TILES") {
-    drawText8x8("TERRAINS & ROADS:", px + 14, contentY + 8, "#3cbcfc", 1);
+    drawText8x8(t("TERRAINS_ROADS"), px + 14, contentY + 8, "#3cbcfc", 1);
 
     const cols = 3;
     const colW = Math.floor((pw - 36) / cols);
@@ -7065,7 +7384,7 @@ function renderCompactEditorPanel() {
 
     // Brush Radius Selection
     const brushY = contentY + 114;
-    drawText8x8("BRUSH RADIUS:", px + 14, brushY, "#f8b800", 1);
+    drawText8x8(`${t("BRUSH_RADIUS")}:`, px + 14, brushY, "#f8b800", 1);
     const sizes = [1, 3, 5, 9];
     let bsizeX = px + 14;
     const bsizeW = Math.floor((pw - 36 - 12) / 4);
@@ -7114,12 +7433,12 @@ function renderCompactEditorPanel() {
     // Pagination buttons
     const pageY = contentY + 146;
     const halfBtnW = Math.floor((pw - 36) / 2);
-    drawNESButton(px + 14, pageY, halfBtnW, 22, "◀ PREV", false, false);
+    drawNESButton(px + 14, pageY, halfBtnW, 22, t("PREV_BTN"), false, false);
     registerClickableRegion(px + 14, pageY, halfBtnW, 22, () => {
       editorPage = (editorPage - 1 + maxPages) % maxPages;
     });
 
-    drawNESButton(px + 14 + halfBtnW + 6, pageY, halfBtnW, 22, "NEXT ▶", false, false);
+    drawNESButton(px + 14 + halfBtnW + 6, pageY, halfBtnW, 22, t("NEXT_BTN"), false, false);
     registerClickableRegion(px + 14 + halfBtnW + 6, pageY, halfBtnW, 22, () => {
       editorPage = (editorPage + 1) % maxPages;
     });
@@ -7127,40 +7446,40 @@ function renderCompactEditorPanel() {
 
   // TAB 2: NATURE & FLORA
   if (editorTab === "NATURE") {
-    renderPaginatedList("FLORA & RESOURCES", EDITOR_NATURE, "#58d854");
+    renderPaginatedList(t("FLORA_RESOURCES_HDR"), EDITOR_NATURE, "#58d854");
   }
 
   // TAB 3: BUILDINGS & STRUCTURES
   else if (editorTab === "BUILD") {
-    renderPaginatedList("STRUCTURES & WALLS", EDITOR_BUILDINGS, "#f8b800");
+    renderPaginatedList(t("STRUCTURES_WALLS"), EDITOR_BUILDINGS, "#f8b800");
   }
 
   // TAB 4: CREATURES / MOBS
   else if (editorTab === "CREATURES") {
-    renderPaginatedList("SPAWN MOBS", EDITOR_CREATURES, "#3cbcfc");
+    renderPaginatedList(t("SPAWN_MOBS"), EDITOR_CREATURES, "#3cbcfc");
   }
 
   // TAB 5: ITEMS & DISHES
   else if (editorTab === "ITEMS") {
-    renderPaginatedList("ITEMS & FOODS", EDITOR_ITEMS, "#f87858");
+    renderPaginatedList(t("ITEMS_FOOD"), EDITOR_ITEMS, "#f87858");
   }
 
   // TAB 6: TOOLS
   else if (editorTab === "TOOLS") {
-    drawText8x8("MAP TOOLS:", px + 14, contentY + 8, "#3cbcfc", 1);
+    drawText8x8(t("MAP_TOOLS"), px + 14, contentY + 8, "#3cbcfc", 1);
 
     const tools = [
-      { id: "PAINT", label: "TERRAIN BRUSH" },
-      { id: "EYEDROPPER", label: "EYEDROPPER (SAMPLE)" },
-      { id: "BULLDOZER", label: "BULLDOZER (DEMOLISH)" }
+      { id: "PAINT", label: t("TOOL_BRUSH") },
+      { id: "EYEDROPPER", label: t("TOOL_EYEDROPPER") },
+      { id: "BULLDOZER", label: t("TOOL_BULLDOZER") }
     ];
 
     let toolY = contentY + 22;
-    for (const t of tools) {
-      const isAct = editorTool === t.id;
-      drawNESButton(px + 14, toolY, pw - 28, 28, t.label, isAct, t.id === "BULLDOZER");
+    for (const tItem of tools) {
+      const isAct = editorTool === tItem.id;
+      drawNESButton(px + 14, toolY, pw - 28, 28, tItem.label, isAct, tItem.id === "BULLDOZER");
 
-      const toolId = t.id;
+      const toolId = tItem.id;
       registerClickableRegion(px + 14, toolY, pw - 28, 28, () => {
         editorTool = toolId;
         if (toolId !== "SPAWN") editorActiveSpawner = null;
@@ -7174,21 +7493,21 @@ function renderCompactEditorPanel() {
   const footerY = py + ph - 54;
   drawNESBox(px + 8, footerY, pw - 16, 46);
 
-  let activeStr = "NONE";
+  let activeStr = t("NONE");
   if (editorTool === "PAINT") {
-    const tileObj = EDITOR_TILES.find(t => t.id === editorSelectedTile);
+    const tileObj = EDITOR_TILES.find(tItem => tItem.id === editorSelectedTile);
     activeStr = `TILE: ${tileObj?.label || "TILE"} (${editorBrushSize}x${editorBrushSize})`;
   } else if (editorTool === "SPAWN") {
-    activeStr = `SPAWN: ${editorActiveSpawner?.label || "MOB"}`;
+    activeStr = `${t("SPAWN_ACTION")} ${editorActiveSpawner?.label || "MOB"}`;
   } else if (editorTool === "BULLDOZER") {
-    activeStr = "BULLDOZER (DEMOLISH)";
+    activeStr = t("TOOL_BULLDOZER");
   } else if (editorTool === "EYEDROPPER") {
-    activeStr = "EYEDROPPER (SAMPLE)";
+    activeStr = t("TOOL_EYEDROPPER");
   }
 
-  drawText8x8(`ACTIVE: ${activeStr.slice(0, 24)}`, px + 14, footerY + 7, "#f8b800", 1);
-  drawText8x8("L-CLICK: APPLY / DRAG: PAINT", px + 14, footerY + 20, "#58d854", 1);
-  drawText8x8("R-CLICK: PAN | ESC: CLOSE", px + 14, footerY + 32, "#bcbcbc", 1);
+  drawText8x8(`${t("ACTIVE_PREFIX")} ${activeStr.slice(0, 24)}`, px + 14, footerY + 7, "#f8b800", 1);
+  drawText8x8(t("LCLICK_PAINT"), px + 14, footerY + 20, "#58d854", 1);
+  drawText8x8(t("RCLICK_PAN"), px + 14, footerY + 32, "#bcbcbc", 1);
 }
 
 function renderMapEditorOverlay() {
@@ -7215,14 +7534,14 @@ function renderMapEditorOverlay() {
 
     if (editorTool === "PAINT") {
       const tileName = tileObj?.label || "TILE";
-      const badge = `PAINT [${hoverTileX},${hoverTileY}] (${editorBrushSize}x${editorBrushSize}): ${tileName}`;
+      const badge = `PINTAR [${hoverTileX},${hoverTileY}] (${editorBrushSize}x${editorBrushSize}): ${tileName}`;
       drawText8x8(badge, infoX, infoY, tileObj?.color || "#f8b800", 1);
     } else if (editorTool === "SPAWN" && editorActiveSpawner) {
-      drawText8x8(`SPAWN [${hoverTileX},${hoverTileY}]: ${editorActiveSpawner.label}`, infoX, infoY, "#58d854", 1);
+      drawText8x8(`GERAR [${hoverTileX},${hoverTileY}]: ${editorActiveSpawner.label}`, infoX, infoY, "#58d854", 1);
     } else if (editorTool === "BULLDOZER") {
-      drawText8x8(`DEMOLISH [${hoverTileX},${hoverTileY}]`, infoX, infoY, "#e40058", 1);
+      drawText8x8(`DEMOLIR [${hoverTileX},${hoverTileY}]`, infoX, infoY, "#e40058", 1);
     } else if (editorTool === "EYEDROPPER") {
-      drawText8x8(`SAMPLE [${hoverTileX},${hoverTileY}]`, infoX, infoY, "#3cbcfc", 1);
+      drawText8x8(`AMOSTRA [${hoverTileX},${hoverTileY}]`, infoX, infoY, "#3cbcfc", 1);
     }
 
     if (!is3DMode && renderer) {
@@ -7296,9 +7615,9 @@ function renderHoverTooltip() {
   drawText8x8(`SP:${(hoveredEnt.properties.species || "-").toUpperCase()}`, tx + 8, ty + 24, "#ffffff", 1);
 
   if (hoveredEnt.properties.life) {
-    drawNESProgressBar(tx + 8, ty + 36, tw - 16, 12, hoveredEnt.properties.life.energy, hoveredEnt.properties.life.max || 100, "ENERGY", "#58d854");
+    drawNESProgressBar(tx + 8, ty + 36, tw - 16, 12, hoveredEnt.properties.life.energy, hoveredEnt.properties.life.max || 100, t("ENERGY_LABEL"), "#58d854");
   } else {
-    drawText8x8("ITEM / RESOURCE", tx + 8, ty + 38, "#3cbcfc", 1);
+    drawText8x8(t("ITEM_OBJECT_LABEL"), tx + 8, ty + 38, "#3cbcfc", 1);
   }
   ctx.restore();
 }
@@ -7402,7 +7721,7 @@ function renderCreatureVisionOverlay() {
   ctx.strokeRect(curScreenX, curScreenY, curScreenW, curScreenH);
 
   // Badge on screen
-  const badge = `[VISION: ${(target.properties.name || "CREATURE").toUpperCase()} | ZONE (${curZx},${curZy})]`;
+  const badge = `[VISÃO: ${(target.properties.name || "CRIATURA").toUpperCase()} | ZONA (${curZx},${curZy})]`;
   drawText8x8(badge, 8, CANVAS_HEIGHT - 48, "#ffd700", 1);
   ctx.restore();
 }
@@ -7413,27 +7732,27 @@ function renderCreatureVisionOverlay() {
 function renderPerspectiveHUD() {
   if ((!isFirstPersonMode && !isThirdPersonMode) || !perspectiveEntityId || currentMode !== "MAP") return;
   const ent = getEntityById(perspectiveEntityId);
-  const name = ent ? (ent.properties?.name || `CREATURE #${ent.id}`).toUpperCase() : "CREATURE";
+  const name = ent ? (ent.properties?.name || `CRIATURA #${ent.id}`).toUpperCase() : "CRIATURA";
 
   const bw = Math.min(640, CANVAS_WIDTH - 24);
   const bx = Math.floor((CANVAS_WIDTH - bw) / 2);
   const by = 8;
   drawNESBox(bx, by, bw, 28);
 
-  const modeStr = isThirdPersonMode ? "3RD PERSON" : "1ST PERSON";
-  const helpStr = isThirdPersonMode ? "[DRAG/TOUCH: ORBIT] [WHEEL: ZOOM]" : "[DRAG/TOUCH: LOOK]";
+  const modeStr = isThirdPersonMode ? t("THIRD_PERSON") : t("FIRST_PERSON");
+  const helpStr = isThirdPersonMode ? t("HUD_ORBIT_HELP") : t("HUD_LOOK_HELP");
   drawText8x8(`${modeStr}: ${name} | ${helpStr}`, bx + 10, by + 10, "#58d854", 1);
 
   if (isFirstPersonMode && rctRenderer) {
     const isAuto = rctRenderer.isFirstPersonAutoCam?.() ?? true;
-    const autoTxt = isAuto ? "AUTO:ON" : "AUTO:OFF";
+    const autoTxt = isAuto ? `${t("AUTO_CAM")}:${t("ON")}` : `${t("AUTO_CAM")}:${t("OFF")}`;
     drawNESButton(bx + bw - 176, by + 4, 80, 20, autoTxt, isAuto, false);
     registerClickableRegion(bx + bw - 176, by + 4, 80, 20, () => {
       if (rctRenderer?.toggleFirstPersonAutoCam) rctRenderer.toggleFirstPersonAutoCam();
     });
   }
 
-  const exitTxt = isThirdPersonMode ? "EXIT 3P" : "EXIT 1P";
+  const exitTxt = isThirdPersonMode ? t("HUD_EXIT_3P") : t("HUD_EXIT_1P");
   drawNESButton(bx + bw - 90, by + 4, 80, 20, exitTxt, false, false);
   registerClickableRegion(bx + bw - 90, by + 4, 80, 20, () => {
     exitPerspectiveMode();
@@ -7458,43 +7777,43 @@ function renderCreatureSummaryBox() {
   // Absorb clicks on summary box background so world selection is not triggered behind the HUD
   registerClickableRegion(bx, by, bw, bh, () => { });
 
-  const nameStr = (ent.properties.name || `Entity #${ent.id}`).slice(0, 18).toUpperCase();
+  const nameStr = (ent.properties.name || `Entidade #${ent.id}`).slice(0, 18).toUpperCase();
   drawText8x8(nameStr, bx + 8, by + 8, "#f8b800", 1);
 
-  const speciesStr = (ent.properties.species || (isCreature ? "Creature" : "Item")).toUpperCase();
-  const clanStr = (ent.properties.group?.name || (isCreature ? "Solitary" : "Resource")).slice(0, 10).toUpperCase();
+  const speciesStr = (ent.properties.species || (isCreature ? t("SP_LABEL") : t("FILTER_ITEMS"))).toUpperCase();
+  const clanStr = (ent.properties.group?.name || (isCreature ? t("CLAN_SOLITARY") : t("RESOURCE_LABEL"))).slice(0, 10).toUpperCase();
   drawText8x8(`${speciesStr} | ${clanStr}`, bx + 8, by + 20, "#3cbcfc", 1);
 
   if (ent.properties.life && isCreature) {
-    drawNESProgressBar(bx + 8, by + 32, bw - 16, 12, ent.properties.life.energy, ent.properties.life.max || 100, "ENERGY", "#58d854");
+    drawNESProgressBar(bx + 8, by + 32, bw - 16, 12, ent.properties.life.energy, ent.properties.life.max || 100, t("ENERGY_LABEL"), "#58d854");
   } else {
-    const info = ent.properties.edible ? `FOOD +${ent.properties.edible.nutrition}` : (ent.properties.resourceType ? `RESOURCE: ${ent.properties.resourceType.toUpperCase()}` : "ITEM / OBJECT");
+    const info = ent.properties.edible ? `${t("FOOD_LABEL")} +${ent.properties.edible.nutrition}` : (ent.properties.resourceType ? `${t("RESOURCE_LABEL")}: ${ent.properties.resourceType.toUpperCase()}` : t("ITEM_OBJECT_LABEL"));
     drawText8x8(info, bx + 8, by + 34, "#a0e0a0", 1);
   }
 
   // Toggles for Follow, Vision, 1P & 3P (Creatures only)
   if (isCreature) {
-    const followTxt = isFollowMode ? "FOLLOW:ON" : "FOLLOW:OFF";
+    const followTxt = isFollowMode ? `${t("HUD_FOLLOW")}${t("ON")}` : `${t("HUD_FOLLOW")}${t("OFF")}`;
     drawNESButton(bx + 8, by + 50, 84, 24, followTxt, isFollowMode, false);
     registerClickableRegion(bx + 8, by + 50, 84, 24, () => {
       isFollowMode = !isFollowMode;
     });
 
-    const visionTxt = isCreatureVisionMode ? "VISION:ON" : "VISION:OFF";
+    const visionTxt = isCreatureVisionMode ? `${t("HUD_VISION")}${t("ON")}` : `${t("HUD_VISION")}${t("OFF")}`;
     drawNESButton(bx + 98, by + 50, 84, 24, visionTxt, isCreatureVisionMode, false);
     registerClickableRegion(bx + 98, by + 50, 84, 24, () => {
       isCreatureVisionMode = !isCreatureVisionMode;
     });
 
     const is1PAct = isFirstPersonMode && perspectiveEntityId === ent.id;
-    const fpTxt = is1PAct ? "1P:ON" : "1P:OFF";
+    const fpTxt = is1PAct ? `${t("HUD_1P")}${t("ON")}` : `${t("HUD_1P")}${t("OFF")}`;
     drawNESButton(bx + 188, by + 50, 86, 24, fpTxt, is1PAct, false);
     registerClickableRegion(bx + 188, by + 50, 86, 24, () => {
       toggleFirstPersonMode(ent.id);
     });
 
     const is3PAct = isThirdPersonMode && perspectiveEntityId === ent.id;
-    const tpTxt = is3PAct ? "3P:ON" : "3P:OFF";
+    const tpTxt = is3PAct ? `${t("HUD_3P")}${t("ON")}` : `${t("HUD_3P")}${t("OFF")}`;
     drawNESButton(bx + 280, by + 50, 86, 24, tpTxt, is3PAct, false);
     registerClickableRegion(bx + 280, by + 50, 86, 24, () => {
       toggleThirdPersonMode(ent.id);
@@ -7519,12 +7838,12 @@ function renderCreatureEventLogPanel() {
   // Absorb clicks so they don't click through to map
   registerClickableRegion(px, py, pw, ph, () => { });
 
-  const nameStr = (ent.properties.name || `Entity #${ent.id}`).toUpperCase().slice(0, 16);
-  drawText8x8(`* CHRONICLE: ${nameStr}`, px + 8, py + 8, "#ffd700", 1);
+  const nameStr = (ent.properties.name || `${t("DOSSIER")} #${ent.id}`).toUpperCase().slice(0, 16);
+  drawText8x8(`* ${t("CREATURE_CHRONICLE")}: ${nameStr}`, px + 8, py + 8, "#ffd700", 1);
 
   // Full Log Button
-  drawNESButton(px + pw - 88, py + 4, 80, 18, "FULL LOG", false, false);
-  registerClickableRegion(px + pw - 88, py + 4, 80, 18, () => {
+  drawNESButton(px + pw - 92, py + 4, 84, 18, t("HUD_FULL_LOG"), false, false);
+  registerClickableRegion(px + pw - 92, py + 4, 84, 18, () => {
     inspectingFromCreature = "MAP";
     currentMode = "INSPECT";
     dossierTab = "CHRONICLE";
@@ -7532,7 +7851,7 @@ function renderCreatureEventLogPanel() {
 
   const creatureEvents = getEventsForEntity(ent.id, 5);
   if (creatureEvents.length === 0) {
-    drawText8x8("NO HISTORICAL EVENTS RECORDED YET.", px + 10, py + 36, "#888888", 1);
+    drawText8x8(t("NO_HISTORICAL_EVENTS"), px + 10, py + 36, "#888888", 1);
     return;
   }
 
@@ -7672,47 +7991,48 @@ function renderOptionsModal() {
     }
   });
 
-  drawText8x8("GAME SETTINGS & PERFORMANCE OPTIONS", mx + 16, my + 12, "#f8b800", 1);
+  drawText8x8(t("SETTINGS_TITLE"), mx + 16, my + 12, "#f8b800", 1);
 
   // Tabs
   let tabX = mx + 16;
   const tabY = my + 30;
   const tabs = [
-    { id: "OPTIMIZATION", label: "OPTIMIZATION" },
-    { id: "GRAPHICS", label: "GRAPHICS" },
-    { id: "PERSPECTIVE", label: "1P/3P EFFECTS" },
-    { id: "CALIBRATION", label: "CALIBRATION" },
-    { id: "AUDIO", label: "AUDIO" }
+    { id: "OPTIMIZATION", label: t("TAB_OPTIMIZATION") },
+    { id: "GRAPHICS", label: t("TAB_GRAPHICS") },
+    { id: "PERSPECTIVE", label: t("TAB_PERSPECTIVE") },
+    { id: "CALIBRATION", label: t("TAB_CALIBRATION") },
+    { id: "AUDIO", label: t("TAB_AUDIO") },
+    { id: "LANGUAGE", label: t("TAB_LANGUAGE") }
   ];
-  for (const t of tabs) {
-    const isSel = optionsTab === t.id;
-    const tw = isMobile ? 62 : 94;
-    drawNESButton(tabX, tabY, tw, 22, t.label, isSel, false);
-    const tid = t.id;
+  for (const tTab of tabs) {
+    const isSel = optionsTab === tTab.id;
+    const tw = isMobile ? 54 : 86;
+    drawNESButton(tabX, tabY, tw, 22, tTab.label, isSel, false);
+    const tid = tTab.id;
     registerClickableRegion(tabX, tabY, tw, 22, () => {
       optionsTab = tid;
     });
-    tabX += tw + 6;
+    tabX += tw + 4;
   }
 
   let curY = tabY + 34;
 
   if (optionsTab === "OPTIMIZATION") {
     // 1. Max World Chronicles / Events
-    const curWorldLbl = gameOptions.maxWorldEvents === 0 ? "UNLIMITED" : `${gameOptions.maxWorldEvents.toLocaleString()}`;
-    drawText8x8(`MAX WORLD CHRONICLES: [ ${curWorldLbl} ]`, mx + 16, curY, "#3cbcfc", 1);
+    const curWorldLbl = gameOptions.maxWorldEvents === 0 ? t("UNLIMITED") : `${gameOptions.maxWorldEvents.toLocaleString()}`;
+    drawText8x8(`${t("MAX_WORLD_EVENTS")}: [ ${curWorldLbl} ]`, mx + 16, curY, "#3cbcfc", 1);
     const worldLimits = [
-      { val: 1000, label: "1,000" },
-      { val: 5000, label: "5,000" },
-      { val: 10000, label: "10,000" },
-      { val: 25000, label: "25,000" },
-      { val: 50000, label: "50,000" },
-      { val: 0, label: "UNLIMITED" }
+      { val: 1000, label: "1.000" },
+      { val: 5000, label: "5.000" },
+      { val: 10000, label: "10.000" },
+      { val: 25000, label: "25.000" },
+      { val: 50000, label: "50.000" },
+      { val: 0, label: t("UNLIMITED") }
     ];
     let bx = mx + 16;
     for (const opt of worldLimits) {
       const isSel = gameOptions.maxWorldEvents === opt.val;
-      const bw = isMobile ? 48 : 68;
+      const bw = isMobile ? 48 : 72;
       drawNESButton(bx, curY + 10, bw, 22, opt.label, isSel, false);
       const v = opt.val;
       registerClickableRegion(bx, curY + 10, bw, 22, () => {
@@ -7724,20 +8044,20 @@ function renderOptionsModal() {
     curY += 40;
 
     // 2. Max Chronicles Per Creature
-    const curCreatureLbl = gameOptions.maxCreatureEvents === 0 ? "UNLIMITED" : `${gameOptions.maxCreatureEvents}`;
-    drawText8x8(`MAX CHRONICLES PER CREATURE: [ ${curCreatureLbl} ]`, mx + 16, curY, "#3cbcfc", 1);
+    const curCreatureLbl = gameOptions.maxCreatureEvents === 0 ? t("UNLIMITED") : `${gameOptions.maxCreatureEvents}`;
+    drawText8x8(`${t("MAX_CREATURE_EVENTS")}: [ ${curCreatureLbl} ]`, mx + 16, curY, "#3cbcfc", 1);
     const creatureLimits = [
       { val: 50, label: "50" },
       { val: 100, label: "100" },
       { val: 150, label: "150" },
       { val: 250, label: "250" },
       { val: 500, label: "500" },
-      { val: 0, label: "UNLIMITED" }
+      { val: 0, label: t("UNLIMITED") }
     ];
     bx = mx + 16;
     for (const opt of creatureLimits) {
       const isSel = gameOptions.maxCreatureEvents === opt.val;
-      const bw = isMobile ? 48 : 68;
+      const bw = isMobile ? 48 : 72;
       drawNESButton(bx, curY + 10, bw, 22, opt.label, isSel, false);
       const v = opt.val;
       registerClickableRegion(bx, curY + 10, bw, 22, () => {
@@ -7749,15 +8069,15 @@ function renderOptionsModal() {
     curY += 40;
 
     // 3. 3D Render Distance (Chunk Radius in Tiles)
-    const curDistLbl = gameOptions.max3DRenderDistance === 0 ? "FULL WORLD" : `${gameOptions.max3DRenderDistance} TILES`;
-    drawText8x8(`3D CHUNK RENDER DISTANCE: [ ${curDistLbl} ]`, mx + 16, curY, "#3cbcfc", 1);
+    const curDistLbl = gameOptions.max3DRenderDistance === 0 ? t("ALL_WORLD") : `${gameOptions.max3DRenderDistance} TILES`;
+    drawText8x8(`${t("RENDER_DIST_3D")}: [ ${curDistLbl} ]`, mx + 16, curY, "#3cbcfc", 1);
     const distOptions = [
       { val: 24, label: "24 T" },
       { val: 36, label: "36 T" },
       { val: 48, label: "48 T" },
       { val: 64, label: "64 T" },
       { val: 96, label: "96 T" },
-      { val: 0, label: "FULL" }
+      { val: 0, label: t("TOTAL") }
     ];
     bx = mx + 16;
     for (const opt of distOptions) {
@@ -7782,8 +8102,8 @@ function renderOptionsModal() {
     curY += 40;
 
     // 4. Target Framerate (FPS Cap)
-    const curFpsLbl = gameOptions.targetFps === 0 ? "UNLIMITED" : `${gameOptions.targetFps} FPS`;
-    drawText8x8(`TARGET FRAMERATE (FPS CAP): [ ${curFpsLbl} ]`, mx + 16, curY, "#3cbcfc", 1);
+    const curFpsLbl = gameOptions.targetFps === 0 ? t("UNLIMITED") : `${gameOptions.targetFps} FPS`;
+    drawText8x8(`${t("TARGET_FPS")}: [ ${curFpsLbl} ]`, mx + 16, curY, "#3cbcfc", 1);
     const fpsOptions = [
       { val: 15, label: "15 FPS" },
       { val: 30, label: "30 FPS" },
@@ -7803,12 +8123,13 @@ function renderOptionsModal() {
     }
   } else if (optionsTab === "GRAPHICS") {
     // 1. Wireframe Mode
-    const wireMode = rctRenderer?.getWireframeModeName ? rctRenderer.getWireframeModeName() : "OFF";
-    drawText8x8(`WIREFRAME MODE: [ ${wireMode} ]`, mx + 16, curY, "#3cbcfc", 1);
+    const rawWire = rctRenderer?.wireframeMode || 0;
+    const wireMode = rawWire === 0 ? t("OFF") : rawWire === 1 ? t("GRID_LABEL") : t("TOTAL");
+    drawText8x8(`${t("WIREFRAME_MODE")}: [ ${wireMode} ]`, mx + 16, curY, "#3cbcfc", 1);
     const wireOptions = [
-      { id: 0, label: "OFF" },
-      { id: 1, label: "GRID" },
-      { id: 2, label: "FULL" }
+      { id: 0, label: t("OFF") },
+      { id: 1, label: t("GRID_LABEL") },
+      { id: 2, label: t("TOTAL") }
     ];
     let bx = mx + 16;
     for (const wOpt of wireOptions) {
@@ -7828,7 +8149,7 @@ function renderOptionsModal() {
 
     // 2. Resolution Scale
     const curRes = rctRenderer?.getResolutionName ? rctRenderer.getResolutionName() : "100%";
-    drawText8x8(`RESOLUTION SCALE: [ ${curRes} ]`, mx + 16, curY, "#3cbcfc", 1);
+    drawText8x8(`${t("RESOLUTION_SCALE")}: [ ${curRes} ]`, mx + 16, curY, "#3cbcfc", 1);
     const resOptions = [
       { val: 0.25, label: "25%" },
       { val: 0.50, label: "50%" },
@@ -7851,18 +8172,18 @@ function renderOptionsModal() {
 
     // 3. Shadow Map & Quality
     const shdActive = rctRenderer?.isShadowsActive ? rctRenderer.isShadowsActive() : true;
-    drawText8x8(`DIRECTIONAL SHADOWS: [ ${shdActive ? "ENABLED" : "DISABLED"} | ${gameOptions.shadowQuality}x${gameOptions.shadowQuality} ]`, mx + 16, curY, "#3cbcfc", 1);
+    drawText8x8(`${t("SHADOWS")}: [ ${shdActive ? t("ON") : t("OFF")} | ${gameOptions.shadowQuality}x${gameOptions.shadowQuality} ]`, mx + 16, curY, "#3cbcfc", 1);
     bx = mx + 16;
-    drawNESButton(bx, curY + 10, 80, 22, shdActive ? "ON" : "OFF", shdActive, false);
+    drawNESButton(bx, curY + 10, 80, 22, shdActive ? t("ON") : t("OFF"), shdActive, false);
     registerClickableRegion(bx, curY + 10, 80, 22, () => {
       if (rctRenderer?.toggleShadows) rctRenderer.toggleShadows();
     });
     bx += 88;
 
     const shdQualities = [
-      { val: 1024, label: "1K (FAST)" },
-      { val: 2048, label: "2K (HIGH)" },
-      { val: 4096, label: "4K (ULTRA)" }
+      { val: 1024, label: `1K (${t("FAST_LABEL")})` },
+      { val: 2048, label: `2K (${t("HIGH_LABEL")})` },
+      { val: 4096, label: `4K (${t("ULTRA_LABEL")})` }
     ];
     for (const sq of shdQualities) {
       const isSel = gameOptions.shadowQuality === sq.val;
@@ -7879,16 +8200,16 @@ function renderOptionsModal() {
     curY += 40;
 
     // 4. Overhead Badges & Clan Flags
-    drawText8x8(`OVERHEAD BILLBOARDS & BADGES:`, mx + 16, curY, "#3cbcfc", 1);
+    drawText8x8(`${t("OVERHEAD_BADGES")}:`, mx + 16, curY, "#3cbcfc", 1);
     bx = mx + 16;
-    drawNESButton(bx, curY + 10, 130, 22, `BADGES: ${gameOptions.showBadges ? "ON" : "OFF"}`, gameOptions.showBadges, false);
+    drawNESButton(bx, curY + 10, 130, 22, `${t("BADGES_LABEL")}: ${gameOptions.showBadges ? t("ON") : t("OFF")}`, gameOptions.showBadges, false);
     registerClickableRegion(bx, curY + 10, 130, 22, () => {
       gameOptions.showBadges = !gameOptions.showBadges;
       applyGameOptions();
       saveGameOptions();
     });
     bx += 138;
-    drawNESButton(bx, curY + 10, 130, 22, `FLAGS: ${gameOptions.showClanFlags ? "ON" : "OFF"}`, gameOptions.showClanFlags, false);
+    drawNESButton(bx, curY + 10, 130, 22, `${t("FLAGS_LABEL")}: ${gameOptions.showClanFlags ? t("ON") : t("OFF")}`, gameOptions.showClanFlags, false);
     registerClickableRegion(bx, curY + 10, 130, 22, () => {
       gameOptions.showClanFlags = !gameOptions.showClanFlags;
       applyGameOptions();
@@ -7898,10 +8219,10 @@ function renderOptionsModal() {
 
     // 5. Anisotropic Filtering
     const anisoValG = gameOptions.perspectiveAnisotropy !== undefined ? gameOptions.perspectiveAnisotropy : 4;
-    const anisoLabelG = anisoValG <= 1 ? "OFF" : `${anisoValG}X`;
-    drawText8x8(`ANISOTROPIC FILTERING: [ ${anisoLabelG} ]`, mx + 16, curY, "#3cbcfc", 1);
+    const anisoLabelG = anisoValG <= 1 ? t("OFF") : `${anisoValG}X`;
+    drawText8x8(`${t("ANISOTROPIC")}: [ ${anisoLabelG} ]`, mx + 16, curY, "#3cbcfc", 1);
     const anisoOptionsG = [
-      { val: 1, label: "OFF" },
+      { val: 1, label: t("OFF") },
       { val: 2, label: "2X" },
       { val: 4, label: "4X" },
       { val: 8, label: "8X" },
@@ -7921,18 +8242,18 @@ function renderOptionsModal() {
       bx += bw + 6;
     }
   } else if (optionsTab === "PERSPECTIVE") {
-    // 1. Surface Normal Maps (Pixel-Derived Relief for Tiles & Buildings)
+    // 1. Surface Normal Maps
     const normOn = gameOptions.perspectiveNormalMaps !== false;
-    drawText8x8(`SURFACE NORMAL MAPS (1P/3P): [ ${normOn ? "ON" : "OFF"} ]`, mx + 16, curY, "#3cbcfc", 1);
+    drawText8x8(`${t("NORMAL_MAPS")}: [ ${normOn ? t("ON") : t("OFF")} ]`, mx + 16, curY, "#3cbcfc", 1);
     let bx = mx + 16;
-    drawNESButton(bx, curY + 10, 80, 22, "ON", normOn, false);
+    drawNESButton(bx, curY + 10, 80, 22, t("ON"), normOn, false);
     registerClickableRegion(bx, curY + 10, 80, 22, () => {
       gameOptions.perspectiveNormalMaps = true;
       applyGameOptions();
       saveGameOptions();
     });
     bx += 88;
-    drawNESButton(bx, curY + 10, 80, 22, "OFF", !normOn, false);
+    drawNESButton(bx, curY + 10, 80, 22, t("OFF"), !normOn, false);
     registerClickableRegion(bx, curY + 10, 80, 22, () => {
       gameOptions.perspectiveNormalMaps = false;
       applyGameOptions();
@@ -7942,12 +8263,12 @@ function renderOptionsModal() {
 
     // 2. Depth of Field (Bokeh Blur Strength)
     const dofVal = gameOptions.perspectiveDofStrength || "HIGH";
-    drawText8x8(`DEPTH OF FIELD (1P/3P BOKEH): [ ${dofVal} ]`, mx + 16, curY, "#3cbcfc", 1);
+    drawText8x8(`${t("DOF_BOKEH")}: [ ${dofVal} ]`, mx + 16, curY, "#3cbcfc", 1);
     const dofOptions = [
-      { val: "OFF", label: "OFF" },
-      { val: "LOW", label: "LOW" },
-      { val: "MED", label: "MED" },
-      { val: "HIGH", label: "HIGH" }
+      { val: "OFF", label: t("OFF") },
+      { val: "LOW", label: t("LOW_LABEL") },
+      { val: "MED", label: t("MEDIUM_LABEL") },
+      { val: "HIGH", label: t("HIGH_LABEL") }
     ];
     bx = mx + 16;
     for (const opt of dofOptions) {
@@ -7966,16 +8287,16 @@ function renderOptionsModal() {
 
     // 3. Chromatic Aberration
     const chromaOn = gameOptions.perspectiveChromaticAberration !== false;
-    drawText8x8(`CHROMATIC ABERRATION (1P/3P): [ ${chromaOn ? "ON" : "OFF"} ]`, mx + 16, curY, "#3cbcfc", 1);
+    drawText8x8(`${t("CHROMA")}: [ ${chromaOn ? t("ON") : t("OFF")} ]`, mx + 16, curY, "#3cbcfc", 1);
     bx = mx + 16;
-    drawNESButton(bx, curY + 10, 80, 22, "ON", chromaOn, false);
+    drawNESButton(bx, curY + 10, 80, 22, t("ON"), chromaOn, false);
     registerClickableRegion(bx, curY + 10, 80, 22, () => {
       gameOptions.perspectiveChromaticAberration = true;
       applyGameOptions();
       saveGameOptions();
     });
     bx += 88;
-    drawNESButton(bx, curY + 10, 80, 22, "OFF", !chromaOn, false);
+    drawNESButton(bx, curY + 10, 80, 22, t("OFF"), !chromaOn, false);
     registerClickableRegion(bx, curY + 10, 80, 22, () => {
       gameOptions.perspectiveChromaticAberration = false;
       applyGameOptions();
@@ -7985,16 +8306,16 @@ function renderOptionsModal() {
 
     // 4. Water Ripple Reflections & Atmospheric Fog
     const waterOn = gameOptions.perspectiveWaterReflections !== false;
-    drawText8x8(`WATER RIPPLES & SPECULAR: [ ${waterOn ? "ON" : "OFF"} ]`, mx + 16, curY, "#3cbcfc", 1);
+    drawText8x8(`${t("WATER_REFLECTIONS")}: [ ${waterOn ? t("ON") : t("OFF")} ]`, mx + 16, curY, "#3cbcfc", 1);
     bx = mx + 16;
-    drawNESButton(bx, curY + 10, 80, 22, "ON", waterOn, false);
+    drawNESButton(bx, curY + 10, 80, 22, t("ON"), waterOn, false);
     registerClickableRegion(bx, curY + 10, 80, 22, () => {
       gameOptions.perspectiveWaterReflections = true;
       applyGameOptions();
       saveGameOptions();
     });
     bx += 88;
-    drawNESButton(bx, curY + 10, 80, 22, "OFF", !waterOn, false);
+    drawNESButton(bx, curY + 10, 80, 22, t("OFF"), !waterOn, false);
     registerClickableRegion(bx, curY + 10, 80, 22, () => {
       gameOptions.perspectiveWaterReflections = false;
       applyGameOptions();
@@ -8004,12 +8325,12 @@ function renderOptionsModal() {
 
     // 5. Atmospheric Horizon Fog
     const fogVal = gameOptions.perspectiveFog || "LIGHT";
-    drawText8x8(`HORIZON ATMOSPHERIC FOG: [ ${fogVal} ]`, mx + 16, curY, "#3cbcfc", 1);
+    drawText8x8(`${t("HORIZON_FOG")}: [ ${fogVal} ]`, mx + 16, curY, "#3cbcfc", 1);
     const fogOptions = [
-      { val: "OFF", label: "OFF" },
-      { val: "LIGHT", label: "LIGHT" },
-      { val: "DENSE", label: "DENSE" },
-      { val: "MIST", label: "MIST" },
+      { val: "OFF", label: t("OFF") },
+      { val: "LIGHT", label: t("FOG_LIGHT") },
+      { val: "DENSE", label: t("DENSE_LABEL") },
+      { val: "MIST", label: t("FOG_MIST") },
       { val: "SILENT HILL", label: "SILENT HILL" }
     ];
     bx = mx + 16;
@@ -8029,10 +8350,10 @@ function renderOptionsModal() {
 
     // 6. Anisotropic Texture Filtering & Intensity
     const anisoVal = gameOptions.perspectiveAnisotropy !== undefined ? gameOptions.perspectiveAnisotropy : 4;
-    const anisoLabel = anisoVal <= 1 ? "OFF" : `${anisoVal}X`;
-    drawText8x8(`ANISOTROPIC FILTERING: [ ${anisoLabel} ]`, mx + 16, curY, "#3cbcfc", 1);
+    const anisoLabel = anisoVal <= 1 ? t("OFF") : `${anisoVal}X`;
+    drawText8x8(`${t("ANISOTROPIC")}: [ ${anisoLabel} ]`, mx + 16, curY, "#3cbcfc", 1);
     const anisoOptions = [
-      { val: 1, label: "OFF" },
+      { val: 1, label: t("OFF") },
       { val: 2, label: "2X" },
       { val: 4, label: "4X" },
       { val: 8, label: "8X" },
@@ -8053,20 +8374,20 @@ function renderOptionsModal() {
     }
     curY += 40;
 
-    // 7. Ambient Occlusion (Active / Type / Intensity)
+    // 7. Ambient Occlusion
     const aoActive = gameOptions.perspectiveAmbientOcclusion !== false;
     const aoType = gameOptions.perspectiveAOType || "SSAO";
     const aoInt = gameOptions.perspectiveAOIntensity || "HIGH";
-    drawText8x8(`AMBIENT OCCLUSION (AO): [ ${aoActive ? "ON" : "OFF"} | ${aoType} | ${aoInt} ]`, mx + 16, curY, "#3cbcfc", 1);
+    drawText8x8(`${t("AMBIENT_OCCLUSION")}: [ ${aoActive ? t("ON") : t("OFF")} | ${aoType} | ${aoInt} ]`, mx + 16, curY, "#3cbcfc", 1);
     bx = mx + 16;
-    drawNESButton(bx, curY + 10, 58, 22, "ON", aoActive, false);
+    drawNESButton(bx, curY + 10, 58, 22, t("ON"), aoActive, false);
     registerClickableRegion(bx, curY + 10, 58, 22, () => {
       gameOptions.perspectiveAmbientOcclusion = true;
       applyGameOptions();
       saveGameOptions();
     });
     bx += 64;
-    drawNESButton(bx, curY + 10, 58, 22, "OFF", !aoActive, false);
+    drawNESButton(bx, curY + 10, 58, 22, t("OFF"), !aoActive, false);
     registerClickableRegion(bx, curY + 10, 58, 22, () => {
       gameOptions.perspectiveAmbientOcclusion = false;
       applyGameOptions();
@@ -8075,10 +8396,10 @@ function renderOptionsModal() {
     bx += 74;
 
     const aoTypes = [
-      { val: "CONTACT", label: "CONTACT" },
-      { val: "CREVICE", label: "CREVICE" },
+      { val: "CONTACT", label: t("CONTACT_LABEL") },
+      { val: "CREVICE", label: t("CREVICE_LABEL") },
       { val: "SSAO", label: "SSAO" },
-      { val: "DEEP", label: "DEEP" }
+      { val: "DEEP", label: t("DEEP_LABEL") }
     ];
     for (const opt of aoTypes) {
       const isSel = aoType === opt.val;
@@ -8095,12 +8416,12 @@ function renderOptionsModal() {
     curY += 34;
 
     // AO Intensity
-    drawText8x8(`AO SHADOW INTENSITY: [ ${aoInt} ]`, mx + 16, curY, "#3cbcfc", 1);
+    drawText8x8(`${t("AO_INTENSITY")}: [ ${aoInt} ]`, mx + 16, curY, "#3cbcfc", 1);
     const aoIntensities = [
-      { val: "LOW", label: "LOW" },
-      { val: "MED", label: "MED" },
-      { val: "HIGH", label: "HIGH" },
-      { val: "ULTRA", label: "ULTRA" }
+      { val: "LOW", label: t("LOW_LABEL") },
+      { val: "MED", label: t("MEDIUM_LABEL") },
+      { val: "HIGH", label: t("HIGH_LABEL") },
+      { val: "ULTRA", label: t("ULTRA_LABEL") }
     ];
     bx = mx + 16;
     for (const opt of aoIntensities) {
@@ -8119,7 +8440,7 @@ function renderOptionsModal() {
     // 1. Brightness Calibration
     const curBright = gameOptions.renderBrightness !== undefined ? gameOptions.renderBrightness : 1.0;
     const brightPct = Math.round(curBright * 100);
-    drawText8x8(`BRIGHTNESS / BRILHO: [ ${brightPct}% ]`, mx + 16, curY, "#3cbcfc", 1);
+    drawText8x8(`${t("BRIGHTNESS")}: [ ${brightPct}% ]`, mx + 16, curY, "#3cbcfc", 1);
     const brightOptions = [
       { val: 0.70, label: "70%" },
       { val: 0.85, label: "85%" },
@@ -8145,7 +8466,7 @@ function renderOptionsModal() {
     // 2. Contrast Calibration
     const curContrast = gameOptions.renderContrast !== undefined ? gameOptions.renderContrast : 1.0;
     const contrastPct = Math.round(curContrast * 100);
-    drawText8x8(`CONTRAST / CONTRASTE: [ ${contrastPct}% ]`, mx + 16, curY, "#3cbcfc", 1);
+    drawText8x8(`${t("CONTRAST")}: [ ${contrastPct}% ]`, mx + 16, curY, "#3cbcfc", 1);
     const contrastOptions = [
       { val: 0.70, label: "70%" },
       { val: 0.85, label: "85%" },
@@ -8171,7 +8492,7 @@ function renderOptionsModal() {
     // 3. Alpha / Opacity Calibration
     const curAlpha = gameOptions.renderAlpha !== undefined ? gameOptions.renderAlpha : 1.0;
     const alphaPct = Math.round(curAlpha * 100);
-    drawText8x8(`ALPHA / TRANSPARENCY & OPACITY: [ ${alphaPct}% ]`, mx + 16, curY, "#3cbcfc", 1);
+    drawText8x8(`${t("OPACITY")}: [ ${alphaPct}% ]`, mx + 16, curY, "#3cbcfc", 1);
     const alphaOptions = [
       { val: 0.60, label: "60%" },
       { val: 0.80, label: "80%" },
@@ -8195,8 +8516,8 @@ function renderOptionsModal() {
     curY += 40;
 
     // Reset Defaults Button
-    drawNESButton(mx + 16, curY + 10, 160, 22, "RESET CALIBRATION", false, false);
-    registerClickableRegion(mx + 16, curY + 10, 160, 22, () => {
+    drawNESButton(mx + 16, curY + 10, 180, 22, t("RESET_CALIBRATION"), false, false);
+    registerClickableRegion(mx + 16, curY + 10, 180, 22, () => {
       gameOptions.renderBrightness = 1.0;
       gameOptions.renderContrast = 1.0;
       gameOptions.renderAlpha = 1.0;
@@ -8205,16 +8526,33 @@ function renderOptionsModal() {
     });
   } else if (optionsTab === "AUDIO") {
     // 1. Audio & Sound FX
-    drawText8x8(`AUDIO & SOUND FX: [ ${isAudioMuted ? "MUTED" : "ENABLED"} ]`, mx + 16, curY, "#3cbcfc", 1);
+    const audioStateLabel = isAudioMuted ? t("OFF") : t("ON");
+    drawText8x8(`${t("AUDIO_SOUND_FX")}: [ ${audioStateLabel} ]`, mx + 16, curY, "#3cbcfc", 1);
     let bx = mx + 16;
-    drawNESButton(bx, curY + 10, 140, 22, isAudioMuted ? "UNMUTE AUDIO" : "MUTE AUDIO", !isAudioMuted, false);
-    registerClickableRegion(bx, curY + 10, 140, 22, toggleAudio);
+    drawNESButton(bx, curY + 10, 160, 22, isAudioMuted ? t("UNMUTE_AUDIO") : t("MUTE_AUDIO"), !isAudioMuted, false);
+    registerClickableRegion(bx, curY + 10, 160, 22, toggleAudio);
+  } else if (optionsTab === "LANGUAGE") {
+    // Language selection
+    drawText8x8(`${t("LANGUAGE_LABEL")}:`, mx + 16, curY, "#3cbcfc", 1);
+    let bx = mx + 16;
+    const curLang = getCurrentLanguage();
+    for (const lang of SUPPORTED_LANGUAGES) {
+      const isSel = curLang === lang.id;
+      const bw = isMobile ? 100 : 130;
+      drawNESButton(bx, curY + 14, bw, 24, lang.label, isSel, false);
+      const lId = lang.id;
+      registerClickableRegion(bx, curY + 14, bw, 24, () => {
+        setLanguage(lId);
+        updateEntitySearchInputVisibility();
+      });
+      bx += bw + 10;
+    }
   }
 
   // Footer: Back / Apply button
-  const backLabel = hasActiveGame ? "BACK TO GAME" : "BACK TO MENU";
-  drawNESButton(mx + mw - 140, my + mh - 30, 124, 24, backLabel, true, false);
-  registerClickableRegion(mx + mw - 140, my + mh - 30, 124, 24, () => {
+  const backLabel = hasActiveGame ? t("BACK_TO_GAME") : t("BACK_TO_MENU");
+  drawNESButton(mx + mw - 150, my + mh - 30, 134, 24, backLabel, true, false);
+  registerClickableRegion(mx + mw - 150, my + mh - 30, 134, 24, () => {
     if (hasActiveGame) {
       currentMode = "MAP";
       audio.stopInstance("menuTheme", false);
@@ -8244,9 +8582,9 @@ function renderGeneratorModal() {
   drawNESBox(mx, my, mw, mh);
 
   // Single Back / Return Button
-  const backLabel = hasActiveGame ? "RETURN TO MAP" : "TITLE MENU";
-  drawNESButton(mx + mw - 150, my + 6, 140, 24, backLabel, false, true);
-  registerClickableRegion(mx + mw - 150, my + 6, 140, 24, () => {
+  const backLabel = hasActiveGame ? t("RETURN_TO_MAP") : t("TITLE_MENU");
+  drawNESButton(mx + mw - 160, my + 6, 150, 24, backLabel, false, true);
+  registerClickableRegion(mx + mw - 160, my + 6, 150, 24, () => {
     if (hasActiveGame) {
       currentMode = "MAP";
     } else {
@@ -8254,16 +8592,16 @@ function renderGeneratorModal() {
     }
   });
 
-  drawText8x8("WORLD GENERATOR & CUSTOM CONFIGURATOR", mx + 16, my + 12, "#f8b800", 1);
+  drawText8x8(t("WORLD_GEN_TITLE"), mx + 16, my + 12, "#f8b800", 1);
 
   let curY = my + 32;
 
   // 1. World Preset
-  drawText8x8("1. PRESET:", mx + 16, curY, "#3cbcfc", 1);
+  drawText8x8(t("PRESET"), mx + 16, curY, "#3cbcfc", 1);
   const presets = [
-    { id: 0, label: "ARCHIPELAGO" },
-    { id: 1, label: "CONTINENT" },
-    { id: 2, label: "HIGHLANDS" }
+    { id: 0, label: t("ARCHIPELAGO") },
+    { id: 1, label: t("CONTINENT") },
+    { id: 2, label: t("HIGHLANDS") }
   ];
   let px = mx + 16;
   for (const p of presets) {
@@ -8280,7 +8618,7 @@ function renderGeneratorModal() {
   curY += 38;
 
   // 2. Custom Dimensions (Width & Height)
-  drawText8x8(`2. DIMENSIONS: [ ${genWidth} x ${genHeight} ]`, mx + 16, curY, "#3cbcfc", 1);
+  drawText8x8(`${t("DIMENSIONS")} [ ${genWidth} x ${genHeight} ]`, mx + 16, curY, "#3cbcfc", 1);
 
   // Quick size presets
   const quickSizes = [
@@ -8306,7 +8644,7 @@ function renderGeneratorModal() {
 
   // Fine Width / Height adjusters
   let adjX = qx + 8;
-  drawText8x8("W:", adjX, curY + 14, "#ffffff", 1);
+  drawText8x8(t("WIDTH_SHORT"), adjX, curY + 14, "#ffffff", 1);
   drawNESButton(adjX + 18, curY + 10, 20, 22, "-", false, false);
   registerClickableRegion(adjX + 18, curY + 10, 20, 22, () => {
     genWidth = Math.max(64, genWidth - 64);
@@ -8317,7 +8655,7 @@ function renderGeneratorModal() {
   });
 
   adjX += 74;
-  drawText8x8("H:", adjX, curY + 14, "#ffffff", 1);
+  drawText8x8(t("HEIGHT_SHORT"), adjX, curY + 14, "#ffffff", 1);
   drawNESButton(adjX + 18, curY + 10, 20, 22, "-", false, false);
   registerClickableRegion(adjX + 18, curY + 10, 20, 22, () => {
     genHeight = Math.max(64, genHeight - 64);
@@ -8330,12 +8668,12 @@ function renderGeneratorModal() {
   curY += 38;
 
   // 3. Macro-Chunk / Territory Zone Size
-  drawText8x8(`3. MACRO-ZONE SIZE: [ ${genZoneSize}x${genZoneSize} TILES ]`, mx + 16, curY, "#3cbcfc", 1);
+  drawText8x8(`${t("MACRO_ZONE_SIZE")} [ ${genZoneSize}x${genZoneSize} TILES ]`, mx + 16, curY, "#3cbcfc", 1);
   const zoneSizes = [
     { sz: 4, label: "4x4 (MICRO)" },
-    { sz: 8, label: "8x8 (NORMAL)" },
-    { sz: 16, label: "16x16 (LARGE)" },
-    { sz: 32, label: "32x32 (SECTOR)" }
+    { sz: 8, label: `8x8 (${t("STANDARD_LABEL")})` },
+    { sz: 16, label: `16x16 (${t("LARGE_LABEL")})` },
+    { sz: 32, label: `32x32 (${t("SECTOR_LABEL")})` }
   ];
   let zx = mx + 16;
   for (const zs of zoneSizes) {
@@ -8353,23 +8691,28 @@ function renderGeneratorModal() {
   curY += 38;
 
   // 4. Seed & Randomizer
-  drawText8x8(`4. SEED: [ ${genSeed} ]`, mx + 16, curY, "#3cbcfc", 1);
-  drawNESButton(mx + 16, curY + 10, 160, 22, "RANDOMIZE SEED", false, false);
-  registerClickableRegion(mx + 16, curY + 10, 160, 22, () => {
+  drawText8x8(`${t("SEED")} [ ${genSeed} ]`, mx + 16, curY, "#3cbcfc", 1);
+  drawNESButton(mx + 16, curY + 10, 180, 22, t("RANDOMIZE_SEED"), false, false);
+  registerClickableRegion(mx + 16, curY + 10, 180, 22, () => {
     genSeed = Math.floor(Math.random() * 1000000) + 1;
   });
 
   curY += 38;
 
   // 5. Creature Population Density (Proportional)
-  drawText8x8("5. WILD FAUNA (SCALED TO WORLD AREA):", mx + 16, curY, "#3cbcfc", 1);
-  const cPops = ["NONE", "LOW", "STANDARD", "HIGH"];
+  drawText8x8(t("WILD_FAUNA"), mx + 16, curY, "#3cbcfc", 1);
+  const cPops = [
+    { id: "NONE", label: t("NONE") },
+    { id: "LOW", label: t("LOW_LABEL") },
+    { id: "STANDARD", label: t("STANDARD_LABEL") },
+    { id: "HIGH", label: t("HIGH_LABEL") }
+  ];
   let cx = mx + 16;
   for (const cp of cPops) {
-    const isSel = genCreatureDensity === cp;
+    const isSel = genCreatureDensity === cp.id;
     const bw = 95;
-    drawNESButton(cx, curY + 10, bw, 22, cp, isSel, false);
-    const cpVal = cp;
+    drawNESButton(cx, curY + 10, bw, 22, cp.label, isSel, false);
+    const cpVal = cp.id;
     registerClickableRegion(cx, curY + 10, bw, 22, () => {
       genCreatureDensity = cpVal;
     });
@@ -8379,14 +8722,18 @@ function renderGeneratorModal() {
   curY += 38;
 
   // 6. Flora & Nature Density (Proportional)
-  drawText8x8("6. FLORA & RESOURCES (SCALED TO WORLD AREA):", mx + 16, curY, "#3cbcfc", 1);
-  const pDens = ["SPARSE", "NORMAL", "DENSE"];
+  drawText8x8(t("FLORA_RESOURCES"), mx + 16, curY, "#3cbcfc", 1);
+  const pDens = [
+    { id: "SPARSE", label: t("SPARSE_LABEL") },
+    { id: "NORMAL", label: t("NORMAL_LABEL") },
+    { id: "DENSE", label: t("DENSE_LABEL") }
+  ];
   let plx = mx + 16;
   for (const pd of pDens) {
-    const isSel = genPlantDensity === pd;
+    const isSel = genPlantDensity === pd.id;
     const bw = 100;
-    drawNESButton(plx, curY + 10, bw, 22, pd, isSel, false);
-    const pdVal = pd;
+    drawNESButton(plx, curY + 10, bw, 22, pd.label, isSel, false);
+    const pdVal = pd.id;
     registerClickableRegion(plx, curY + 10, bw, 22, () => {
       genPlantDensity = pdVal;
     });
@@ -8395,8 +8742,8 @@ function renderGeneratorModal() {
 
   curY += 38;
 
-  // 7. Founding Pioneer Clans / Embarks (Freely selectable from 0 to 128+)
-  drawText8x8(`7. EMBARKS / FOUNDING CLANS: [ ${genSpawnPioneers && genEmbarkCount > 0 ? genEmbarkCount + " CLANS" : "NONE"} ]`, mx + 16, curY, "#3cbcfc", 1);
+  // 7. Founding Pioneer Clans / Embarks
+  drawText8x8(`${t("EMBARKS")} [ ${genSpawnPioneers && genEmbarkCount > 0 ? genEmbarkCount + " " + t("CLANS_LABEL") : t("NONE")} ]`, mx + 16, curY, "#3cbcfc", 1);
   let ebx = mx + 16;
 
   // Stepper buttons [-10], [-1], [+1], [+10]
@@ -8423,8 +8770,8 @@ function renderGeneratorModal() {
   const presetEmbarks = [0, 1, 2, 3, 5, 8, 12, 16, 24, 32, 64];
   for (const cnt of presetEmbarks) {
     const isSel = genSpawnPioneers ? (genEmbarkCount === cnt) : (cnt === 0);
-    const bw = cnt === 0 ? 56 : 30;
-    const label = cnt === 0 ? "NONE" : String(cnt);
+    const bw = cnt === 0 ? 68 : 30;
+    const label = cnt === 0 ? t("NONE") : String(cnt);
     drawNESButton(ebx, curY + 10, bw, 22, label, isSel, false);
     registerClickableRegion(ebx, curY + 10, bw, 22, () => {
       if (cnt === 0) {
@@ -8438,12 +8785,12 @@ function renderGeneratorModal() {
     ebx += bw + 4;
   }
 
-  // Action Button immediately after options: [GENERATE WORLD]
+  // Action Button immediately after options: [GERAR MUNDO]
   curY += 42;
   const genBtnW = Math.min(520, mw - 32);
   const genBtnX = mx + Math.floor((mw - genBtnW) / 2);
   const genBtnY = curY;
-  const genBtnLabel = `GENERATE WORLD (${genWidth}x${genHeight} | ZONE ${genZoneSize}x${genZoneSize})`;
+  const genBtnLabel = `${t("GENERATE_WORLD_BTN")} (${genWidth}x${genHeight} | ${t("ZONE")} ${genZoneSize}x${genZoneSize})`;
   drawNESButton(genBtnX, genBtnY, genBtnW, 30, genBtnLabel, true, false);
   registerClickableRegion(genBtnX, genBtnY, genBtnW, 30, () => {
     generateConfiguredWorld();
@@ -8504,7 +8851,7 @@ function renderTitleScreen() {
 
   // Button 0: CONTINUE GAME (if a gameplay world is active)
   if (hasActiveGame) {
-    drawNESButton(menuBoxX, menuY, menuBoxW, 32, "CONTINUE GAME", true, false);
+    drawNESButton(menuBoxX, menuY, menuBoxW, 32, t("CONTINUE_GAME"), true, false);
     registerClickableRegion(menuBoxX, menuY, menuBoxW, 32, () => {
       currentMode = "MAP";
       audio.stopInstance("menuTheme", false);
@@ -8513,7 +8860,7 @@ function renderTitleScreen() {
   }
 
   // Button 1: NEW WORLD / CUSTOM WORLD GENERATOR
-  drawNESButton(menuBoxX, menuY, menuBoxW, 34, "NEW WORLD", !hasActiveGame, false);
+  drawNESButton(menuBoxX, menuY, menuBoxW, 34, t("NEW_WORLD"), !hasActiveGame, false);
   registerClickableRegion(menuBoxX, menuY, menuBoxW, 34, () => {
     currentMode = "GENERATOR";
     modalScroll = 0;
@@ -8521,7 +8868,7 @@ function renderTitleScreen() {
   menuY += 42;
 
   // Button 3: OPTIONS & SETTINGS
-  drawNESButton(menuBoxX, menuY, menuBoxW, 28, "OPTIONS & SETTINGS", false, false);
+  drawNESButton(menuBoxX, menuY, menuBoxW, 28, t("SETTINGS"), false, false);
   registerClickableRegion(menuBoxX, menuY, menuBoxW, 28, () => {
     currentMode = "OPTIONS";
     modalScroll = 0;
@@ -8530,11 +8877,11 @@ function renderTitleScreen() {
 
   // Button 4: Quick Settings Row (2D/3D & Audio)
   const halfW = Math.floor((menuBoxW - 8) / 2);
-  const view3DLabel = is3DMode ? "VIEW: 3D ISO" : "VIEW: 2D MAP";
-  drawNESButton(menuBoxX, menuY, halfW, 28, view3DLabel, is3DMode, false);
+  const view3DLabel = is3DMode ? "3D ISO" : "2D MAP";
+  drawNESButton(menuBoxX, menuY, halfW, 28, `${t("VIEW")}: ${view3DLabel}`, is3DMode, false);
   registerClickableRegion(menuBoxX, menuY, halfW, 28, toggle3DMode);
 
-  const audioLabel = isAudioMuted ? "AUDIO: MUTED" : "AUDIO: ON";
+  const audioLabel = isAudioMuted ? t("AUDIO_MUTED") : t("AUDIO_ACTIVE");
   drawNESButton(menuBoxX + halfW + 8, menuY, halfW, 28, audioLabel, !isAudioMuted, false);
   registerClickableRegion(menuBoxX + halfW + 8, menuY, halfW, 28, toggleAudio);
 
@@ -8751,26 +9098,57 @@ function frame(time) {
         renderCreatureEventLogPanel();
         renderMapEditorOverlay();
         renderCompactEditorPanel();
+      }
 
-        if (inspectingLogEvent) {
-          const mx = 30;
-          const my = 36;
-          const mw = CANVAS_WIDTH - 60;
-          const mh = CANVAS_HEIGHT - 72;
-          renderLogDetailView(mx, my, mw, mh, inspectingLogEvent);
-        } else if (inspectingBattle) {
-          const mx = 30;
-          const my = 36;
-          const mw = CANVAS_WIDTH - 60;
-          const mh = CANVAS_HEIGHT - 72;
-          renderBattleDetailView(mx, my, mw, mh, inspectingBattle);
-        } else if (inspectingRelationship) {
-          const mx = 30;
-          const my = 36;
-          const mw = CANVAS_WIDTH - 60;
-          const mh = CANVAS_HEIGHT - 72;
-          renderRelationshipModal(mx, my, mw, mh, inspectingRelationship);
-        }
+      // Universal Sub-Modal Inspection Overlay (Always renders on top of active mode window)
+      if (inspectingLogEvent) {
+        const isMobile = CANVAS_WIDTH <= 680;
+        const mx = isMobile ? 6 : 30;
+        const my = isMobile ? 36 : 36;
+        const mw = isMobile ? CANVAS_WIDTH - 12 : CANVAS_WIDTH - 60;
+        const mh = isMobile ? CANVAS_HEIGHT - 44 : CANVAS_HEIGHT - 72;
+        ctx.save();
+        ctx.fillStyle = "rgba(0, 0, 0, 0.96)";
+        ctx.fillRect(0, 32, CANVAS_WIDTH, CANVAS_HEIGHT - 68);
+        drawNESBox(mx, my, mw, mh);
+        renderLogDetailView(mx, my, mw, mh, inspectingLogEvent);
+        ctx.restore();
+      } else if (inspectingBattle) {
+        const isMobile = CANVAS_WIDTH <= 680;
+        const mx = isMobile ? 6 : 30;
+        const my = isMobile ? 36 : 36;
+        const mw = isMobile ? CANVAS_WIDTH - 12 : CANVAS_WIDTH - 60;
+        const mh = isMobile ? CANVAS_HEIGHT - 44 : CANVAS_HEIGHT - 72;
+        ctx.save();
+        ctx.fillStyle = "rgba(0, 0, 0, 0.96)";
+        ctx.fillRect(0, 32, CANVAS_WIDTH, CANVAS_HEIGHT - 68);
+        drawNESBox(mx, my, mw, mh);
+        renderBattleDetailView(mx, my, mw, mh, inspectingBattle);
+        ctx.restore();
+      } else if (inspectingRelationship) {
+        const isMobile = CANVAS_WIDTH <= 680;
+        const mx = isMobile ? 6 : 30;
+        const my = isMobile ? 36 : 36;
+        const mw = isMobile ? CANVAS_WIDTH - 12 : CANVAS_WIDTH - 60;
+        const mh = isMobile ? CANVAS_HEIGHT - 44 : CANVAS_HEIGHT - 72;
+        ctx.save();
+        ctx.fillStyle = "rgba(0, 0, 0, 0.96)";
+        ctx.fillRect(0, 32, CANVAS_WIDTH, CANVAS_HEIGHT - 68);
+        drawNESBox(mx, my, mw, mh);
+        renderRelationshipModal(mx, my, mw, mh, inspectingRelationship);
+        ctx.restore();
+      } else if (inspectingSurname) {
+        const isMobile = CANVAS_WIDTH <= 680;
+        const mx = isMobile ? 6 : 30;
+        const my = isMobile ? 36 : 36;
+        const mw = isMobile ? CANVAS_WIDTH - 12 : CANVAS_WIDTH - 60;
+        const mh = isMobile ? CANVAS_HEIGHT - 44 : CANVAS_HEIGHT - 72;
+        ctx.save();
+        ctx.fillStyle = "rgba(0, 0, 0, 0.96)";
+        ctx.fillRect(0, 32, CANVAS_WIDTH, CANVAS_HEIGHT - 68);
+        drawNESBox(mx, my, mw, mh);
+        renderSurnameTreeModal(mx, my, mw, mh, inspectingSurname);
+        ctx.restore();
       }
 
       // Always render Top HUD bar and Bottom Navigation/Speed Toolbar on all in-game views

@@ -8159,6 +8159,7 @@ export function createCombatProp(attackInterval = 1.2, aggroRange = 3) {
         id: ent.id,
         name: attackerName,
         species: ent.properties.species || "unknown",
+        group: ent.properties.group || null,
         tick: currentTick,
         time: Date.now()
       };

@@ -185,7 +185,7 @@ export function formatEventDescription(ev) {
     case OP_HUMILIATE:
       return `${pName} publicly humiliated and mocked ${sName}, leaving them distraught!${locStr}`;
     case OP_PROPOSAL_ACCEPTED:
-      return `${pName} proposed a courtship to ${sName}, and they joyfully became a bonded couple! ❤️${locStr}`;
+      return `${pName} proposed a courtship to ${sName}, and they joyfully became a bonded couple!${locStr}`;
     case OP_PROPOSAL_REJECTED:
       return `${pName} confessed love and proposed to ${sName}, but was painfully rejected and left heartbroken!${locStr}`;
     case OP_BIRTH:
@@ -812,7 +812,7 @@ export function getRelationshipSummary(entA_Id, entB_Id, entityRegistry = null) 
   let statusColor = "#bcbcbc";
 
   if (bondedProposal || (entA?.properties?.monogamy?.partnerId === entB_Id)) {
-    statusLabel = "BONDED COUPLE ❤️";
+    statusLabel = "BONDED COUPLE";
     statusColor = "#ff60a0";
   } else if (score >= 60 || positiveCount >= 6) {
     statusLabel = "CHERISHED ALLIES / CLOSE FRIENDS";

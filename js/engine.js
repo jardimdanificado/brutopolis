@@ -912,8 +912,12 @@ export function explodeEntityOnDeath(entity, entitiesArray, world) {
   );
   const hasAmputations = Object.keys(entity.properties).some(k => k.startsWith("amputated_"));
 
-  // Check if attacked within the last 600 ticks (~60-120 seconds of simulation)
-  const isRecentAttack = entity._lastAttacker && (currentTick - (entity._lastAttacker.tick || 0)) <= 600;
+  // Check if attacked recently or succumbed to wounds inflicted by last attacker
+  // If severely damaged or amputated, the fatal wound window extends up to 3600 ticks (~1.5 days), otherwise 1200 ticks
+  const ticksSinceAttack = entity._lastAttacker ? (currentTick - (entity._lastAttacker.tick || 0)) : 999999;
+  const isDirectCombatDeath = ticksSinceAttack <= 1200;
+  const isSuccumbedToWounds = entity._lastAttacker && (severelyDamaged || hasAmputations) && ticksSinceAttack <= 3600;
+  const isRecentAttack = isDirectCombatDeath || isSuccumbedToWounds;
 
   if (isRecentAttack) {
     const killerId = entity._lastAttacker.id;
@@ -921,7 +925,7 @@ export function explodeEntityOnDeath(entity, entitiesArray, world) {
     let killDesc = "";
 
     if (severelyDamaged || hasAmputations) {
-      killDesc = `${killerName} killed ${entityName} as a result of severe wounds and blood loss at [X: ${ex}, Y: ${ey}]!`;
+      killDesc = `${killerName} killed ${entityName} as a result of severe combat wounds and blood loss at [X: ${ex}, Y: ${ey}]!`;
     } else {
       killDesc = `${killerName} slain ${entityName} in combat at [X: ${ex}, Y: ${ey}]!`;
     }
@@ -938,7 +942,9 @@ export function explodeEntityOnDeath(entity, entitiesArray, world) {
       metadata: { killerId, killerName, victimName: entityName, species, reason: severelyDamaged || hasAmputations ? "wounds" : "combat" }
     });
 
-    const killerEntObj = entitiesArray ? entitiesArray.find(e => e.id === killerId && !e.destroyed) : (entityRegistry ? entityRegistry.get(killerId) : null);
+    const killerEntObj = (entitiesArray ? entitiesArray.find(e => e.id === killerId && !e.destroyed) : null) || 
+      (entityRegistry ? entityRegistry.get(killerId) : null) ||
+      (entity._lastAttacker?.group ? { id: killerId, properties: { name: killerName, species: entity._lastAttacker.species, group: entity._lastAttacker.group } } : null);
     if (killerEntObj && typeof recordWarCombat === "function") {
       recordWarCombat(killerEntObj, entity, 0, true, currentTick, deathEv?.id || null);
     }
