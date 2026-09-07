@@ -56,6 +56,7 @@ export function startWarRecord(groupA, groupB, tick, world = null) {
     winnerName: null,
     warriors: {},
     pacifists: {},
+    victims: {},
     eventIds: []
   };
   worldWars.unshift(newWar);
@@ -109,6 +110,22 @@ export function recordWarCombat(attacker, target, damage = 0, isKill = false, ti
   war.warriors[aId].damageDealt += Math.round(damage);
   if (isKill) {
     war.warriors[aId].kills += 1;
+
+    if (!war.victims) war.victims = {};
+    const vId = target.id;
+    if (!war.victims[vId]) {
+      war.victims[vId] = {
+        id: vId,
+        name: target.properties?.name || `Victim #${vId}`,
+        groupName: target.properties?.group?.name || "Clan",
+        species: target.properties?.species || "humanoid",
+        killerId: aId,
+        killerName: attacker.properties?.name || `Fighter #${aId}`,
+        killerGroupName: attacker.properties?.group?.name || "Clan",
+        deathTick: tick,
+        eventId: eventId || null
+      };
+    }
   }
 }
 

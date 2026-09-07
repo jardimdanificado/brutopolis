@@ -2,8 +2,8 @@
 // Brutopolis
 // =============================================================================
 
-const BrutopolisVersion = "0.125.1";
-const BrutopolisVersionName = "For to be carnally minded is death; but to be spiritually minded is life and peace.";
+const BrutopolisVersion = "0.125.2";
+const BrutopolisVersionName = "And there was war in heaven: Michael and his angels fought against the dragon;";
 
 // WASM replaced by Pure JS Renderer
 import { World } from "./js/world.js";
@@ -966,7 +966,7 @@ let politicalModalScroll = 0;
 let electionModalScroll = 0;
 let diplomaticHistoryScroll = 0;
 let warPanelScroll = 0;
-let warPanelTab = "WARS"; // "WARS", "WARRIORS", "PACIFISTS", "EVENTS"
+let warPanelTab = "WARS"; // "WARS", "WARRIORS", "PACIFISTS", "VICTIMS", "EVENTS"
 let inspectingWarRecord = null; // Specific war inspected in war panel
 let inspectingSurname = null; // Surname string inspected in surname tree modal
 let surnameTreeZoom = 1.0;
@@ -5952,8 +5952,8 @@ function renderSurnameTreeModal(mx, my, mw, mh, surname) {
 function renderWarPanelModal(mx, my, mw, mh) {
   drawText8x8(`WAR ROOM & HISTORIC CONFLICTS (PAINEL DE GUERRA)`, mx + 16, my + 14, "#ff2040", 1);
 
-  // Tabs: [WARS] [WARRIORS] [PACIFISTS] [EVENTS]
-  const tabs = ["WARS", "WARRIORS", "PACIFISTS", "EVENTS"];
+  // Tabs: [WARS] [WARRIORS] [PACIFISTS] [VICTIMS] [EVENTS]
+  const tabs = ["WARS", "WARRIORS", "PACIFISTS", "VICTIMS", "EVENTS"];
   let tX = mx + 16;
   for (const t of tabs) {
     const isAct = warPanelTab === t;
@@ -6021,8 +6021,9 @@ function renderWarPanelModal(mx, my, mw, mh) {
 
       const warriorCount = Object.keys(w.warriors || {}).length;
       const pacifistCount = Object.keys(w.pacifists || {}).length;
+      const victimCount = Object.keys(w.victims || {}).length;
       const winnerStr = w.winnerName ? ` • Winner: ${w.winnerName}` : "";
-      drawText8x8(`Combatants: ${warriorCount} | Pacifists/Diplomats: ${pacifistCount} | Events: ${(w.eventIds || []).length}${winnerStr}`, mx + 24, curY + 20, "#bcbcbc", 1);
+      drawText8x8(`Combatants: ${warriorCount} | Pacifists: ${pacifistCount} | Casualties/Victims: ${victimCount} | Events: ${(w.eventIds || []).length}${winnerStr}`, mx + 24, curY + 20, "#bcbcbc", 1);
 
       const curWar = w;
       drawNESButton(mx + mw - 140, curY + 8, 120, 24, "INSPECT WAR", false, false);
@@ -6165,7 +6166,97 @@ function renderWarPanelModal(mx, my, mw, mh) {
     }
   }
 
-  // TAB 4: WAR TIMELINE / EVENTS
+  // TAB 4: VICTIMS & CASUALTIES (VÍTIMAS DE GUERRA)
+  else if (warPanelTab === "VICTIMS") {
+    const victimMap = new Map();
+    const targetWars = inspectingWarRecord ? [inspectingWarRecord] : wars;
+
+    for (const w of targetWars) {
+      // 1. Direct recorded victims dictionary
+      for (const [vId, entry] of Object.entries(w.victims || {})) {
+        if (!victimMap.has(vId)) {
+          victimMap.set(vId, { ...entry });
+        }
+      }
+
+      // 2. Historical DEATH events registered in this war's eventIds
+      if (typeof allEvents !== "undefined" && Array.isArray(allEvents) && Array.isArray(w.eventIds)) {
+        for (const eid of w.eventIds) {
+          const ev = (typeof eventsById !== "undefined" && eventsById.get) ? eventsById.get(eid) : allEvents.find(e => e.id === eid);
+          if (ev && (ev.opcode === 2 || ev.type === "DEATH")) {
+            const vicId = ev.primaryEntityId;
+            if (vicId && !victimMap.has(String(vicId))) {
+              const vicEnt = (typeof getEntityById === "function") ? getEntityById(vicId) : null;
+              const killerId = ev.secondaryEntityId || ev.metadata?.killerId || null;
+              const killerEnt = killerId ? ((typeof getEntityById === "function") ? getEntityById(killerId) : null) : null;
+              const gName = vicEnt?.properties?.group?.name || (vicId && w.groupAId ? (w.groupAName) : "Unknown Clan");
+
+              victimMap.set(String(vicId), {
+                id: vicId,
+                name: ev.metadata?.victimName || ev.metadata?.name || vicEnt?.properties?.name || `Victim #${vicId}`,
+                groupName: vicEnt?.properties?.group?.name || ev.metadata?.groupName || "War Faction",
+                species: ev.metadata?.species || vicEnt?.properties?.species || "humanoid",
+                killerId: killerId,
+                killerName: ev.metadata?.killerName || killerEnt?.properties?.name || (killerId ? `Fighter #${killerId}` : "Battlefield Wounds"),
+                killerGroupName: killerEnt?.properties?.group?.name || "Opposing Forces",
+                deathTick: ev.tick || 0,
+                eventId: ev.id
+              });
+            }
+          }
+        }
+      }
+    }
+
+    const victimList = Array.from(victimMap.values());
+    victimList.sort((a, b) => (b.deathTick || 0) - (a.deathTick || 0));
+
+    const scopeTitle = inspectingWarRecord ? `FOR WAR: ${inspectingWarRecord.groupAName} VS ${inspectingWarRecord.groupBName}` : "ALL-TIME WAR CASUALTIES";
+    drawText8x8(`WAR CASUALTIES & FALLEN (VÍTIMAS DA GUERRA) - ${scopeTitle}:`, mx + 24, contentY + 10, "#ff4444", 1);
+
+    if (inspectingWarRecord) {
+      drawNESButton(mx + mw - 140, contentY + 6, 120, 20, "< ALL WARS", false, false);
+      registerClickableRegion(mx + mw - 140, contentY + 6, 120, 20, () => {
+        inspectingWarRecord = null;
+        warPanelScroll = 0;
+      });
+    }
+
+    if (victimList.length === 0) {
+      drawText8x8("NO CASUALTIES OR FALLEN RECORDED IN SELECTED CONFLICTS YET.", mx + 24, contentY + 36, "#bcbcbc", 1);
+      return;
+    }
+
+    const rowH = 36;
+    const visibleCount = Math.floor((contentH - 44) / rowH);
+    const maxScroll = Math.max(0, victimList.length - visibleCount);
+    warPanelScroll = Math.max(0, Math.min(maxScroll, warPanelScroll));
+
+    let curY = contentY + 34;
+    for (let i = warPanelScroll; i < Math.min(victimList.length, warPanelScroll + visibleCount); i++) {
+      const vic = victimList[i];
+      const isHover = mouseX >= mx + 16 && mouseX <= mx + mw - 16 && mouseY >= curY - 2 && mouseY <= curY + rowH - 4;
+      if (isHover) {
+        ctx.fillStyle = "#221018";
+        ctx.fillRect(mx + 16, curY - 2, mw - 32, rowH - 2);
+      }
+
+      drawText8x8(`💀 [TICK ${vic.deathTick || 0}] ${vic.name.toUpperCase()} (${vic.groupName})`, mx + 24, curY + 2, "#ff5050", 1);
+      drawText8x8(`Slain by: ${vic.killerName} (${vic.killerGroupName}) | Species: ${vic.species}`, mx + 24, curY + 18, "#bcbcbc", 1);
+
+      const entId = Number(vic.id);
+      drawNESButton(mx + mw - 110, curY + 6, 90, 22, "INSPECT", false, false);
+      registerClickableRegion(mx + mw - 110, curY + 6, 90, 22, () => {
+        lastSelectedId = entId;
+        dossierTab = "OVERVIEW";
+        currentMode = "INSPECT";
+      });
+
+      curY += rowH;
+    }
+  }
+
+  // TAB 5: WAR TIMELINE / EVENTS
   else if (warPanelTab === "EVENTS") {
     let evIds = [];
     if (inspectingWarRecord) {
