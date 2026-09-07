@@ -44,8 +44,25 @@ export function classificarPalavra(str) {
     return 'neutro';
 }
 
+export function converterParaSingular(str) {
+    if (!str) return str;
+    let res = str;
+    if (res.endsWith('s')) {
+        if (res.endsWith('ões')) res = res.slice(0, -3) + 'ão';
+        else if (res.endsWith('ães')) res = res.slice(0, -3) + 'ão';
+        else if (res.endsWith('ãos')) res = res.slice(0, -3) + 'ão';
+        else if (res.endsWith('ns')) res = res.slice(0, -2) + 'm';
+        else if (res.match(/[aeou]is$/)) res = res.slice(0, -2) + 'l';
+        else if (res.endsWith('is')) res = res.slice(0, -1) + 'l';
+        else if (res.endsWith('res') || res.endsWith('zes')) res = res.slice(0, -2);
+        else res = res.slice(0, -1);
+    }
+    return res;
+}
+
+
 export const vocabulario = {
-    "combinar": (p1, p2, modo = 'preciso', genero = '') => {
+    "combinar": (p1, p2, modo = 'preciso', genero = '', numero = 'singular') => {
         p1 = sanitizar(p1);
         p2 = sanitizar(p2);
         if (!p1 || !p2) throw new Error('Palavras inválidas');
@@ -155,6 +172,26 @@ export const vocabulario = {
                 if (genAtual === 'masculino') {
                     res = res.replace(/o$/, 'a').replace(/os$/, 'as').replace(/ão$/, 'ã').replace(/ãos$/, 'ães');
                 }
+            }
+        }
+
+        // Lógica de Número (Singular / Plural)
+        if (numero) {
+            const isAtualPlural = res.endsWith('s');
+            
+            if (numero === 'plural-apenas' || numero === 'plural-restrito') {
+                if (!isAtualPlural) throw new Error("Número incompatível: exigido plural");
+            } else if (numero === 'singular-apenas' || numero === 'singular-restrito') {
+                if (isAtualPlural) throw new Error("Número incompatível: exigido singular");
+            } else if (numero === 'plural' && !isAtualPlural) {
+                if (res.endsWith('m')) res = res.slice(0, -1) + 'ns';
+                else if (res.endsWith('r') || res.endsWith('z')) res = res + 'es';
+                else if (res.match(/[aeou]l$/)) res = res.slice(0, -1) + 'is';
+                else if (res.endsWith('il')) res = res.slice(0, -1) + 's';
+                else if (res.endsWith('ão')) res = res.slice(0, -2) + 'ões';
+                else res = res + 's';
+            } else if (numero === 'singular') {
+                res = converterParaSingular(res);
             }
         }
 

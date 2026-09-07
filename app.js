@@ -2,7 +2,7 @@
 // Brutopolis
 // =============================================================================
 
-const BrutopolisVersion = "0.125.5";
+const BrutopolisVersion = "0.125.6";
 const BrutopolisVersionName = "And there was war in heaven: Michael and his angels fought against the dragon;";
 
 // WASM replaced by Pure JS Renderer
@@ -5252,7 +5252,7 @@ function renderPoliticalHistoryModal(mx, my, mw, mh, g) {
     return true;
   });
 
-    drawText8x8(`${t("POLITICAL_CHRONICLES")}: ${(g.name || t("CLAN_LABEL")).toUpperCase()} (${rawPolHistory.length} ${t("TAB_WAR_EVENTS")})`, mx + 16, my + 14, gFgColor, 1);
+  drawText8x8(`${t("POLITICAL_CHRONICLES")}: ${(g.name || t("CLAN_LABEL")).toUpperCase()} (${rawPolHistory.length} ${t("TAB_WAR_EVENTS")})`, mx + 16, my + 14, gFgColor, 1);
 
   // Filter Tabs: [TODOS] [ELEIÇÕES] [GUERRAS] [DIPLOMACIA]
   const filterTabs = [

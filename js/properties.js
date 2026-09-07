@@ -34,7 +34,7 @@ import {
   OP_DIPLOMATIC_MISSION
 } from "./event_log.js";
 import { addPoliticalHistoryEntry, isAlive, getAllGroups, endWarRecord, recordWarCombat, recordWarPeace } from "./politics.js";
-import { vocabulario } from "./vocabulario.js";
+import { vocabulario, converterParaSingular } from "./vocabulario.js";
 
 export let activeWorld = null;
 export function setActiveWorld(w) {
@@ -2122,7 +2122,8 @@ export function getRandomVocabWord(genderPreference = "") {
             continue;
           }
         }
-        return clean.charAt(0).toUpperCase() + clean.slice(1).toLowerCase();
+        const sing = converterParaSingular(clean.toLowerCase());
+        return sing.charAt(0).toUpperCase() + sing.slice(1).toLowerCase();
       }
     }
   }
@@ -2295,7 +2296,7 @@ export function generateBabyName(mother, father = null, babyGender = "male", ent
       finalName = `${firstName} ${extraWord} ${combinedSurnameStr}`.trim();
     } else {
       try {
-        const combined = vocabulario.combinar(firstName, extraWord, 'eufonia', genderKey);
+        const combined = vocabulario.combinar(firstName, extraWord, 'eufonia', genderKey, 'singular');
         finalName = `${combined.charAt(0).toUpperCase() + combined.slice(1)} ${combinedSurnameStr}`;
       } catch (e) {
         finalName = `${firstName} ${extraWord} ${combinedSurnameStr}`.trim();
@@ -2333,7 +2334,7 @@ export function generateUniqueCreatureName(roleTitle = "Creature", species = "hu
     attempts++;
     const extra = getRandomVocabWord(genderKey);
     try {
-      const combined = vocabulario.combinar(firstName, extra, 'eufonia', genderKey);
+      const combined = vocabulario.combinar(firstName, extra, 'eufonia', genderKey, 'singular');
       const cFirst = combined.charAt(0).toUpperCase() + combined.slice(1);
       candidate = isHumanoid ? `${cFirst} ${surname}` : `${cFirst}`;
     } catch (e) {
@@ -2354,7 +2355,7 @@ export function generateUniqueWeaponName(baseType = "Blade") {
     attempts++;
     const epithet2 = getRandomVocabWord();
     try {
-      const combined = vocabulario.combinar(epithet, epithet2, 'eufonia');
+      const combined = vocabulario.combinar(epithet, epithet2, 'eufonia', '', 'singular');
       const cEp = combined.charAt(0).toUpperCase() + combined.slice(1);
       candidate = `${baseType} of ${cEp}`;
     } catch (e) {
@@ -2377,7 +2378,7 @@ export function generateUniqueFloraName(baseTitle = "Oak", species = "oak") {
     attempts++;
     const extra = getRandomVocabWord();
     try {
-      const combined = vocabulario.combinar(epithet, extra, 'eufonia');
+      const combined = vocabulario.combinar(epithet, extra, 'eufonia', '', 'singular');
       const cEp = combined.charAt(0).toUpperCase() + combined.slice(1);
       candidate = `${baseTitle} of ${cEp}`;
     } catch (e) {
