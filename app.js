@@ -49,6 +49,7 @@ import {
   setEventLogConfig,
   eventLogConfig,
   OP_RELATION,
+  OP_BIRTH,
   allEvents,
   eventsById
 } from "./js/event_log.js";
@@ -2523,7 +2524,7 @@ function getFamilyTreeData(targetId) {
   let birthMotherId = null;
   if (typeof allEvents !== "undefined" && Array.isArray(allEvents)) {
     for (const ev of allEvents) {
-      if ((ev.opcode === 8 || ev.type === "BIRTH") && ev.secondaryEntityId === targetId) {
+      if ((ev.opcode === OP_BIRTH || ev.opcode === 1 || ev.type === "BIRTH") && ev.secondaryEntityId === targetId) {
         if (ev.primaryEntityId) birthMotherId = ev.primaryEntityId;
         if (ev.metadata?.fatherId) birthFatherId = ev.metadata.fatherId;
         break;
@@ -2662,7 +2663,7 @@ function getInfiniteFamilyTreeData(targetId) {
     // Synthesize dummy entity record from historical birth events if culled
     if (typeof allEvents !== "undefined" && Array.isArray(allEvents)) {
       for (const ev of allEvents) {
-        if (ev.opcode === 8 || ev.type === "BIRTH") { // OP_BIRTH
+        if (ev.opcode === OP_BIRTH || ev.opcode === 1 || ev.type === "BIRTH") { // OP_BIRTH
           if (ev.primaryEntityId === id) {
             return {
               id,
@@ -2685,6 +2686,17 @@ function getInfiniteFamilyTreeData(targetId) {
               }
             };
           }
+          if (ev.secondaryEntityId === id) {
+            return {
+              id,
+              destroyed: true,
+              properties: {
+                name: ev.metadata?.secondaryName || `Descendant #${id}`,
+                species: "human",
+                life: { energy: 0, isDead: true }
+              }
+            };
+          }
         }
       }
     }
@@ -2698,7 +2710,7 @@ function getInfiniteFamilyTreeData(targetId) {
 
   if (typeof allEvents !== "undefined" && Array.isArray(allEvents)) {
     for (const ev of allEvents) {
-      if (ev.opcode === 8 || ev.type === "BIRTH") { // OP_BIRTH
+      if (ev.opcode === OP_BIRTH || ev.opcode === 1 || ev.type === "BIRTH") { // OP_BIRTH
         const childId = ev.secondaryEntityId;
         const motherId = ev.primaryEntityId;
         const fatherId = ev.metadata?.fatherId;
@@ -3183,8 +3195,8 @@ function renderGraphicalFamilyTreeTab(mx, my, mw, mh, target) {
   };
 
   // Compute tier layout positions
-  // Center gen 0 at y = contentY + 80 - modalScroll * 25
-  const gen0Y = contentY + 80 - modalScroll * 25;
+  // Center gen 0 in the viewport so both ancestors (negative gen) and descendants (positive gen) have ample space
+  const gen0Y = (contentY + contentH / 2 - cardH / 2) + (treeData.minGen < 0 ? Math.min(100, Math.abs(treeData.minGen) * 20) : 0);
   const nodePositions = new Map(); // id -> { x, y }
 
   for (let g = treeData.minGen; g <= treeData.maxGen; g++) {
@@ -5899,7 +5911,7 @@ function renderSurnameTreeModal(mx, my, mw, mh, surname) {
   };
 
   const nodePositions = new Map();
-  const startGenY = contentY + 40 - modalScroll * 25;
+  const startGenY = contentY + 40;
 
   for (let g = 0; g <= maxGen; g++) {
     const list = tiers.get(g) || [];

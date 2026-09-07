@@ -716,9 +716,9 @@ function processWarDeclarations(group, allGroups, tick) {
           if (!targetGroup.wars) targetGroup.wars = [];
           if (!targetGroup.wars.includes(group.id)) targetGroup.wars.push(group.id);
           
-          startWarRecord(group, targetGroup, tick);
+          const war = startWarRecord(group, targetGroup, tick);
           const desc = `As tensões explodiram! ${group.name} declarou GUERRA contra ${targetGroup.name}.`;
-          recordWorldEvent({
+          const warEv = recordWorldEvent({
             opcode: OP_WAR_DECLARED,
             primaryEntityId: group.leaderId,
             secondaryEntityId: targetGroup.leaderId,
@@ -727,6 +727,9 @@ function processWarDeclarations(group, allGroups, tick) {
             tick,
             metadata: { groupName: group.name, targetName: targetGroup.name }
           });
+          if (war && warEv && warEv.id) {
+            if (!war.eventIds.includes(warEv.id)) war.eventIds.push(warEv.id);
+          }
           addPoliticalHistoryEntry(group, {
             type: "WAR_DECLARED",
             title: `Declaração de Guerra`,
@@ -745,10 +748,10 @@ function processWarDeclarations(group, allGroups, tick) {
       if (targetGroup && targetGroup.wars) {
         targetGroup.wars = targetGroup.wars.filter(id => id !== group.id);
       }
-      endWarRecord(group.id, tid, "PEACE_TREATY", null, null, tick);
+      const endedWar = endWarRecord(group.id, tid, "PEACE_TREATY", null, null, tick);
       const targetName = targetGroup ? targetGroup.name : `Clã #${tid}`;
       const desc = `Tratado de Paz assinado! As relações entre ${group.name} e ${targetName} melhoraram e a guerra chegou ao fim.`;
-      recordWorldEvent({
+      const peaceEv = recordWorldEvent({
         opcode: OP_DIPLOMATIC_MISSION,
         primaryEntityId: group.leaderId,
         secondaryEntityId: targetGroup?.leaderId || null,
@@ -757,6 +760,9 @@ function processWarDeclarations(group, allGroups, tick) {
         tick,
         metadata: { groupName: group.name, targetName }
       });
+      if (endedWar && peaceEv && peaceEv.id) {
+        if (!endedWar.eventIds.includes(peaceEv.id)) endedWar.eventIds.push(peaceEv.id);
+      }
       addPoliticalHistoryEntry(group, {
         type: "PEACE_TREATY",
         title: `Tratado de Paz`,
@@ -829,6 +835,16 @@ function annexRuins(group, tick) {
 
 function handleGroupDissolution(group, tick) {
   group.dissolved = true;
+  // End any active wars involving this dissolved group
+  if (Array.isArray(worldWars)) {
+    for (const war of worldWars) {
+      if (war.status === "ACTIVE" && (war.groupAId === group.id || war.groupBId === group.id)) {
+        const opposingId = war.groupAId === group.id ? war.groupBId : war.groupAId;
+        const opposingName = war.groupAId === group.id ? war.groupBName : war.groupAName;
+        endWarRecord(war.groupAId, war.groupBId, "CONQUEST", opposingId, opposingName, tick);
+      }
+    }
+  }
   group.wars = [];
   group._plannedRoads = [];
   group._plannedStoneRoads = [];

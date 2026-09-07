@@ -5158,7 +5158,9 @@ export function gossipBetweenCreatures(speaker, listener, world, entities) {
     if (deltaSpk > 0 || deltaLis > 0 || (newSpkAff > 20 && newLisAff > 20)) {
       if (typeof recordWarPeace === "function") {
         const points = Math.max(1, Math.round((Math.max(0, deltaSpk) + Math.max(0, deltaLis)) * 2) || 2);
-        recordWarPeace(speaker, listener, "PEACEFUL_INTERACTION", points, null);
+        const lastEv = (typeof allEvents !== "undefined" && allEvents.length > 0) ? allEvents[allEvents.length - 1] : null;
+        const evId = (lastEv && (lastEv.primaryEntityId === speaker.id || lastEv.secondaryEntityId === speaker.id || lastEv.primaryEntityId === listener.id || lastEv.secondaryEntityId === listener.id)) ? lastEv.id : null;
+        recordWarPeace(speaker, listener, "PEACEFUL_INTERACTION", points, evId);
       }
     }
   }
