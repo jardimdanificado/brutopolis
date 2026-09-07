@@ -2,8 +2,8 @@
 // Brutopolis
 // =============================================================================
 
-const BrutopolisVersion = "0.124.3";
-const BrutopolisVersionName = "Who may ascend the mountain of the LORD? Who may stand in his holy place?";
+const BrutopolisVersion = "0.125.1";
+const BrutopolisVersionName = "For to be carnally minded is death; but to be spiritually minded is life and peace.";
 
 // WASM replaced by Pure JS Renderer
 import { World } from "./js/world.js";
@@ -109,6 +109,9 @@ function initSimWorker() {
         if (Array.isArray(data.groups)) {
           world.groups = data.groups;
         }
+        if (Array.isArray(data.wars)) {
+          world.wars = data.wars;
+        }
 
         if (data.isTitleScreen) {
           // Defer heavy entity processing so audio.update() can run before the spike
@@ -173,6 +176,9 @@ function initSimWorker() {
         }
         if (Array.isArray(data.groups) && world) {
           world.groups = data.groups;
+        }
+        if (Array.isArray(data.wars) && world) {
+          world.wars = data.wars;
         }
         if (data.entities) {
           updateLocalEntities(data.entities, data.registry, data.deceased);
@@ -958,6 +964,14 @@ let diplomacyModalScroll = 0;
 let politicalModalScroll = 0;
 let electionModalScroll = 0;
 let diplomaticHistoryScroll = 0;
+let warPanelScroll = 0;
+let warPanelTab = "WARS"; // "WARS", "WARRIORS", "PACIFISTS", "EVENTS"
+let inspectingWarRecord = null; // Specific war inspected in war panel
+let inspectingSurname = null; // Surname string inspected in surname tree modal
+let surnameTreeZoom = 1.0;
+let surnameTreePanX = 0;
+let surnameTreePanY = 0;
+let politicalHistoryFilter = "ALL"; // "ALL", "ELECTIONS", "WARS", "DIPLOMACY"
 let groupDetailTab = "ZONES"; // Active tab in clan dossier: "ZONES", "STOCKPILE", "MEMBERS", "POLITICS", "HISTORY"
 let dossierTab = "OVERVIEW"; // Active tab in creature dossier: "OVERVIEW", "AFFINITIES", "OFFSPRING", "CHRONICLE"
 let familyTreeZoom = 1.0; // Zoom factor for graphical family tree
@@ -1834,6 +1848,30 @@ window.addEventListener("mousemove", (e) => {
     }
   }
 
+  // Modal Graphical Family Tree & Surname Tree Drag Panning
+  if (isMouseDown && (e.buttons === 1 || e.buttons === 2)) {
+    if (currentMode === "INSPECT" && dossierTab === "TREE" && !inspectingSurname && !inspectingRelationship) {
+      const dx = e.clientX - dragStartClientX;
+      const dy = e.clientY - dragStartClientY;
+      dragStartClientX = e.clientX;
+      dragStartClientY = e.clientY;
+      familyTreePanX += dx;
+      familyTreePanY += dy;
+      isDragging = true;
+      return;
+    }
+    if (inspectingSurname) {
+      const dx = e.clientX - dragStartClientX;
+      const dy = e.clientY - dragStartClientY;
+      dragStartClientX = e.clientX;
+      dragStartClientY = e.clientY;
+      surnameTreePanX += dx;
+      surnameTreePanY += dy;
+      isDragging = true;
+      return;
+    }
+  }
+
   // Camera Drag (Right Click or Left Click Drag when not painting)
   if (isMouseDown && (renderer || rctRenderer) && !isPainting && currentMode === "MAP") {
     const totalDist = Math.hypot(e.clientX - dragStartClientX, e.clientY - dragStartClientY);
@@ -1914,6 +1952,25 @@ window.addEventListener("mouseup", (e) => {
 canvas.addEventListener("wheel", (e) => {
   e.preventDefault();
   if (currentMode !== "MAP") {
+    if (currentMode === "INSPECT" && dossierTab === "TREE" && !inspectingSurname && !inspectingRelationship) {
+      if (e.ctrlKey) {
+        const zoomDelta = e.deltaY < 0 ? 0.1 : -0.1;
+        familyTreeZoom = Math.min(3.0, Math.max(0.2, Number((familyTreeZoom + zoomDelta).toFixed(2))));
+      } else {
+        familyTreePanY -= e.deltaY * 0.8;
+      }
+      return;
+    }
+    if (inspectingSurname) {
+      if (e.ctrlKey) {
+        const zoomDelta = e.deltaY < 0 ? 0.1 : -0.1;
+        surnameTreeZoom = Math.min(3.0, Math.max(0.2, Number((surnameTreeZoom + zoomDelta).toFixed(2))));
+      } else {
+        surnameTreePanY -= e.deltaY * 0.8;
+      }
+      return;
+    }
+
     const scrollStep = (e.deltaY < 0) ? -2 : 2;
     if (inspectingElectionRecord) {
       electionModalScroll = Math.max(0, electionModalScroll + scrollStep);
@@ -1923,6 +1980,8 @@ canvas.addEventListener("wheel", (e) => {
       politicalModalScroll = Math.max(0, politicalModalScroll + scrollStep);
     } else if (inspectingDiplomacyGroup) {
       diplomacyModalScroll = Math.max(0, diplomacyModalScroll + scrollStep);
+    } else if (currentMode === "WAR_PANEL") {
+      warPanelScroll = Math.max(0, warPanelScroll + scrollStep);
     } else {
       modalScroll = Math.max(0, modalScroll + scrollStep);
     }
@@ -2044,6 +2103,10 @@ window.addEventListener("keydown", (e) => {
   } else if (e.code === "KeyG") {
     currentMode = currentMode === "GROUPS" ? "MAP" : "GROUPS";
     modalScroll = 0;
+  } else if (e.code === "KeyW" && !isFirstPersonMode) {
+    currentMode = currentMode === "WARS" ? "MAP" : "WARS";
+    warPanelScroll = 0;
+    warPanelTab = "WARS";
   } else if (e.code === "KeyL") {
     currentMode = currentMode === "LOGS" ? "MAP" : "LOGS";
     modalScroll = 0;
@@ -2280,6 +2343,7 @@ function renderBottomToolbar() {
       { label: "DOSSIER", mode: "INSPECT" },
       { label: "ENTITIES", mode: "ENTITIES" },
       { label: "GROUPS", mode: "GROUPS" },
+      { label: "WARS", mode: "WARS" },
       { label: "LOGS", mode: "LOGS" },
       {
         label: "EDITOR",
@@ -2455,8 +2519,19 @@ function getFamilyTreeData(targetId) {
   const getEnt = (id) => id ? (getEntityById(id) || (entityRegistry ? entityRegistry.get(id) : null)) : null;
 
   // Parents
-  const fatherId = props.fatherId !== undefined ? props.fatherId : props.life?.fatherId;
-  const motherId = props.motherId !== undefined ? props.motherId : props.life?.motherId;
+  let birthFatherId = null;
+  let birthMotherId = null;
+  if (typeof allEvents !== "undefined" && Array.isArray(allEvents)) {
+    for (const ev of allEvents) {
+      if ((ev.opcode === 8 || ev.type === "BIRTH") && ev.secondaryEntityId === targetId) {
+        if (ev.primaryEntityId) birthMotherId = ev.primaryEntityId;
+        if (ev.metadata?.fatherId) birthFatherId = ev.metadata.fatherId;
+        break;
+      }
+    }
+  }
+  const fatherId = props.fatherId !== undefined ? props.fatherId : (props.life?.fatherId || birthFatherId);
+  const motherId = props.motherId !== undefined ? props.motherId : (props.life?.motherId || birthMotherId);
   const father = getEnt(fatherId);
   const mother = getEnt(motherId);
 
@@ -2576,6 +2651,212 @@ function getFamilyTreeData(targetId) {
   return res;
 }
 
+function getInfiniteFamilyTreeData(targetId) {
+  const target = getEntityById(targetId) || (entityRegistry ? entityRegistry.get(targetId) : null);
+  if (!target) return null;
+
+  const getEnt = (id) => {
+    if (!id) return null;
+    let e = getEntityById(id) || (entityRegistry ? entityRegistry.get(id) : null);
+    if (e) return e;
+    // Synthesize dummy entity record from historical birth events if culled
+    if (typeof allEvents !== "undefined" && Array.isArray(allEvents)) {
+      for (const ev of allEvents) {
+        if (ev.opcode === 8 || ev.type === "BIRTH") { // OP_BIRTH
+          if (ev.primaryEntityId === id) {
+            return {
+              id,
+              destroyed: true,
+              properties: {
+                name: ev.metadata?.primaryName || `Ancestor #${id}`,
+                species: "human",
+                life: { energy: 0, isDead: true }
+              }
+            };
+          }
+          if (ev.metadata?.fatherId === id) {
+            return {
+              id,
+              destroyed: true,
+              properties: {
+                name: ev.metadata?.fatherName || `Ancestor #${id}`,
+                species: "human",
+                life: { energy: 0, isDead: true }
+              }
+            };
+          }
+        }
+      }
+    }
+    return null;
+  };
+
+  // Build helper maps from allEvents for birth lineage
+  const birthMotherByChild = new Map();
+  const birthFatherByChild = new Map();
+  const birthChildrenByParent = new Map();
+
+  if (typeof allEvents !== "undefined" && Array.isArray(allEvents)) {
+    for (const ev of allEvents) {
+      if (ev.opcode === 8 || ev.type === "BIRTH") { // OP_BIRTH
+        const childId = ev.secondaryEntityId;
+        const motherId = ev.primaryEntityId;
+        const fatherId = ev.metadata?.fatherId;
+        if (childId) {
+          if (motherId) {
+            birthMotherByChild.set(childId, motherId);
+            if (!birthChildrenByParent.has(motherId)) birthChildrenByParent.set(motherId, new Set());
+            birthChildrenByParent.get(motherId).add(childId);
+          }
+          if (fatherId) {
+            birthFatherByChild.set(childId, fatherId);
+            if (!birthChildrenByParent.has(fatherId)) birthChildrenByParent.set(fatherId, new Set());
+            birthChildrenByParent.get(fatherId).add(childId);
+          }
+        }
+      }
+    }
+  }
+
+  const nodes = new Map(); // id -> { ent, gen, role, parentIds: [] }
+  const partner = target.properties?.monogamy?.partnerId ? getEnt(target.properties.monogamy.partnerId) : null;
+
+  // Root node
+  nodes.set(target.id, { ent: target, gen: 0, role: "SUBJECT", isTarget: true, parentIds: [] });
+  if (partner) {
+    nodes.set(partner.id, { ent: partner, gen: 0, role: "SPOUSE", isPartner: true, parentIds: [] });
+  }
+
+  // Siblings
+  const tFId = target.properties?.fatherId !== undefined ? target.properties.fatherId : (target.properties?.life?.fatherId || birthFatherByChild.get(target.id));
+  const tMId = target.properties?.motherId !== undefined ? target.properties.motherId : (target.properties?.life?.motherId || birthMotherByChild.get(target.id));
+  if (entityRegistry && (tFId || tMId)) {
+    for (const other of entityRegistry.values()) {
+      if (other.id === target.id || other.id === partner?.id) continue;
+      const oP = other.properties || {};
+      const oF = oP.fatherId !== undefined ? oP.fatherId : (oP.life?.fatherId || birthFatherByChild.get(other.id));
+      const oM = oP.motherId !== undefined ? oP.motherId : (oP.life?.motherId || birthMotherByChild.get(other.id));
+      if ((tFId && oF === tFId) || (tMId && oM === tMId)) {
+        nodes.set(other.id, { ent: other, gen: 0, role: "SIBLING", parentIds: [oF, oM].filter(Boolean) });
+      }
+    }
+  }
+
+  // 1. Traverse Ancestors (Gen -1, -2, -3, ...) - completely unbounded
+  const ancestorQueue = [{ id: target.id, gen: 0 }];
+  const visitedAncestors = new Set([target.id]);
+
+  while (ancestorQueue.length > 0) {
+    const cur = ancestorQueue.shift();
+    const curEnt = getEnt(cur.id);
+    const props = curEnt?.properties || {};
+    const fId = props.fatherId !== undefined ? props.fatherId : (props.life?.fatherId || birthFatherByChild.get(cur.id));
+    const mId = props.motherId !== undefined ? props.motherId : (props.life?.motherId || birthMotherByChild.get(cur.id));
+
+    const pIds = [];
+    if (fId) {
+      pIds.push(fId);
+      if (!visitedAncestors.has(fId)) {
+        visitedAncestors.add(fId);
+        const fEnt = getEnt(fId);
+        if (fEnt) {
+          const gen = cur.gen - 1;
+          const role = gen === -1 ? "FATHER" : (gen === -2 ? "GRANDFATHER" : `ANCESTOR (GEN ${gen})`);
+          nodes.set(fId, { ent: fEnt, gen, role, parentIds: [] });
+          ancestorQueue.push({ id: fId, gen });
+        }
+      }
+    }
+    if (mId) {
+      pIds.push(mId);
+      if (!visitedAncestors.has(mId)) {
+        visitedAncestors.add(mId);
+        const mEnt = getEnt(mId);
+        if (mEnt) {
+          const gen = cur.gen - 1;
+          const role = gen === -1 ? "MOTHER" : (gen === -2 ? "GRANDMOTHER" : `ANCESTOR (GEN ${gen})`);
+          nodes.set(mId, { ent: mEnt, gen, role, parentIds: [] });
+          ancestorQueue.push({ id: mId, gen });
+        }
+      }
+    }
+    const nodeObj = nodes.get(cur.id);
+    if (nodeObj) {
+      nodeObj.parentIds = pIds;
+    }
+  }
+
+  // 2. Traverse Descendants (Gen +1, +2, +3, ...)
+  // Build parent-to-children index across entire entityRegistry and allEvents
+  const parentToChildren = new Map();
+  if (entityRegistry) {
+    for (const ent of entityRegistry.values()) {
+      const props = ent.properties || {};
+      const fId = props.fatherId !== undefined ? props.fatherId : (props.life?.fatherId || birthFatherByChild.get(ent.id));
+      const mId = props.motherId !== undefined ? props.motherId : (props.life?.motherId || birthMotherByChild.get(ent.id));
+      if (fId) {
+        if (!parentToChildren.has(fId)) parentToChildren.set(fId, new Set());
+        parentToChildren.get(fId).add(ent.id);
+      }
+      if (mId) {
+        if (!parentToChildren.has(mId)) parentToChildren.set(mId, new Set());
+        parentToChildren.get(mId).add(ent.id);
+      }
+      // Also check childrenIds array on entity if present
+      if (props.life?.childrenIds) {
+        for (const cid of props.life.childrenIds) {
+          if (!parentToChildren.has(ent.id)) parentToChildren.set(ent.id, new Set());
+          parentToChildren.get(ent.id).add(cid);
+        }
+      }
+    }
+  }
+
+  for (const [pId, cSet] of birthChildrenByParent.entries()) {
+    if (!parentToChildren.has(pId)) parentToChildren.set(pId, new Set());
+    for (const cid of cSet) {
+      parentToChildren.get(pId).add(cid);
+    }
+  }
+
+  const descQueue = [{ id: target.id, gen: 0 }];
+  const visitedDescendants = new Set([target.id]);
+
+  while (descQueue.length > 0) {
+    const cur = descQueue.shift();
+    const cIds = parentToChildren.get(cur.id);
+    if (!cIds) continue;
+
+    for (const cid of cIds) {
+      if (visitedDescendants.has(cid)) continue;
+      visitedDescendants.add(cid);
+      const cEnt = getEnt(cid);
+      if (!cEnt) continue;
+
+      const gen = cur.gen + 1;
+      const role = gen === 1 ? "CHILD" : (gen === 2 ? "GRANDCHILD" : `DESCENDANT (GEN +${gen})`);
+      const cP = cEnt.properties || {};
+      const cF = cP.fatherId !== undefined ? cP.fatherId : (cP.life?.fatherId || birthFatherByChild.get(cid));
+      const cM = cP.motherId !== undefined ? cP.motherId : (cP.life?.motherId || birthMotherByChild.get(cid));
+      nodes.set(cid, { ent: cEnt, gen, role, parentIds: [cF, cM].filter(Boolean) });
+      descQueue.push({ id: cid, gen });
+    }
+  }
+
+  // Group nodes by generational tier
+  const tiers = new Map();
+  let minGen = 0;
+  let maxGen = 0;
+  for (const n of nodes.values()) {
+    if (n.gen < minGen) minGen = n.gen;
+    if (n.gen > maxGen) maxGen = n.gen;
+    if (!tiers.has(n.gen)) tiers.set(n.gen, []);
+    tiers.get(n.gen).push(n);
+  }
+
+  return { target, partner, nodes, tiers, minGen, maxGen };
+}
+
 function renderFamilyTab(mx, my, mw, mh, target) {
   const treeData = getFamilyTreeData(target.id);
   if (!treeData) return;
@@ -2662,20 +2943,33 @@ function renderFamilyTab(mx, my, mw, mh, target) {
     sections.push({ title: `SIBLINGS (${siblings.length})`, members: siblings });
   }
 
-  // 7. Grandparents
-  const grandparents = [];
-  if (treeData.patGrandpa) grandparents.push({ role: "PATERNAL GRANDFATHER", ent: treeData.patGrandpa });
-  if (treeData.patGrandma) grandparents.push({ role: "PATERNAL GRANDMOTHER", ent: treeData.patGrandma });
-  if (treeData.matGrandpa) grandparents.push({ role: "MATERNAL GRANDFATHER", ent: treeData.matGrandpa });
-  if (treeData.matGrandma) grandparents.push({ role: "MATERNAL GRANDMOTHER", ent: treeData.matGrandma });
-  if (grandparents.length > 0) {
-    sections.push({ title: "GRANDPARENTS (ANCESTORS - GEN -2)", members: grandparents });
+  // 7. Ancestors (Grandparents and Beyond)
+  const infiniteData = getInfiniteFamilyTreeData(target.id);
+  if (infiniteData) {
+    for (let g = -2; g >= infiniteData.minGen; g--) {
+      const list = infiniteData.tiers.get(g) || [];
+      if (list.length > 0) {
+        const title = g === -2 ? `GRANDPARENTS (GEN -2)` : (g === -3 ? `GREAT-GRANDPARENTS (GEN -3)` : `ANCESTORS (GEN ${g})`);
+        sections.push({
+          title: `${title} (${list.length})`,
+          members: list.map(n => ({ role: n.role, ent: n.ent }))
+        });
+      }
+    }
   }
 
-  // 8. Grandchildren
-  if (treeData.grandchildren.length > 0) {
-    const gEntries = treeData.grandchildren.map(gc => ({ role: `GRANDCHILD`, ent: gc.entity }));
-    sections.push({ title: `GRANDCHILDREN (${treeData.grandchildren.length})`, members: gEntries });
+  // 8. Descendants (Grandchildren and Beyond)
+  if (infiniteData) {
+    for (let g = 2; g <= infiniteData.maxGen; g++) {
+      const list = infiniteData.tiers.get(g) || [];
+      if (list.length > 0) {
+        const title = g === 2 ? `GRANDCHILDREN (GEN +2)` : (g === 3 ? `GREAT-GRANDCHILDREN (GEN +3)` : `DESCENDANTS (GEN +${g})`);
+        sections.push({
+          title: `${title} (${list.length})`,
+          members: list.map(n => ({ role: n.role, ent: n.ent }))
+        });
+      }
+    }
   }
 
   // 9. Godparent (Padrinho / Madrinha) & Godchildren (Afilhados / Afilhadas)
@@ -2779,25 +3073,26 @@ function renderFamilyTab(mx, my, mw, mh, target) {
  * Graphical, interactive, visual family tree with hierarchical generational nodes and connectors
  */
 function renderGraphicalFamilyTreeTab(mx, my, mw, mh, target) {
-  const treeData = getFamilyTreeData(target.id);
+  const treeData = getInfiniteFamilyTreeData(target.id);
   if (!treeData) return;
 
   const contentY = my + 62;
   const contentH = (my + mh - 12) - contentY;
   drawNESBox(mx + 10, contentY, mw - 20, contentH);
 
-  drawText8x8("FAMILY PEDIGREE (CLICK NODE TO RE-CENTER):", mx + 20, contentY + 10, "#ffd700", 1);
+  const totalMembersCount = treeData.nodes.size;
+  drawText8x8(`FAMILY PEDIGREE: ${totalMembersCount} RELATIVES (CLICK NODE TO RE-CENTER):`, mx + 20, contentY + 10, "#ffd700", 1);
 
   // Zoom Controls Bar at Top Right of Box
   const zoomPct = Math.round(familyTreeZoom * 100);
   drawNESButton(mx + mw - 235, contentY + 6, 36, 20, "[-]", false, false);
   registerClickableRegion(mx + mw - 235, contentY + 6, 36, 20, () => {
-    familyTreeZoom = Math.max(0.4, Number((familyTreeZoom - 0.15).toFixed(2)));
+    familyTreeZoom = Math.max(0.2, Number((familyTreeZoom - 0.15).toFixed(2)));
   });
 
   drawNESButton(mx + mw - 195, contentY + 6, 36, 20, "[+]", false, false);
   registerClickableRegion(mx + mw - 195, contentY + 6, 36, 20, () => {
-    familyTreeZoom = Math.min(2.5, Number((familyTreeZoom + 0.15).toFixed(2)));
+    familyTreeZoom = Math.min(3.0, Number((familyTreeZoom + 0.15).toFixed(2)));
   });
 
   drawNESButton(mx + mw - 155, contentY + 6, 125, 20, `RESET (${zoomPct}%)`, false, false);
@@ -2810,7 +3105,6 @@ function renderGraphicalFamilyTreeTab(mx, my, mw, mh, target) {
   const cardW = 160;
   const cardH = 50;
   const tierGap = 75;
-  const startTierY = contentY + 45 - modalScroll * 25;
   const centerX = mx + mw / 2;
 
   // Clip view to inner box
@@ -2869,6 +3163,8 @@ function renderGraphicalFamilyTreeTab(mx, my, mw, mh, target) {
     registerClickableRegion(scrX, scrY, scrW, scrH, () => {
       lastSelectedId = curId;
       modalScroll = 0;
+      familyTreePanX = 0;
+      familyTreePanY = 0;
     });
   };
 
@@ -2886,104 +3182,45 @@ function renderGraphicalFamilyTreeTab(mx, my, mw, mh, target) {
     ctx.restore();
   };
 
-  // 1. Tier -2: Grandparents
-  const tierGPY = startTierY;
-  const gpSlots = [
-    { ent: treeData.patGrandpa, role: "PAT. GRANDFATHER" },
-    { ent: treeData.patGrandma, role: "PAT. GRANDMOTHER" },
-    { ent: treeData.matGrandpa, role: "MAT. GRANDFATHER" },
-    { ent: treeData.matGrandma, role: "MAT. GRANDMOTHER" }
-  ].filter(g => !!g.ent);
+  // Compute tier layout positions
+  // Center gen 0 at y = contentY + 80 - modalScroll * 25
+  const gen0Y = contentY + 80 - modalScroll * 25;
+  const nodePositions = new Map(); // id -> { x, y }
 
-  if (gpSlots.length > 0) {
-    const totalGPW = gpSlots.length * (cardW + 16) - 16;
-    let curX = centerX - totalGPW / 2;
-    for (const g of gpSlots) {
-      drawNodeCard(curX, tierGPY, g.ent, g.role);
+  for (let g = treeData.minGen; g <= treeData.maxGen; g++) {
+    const list = treeData.tiers.get(g) || [];
+    if (list.length === 0) continue;
+
+    const tierY = gen0Y + g * tierGap;
+    const totalTierW = list.length * (cardW + 16) - 16;
+    let curX = centerX - totalTierW / 2;
+
+    for (const node of list) {
+      nodePositions.set(node.ent.id, { x: curX, y: tierY, node });
       curX += cardW + 16;
     }
   }
 
-  // 2. Tier -1: Parents
-  const tierParentsY = tierGPY + (gpSlots.length > 0 ? tierGap : 0);
-  const pSlots = [
-    { ent: treeData.father, role: "FATHER" },
-    { ent: treeData.mother, role: "MOTHER" }
-  ].filter(p => !!p.ent);
-
-  const parentX1 = centerX - cardW - 16;
-  const parentX2 = centerX + 16;
-
-  if (treeData.father) {
-    drawNodeCard(parentX1, tierParentsY, treeData.father, "FATHER");
-  }
-  if (treeData.mother) {
-    drawNodeCard(parentX2, tierParentsY, treeData.mother, "MOTHER");
-  }
-  if (treeData.father && treeData.mother) {
-    // Connector line between parents
-    ctx.save();
-    ctx.strokeStyle = "#ffd700";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(parentX1 + cardW, tierParentsY + cardH / 2);
-    ctx.lineTo(parentX2, tierParentsY + cardH / 2);
-    ctx.stroke();
-    drawText8x8("❤️", centerX - 6, tierParentsY + cardH / 2 - 4, "#ff60a0", 1);
-    ctx.restore();
-  }
-
-  // 3. Tier 0: Subject Generation (Subject, Spouse, Siblings)
-  const tierSubjectY = tierParentsY + (pSlots.length > 0 ? tierGap : 0);
-
-  // Line from parents down to Subject
-  if (pSlots.length > 0) {
-    drawConnectorLine(centerX, tierParentsY + cardH, centerX, tierSubjectY, "#ffd700");
-  }
-
-  const subjCards = [];
-  subjCards.push({ ent: treeData.target, role: "SUBJECT", isTarget: true });
-  if (treeData.partner) subjCards.push({ ent: treeData.partner, role: "SPOUSE", isPartner: true });
-  for (const sib of treeData.siblings) {
-    subjCards.push({ ent: sib, role: "SIBLING" });
-  }
-
-  const totalSubjW = subjCards.length * (cardW + 16) - 16;
-  let curSubjX = centerX - totalSubjW / 2;
-  for (const sc of subjCards) {
-    drawNodeCard(curSubjX, tierSubjectY, sc.ent, sc.role, sc.isTarget, sc.isPartner);
-    if (sc.isTarget && treeData.partner) {
-      // Spouse link
-      drawText8x8("💍", curSubjX + cardW + 2, tierSubjectY + cardH / 2 - 4, "#ffd700", 1);
-    }
-    curSubjX += cardW + 16;
-  }
-
-  // 4. Tier +1: Children
-  if (treeData.children.length > 0) {
-    const tierChildrenY = tierSubjectY + tierGap;
-    const totalChildW = treeData.children.length * (cardW + 14) - 14;
-    let curChildX = centerX - totalChildW / 2;
-
-    drawConnectorLine(centerX, tierSubjectY + cardH, centerX, tierChildrenY, "#58d854");
-
-    for (const c of treeData.children) {
-      drawNodeCard(curChildX, tierChildrenY, c, "CHILD");
-      curChildX += cardW + 14;
-    }
-
-    // 5. Tier +2: Grandchildren
-    if (treeData.grandchildren.length > 0) {
-      const tierGCY = tierChildrenY + tierGap;
-      const totalGCW = treeData.grandchildren.length * (cardW + 12) - 12;
-      let curGCX = centerX - totalGCW / 2;
-
-      drawConnectorLine(centerX, tierChildrenY + cardH, centerX, tierGCY, "#3cbcfc");
-
-      for (const gc of treeData.grandchildren) {
-        drawNodeCard(curGCX, tierGCY, gc.entity, "GRANDCHILD");
-        curGCX += cardW + 12;
+  // Draw connectors from parents to children
+  for (const [id, pos] of nodePositions.entries()) {
+    const node = pos.node;
+    if (node.parentIds && node.parentIds.length > 0) {
+      for (const pId of node.parentIds) {
+        const pPos = nodePositions.get(pId);
+        if (pPos) {
+          const connCol = node.gen <= 0 ? "#ffd700" : (node.gen === 1 ? "#58d854" : "#3cbcfc");
+          drawConnectorLine(pPos.x + cardW / 2, pPos.y + cardH, pos.x + cardW / 2, pos.y, connCol);
+        }
       }
+    }
+  }
+
+  // Draw node cards
+  for (const [id, pos] of nodePositions.entries()) {
+    const node = pos.node;
+    drawNodeCard(pos.x, pos.y, node.ent, node.role, !!node.isTarget, !!node.isPartner);
+    if (node.isTarget && treeData.partner) {
+      drawText8x8("💍", pos.x + cardW + 2, pos.y + cardH / 2 - 4, "#ffd700", 1);
     }
   }
 
@@ -3112,6 +3349,12 @@ function renderDossierModal() {
 
   if (inspectingRelationship) {
     renderRelationshipModal(mx, my, mw, mh, inspectingRelationship);
+    ctx.restore();
+    return;
+  }
+
+  if (inspectingSurname) {
+    renderSurnameTreeModal(mx, my, mw, mh, inspectingSurname);
     ctx.restore();
     return;
   }
@@ -3322,7 +3565,7 @@ function renderDossierModal() {
     }
 
     const lineageY = isHouse ? my + 154 : my + 132;
-    drawNESBox(mx + 10, lineageY, mw - 20, 56);
+    drawNESBox(mx + 10, lineageY, mw - 20, isHouse ? 56 : 74);
 
     // Perks & Traits / Structure stats
     if (isHouse) {
@@ -3411,10 +3654,33 @@ function renderDossierModal() {
           modalScroll = 0;
         });
       }
+
+      // Surnames row & interactive Surname Tree button
+      const sNames = Array.isArray(props.surnames) && props.surnames.length > 0 ? props.surnames : (props.surname ? [props.surname] : []);
+      const sText = sNames.length > 0 ? sNames.join(", ").toUpperCase() : "NONE (ANONYMOUS)";
+      drawText8x8(`SURNAMES (${sNames.length}): ${sText.slice(0, 60)}`, mx + 20, lineageY + 54, "#ffd700", 1);
+
+      if (sNames.length > 0) {
+        let btnSurX = mx + 20 + Math.min(sText.slice(0, 60).length * 8 + 140, mw - 240);
+        for (let si = 0; si < Math.min(sNames.length, 2); si++) {
+          const s = sNames[si];
+          const bLabel = `[TREE: ${s.toUpperCase()}]`;
+          const bW = bLabel.length * 8 + 14;
+          drawNESButton(btnSurX, lineageY + 48, bW, 20, bLabel, false, false);
+          registerClickableRegion(btnSurX, lineageY + 48, bW, 20, () => {
+            inspectingSurname = s;
+            surnameTreeZoom = 1.0;
+            surnameTreePanX = 0;
+            surnameTreePanY = 0;
+            modalScroll = 0;
+          });
+          btnSurX += bW + 6;
+        }
+      }
     }
 
     // 3. Vital Gauges
-    let gaugeY = lineageY + 62;
+    let gaugeY = lineageY + (isHouse ? 62 : 80);
     if (props.brain && typeof props.brain.condition === "number") {
       drawNESProgressBar(mx + 10, gaugeY, mw - 20, 16, props.brain.condition, props.brain.maxCondition || 100, `VITAL HP (BRAIN INTEGRITY): ${Math.round(props.brain.condition)}/${props.brain.maxCondition || 100}`, "#f83800");
       gaugeY += 20;
@@ -4171,6 +4437,12 @@ function renderGroupsModal() {
     return;
   }
 
+  if (inspectingSurname) {
+    renderSurnameTreeModal(mx, my, mw, mh, inspectingSurname);
+    ctx.restore();
+    return;
+  }
+
   // If viewing full Clan Dossier Detail
   if (inspectingGroup) {
     renderGroupDetailView(mx, my, mw, mh, inspectingGroup);
@@ -4686,6 +4958,15 @@ function renderGroupDetailView(mx, my, mw, mh, g) {
       diplomacyModalScroll = 0;
     });
 
+    // War Room (Painel de Guerra) Button
+    const warCount = (world?.wars || []).filter(w => w.groupAId === g.id || w.groupBId === g.id).length;
+    drawNESButton(mx + 20, contentY + 122, 270, 24, `WAR ROOM / GUERRAS (${warCount})`, false, false);
+    registerClickableRegion(mx + 20, contentY + 122, 270, 24, () => {
+      currentMode = "WARS";
+      warPanelScroll = 0;
+      warPanelTab = "WARS";
+    });
+
     drawText8x8(`POLITICAL LEADERSHIP & POSTS`, mx + 310, contentY + 12, "#ffd700", 1);
 
     // High Leader
@@ -4824,9 +5105,17 @@ function renderDiplomacyModal(mx, my, mw, mh, g) {
   drawText8x8(`DIPLOMATIC RELATIONS: ${(g.name || "CLAN").toUpperCase()}`, mx + 16, my + 14, gFgColor, 1);
 
   // Back Button
-  drawNESButton(mx + mw - 110, my + 6, 100, 24, "< DOSSIER", false, false);
-  registerClickableRegion(mx + mw - 110, my + 6, 100, 24, () => {
+  drawNESButton(mx + mw - 150, my + 6, 110, 24, "< DOSSIER", false, false);
+  registerClickableRegion(mx + mw - 150, my + 6, 110, 24, () => {
     inspectingDiplomacyGroup = null;
+  });
+
+  // [X] Close Button
+  drawNESButton(mx + mw - 32, my + 6, 26, 24, "X", false, true);
+  registerClickableRegion(mx + mw - 32, my + 6, 26, 24, () => {
+    inspectingDiplomacyGroup = null;
+    inspectingGroup = null;
+    currentMode = "MAP";
   });
 
   const contentY = my + 38;
@@ -4919,32 +5208,61 @@ function renderDiplomacyModal(mx, my, mw, mh, g) {
  */
 function renderPoliticalHistoryModal(mx, my, mw, mh, g) {
   const gFgColor = g.color ? `#${(g.color & 0xffffff).toString(16).padStart(6, "0")}` : "#f8b800";
-  drawText8x8(`POLITICAL CHRONICLES & ELECTIONS: ${(g.name || "CLAN").toUpperCase()}`, mx + 16, my + 14, gFgColor, 1);
+  const rawPolHistory = g.politicalHistory || [];
+  const polHistory = rawPolHistory.filter(ev => {
+    if (politicalHistoryFilter === "ELECTIONS") return ev.type === "ELECTION";
+    if (politicalHistoryFilter === "WARS") return ev.type === "WAR_DECLARED" || ev.type === "PEACE_TREATY" || ev.type === "WAR_VICTORY";
+    if (politicalHistoryFilter === "DIPLOMACY") return ev.type === "DIPLOMATIC_MISSION";
+    return true;
+  });
+
+  drawText8x8(`POLITICAL CHRONICLES: ${(g.name || "CLAN").toUpperCase()} (${rawPolHistory.length} EVENTS)`, mx + 16, my + 14, gFgColor, 1);
+
+  // Filter Tabs: [ALL] [ELECTIONS] [WARS] [DIPLOMACY]
+  const filterTabs = ["ALL", "ELECTIONS", "WARS", "DIPLOMACY"];
+  let fX = mx + 16;
+  for (const f of filterTabs) {
+    const isAct = politicalHistoryFilter === f;
+    const fw = f.length * 8 + 10;
+    drawNESButton(fX, my + 32, fw, 20, f, isAct, false);
+    const fid = f;
+    registerClickableRegion(fX, my + 32, fw, 20, () => {
+      politicalHistoryFilter = fid;
+      politicalModalScroll = 0;
+    });
+    fX += fw + 4;
+  }
 
   // Scroll Buttons
-  drawNESButton(mx + mw - 190, my + 6, 32, 24, "▲", false, false);
-  registerClickableRegion(mx + mw - 190, my + 6, 32, 24, () => {
+  drawNESButton(mx + mw - 230, my + 6, 32, 24, "▲", false, false);
+  registerClickableRegion(mx + mw - 230, my + 6, 32, 24, () => {
     politicalModalScroll = Math.max(0, politicalModalScroll - 2);
   });
-  drawNESButton(mx + mw - 150, my + 6, 32, 24, "▼", false, false);
-  registerClickableRegion(mx + mw - 150, my + 6, 32, 24, () => {
+  drawNESButton(mx + mw - 190, my + 6, 32, 24, "▼", false, false);
+  registerClickableRegion(mx + mw - 190, my + 6, 32, 24, () => {
     politicalModalScroll = Math.max(0, politicalModalScroll + 2);
   });
 
   // Back Button
-  drawNESButton(mx + mw - 110, my + 6, 100, 24, "< DOSSIER", false, false);
-  registerClickableRegion(mx + mw - 110, my + 6, 100, 24, () => {
+  drawNESButton(mx + mw - 150, my + 6, 110, 24, "< DOSSIER", false, false);
+  registerClickableRegion(mx + mw - 150, my + 6, 110, 24, () => {
     inspectingPoliticalHistoryGroup = null;
   });
 
-  const contentY = my + 38;
+  // [X] Close Button
+  drawNESButton(mx + mw - 32, my + 6, 26, 24, "X", false, true);
+  registerClickableRegion(mx + mw - 32, my + 6, 26, 24, () => {
+    inspectingPoliticalHistoryGroup = null;
+    inspectingGroup = null;
+    currentMode = "MAP";
+  });
+
+  const contentY = my + 56;
   const contentH = (my + mh - 12) - contentY;
   drawNESBox(mx + 12, contentY, mw - 24, contentH);
 
-  const polHistory = g.politicalHistory || [];
-
   if (polHistory.length === 0) {
-    drawText8x8("NO POLITICAL EVENTS OR ELECTIONS RECORDED FOR THIS CLAN YET.", mx + 24, contentY + 24, "#bcbcbc", 1);
+    drawText8x8("NO POLITICAL EVENTS FOUND FOR CURRENT FILTER.", mx + 24, contentY + 24, "#bcbcbc", 1);
     return;
   }
 
@@ -5013,9 +5331,18 @@ function renderDiplomaticMissionModal(mx, my, mw, mh, ev) {
   drawText8x8(`DIPLOMATIC MISSION REPORT`, mx + 16, my + 14, col, 1);
 
   // Back Button
-  drawNESButton(mx + mw - 140, my + 6, 130, 24, "< CHRONICLES", false, false);
-  registerClickableRegion(mx + mw - 140, my + 6, 130, 24, () => {
+  drawNESButton(mx + mw - 170, my + 6, 130, 24, "< CHRONICLES", false, false);
+  registerClickableRegion(mx + mw - 170, my + 6, 130, 24, () => {
     inspectingDiplomaticMission = null;
+  });
+
+  // [X] Close Button
+  drawNESButton(mx + mw - 32, my + 6, 26, 24, "X", false, true);
+  registerClickableRegion(mx + mw - 32, my + 6, 26, 24, () => {
+    inspectingDiplomaticMission = null;
+    inspectingPoliticalHistoryGroup = null;
+    inspectingGroup = null;
+    currentMode = "MAP";
   });
 
   const contentY = my + 38;
@@ -5124,19 +5451,28 @@ function renderDiplomaticHistoryModal(mx, my, mw, mh, data) {
   drawText8x8(`CHRONICLES: ${nameA} <-> ${nameB}`, mx + 16, my + 14, "#ffd700", 1);
 
   // Scroll Buttons
-  drawNESButton(mx + mw - 230, my + 6, 32, 24, "▲", false, false);
-  registerClickableRegion(mx + mw - 230, my + 6, 32, 24, () => {
+  drawNESButton(mx + mw - 265, my + 6, 32, 24, "▲", false, false);
+  registerClickableRegion(mx + mw - 265, my + 6, 32, 24, () => {
     diplomaticHistoryScroll = Math.max(0, diplomaticHistoryScroll - 2);
   });
-  drawNESButton(mx + mw - 190, my + 6, 32, 24, "▼", false, false);
-  registerClickableRegion(mx + mw - 190, my + 6, 32, 24, () => {
+  drawNESButton(mx + mw - 225, my + 6, 32, 24, "▼", false, false);
+  registerClickableRegion(mx + mw - 225, my + 6, 32, 24, () => {
     diplomaticHistoryScroll = Math.max(0, diplomaticHistoryScroll + 2);
   });
 
   // Back Button
-  drawNESButton(mx + mw - 150, my + 6, 140, 24, "< DIPLOMACY", false, false);
-  registerClickableRegion(mx + mw - 150, my + 6, 140, 24, () => {
+  drawNESButton(mx + mw - 185, my + 6, 145, 24, "< DIPLOMACY", false, false);
+  registerClickableRegion(mx + mw - 185, my + 6, 145, 24, () => {
     inspectingDiplomaticHistory = null;
+  });
+
+  // [X] Close Button
+  drawNESButton(mx + mw - 32, my + 6, 26, 24, "X", false, true);
+  registerClickableRegion(mx + mw - 32, my + 6, 26, 24, () => {
+    inspectingDiplomaticHistory = null;
+    inspectingDiplomacyGroup = null;
+    inspectingGroup = null;
+    currentMode = "MAP";
   });
 
   // Top Status Bar
@@ -5266,9 +5602,18 @@ function renderElectionInspector(mx, my, mw, mh, elec) {
   drawText8x8(`ELECTION INSPECTOR: ${(elec.roleTitle || "LEADERSHIP").toUpperCase()} - ${(elec.groupName || "CLAN").toUpperCase()}`, mx + 16, my + 14, "#58d854", 1);
 
   // Back Button
-  drawNESButton(mx + mw - 120, my + 6, 110, 24, "< CHRONICLES", false, false);
-  registerClickableRegion(mx + mw - 120, my + 6, 110, 24, () => {
+  drawNESButton(mx + mw - 170, my + 6, 130, 24, "< CHRONICLES", false, false);
+  registerClickableRegion(mx + mw - 170, my + 6, 130, 24, () => {
     inspectingElectionRecord = null;
+  });
+
+  // [X] Close Button
+  drawNESButton(mx + mw - 32, my + 6, 26, 24, "X", false, true);
+  registerClickableRegion(mx + mw - 32, my + 6, 26, 24, () => {
+    inspectingElectionRecord = null;
+    inspectingPoliticalHistoryGroup = null;
+    inspectingGroup = null;
+    currentMode = "MAP";
   });
 
   // Top Summary Card
@@ -5359,6 +5704,497 @@ function renderElectionInspector(mx, my, mw, mh, elec) {
       });
 
       vY += rowH;
+    }
+  }
+}
+
+/**
+ * Modal Sub-View: Interactive Surname Family Tree connected to the Progenitor
+ */
+function renderSurnameTreeModal(mx, my, mw, mh, surname) {
+  if (!surname) {
+    inspectingSurname = null;
+    return;
+  }
+
+  const sUpper = surname.toUpperCase();
+  drawText8x8(`SURNAME TREE: [${sUpper}] (LINEAGE OF PROGENITOR)`, mx + 16, my + 14, "#ffd700", 1);
+
+  // Zoom Controls Bar at Top Right of Box
+  const zoomPct = Math.round(surnameTreeZoom * 100);
+  drawNESButton(mx + mw - 300, my + 6, 36, 20, "[-]", false, false);
+  registerClickableRegion(mx + mw - 300, my + 6, 36, 20, () => {
+    surnameTreeZoom = Math.max(0.2, Number((surnameTreeZoom - 0.15).toFixed(2)));
+  });
+
+  drawNESButton(mx + mw - 260, my + 6, 36, 20, "[+]", false, false);
+  registerClickableRegion(mx + mw - 260, my + 6, 36, 20, () => {
+    surnameTreeZoom = Math.min(3.0, Number((surnameTreeZoom + 0.15).toFixed(2)));
+  });
+
+  drawNESButton(mx + mw - 220, my + 6, 110, 20, `RESET (${zoomPct}%)`, false, false);
+  registerClickableRegion(mx + mw - 220, my + 6, 110, 20, () => {
+    surnameTreeZoom = 1.0;
+    surnameTreePanX = 0;
+    surnameTreePanY = 0;
+  });
+
+  // Back Button
+  drawNESButton(mx + mw - 105, my + 6, 68, 24, "< BACK", false, false);
+  registerClickableRegion(mx + mw - 105, my + 6, 68, 24, () => {
+    inspectingSurname = null;
+  });
+
+  // [X] Close Button
+  drawNESButton(mx + mw - 32, my + 6, 26, 24, "X", false, true);
+  registerClickableRegion(mx + mw - 32, my + 6, 26, 24, () => {
+    inspectingSurname = null;
+    currentMode = "MAP";
+  });
+
+  const contentY = my + 38;
+  const contentH = (my + mh - 12) - contentY;
+  drawNESBox(mx + 12, contentY, mw - 24, contentH);
+
+  // Collect all entities in universe bearing this surname
+  const surnameMembers = [];
+  const sLow = surname.toLowerCase();
+  if (entityRegistry) {
+    for (const ent of entityRegistry.values()) {
+      if (!ent || !ent.properties) continue;
+      const sArr = Array.isArray(ent.properties.surnames) ? ent.properties.surnames : (ent.properties.surname ? [ent.properties.surname] : []);
+      if (sArr.some(s => s && s.toLowerCase() === sLow)) {
+        surnameMembers.push(ent);
+      }
+    }
+  }
+
+  if (surnameMembers.length === 0) {
+    drawText8x8(`NO CREATURES FOUND CARRYING SURNAME '${sUpper}'.`, mx + 24, contentY + 24, "#bcbcbc", 1);
+    return;
+  }
+
+  // Identify Progenitor: created without father/mother or with progenitorSurname matching
+  let progenitor = surnameMembers.find(e => e.properties?.progenitorSurname?.toLowerCase() === sLow);
+  if (!progenitor) {
+    progenitor = surnameMembers.find(e => !e.properties?.fatherId && !e.properties?.motherId && !e.properties?.life?.fatherId && !e.properties?.life?.motherId);
+  }
+  if (!progenitor) {
+    // Pick oldest member
+    surnameMembers.sort((a, b) => (b.properties?.life?.age || 0) - (a.properties?.life?.age || 0));
+    progenitor = surnameMembers[0];
+  }
+
+  // Calculate generational depth for all surname members relative to progenitor
+  const genMap = new Map();
+  genMap.set(progenitor.id, 0);
+
+  const q = [progenitor.id];
+  while (q.length > 0) {
+    const curId = q.shift();
+    const curGen = genMap.get(curId);
+    for (const m of surnameMembers) {
+      if (genMap.has(m.id)) continue;
+      const fId = m.properties?.fatherId !== undefined ? m.properties.fatherId : m.properties?.life?.fatherId;
+      const mId = m.properties?.motherId !== undefined ? m.properties.motherId : m.properties?.life?.motherId;
+      if (fId === curId || mId === curId) {
+        genMap.set(m.id, curGen + 1);
+        q.push(m.id);
+      }
+    }
+  }
+
+  // Fallback for any unlinked members
+  for (const m of surnameMembers) {
+    if (!genMap.has(m.id)) {
+      genMap.set(m.id, 0);
+    }
+  }
+
+  // Group by generation
+  const tiers = new Map();
+  let maxGen = 0;
+  for (const m of surnameMembers) {
+    const g = genMap.get(m.id);
+    if (g > maxGen) maxGen = g;
+    if (!tiers.has(g)) tiers.set(g, []);
+    tiers.get(g).push(m);
+  }
+
+  const cardW = 160;
+  const cardH = 50;
+  const tierGap = 75;
+  const centerX = mx + mw / 2;
+
+  // Clip view to inner box
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(mx + 14, contentY + 12, mw - 28, contentH - 20);
+  ctx.clip();
+
+  // Apply Panning and Zooming Transform centered on the tree
+  ctx.translate(centerX + surnameTreePanX, contentY + 30 + surnameTreePanY);
+  ctx.scale(surnameTreeZoom, surnameTreeZoom);
+  ctx.translate(-centerX, -(contentY + 30));
+
+  const drawNodeCard = (cx, cy, ent, isProgenitor) => {
+    if (!ent) return;
+    const isAlive = !ent.destroyed && ent.properties?.life?.energy > 0;
+    const scrX = (centerX + surnameTreePanX) + (cx - centerX) * surnameTreeZoom;
+    const scrY = (contentY + 30 + surnameTreePanY) + (cy - (contentY + 30)) * surnameTreeZoom;
+    const scrW = cardW * surnameTreeZoom;
+    const scrH = cardH * surnameTreeZoom;
+
+    const isHover = mouseX >= scrX && mouseX <= scrX + scrW && mouseY >= scrY && mouseY <= scrY + scrH;
+
+    ctx.save();
+    ctx.fillStyle = isProgenitor ? "#242038" : (isHover ? "#242440" : "#121220");
+    ctx.fillRect(cx, cy, cardW, cardH);
+
+    ctx.strokeStyle = isProgenitor ? "#ffd700" : (isHover ? "#3cbcfc" : (isAlive ? "#58d854" : "#9c5050"));
+    ctx.lineWidth = isProgenitor || isHover ? 2 : 1;
+    ctx.strokeRect(cx, cy, cardW, cardH);
+
+    const roleTag = isProgenitor ? "PROGENITOR" : `GEN +${genMap.get(ent.id) || 0}`;
+    drawText8x8(`[${roleTag}]`, cx + 6, cy + 6, isProgenitor ? "#ffd700" : "#3cbcfc", 1);
+
+    const nameCol = isProgenitor ? "#ffd700" : (isAlive ? "#ffffff" : "#9c5050");
+    const nameStr = (ent.properties?.name || `CREATURE #${ent.id}`).toUpperCase();
+    const maxChars = Math.floor((cardW - 12) / 8);
+    drawText8x8(nameStr.slice(0, maxChars), cx + 6, cy + 20, nameCol, 1);
+
+    const statusBadge = isAlive ? "[ALIVE]" : "[DEAD]";
+    const statusCol = isAlive ? "#58d854" : "#9c5050";
+    drawText8x8(statusBadge, cx + 6, cy + 34, statusCol, 1);
+
+    const clanStr = (ent.properties?.group?.name || "SOLITARY").slice(0, 8).toUpperCase();
+    drawText8x8(`CLAN:${clanStr}`, cx + 58, cy + 34, "#bcbcbc", 1);
+
+    ctx.restore();
+
+    const curId = ent.id;
+    registerClickableRegion(scrX, scrY, scrW, scrH, () => {
+      lastSelectedId = curId;
+      dossierTab = "OVERVIEW";
+      currentMode = "INSPECT";
+      inspectingSurname = null;
+      modalScroll = 0;
+      familyTreePanX = 0;
+      familyTreePanY = 0;
+    });
+  };
+
+  const drawConnectorLine = (x1, y1, x2, y2, color = "#606080") => {
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    const midY = (y1 + y2) / 2;
+    ctx.lineTo(x1, midY);
+    ctx.lineTo(x2, midY);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+    ctx.restore();
+  };
+
+  const nodePositions = new Map();
+  const startGenY = contentY + 40 - modalScroll * 25;
+
+  for (let g = 0; g <= maxGen; g++) {
+    const list = tiers.get(g) || [];
+    if (list.length === 0) continue;
+    const tierY = startGenY + g * tierGap;
+    const totalW = list.length * (cardW + 16) - 16;
+    let curX = centerX - totalW / 2;
+    for (const ent of list) {
+      nodePositions.set(ent.id, { x: curX, y: tierY, ent });
+      curX += cardW + 16;
+    }
+  }
+
+  // Draw parent connectors
+  for (const [id, pos] of nodePositions.entries()) {
+    const ent = pos.ent;
+    const fId = ent.properties?.fatherId !== undefined ? ent.properties.fatherId : ent.properties?.life?.fatherId;
+    const mId = ent.properties?.motherId !== undefined ? ent.properties.motherId : ent.properties?.life?.motherId;
+    for (const pId of [fId, mId]) {
+      if (pId && nodePositions.has(pId)) {
+        const pPos = nodePositions.get(pId);
+        drawConnectorLine(pPos.x + cardW / 2, pPos.y + cardH, pos.x + cardW / 2, pos.y, "#ffd700");
+      }
+    }
+  }
+
+  // Draw cards
+  for (const [id, pos] of nodePositions.entries()) {
+    drawNodeCard(pos.x, pos.y, pos.ent, pos.ent.id === progenitor.id);
+  }
+
+  ctx.restore();
+}
+
+/**
+ * Modal Sub-View: War Room & Chronicles of War (Active & Historic Conflicts)
+ */
+function renderWarPanelModal(mx, my, mw, mh) {
+  drawText8x8(`WAR ROOM & HISTORIC CONFLICTS (PAINEL DE GUERRA)`, mx + 16, my + 14, "#ff2040", 1);
+
+  // Tabs: [WARS] [WARRIORS] [PACIFISTS] [EVENTS]
+  const tabs = ["WARS", "WARRIORS", "PACIFISTS", "EVENTS"];
+  let tX = mx + 16;
+  for (const t of tabs) {
+    const isAct = warPanelTab === t;
+    const tw = t.length * 8 + 14;
+    drawNESButton(tX, my + 32, tw, 22, t, isAct, false);
+    const tid = t;
+    registerClickableRegion(tX, my + 32, tw, 22, () => {
+      warPanelTab = tid;
+      warPanelScroll = 0;
+    });
+    tX += tw + 6;
+  }
+
+  // Scroll Buttons
+  drawNESButton(mx + mw - 230, my + 6, 32, 24, "▲", false, false);
+  registerClickableRegion(mx + mw - 230, my + 6, 32, 24, () => {
+    warPanelScroll = Math.max(0, warPanelScroll - 2);
+  });
+  drawNESButton(mx + mw - 190, my + 6, 32, 24, "▼", false, false);
+  registerClickableRegion(mx + mw - 190, my + 6, 32, 24, () => {
+    warPanelScroll = Math.max(0, warPanelScroll + 2);
+  });
+
+  // [X] Close Button
+  drawNESButton(mx + mw - 32, my + 6, 26, 24, "X", false, true);
+  registerClickableRegion(mx + mw - 32, my + 6, 26, 24, () => {
+    currentMode = "MAP";
+    inspectingWarRecord = null;
+  });
+
+  const contentY = my + 58;
+  const contentH = (my + mh - 12) - contentY;
+  drawNESBox(mx + 12, contentY, mw - 24, contentH);
+
+  const wars = (world && Array.isArray(world.wars)) ? world.wars : [];
+
+  // TAB 1: WARS LIST
+  if (warPanelTab === "WARS") {
+    if (wars.length === 0) {
+      drawText8x8("NO WARS HAVE BEEN RECORDED IN THIS WORLD YET. PEACE REIGNS.", mx + 24, contentY + 24, "#58d854", 1);
+      return;
+    }
+
+    const rowH = 48;
+    const visibleCount = Math.floor((contentH - 24) / rowH);
+    const maxScroll = Math.max(0, wars.length - visibleCount);
+    warPanelScroll = Math.max(0, Math.min(maxScroll, warPanelScroll));
+
+    let curY = contentY + 12;
+    for (let i = warPanelScroll; i < Math.min(wars.length, warPanelScroll + visibleCount); i++) {
+      const w = wars[i];
+      const isHover = mouseX >= mx + 16 && mouseX <= mx + mw - 16 && mouseY >= curY - 2 && mouseY <= curY + rowH - 4;
+      if (isHover) {
+        ctx.fillStyle = "#181828";
+        ctx.fillRect(mx + 16, curY - 2, mw - 32, rowH - 2);
+      }
+
+      const isAct = w.status === "ACTIVE";
+      const statusBadge = isAct ? "[ACTIVE WAR]" : `[CONCLUDED: ${w.status}]`;
+      const statusCol = isAct ? "#ff2040" : (w.status === "DECISIVE_VICTORY" ? "#ffd700" : "#58d854");
+
+      const durTicks = (w.endTick || currentTick) - (w.startTick || 0);
+      const warTitle = `${w.groupAName || "CLAN A"} VS ${w.groupBName || "CLAN B"}`;
+      drawText8x8(`${statusBadge} ${warTitle} (${durTicks} TICKS)`, mx + 24, curY + 4, statusCol, 1);
+
+      const warriorCount = Object.keys(w.warriors || {}).length;
+      const pacifistCount = Object.keys(w.pacifists || {}).length;
+      const winnerStr = w.winnerName ? ` • Winner: ${w.winnerName}` : "";
+      drawText8x8(`Combatants: ${warriorCount} | Pacifists/Diplomats: ${pacifistCount} | Events: ${(w.eventIds || []).length}${winnerStr}`, mx + 24, curY + 20, "#bcbcbc", 1);
+
+      const curWar = w;
+      drawNESButton(mx + mw - 140, curY + 8, 120, 24, "INSPECT WAR", false, false);
+      registerClickableRegion(mx + mw - 140, curY + 8, 120, 24, () => {
+        inspectingWarRecord = curWar;
+        warPanelTab = "WARRIORS";
+        warPanelScroll = 0;
+      });
+
+      curY += rowH;
+    }
+  }
+
+  // TAB 2: WARRIORS RANKING
+  else if (warPanelTab === "WARRIORS") {
+    // Gather warriors from selected war or all wars
+    const warriorMap = new Map();
+    const targetWars = inspectingWarRecord ? [inspectingWarRecord] : wars;
+
+    for (const w of targetWars) {
+      for (const [wId, entry] of Object.entries(w.warriors || {})) {
+        if (!warriorMap.has(wId)) {
+          warriorMap.set(wId, { ...entry });
+        } else {
+          const ex = warriorMap.get(wId);
+          ex.battles += entry.battles || 0;
+          ex.damageDealt += entry.damageDealt || 0;
+          ex.kills += entry.kills || 0;
+        }
+      }
+    }
+
+    const warriorList = Array.from(warriorMap.values());
+    warriorList.sort((a, b) => (b.damageDealt + b.kills * 50 + b.battles * 10) - (a.damageDealt + a.kills * 50 + a.battles * 10));
+
+    const scopeTitle = inspectingWarRecord ? `FOR WAR: ${inspectingWarRecord.groupAName} VS ${inspectingWarRecord.groupBName}` : "ALL-TIME WORLD WARS";
+    drawText8x8(`TOP WARRIORS (MAIORES GUERREIROS) - ${scopeTitle}:`, mx + 24, contentY + 10, "#ffd700", 1);
+
+    if (inspectingWarRecord) {
+      drawNESButton(mx + mw - 140, contentY + 6, 120, 20, "< ALL WARS", false, false);
+      registerClickableRegion(mx + mw - 140, contentY + 6, 120, 20, () => {
+        inspectingWarRecord = null;
+        warPanelScroll = 0;
+      });
+    }
+
+    if (warriorList.length === 0) {
+      drawText8x8("NO COMBAT DAMAGE RECORDED IN SELECTED WARS YET.", mx + 24, contentY + 36, "#bcbcbc", 1);
+      return;
+    }
+
+    const rowH = 34;
+    const visibleCount = Math.floor((contentH - 44) / rowH);
+    const maxScroll = Math.max(0, warriorList.length - visibleCount);
+    warPanelScroll = Math.max(0, Math.min(maxScroll, warPanelScroll));
+
+    let curY = contentY + 34;
+    for (let i = warPanelScroll; i < Math.min(warriorList.length, warPanelScroll + visibleCount); i++) {
+      const wr = warriorList[i];
+      const rank = i + 1;
+      const rankBadge = rank === 1 ? "🥇 #1" : (rank === 2 ? "🥈 #2" : (rank === 3 ? "🥉 #3" : `#${rank}`));
+      const rCol = rank <= 3 ? "#ffd700" : "#ffffff";
+
+      drawText8x8(`${rankBadge} ${wr.name.toUpperCase()} (${wr.groupName})`, mx + 24, curY + 2, rCol, 1);
+      drawText8x8(`⚔️ Battles: ${wr.battles} | 💥 Total Damage: ${wr.damageDealt} DMG | 💀 Kills: ${wr.kills}`, mx + 24, curY + 16, "#ff6060", 1);
+
+      const entId = Number(wr.id);
+      drawNESButton(mx + mw - 110, curY + 4, 90, 22, "INSPECT", false, false);
+      registerClickableRegion(mx + mw - 110, curY + 4, 90, 22, () => {
+        lastSelectedId = entId;
+        dossierTab = "OVERVIEW";
+        currentMode = "INSPECT";
+      });
+
+      curY += rowH;
+    }
+  }
+
+  // TAB 3: PACIFISTS RANKING
+  else if (warPanelTab === "PACIFISTS") {
+    const pacMap = new Map();
+    const targetWars = inspectingWarRecord ? [inspectingWarRecord] : wars;
+
+    for (const w of targetWars) {
+      for (const [pId, entry] of Object.entries(w.pacifists || {})) {
+        if (!pacMap.has(pId)) {
+          pacMap.set(pId, { ...entry });
+        } else {
+          const ex = pacMap.get(pId);
+          ex.positiveInteractions += entry.positiveInteractions || 0;
+          ex.diplomaticMissions += entry.diplomaticMissions || 0;
+          ex.relationBoost += entry.relationBoost || 0;
+        }
+      }
+    }
+
+    const pacList = Array.from(pacMap.values());
+    pacList.sort((a, b) => (b.relationBoost * 2 + b.diplomaticMissions * 15 + b.positiveInteractions * 5) - (a.relationBoost * 2 + a.diplomaticMissions * 15 + a.positiveInteractions * 5));
+
+    const scopeTitle = inspectingWarRecord ? `FOR WAR: ${inspectingWarRecord.groupAName} VS ${inspectingWarRecord.groupBName}` : "ALL-TIME WORLD WARS";
+    drawText8x8(`TOP PACIFISTS & PEACEMAKERS (MAIORES PACIFISTAS) - ${scopeTitle}:`, mx + 24, contentY + 10, "#58d854", 1);
+
+    if (inspectingWarRecord) {
+      drawNESButton(mx + mw - 140, contentY + 6, 120, 20, "< ALL WARS", false, false);
+      registerClickableRegion(mx + mw - 140, contentY + 6, 120, 20, () => {
+        inspectingWarRecord = null;
+        warPanelScroll = 0;
+      });
+    }
+
+    if (pacList.length === 0) {
+      drawText8x8("NO DIPLOMATIC MISSIONS OR PEACEMAKING RECORDED IN SELECTED WARS YET.", mx + 24, contentY + 36, "#bcbcbc", 1);
+      return;
+    }
+
+    const rowH = 34;
+    const visibleCount = Math.floor((contentH - 44) / rowH);
+    const maxScroll = Math.max(0, pacList.length - visibleCount);
+    warPanelScroll = Math.max(0, Math.min(maxScroll, warPanelScroll));
+
+    let curY = contentY + 34;
+    for (let i = warPanelScroll; i < Math.min(pacList.length, warPanelScroll + visibleCount); i++) {
+      const pc = pacList[i];
+      const rank = i + 1;
+      const rankBadge = rank === 1 ? "🕊️ #1" : (rank === 2 ? "🕊️ #2" : (rank === 3 ? "🕊️ #3" : `#${rank}`));
+      const rCol = rank <= 3 ? "#58d854" : "#ffffff";
+
+      drawText8x8(`${rankBadge} ${pc.name.toUpperCase()} (${pc.groupName})`, mx + 24, curY + 2, rCol, 1);
+      drawText8x8(`🤝 Peace Interactions: ${pc.positiveInteractions} | 📜 Missions: ${pc.diplomaticMissions} | 💖 Rel Boost: +${pc.relationBoost}`, mx + 24, curY + 16, "#3cbcfc", 1);
+
+      const entId = Number(pc.id);
+      drawNESButton(mx + mw - 110, curY + 4, 90, 22, "INSPECT", false, false);
+      registerClickableRegion(mx + mw - 110, curY + 4, 90, 22, () => {
+        lastSelectedId = entId;
+        dossierTab = "OVERVIEW";
+        currentMode = "INSPECT";
+      });
+
+      curY += rowH;
+    }
+  }
+
+  // TAB 4: WAR TIMELINE / EVENTS
+  else if (warPanelTab === "EVENTS") {
+    let evIds = [];
+    if (inspectingWarRecord) {
+      evIds = inspectingWarRecord.eventIds || [];
+    } else {
+      const s = new Set();
+      for (const w of wars) {
+        for (const eid of (w.eventIds || [])) s.add(eid);
+      }
+      evIds = Array.from(s);
+    }
+
+    const warEvents = (allEvents || []).filter(e => evIds.includes(e.id));
+    warEvents.sort((a, b) => (b.tick || 0) - (a.tick || 0));
+
+    const scopeTitle = inspectingWarRecord ? `FOR WAR: ${inspectingWarRecord.groupAName} VS ${inspectingWarRecord.groupBName}` : "ALL-TIME WAR TIMELINE";
+    drawText8x8(`WAR EVENTS CHRONICLE (${warEvents.length} EVENTS) - ${scopeTitle}:`, mx + 24, contentY + 10, "#ffd700", 1);
+
+    if (warEvents.length === 0) {
+      drawText8x8("NO REGISTERED WORLD EVENTS FOR THIS WAR TIMELINE YET.", mx + 24, contentY + 36, "#bcbcbc", 1);
+      return;
+    }
+
+    const rowH = 32;
+    const visibleCount = Math.floor((contentH - 44) / rowH);
+    const maxScroll = Math.max(0, warEvents.length - visibleCount);
+    warPanelScroll = Math.max(0, Math.min(maxScroll, warPanelScroll));
+
+    let curY = contentY + 34;
+    for (let i = warPanelScroll; i < Math.min(warEvents.length, warPanelScroll + visibleCount); i++) {
+      const ev = warEvents[i];
+      const typeCol = ev.type === "DEATH" ? "#ff2040" : (ev.type === "ATTACK" ? "#ffd700" : "#3cbcfc");
+      drawText8x8(`[TICK ${ev.tick}] [${ev.type}] ${ev.description}`, mx + 24, curY + 4, typeCol, 1);
+
+      const curEv = ev;
+      drawNESButton(mx + mw - 110, curY + 2, 90, 20, "INSPECT", false, false);
+      registerClickableRegion(mx + mw - 110, curY + 2, 90, 20, () => {
+        inspectingLogEvent = curEv;
+      });
+
+      curY += rowH;
     }
   }
 }
@@ -7786,6 +8622,19 @@ function frame(time) {
         if (currentMode === "INSPECT") renderDossierModal();
         else if (currentMode === "ENTITIES") renderEntitiesModal();
         else if (currentMode === "GROUPS") renderGroupsModal();
+        else if (currentMode === "WARS") {
+          const isMobile = CANVAS_WIDTH <= 680;
+          const mx = isMobile ? 6 : 30;
+          const my = isMobile ? 36 : 36;
+          const mw = isMobile ? CANVAS_WIDTH - 12 : CANVAS_WIDTH - 60;
+          const mh = isMobile ? CANVAS_HEIGHT - 44 : CANVAS_HEIGHT - 72;
+          ctx.save();
+          ctx.fillStyle = "rgba(0, 0, 0, 0.94)";
+          ctx.fillRect(0, 32, CANVAS_WIDTH, CANVAS_HEIGHT - 68);
+          drawNESBox(mx, my, mw, mh);
+          renderWarPanelModal(mx, my, mw, mh);
+          ctx.restore();
+        }
         else if (currentMode === "LOGS") renderLogsModal();
         else if (currentMode === "GENERATOR") renderGeneratorModal();
         else if (currentMode === "OPTIONS") renderOptionsModal();

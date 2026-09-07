@@ -33,7 +33,7 @@ import {
   OP_FORGET,
   OP_DIPLOMATIC_MISSION
 } from "./event_log.js";
-import { addPoliticalHistoryEntry, isAlive, getAllGroups } from "./politics.js";
+import { addPoliticalHistoryEntry, isAlive, getAllGroups, endWarRecord, recordWarCombat, recordWarPeace } from "./politics.js";
 import { vocabulario } from "./vocabulario.js";
 
 export let activeWorld = null;
@@ -2129,25 +2129,96 @@ export function getRandomVocabWord(genderPreference = "") {
   return targetGen === "feminino" ? "Pioneira" : "Pioneiro";
 }
 
-export function getMotherSurname(mother) {
-  if (mother.properties?.surname) return mother.properties.surname;
+export const FILIAL_TERMS = new Set([
+  "filho", "filha", "afilhado", "afilhada", "jr", "jr.", "junior",
+  "neto", "neta", "sobrinho", "sobrinha", "the", "o", "a", "de", "da", "do", "dos", "das"
+]);
 
-  // Extract from name if name contains a surname
-  const rawName = (mother.properties?.name || "").replace(/,\s*the\s+\w+/i, "").trim();
-  const parts = rawName.split(/\s+/);
-  if (parts.length >= 2 && !["Jr", "Jr.", "the", "Filho", "Filha", "afilhado", "afilhada", "Matriarch", "Explorer", "Builder", "Miner", "Hunter", "Farmer"].includes(parts[parts.length - 1])) {
-    mother.properties.surname = parts[parts.length - 1];
-    return mother.properties.surname;
+export function isFilialTerm(term) {
+  if (!term || typeof term !== "string") return false;
+  const clean = term.toLowerCase().replace(/[.,]/g, "").trim();
+  return FILIAL_TERMS.has(clean);
+}
+
+export const usedDeusExSurnames = new Set();
+
+export function generateUniqueDeusExSurname() {
+  let attempts = 0;
+  while (attempts < 200) {
+    attempts++;
+    const word = getRandomVocabWord();
+    if (!word || word.length < 3) continue;
+    const clean = word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    if (!usedDeusExSurnames.has(clean) && !isFilialTerm(clean)) {
+      usedDeusExSurnames.add(clean);
+      return clean;
+    }
+  }
+  const fallback = `Linhagem${usedDeusExSurnames.size + 1}`;
+  usedDeusExSurnames.add(fallback);
+  return fallback;
+}
+
+export function extractEntitySurnames(ent) {
+  if (!ent || !ent.properties) return [];
+  const results = [];
+  const addSurnameToken = (token) => {
+    if (!token || typeof token !== "string") return;
+    const clean = token.replace(/[,;]/g, "").trim();
+    if (!clean || clean.length < 2 || isFilialTerm(clean)) return;
+    const formatted = clean.charAt(0).toUpperCase() + clean.slice(1);
+    if (!results.includes(formatted)) {
+      results.push(formatted);
+    }
+  };
+
+  if (Array.isArray(ent.properties.surnames) && ent.properties.surnames.length > 0) {
+    for (const s of ent.properties.surnames) {
+      if (typeof s === "string") {
+        s.split(/\s+/).forEach(addSurnameToken);
+      }
+    }
   }
 
-  // Otherwise assign a lineage surname from vocabulario
-  const newSurname = getRandomVocabWord();
-  if (mother.properties) mother.properties.surname = newSurname;
+  if (ent.properties.surname && typeof ent.properties.surname === "string") {
+    ent.properties.surname.split(/\s+/).forEach(addSurnameToken);
+  }
+
+  if (ent.properties.progenitorSurname && typeof ent.properties.progenitorSurname === "string") {
+    ent.properties.progenitorSurname.split(/\s+/).forEach(addSurnameToken);
+  }
+
+  if (results.length === 0 && ent.properties.name) {
+    const rawName = ent.properties.name.replace(/,\s*the\s+\w+/i, "").trim();
+    const parts = rawName.split(/\s+/);
+    if (parts.length > 1) {
+      parts.slice(1).forEach(addSurnameToken);
+    }
+  }
+
+  return results;
+}
+
+export function getMotherSurname(mother) {
+  const extracted = extractEntitySurnames(mother);
+  if (extracted.length > 0) return extracted[0];
+  const newSurname = generateUniqueDeusExSurname();
+  if (mother.properties) {
+    mother.properties.surname = newSurname;
+    mother.properties.surnames = [newSurname];
+  }
   return newSurname;
 }
 
 export function generateBabyName(mother, father = null, babyGender = "male", entities = []) {
-  const motherSurname = getMotherSurname(mother);
+  const motherSurnames = extractEntitySurnames(mother);
+  const fatherSurnames = father ? extractEntitySurnames(father) : [];
+  let combinedSurnames = [...new Set([...fatherSurnames, ...motherSurnames])];
+  if (combinedSurnames.length === 0) {
+    combinedSurnames = [generateUniqueDeusExSurname()];
+  }
+  const combinedSurnameStr = combinedSurnames.join(" ");
+
   let firstName = "";
   let isTribute = false;
   let tributeTargetName = null;
@@ -2213,7 +2284,7 @@ export function generateBabyName(mother, father = null, babyGender = "male", ent
     firstName = getRandomVocabWord(genderKey);
   }
 
-  let finalName = `${firstName} ${motherSurname}`.trim();
+  let finalName = `${firstName} ${combinedSurnameStr}`.trim();
 
   // Guarantee global uniqueness
   let attempts = 0;
@@ -2221,13 +2292,13 @@ export function generateBabyName(mother, father = null, babyGender = "male", ent
     attempts++;
     const extraWord = getRandomVocabWord(genderKey);
     if (isFilho || isFilha || isTribute) {
-      finalName = `${firstName} ${extraWord} ${motherSurname}`.trim();
+      finalName = `${firstName} ${extraWord} ${combinedSurnameStr}`.trim();
     } else {
       try {
         const combined = vocabulario.combinar(firstName, extraWord, 'eufonia', genderKey);
-        finalName = `${combined.charAt(0).toUpperCase() + combined.slice(1)} ${motherSurname}`;
+        finalName = `${combined.charAt(0).toUpperCase() + combined.slice(1)} ${combinedSurnameStr}`;
       } catch (e) {
-        finalName = `${firstName} ${extraWord} ${motherSurname}`.trim();
+        finalName = `${firstName} ${extraWord} ${combinedSurnameStr}`.trim();
       }
     }
   }
@@ -2235,25 +2306,27 @@ export function generateBabyName(mother, father = null, babyGender = "male", ent
   usedBabyNames.add(finalName);
   return {
     name: finalName,
+    firstName,
     isTribute: isTribute || isFilho || isFilha,
     isFilho,
     isFilha,
     tributeTo: tributeTargetName,
     godparent: godparentEntity,
-    surname: motherSurname
+    surname: combinedSurnameStr,
+    surnames: combinedSurnames
   };
 }
 
 const usedGlobalNames = new Set();
 const usedWeaponNames = new Set();
 
-export function generateUniqueCreatureName(roleTitle = "Creature", species = "human", gender = "male") {
+export function generateUniqueCreatureName(roleTitle = "Creature", species = "human", gender = "male", forcedSurname = null) {
   const genderKey = gender === "female" ? "feminino" : "masculino";
   const firstName = getRandomVocabWord(genderKey);
-  const surname = getRandomVocabWord();
-  let candidate = species === "human" || species === "elf" || species === "dwarf" || species === "orc" || species === "goblin" || species === "kobold" || species === "lizardfolk" || species === "catfolk" || species === "centaur"
-    ? `${firstName} ${surname}`
-    : `${firstName}`;
+  const isHumanoid = species === "human" || species === "elf" || species === "dwarf" || species === "orc" || species === "goblin" || species === "kobold" || species === "lizardfolk" || species === "catfolk" || species === "centaur";
+  const surname = forcedSurname || (isHumanoid ? generateUniqueDeusExSurname() : getRandomVocabWord());
+  const surnames = [surname];
+  let candidate = isHumanoid ? `${firstName} ${surname}` : `${firstName}`;
 
   let attempts = 0;
   while (usedGlobalNames.has(candidate) && attempts < 30) {
@@ -2262,18 +2335,14 @@ export function generateUniqueCreatureName(roleTitle = "Creature", species = "hu
     try {
       const combined = vocabulario.combinar(firstName, extra, 'eufonia', genderKey);
       const cFirst = combined.charAt(0).toUpperCase() + combined.slice(1);
-      candidate = species === "human" || species === "elf" || species === "dwarf" || species === "orc" || species === "goblin" || species === "kobold" || species === "lizardfolk" || species === "catfolk" || species === "centaur"
-        ? `${cFirst} ${surname}`
-        : `${cFirst}`;
+      candidate = isHumanoid ? `${cFirst} ${surname}` : `${cFirst}`;
     } catch (e) {
-      candidate = species === "human" || species === "elf" || species === "dwarf" || species === "orc" || species === "goblin" || species === "kobold" || species === "lizardfolk" || species === "catfolk" || species === "centaur"
-        ? `${firstName} ${extra} ${surname}`
-        : `${firstName} ${extra}`;
+      candidate = isHumanoid ? `${firstName} ${extra} ${surname}` : `${firstName} ${extra}`;
     }
   }
 
   usedGlobalNames.add(candidate);
-  return { fullName: candidate, firstName, surname };
+  return { fullName: candidate, firstName, surname, surnames, progenitorSurname: surname };
 }
 
 export function generateUniqueWeaponName(baseType = "Blade") {
@@ -2402,6 +2471,7 @@ export function createGenitaliaProp(type = "penis", isPregnant = false) {
 
           // Store inherited lineage surname
           baby.properties.surname = nameInfo.surname;
+          baby.properties.surnames = nameInfo.surnames || (nameInfo.surname ? [nameInfo.surname] : []);
 
           // Sensory & Vital Organs
           if (ent.properties.terrestrial) baby.properties.terrestrial = createTerrestrialProp();
@@ -5084,6 +5154,13 @@ export function gossipBetweenCreatures(speaker, listener, world, entities) {
       spkGroup.relations[lisGroup.id] = Math.max(-100, Math.min(100, (spkGroup.relations[lisGroup.id] || 0) + totalDelta));
       lisGroup.relations[spkGroup.id] = Math.max(-100, Math.min(100, (lisGroup.relations[spkGroup.id] || 0) + totalDelta));
     }
+
+    if (deltaSpk > 0 || deltaLis > 0 || (newSpkAff > 20 && newLisAff > 20)) {
+      if (typeof recordWarPeace === "function") {
+        const points = Math.max(1, Math.round((Math.max(0, deltaSpk) + Math.max(0, deltaLis)) * 2) || 2);
+        recordWarPeace(speaker, listener, "PEACEFUL_INTERACTION", points, null);
+      }
+    }
   }
 }
 
@@ -6342,6 +6419,7 @@ export function createGroupMemberProp() {
 
               if (enemyLeaderDead && enemy50PercentCasualties) {
                 // Decisive Victory: Annex all territory from the defeated clan
+                endWarRecord(group.id, enemyGroup.id, "DECISIVE_VICTORY", group.id, group.name, currentTick, world);
                 group.claimedZones = [...new Set([...group.claimedZones, ...enemyGroup.claimedZones])];
                 group.wars.splice(i, 1);
                 enemyGroup.wars = (enemyGroup.wars || []).filter(id => id !== group.id);
@@ -6362,6 +6440,7 @@ export function createGroupMemberProp() {
                 });
               }
             } else {
+              endWarRecord(group.id, enemyGrpId, "DISSOLVED", group.id, group.name, currentTick, world);
               group.wars.splice(i, 1);
             }
           }
@@ -8085,7 +8164,7 @@ export function createCombatProp(attackInterval = 1.2, aggroRange = 3) {
       // 4. Record indexed ATTACK event (Only for conscious/living beings, never for trees or flora)
       const targetIsFloraOrInanimate = !target.properties.brain || !target.properties.life || target.properties.photosynthesis || target.properties.deep_root || target.properties.species === "oak" || target.properties.species === "willow" || target.properties.species === "pine" || target.properties.species === "tree" || target.properties.species === "cactus";
       if (!targetIsFloraOrInanimate) {
-        recordWorldEvent({
+        const attackEv = recordWorldEvent({
           type: "ATTACK",
           primaryEntityId: ent.id,
           secondaryEntityId: target.id,
@@ -8095,6 +8174,9 @@ export function createCombatProp(attackInterval = 1.2, aggroRange = 3) {
           timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
           metadata: { attackerName, targetName, usedLimbName, hitPartName, netDamage, absorbed: absorbedDamage, motive: targetIsHate ? "hatred" : (targetIsHunger ? "hunger" : "combat") }
         });
+        if (typeof recordWarCombat === "function") {
+          recordWarCombat(ent, target, netDamage, false, currentTick, attackEv?.id || null);
+        }
       }
 
       // 5. Affinity Dynamics upon Attack
@@ -9190,8 +9272,9 @@ export function createLocomotionProp() {
 
                   const desc = `Missão diplomática bem sucedida! ${ent.properties?.name || "Diplomata"} de ${group.name} convenceu ${leader.properties?.name || "Líder"} de ${targetGroup.name}. ${missionReport.summary}`;
                   
+                  let missionEv = null;
                   if (typeof recordWorldEvent === "function") {
-                    recordWorldEvent({
+                    missionEv = recordWorldEvent({
                       opcode: OP_DIPLOMATIC_MISSION,
                       primaryEntityId: ent.id,
                       secondaryEntityId: leader.id,
@@ -9200,6 +9283,9 @@ export function createLocomotionProp() {
                       tick: typeof currentTick !== "undefined" ? currentTick : 0,
                       metadata: { groupName: group.name, targetName: targetGroup.name, missionReport }
                     });
+                  }
+                  if (typeof recordWarPeace === "function") {
+                    recordWarPeace(ent, targetGroup, "DIPLOMATIC_MISSION", relBoost, missionEv?.id || null);
                   }
 
                   addPoliticalHistoryEntry(group, {
@@ -11194,8 +11280,8 @@ export function createCreatureFromArchetype(speciesKey, x, y, customOpts = {}) {
     const roles = ["Builder", "Miner", "Farmer", "Crafter", "Hunter", "Explorer", "Guard", "Scholar"];
     const chosenRole = customOpts.role || roles[Math.floor(Math.random() * roles.length)];
     const customName = customOpts.name;
-
-    naming = customName ? { fullName: customName, surname: customName.split(" ")[1] || getRandomVocabWord(gender === "female" ? "feminino" : "masculino") } : generateUniqueCreatureName(chosenRole, normKey, gender);
+    const progenitorSurname = customOpts.surname || generateUniqueDeusExSurname();
+    naming = customName ? { fullName: customName, surname: customName.split(" ")[1] || progenitorSurname, surnames: [customName.split(" ")[1] || progenitorSurname], progenitorSurname } : generateUniqueCreatureName(chosenRole, normKey, gender, progenitorSurname);
     usedGlobalNames.add(naming.fullName);
 
     let skin = isFemale ? "Human_Normal_F.png" : "Human_Normal_M.png";
@@ -11296,6 +11382,8 @@ export function createCreatureFromArchetype(speciesKey, x, y, customOpts = {}) {
     entProps = {
       name: naming.fullName,
       surname: naming.surname,
+      surnames: naming.surnames || [naming.surname],
+      progenitorSurname: naming.progenitorSurname || naming.surname,
       species: normKey,
       birthDate,
       render: { skin, color, backcolor },

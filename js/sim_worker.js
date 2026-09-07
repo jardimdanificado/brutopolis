@@ -41,6 +41,7 @@ import {
   OP_RELATION,
   allEvents
 } from "./event_log.js";
+import { getWorldWars } from "./politics.js";
 import {
   createCreatureFromArchetype,
   createHuman,
@@ -625,8 +626,8 @@ function serializeGroups() {
     diplomats: g.diplomats ? [...g.diplomats] : [null, null, null, null, null, null],
     relations: g.relations ? { ...g.relations } : {},
     wars: g.wars ? [...g.wars] : [],
-    elections: g.elections ? g.elections.slice(0, 30).map(e => ({ ...e, ranking: e.ranking ? [...e.ranking] : [], voterDetails: e.voterDetails ? [...e.voterDetails] : [] })) : [],
-    politicalHistory: g.politicalHistory ? g.politicalHistory.slice(0, 50).map(h => ({ ...h })) : [],
+    elections: g.elections ? g.elections.map(e => ({ ...e, ranking: e.ranking ? [...e.ranking] : [], voterDetails: e.voterDetails ? [...e.voterDetails] : [] })) : [],
+    politicalHistory: g.politicalHistory ? g.politicalHistory.map(h => ({ ...h })) : [],
     _plannedRoads: g._plannedRoads ? g._plannedRoads.map(r => ({ x: r.x, y: r.y, isSnapPoint: !!r.isSnapPoint, roadType: r.roadType || 0 })) : null,
     _plaza: g._plaza ? { warehouse: { ...g._plaza.warehouse }, campfire: { ...g._plaza.campfire }, well: { ...g._plaza.well } } : null,
     _housePlots: g._housePlots ? { ...g._housePlots } : null
@@ -673,6 +674,7 @@ function postFullWorldState(startX = 256, startY = 256, firstLeaderId = -1, isTi
     registry: serializeRegistry(),
     groups: serializeGroups(),
     events: serializeEvents(),
+    wars: getWorldWars().map(w => ({ ...w, warriors: { ...w.warriors }, pacifists: { ...w.pacifists }, eventIds: [...w.eventIds] })),
     startX,
     startY,
     firstLeaderId,
@@ -796,6 +798,7 @@ function postSimSync(force = false) {
     deceased: deceasedToSync,
     groups: serializeGroups(),
     events: newEvents,
+    wars: getWorldWars().map(w => ({ ...w, warriors: { ...w.warriors }, pacifists: { ...w.pacifists }, eventIds: [...w.eventIds] })),
     tileUpdates: tileUpdates
   });
 }

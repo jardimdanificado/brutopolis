@@ -3,7 +3,7 @@
 // =============================================================================
 
 import { recordWorldEvent, OP_DEATH } from "./event_log.js";
-import { updatePolitics } from "./politics.js";
+import { updatePolitics, recordWarCombat } from "./politics.js";
 
 let nextEntityId = 1;
 
@@ -926,7 +926,7 @@ export function explodeEntityOnDeath(entity, entitiesArray, world) {
       killDesc = `${killerName} slain ${entityName} in combat at [X: ${ex}, Y: ${ey}]!`;
     }
 
-    recordWorldEvent({
+    const deathEv = recordWorldEvent({
       opcode: OP_DEATH,
       type: "DEATH",
       primaryEntityId: entity.id,
@@ -937,6 +937,11 @@ export function explodeEntityOnDeath(entity, entitiesArray, world) {
       timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
       metadata: { killerId, killerName, victimName: entityName, species, reason: severelyDamaged || hasAmputations ? "wounds" : "combat" }
     });
+
+    const killerEntObj = entitiesArray ? entitiesArray.find(e => e.id === killerId && !e.destroyed) : (entityRegistry ? entityRegistry.get(killerId) : null);
+    if (killerEntObj && typeof recordWarCombat === "function") {
+      recordWarCombat(killerEntObj, entity, 0, true, currentTick, deathEv?.id || null);
+    }
 
     // Notify killer's brain long term memory and victim's clan/friends
     if (entitiesArray) {

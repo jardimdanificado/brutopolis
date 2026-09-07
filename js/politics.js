@@ -28,6 +28,131 @@ export function getAllGroups() {
   return world.groups;
 }
 
+export let worldWars = [];
+
+export function getWorldWars() {
+  return worldWars;
+}
+
+export function startWarRecord(groupA, groupB, tick, world = null) {
+  if (!groupA || !groupB) return null;
+  const existing = worldWars.find(w => w.status === "ACTIVE" && ((w.groupAId === groupA.id && w.groupBId === groupB.id) || (w.groupAId === groupB.id && w.groupBId === groupA.id)));
+  if (existing) return existing;
+
+  const clock = world?.clock || (getCurrentWorld()?.clock ? { day: getCurrentWorld().clock.day, hour: getCurrentWorld().clock.hour, minute: getCurrentWorld().clock.minute } : { day: 0, hour: 0, minute: 0 });
+  const warId = `war_${groupA.id}_${groupB.id}_${tick}`;
+  const newWar = {
+    id: warId,
+    groupAId: groupA.id,
+    groupAName: groupA.name,
+    groupBId: groupB.id,
+    groupBName: groupB.name,
+    startTick: tick,
+    startTimestamp: { ...clock },
+    endTick: null,
+    endTimestamp: null,
+    status: "ACTIVE",
+    winnerId: null,
+    winnerName: null,
+    warriors: {},
+    pacifists: {},
+    eventIds: []
+  };
+  worldWars.unshift(newWar);
+  const wObj = world || getCurrentWorld();
+  if (wObj) {
+    if (!wObj.wars) wObj.wars = worldWars;
+    else if (!wObj.wars.includes(newWar)) wObj.wars.unshift(newWar);
+  }
+  return newWar;
+}
+
+export function endWarRecord(groupAId, groupBId, status = "PEACE_TREATY", winnerId = null, winnerName = null, tick = 0, world = null) {
+  const clock = world?.clock || (getCurrentWorld()?.clock ? { day: getCurrentWorld().clock.day, hour: getCurrentWorld().clock.hour, minute: getCurrentWorld().clock.minute } : { day: 0, hour: 0, minute: 0 });
+  const war = worldWars.find(w => w.status === "ACTIVE" && ((w.groupAId === groupAId && w.groupBId === groupBId) || (w.groupAId === groupBId && w.groupBId === groupAId)));
+  if (war) {
+    war.status = status;
+    war.endTick = tick;
+    war.endTimestamp = { ...clock };
+    war.winnerId = winnerId;
+    war.winnerName = winnerName;
+  }
+  return war;
+}
+
+export function recordWarCombat(attacker, target, damage = 0, isKill = false, tick = 0, eventId = null) {
+  if (!attacker || !target) return;
+  const gAId = attacker.properties?.group?.id;
+  const gBId = target.properties?.group?.id;
+  if (!gAId || !gBId || gAId === gBId) return;
+
+  const war = worldWars.find(w => w.status === "ACTIVE" && ((w.groupAId === gAId && w.groupBId === gBId) || (w.groupAId === gBId && w.groupBId === gAId)));
+  if (!war) return;
+
+  if (eventId && !war.eventIds.includes(eventId)) {
+    war.eventIds.push(eventId);
+  }
+
+  const aId = attacker.id;
+  if (!war.warriors[aId]) {
+    war.warriors[aId] = {
+      id: aId,
+      name: attacker.properties?.name || `Fighter #${aId}`,
+      groupName: attacker.properties?.group?.name || "Clan",
+      species: attacker.properties?.species || "humanoid",
+      battles: 0,
+      damageDealt: 0,
+      kills: 0
+    };
+  }
+  war.warriors[aId].battles += 1;
+  war.warriors[aId].damageDealt += Math.round(damage);
+  if (isKill) {
+    war.warriors[aId].kills += 1;
+  }
+}
+
+export function recordWarPeace(actor, targetOrGroup, type = "DIPLOMACY", relationPoints = 10, eventId = null) {
+  if (!actor || !targetOrGroup) return;
+  const gAId = actor.properties?.group?.id;
+  const isTargetGroup = !!targetOrGroup.members || (!targetOrGroup.properties && targetOrGroup.id);
+  const gBId = isTargetGroup ? targetOrGroup.id : targetOrGroup.properties?.group?.id;
+  if (!gAId || !gBId || gAId === gBId) return;
+
+  const war = worldWars.find(w => w.status === "ACTIVE" && ((w.groupAId === gAId && w.groupBId === gBId) || (w.groupAId === gBId && w.groupBId === gAId)));
+  if (!war) return;
+
+  if (eventId && !war.eventIds.includes(eventId)) {
+    war.eventIds.push(eventId);
+  }
+
+  const registerPacifist = (ent, pts) => {
+    if (!ent || !ent.id) return;
+    const actId = ent.id;
+    if (!war.pacifists[actId]) {
+      war.pacifists[actId] = {
+        id: actId,
+        name: ent.properties?.name || `Diplomat #${actId}`,
+        groupName: ent.properties?.group?.name || "Clan",
+        species: ent.properties?.species || "humanoid",
+        positiveInteractions: 0,
+        diplomaticMissions: 0,
+        relationBoost: 0
+      };
+    }
+    war.pacifists[actId].positiveInteractions += 1;
+    if (type === "DIPLOMATIC_MISSION") {
+      war.pacifists[actId].diplomaticMissions += 1;
+    }
+    war.pacifists[actId].relationBoost += pts;
+  };
+
+  registerPacifist(actor, relationPoints);
+  if (!isTargetGroup && targetOrGroup.id) {
+    registerPacifist(targetOrGroup, relationPoints);
+  }
+}
+
 export function getEntityGender(e) {
   if (!e || !e.properties) return "male";
   if (e.properties.gender) return e.properties.gender;
@@ -126,7 +251,6 @@ export function addPoliticalHistoryEntry(group, entry) {
     id: nextPolEventId++,
     ...entry
   });
-  if (group.politicalHistory.length > 80) group.politicalHistory.pop();
 }
 
 /**
@@ -592,6 +716,7 @@ function processWarDeclarations(group, allGroups, tick) {
           if (!targetGroup.wars) targetGroup.wars = [];
           if (!targetGroup.wars.includes(group.id)) targetGroup.wars.push(group.id);
           
+          startWarRecord(group, targetGroup, tick);
           const desc = `As tensões explodiram! ${group.name} declarou GUERRA contra ${targetGroup.name}.`;
           recordWorldEvent({
             opcode: OP_WAR_DECLARED,
@@ -620,6 +745,7 @@ function processWarDeclarations(group, allGroups, tick) {
       if (targetGroup && targetGroup.wars) {
         targetGroup.wars = targetGroup.wars.filter(id => id !== group.id);
       }
+      endWarRecord(group.id, tid, "PEACE_TREATY", null, null, tick);
       const targetName = targetGroup ? targetGroup.name : `Clã #${tid}`;
       const desc = `Tratado de Paz assinado! As relações entre ${group.name} e ${targetName} melhoraram e a guerra chegou ao fim.`;
       recordWorldEvent({
