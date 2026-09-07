@@ -3899,8 +3899,6 @@ export function getClanBlueprintTiles(group) {
 
   const cfX = campfireEnt ? campfireEnt.x : (plaza?.campfire?.x ?? (whX - 2));
   const cfY = campfireEnt ? campfireEnt.y : (plaza?.campfire?.y ?? (whY + 2));
-  const campfireX = campfireEnt ? campfireEnt.x : (plaza?.campfire?.x ?? (whX - 2));
-  const campfireY = campfireEnt ? campfireEnt.y : (plaza?.campfire?.y ?? (whY + 2));
   const wellX = wellEnt ? wellEnt.x : (plaza?.well?.x ?? (whX + 2));
   const wellY = wellEnt ? wellEnt.y : (plaza?.well?.y ?? (whY - 2));
 
@@ -3909,6 +3907,17 @@ export function getClanBlueprintTiles(group) {
     for (let fx = 0; fx < w; fx++) {
       for (let fy = 0; fy < h; fy++) {
         occupiedTiles.add(`${x + fx}_${y + fy}`);
+      }
+    }
+  }
+
+  // Find if leader house already exists in territory
+  let leaderHouseEnt = null;
+  for (const e of entityRegistry.values()) {
+    if (!e.destroyed && isTileInClaimedZones(e.x, e.y, group.claimedZones)) {
+      if (e.properties?.leaderHouse || (e.properties?.house && (e.properties.house.isLeaderHouse || e.properties.house.ownerId === group.leaderId))) {
+        leaderHouseEnt = e;
+        break;
       }
     }
   }
@@ -3923,9 +3932,9 @@ export function getClanBlueprintTiles(group) {
   const hasWarehouseBuiltOrStarted = !!warehouseEnt;
   const hasCampfireBuiltOrStarted = !!campfireEnt;
 
-  // Phase 2: Leader Palace (Only once base campfire/warehouse exist)
+  // Phase 2: Leader Palace (Only once base campfire/warehouse exist, strictly 1 palace per clan)
   const leaderIdVal = group.leaderId || (members.length > 0 ? members[0] : null);
-  if (hasWarehouseBuiltOrStarted && plaza?.leader_house) {
+  if (hasWarehouseBuiltOrStarted && plaza?.leader_house && !leaderHouseEnt) {
     const lhX = plaza.leader_house.x;
     const lhY = plaza.leader_house.y;
     markOccupied(lhX, lhY, 3, 3, "leader_house", { ownerId: leaderIdVal, isLeaderHouse: true });
@@ -4001,10 +4010,11 @@ export function getClanBlueprintTiles(group) {
     return da - db;
   });
 
-  // Demand-Driven Warehouse: If total storage is >= 75% capacity (>= 30 items per warehouse)
+  // Demand-Driven Warehouse: ONLY if all existing warehouses are 100% completed AND total capacity is full (>= 80%)
+  const hasIncompleteWarehouse = existingWarehouses.some(w => !w.properties?.warehouse?.isCompleted);
   const totalStoredItems = existingWarehouses.reduce((sum, w) => sum + (w.properties.warehouse?.items?.length || 0), 0);
   const totalCapacity = existingWarehouses.length * 40;
-  if (existingWarehouses.length > 0 && (totalCapacity === 0 || totalStoredItems >= totalCapacity * 0.75)) {
+  if (!hasIncompleteWarehouse && existingWarehouses.length > 0 && totalCapacity > 0 && totalStoredItems >= totalCapacity * 0.80) {
     const extraPlot = candidatePlots.shift();
     if (extraPlot) {
       markOccupied(extraPlot.x, extraPlot.y, 2, 2, "warehouse");
@@ -4069,6 +4079,12 @@ export function getClanBlueprintTiles(group) {
   for (let mIdx = 0; mIdx < orderedMembers.length; mIdx++) {
     const ownerId = orderedMembers[mIdx];
     const isLeader = (ownerId === group.leaderId);
+
+    // If this is the leader and a palace already exists in the world or was already placed in tiles, skip planning another!
+    if (isLeader && (leaderHouseEnt || tiles.some(t => t.type === "leader_house"))) {
+      continue;
+    }
+
     const hasHouse = tiles.some(t => (isLeader ? t.type === "leader_house" : t.type === "house") && t.ownerId === ownerId);
     if (!hasHouse) {
       const vacantTile = tiles.find(t => (!t.ownerId || !memberSet.has(t.ownerId)) && (isLeader ? t.type === "leader_house" : t.type === "house"));
@@ -4082,7 +4098,7 @@ export function getClanBlueprintTiles(group) {
         continue;
       }
 
-      const needsLeaderPlot = isLeader && !tiles.some(t => t.type === "leader_house");
+      const needsLeaderPlot = isLeader && !tiles.some(t => t.type === "leader_house") && !leaderHouseEnt;
       let houseFpW = 1, houseFpH = 1, isLeaderPlot = false;
 
       if (needsLeaderPlot) {
@@ -4246,70 +4262,11 @@ export function getClanBlueprintTiles(group) {
     }
   }
 
-  // 6. Perimeter Walls & Gates for luxury kingdoms (>= 16 zones & all houses completed), respecting !isAdjacentToSnapPoint
-  const livingMemberIds = members.filter(id => {
-    const m = entityRegistry.get(id);
-    return m && !m.destroyed;
-  });
-  const housedMembers = new Set();
+  // Cleanup any legacy clan walls/ramparts/gates from existing saves
   for (const ent of entityRegistry.values()) {
-    if (!ent.destroyed && ent.properties.house?.isCompleted && isTileInClaimedZones(ent.x, ent.y, group.claimedZones)) {
-      if (ent.properties.house.ownerId) housedMembers.add(ent.properties.house.ownerId);
-      if (ent.properties.house.partnerId) housedMembers.add(ent.properties.house.partnerId);
-    }
-  }
-  const allMembersHoused = livingMemberIds.length > 0 && livingMemberIds.every(id => housedMembers.has(id));
-  const isLuxuryKingdom = group.claimedZones && group.claimedZones.length >= 16;
-
-  if (allMembersHoused && isLuxuryKingdom) {
-    // 6.1 Find which zones actually contain buildings
-    const builtZonesSet = new Set();
-    for (const t of tiles) {
-      if (t.type === "house" || t.type === "warehouse" || t.type === "kitchen" || t.type === "slaughterhouse" || t.type === "well" || t.type === "artisan_hut") {
-        const zx = Math.floor(t.x / sz);
-        const zy = Math.floor(t.y / sz);
-        builtZonesSet.add(`${zx}_${zy}`);
-      }
-    }
-    
-    // Only wall the zones that are claimed AND near buildings
-    const walledZones = group.claimedZones.filter(zk => builtZonesSet.has(zk));
-
-    for (const zk of walledZones) {
-      const zp = zk.includes("_") ? zk.split("_") : zk.split(",");
-      const zx = parseInt(zp[0], 10);
-      const zy = parseInt(zp[1], 10);
-
-      for (let ox = 0; ox < sz; ox++) {
-        for (let oy = 0; oy < sz; oy++) {
-          const px = zx * sz + ox;
-          const py = zy * sz + oy;
-          const isPerim = isPerimeterEdge(zx, zy, ox, oy, walledZones);
-
-          if (isPerim && isLandTile(px, py) && !isRoadTile(px, py) && !plannedRoadSet.has(`${px}_${py}`)) {
-            const isGateway = (oy === 0 && (ox === 3 || ox === 4)) ||
-                              (oy === sz - 1 && (ox === 3 || ox === 4)) ||
-                              (ox === 0 && (oy === 3 || oy === 4)) ||
-                              (ox === sz - 1 && (oy === 3 || oy === 4));
-            if (isGateway) {
-              tiles.push({ x: px, y: py, type: "gate" });
-            } else {
-              tiles.push({ x: px, y: py, type: "wall" });
-            }
-          }
-        }
-      }
-    }
-  }
-
-  // Cleanup orphaned walls from old blueprints (fixes old saves where walls were generated far out)
-  const validWallCoords = new Set(tiles.filter(t => t.type === "wall" || t.type === "gate").map(t => `${t.x}_${t.y}`));
-  for (const ent of entityRegistry.values()) {
-    if (!ent.destroyed && ent.properties.structure && (ent.properties.wallStyle || ent.properties.name?.includes("Muralha") || ent.properties.name?.includes("Wall"))) {
-      if (ent.properties.name && group.name && ent.properties.name.includes(group.name)) {
-        if (!validWallCoords.has(`${ent.x}_${ent.y}`)) {
-          destroyEntity(ent); // Destroy the orphaned wall so builders stop targeting it
-        }
+    if (!ent.destroyed && (ent.properties?.structure || ent.properties?.door) && (ent.properties?.wallStyle || ent.properties?.name?.includes("Muralha") || ent.properties?.name?.includes("Wall") || ent.properties?.name?.includes("Paliçada") || ent.properties?.name?.includes("Portão") || ent.properties?.name?.includes("Gate"))) {
+      if (ent.properties?.name && group.name && ent.properties.name.includes(group.name)) {
+        destroyEntity(ent);
       }
     }
   }
@@ -6477,7 +6434,7 @@ export function createGroupMemberProp() {
         }
         if (distWh <= 1 && this.actionTimer >= 0.20) {
           for (const k in ent.properties) { const p = ent.properties[k];
-            if ((k.startsWith("arm") || k.startsWith("paw") || k.startsWith("fangs")) && p && p.heldItem && !p.heldItem.isWeapon && !p.heldItem.isTool && !p.heldItem.isTorch && p.heldItem.resourceType !== "torch" && !p.heldItem.name?.includes("Torch") && !p.heldItem.name?.includes("Tocha")) {
+            if ((k.startsWith("arm") || k.startsWith("paw") || k.startsWith("fangs")) && p && p.heldItem && !p.heldItem.isWeapon && !p.heldItem.isTool && !p.heldItem.isTorch && p.heldItem.resourceType !== "torch" && !p.heldItem.name?.includes("Torch") && !p.heldItem.name?.includes("Tocha") && p.heldItem.resourceType !== "basket" && !p.heldItem.container) {
               if (!warehouse.properties.warehouse.items) warehouse.properties.warehouse.items = [];
               warehouse.properties.warehouse.items.push(p.heldItem);
               p.heldItem = null;
@@ -6492,7 +6449,7 @@ export function createGroupMemberProp() {
           group.storage = group.storage.filter(it => it !== "torch" && it !== "tocha");
         }
         for (const k in ent.properties) { const p = ent.properties[k];
-          if ((k.startsWith("arm") || k.startsWith("paw") || k.startsWith("fangs")) && p && p.heldItem && !p.heldItem.isWeapon && !p.heldItem.isTool && !p.heldItem.isTorch && p.heldItem.resourceType !== "torch" && !p.heldItem.name?.includes("Torch") && !p.heldItem.name?.includes("Tocha")) {
+          if ((k.startsWith("arm") || k.startsWith("paw") || k.startsWith("fangs")) && p && p.heldItem && !p.heldItem.isWeapon && !p.heldItem.isTool && !p.heldItem.isTorch && p.heldItem.resourceType !== "torch" && !p.heldItem.name?.includes("Torch") && !p.heldItem.name?.includes("Tocha") && p.heldItem.resourceType !== "basket" && !p.heldItem.container) {
             if (!group.storage) group.storage = [];
             group.storage.push(p.heldItem.resourceType || "item");
             p.heldItem = null;
@@ -6520,12 +6477,6 @@ export function createGroupMemberProp() {
             } else if (bp.type === "house" || bp.type === "leader_house") {
               const h = getEntityAtTileByProp(bp.x, bp.y, "house");
               if (!h || !h.properties.house?.isCompleted) { needsWood = true; needsStone = true; }
-            } else if (bp.type === "wall") {
-              const w = getEntityAtTileByProp(bp.x, bp.y, "structure");
-              if (!w || !w.isConstructed) needsStone = true;
-            } else if (bp.type === "gate") {
-              const g = getEntityAtTileByProp(bp.x, bp.y, "door");
-              if (!g || !g.isConstructed) needsWood = true;
             }
           }
           if (needsWood || needsStone) {
@@ -6608,6 +6559,12 @@ export function createGroupMemberProp() {
           if (bp.type === "warehouse") {
             const warehouseEntity = getEntityAtTileByProp(bp.x, bp.y, "warehouse");
             if (!warehouseEntity && dist <= 1 && this.actionTimer >= 0.20) {
+              // Safety: Do not break ground on a new warehouse if clan already has an uncompleted warehouse!
+              const hasUnfinishedWh = entities.some(e => !e.destroyed && e.properties.warehouse && !e.properties.warehouse.isCompleted && isTileInClaimedZones(e.x, e.y, group.claimedZones));
+              if (hasUnfinishedWh) {
+                return;
+              }
+
               let resType = null;
               for (const k in ent.properties) { const p = ent.properties[k];
                 if ((k.startsWith("arm") || k.startsWith("paw") || k.startsWith("fangs")) && p && (p.heldItem?.resourceType === "stone" || p.heldItem?.resourceType === "wood" || p.heldItem?.resourceType === "bone")) {
@@ -6755,8 +6712,8 @@ export function createGroupMemberProp() {
               }
 
               // 7. Withdraw needed resource to build structures
-              const needsWood = blueprint.some(b => (!getEntityAtTileByProp(b.x, b.y, "house") || !getEntityAtTileByProp(b.x, b.y, "house")?.properties.house?.isCompleted) || (!getEntityAtTileByProp(b.x, b.y, "wall") && b.type === "wall"));
-              const needsStone = blueprint.some(b => (!getEntityAtTileByProp(b.x, b.y, "well") || !getEntityAtTileByProp(b.x, b.y, "well")?.properties.well?.isCompleted) || b.type === "campfire" || (b.type === "wall" && !getEntityAtTileByProp(b.x, b.y, "wall")));
+              const needsWood = blueprint.some(b => (!getEntityAtTileByProp(b.x, b.y, "house") || !getEntityAtTileByProp(b.x, b.y, "house")?.properties.house?.isCompleted));
+              const needsStone = blueprint.some(b => (!getEntityAtTileByProp(b.x, b.y, "well") || !getEntityAtTileByProp(b.x, b.y, "well")?.properties.well?.isCompleted) || b.type === "campfire");
 let freeArm = null; for (const k in ent.properties) { const p = ent.properties[k]; if ((k.startsWith("arm") || k.startsWith("paw") || k.startsWith("fangs")) && p && !p.heldItem) { freeArm = [k, p]; break; } }
               if (freeArm && whItems.length > 0) {
                 const itemIdx = whItems.findIndex(i => (needsWood && (i.resourceType === "wood" || i.name?.includes("Wood"))) || (needsStone && (i.resourceType === "stone" || i.resourceType === "bone" || i.name?.includes("Stone"))));
@@ -7062,52 +7019,6 @@ let freeArm = null; for (const k in ent.properties) { const p = ent.properties[k
                 return;
               }
             }
-          } else if (bp.type === "gate" || bp.type === "door") {
-            const gateEntity = getEntityAtTileByProp(bp.x, bp.y, "door");
-            if (!gateEntity && dist <= 1 && this.actionTimer >= 0.20) {
-              let resType = null;
-              for (const k in ent.properties) { const p = ent.properties[k];
-                if ((k.startsWith("arm") || k.startsWith("paw") || k.startsWith("fangs")) && p && (p.heldItem?.resourceType === "wood" || p.heldItem?.resourceType === "stone" || p.heldItem?.resourceType === "bone")) {
-                  resType = p.heldItem.resourceType;
-                  p.heldItem = null;
-                  break;
-                }
-              }
-              this.actionTimer = 0;
-              const gate = createDoorEntity(bp.x, bp.y, group.members);
-              gate.woodCurrent = (resType === "wood" ? 1 : 0);
-              gate.woodCost = 2;
-              gate.isConstructed = gate.woodCurrent >= gate.woodCost;
-              entities.push(gate);
-              return;
-            } else if (gateEntity && !gateEntity.isConstructed && dist <= 1 && this.actionTimer >= 0.20) {
-              let contributed = false;
-              for (const k in ent.properties) { const p = ent.properties[k];
-                if ((k.startsWith("arm") || k.startsWith("paw") || k.startsWith("fangs")) && p && p.heldItem?.resourceType === "wood") {
-                  p.heldItem = null;
-                  gateEntity.woodCurrent = (gateEntity.woodCurrent || 1) + 1;
-                  contributed = true;
-                  break;
-                }
-              }
-              if (contributed) {
-                this.actionTimer = 0;
-                if (gateEntity.woodCurrent >= (gateEntity.woodCost || 2)) {
-                  gateEntity.isConstructed = true;
-                  recordWorldEvent({
-                    opcode: OP_BUILD,
-                    type: "BUILD",
-                    primaryEntityId: ent.id,
-                    location: { x: bp.x, y: bp.y },
-                    description: `${ent.properties.name} completed the Fortified Gate for '${group.name}'!`,
-                    tick: currentTick,
-                    timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
-                    metadata: { structureName: "Fortified Gate", clan: group.name }
-                  });
-                }
-                return;
-              }
-            }
           } else if (bp.type === "house" || bp.type === "leader_house") {
             const houseEntity = getEntityAtTileByProp(bp.x, bp.y, "house");
             if (!houseEntity && dist <= 1 && this.actionTimer >= 0.20) {
@@ -7171,6 +7082,13 @@ let freeArm = null; for (const k in ent.properties) { const p = ent.properties[k
               }
 
               const isLeaderPlot = bp.isLeaderHouse || bp.type === "leader_house";
+              if (isLeaderPlot) {
+                const hasExistingPalace = entities.some(e => !e.destroyed && isTileInClaimedZones(e.x, e.y, group.claimedZones) && (e.properties.leaderHouse || (e.properties.house && (e.properties.house.isLeaderHouse || e.properties.house.ownerId === group.leaderId))));
+                if (hasExistingPalace) {
+                  return; // Strictly 1 palace per clan!
+                }
+              }
+
               const newHouse = isLeaderPlot
                 ? createLeaderHouseEntity(bp.x, bp.y, group, houseOwnerId, ownerName)
                 : createHouseEntity(bp.x, bp.y, style, houseOwnerId, ownerName, "wood");
@@ -7254,53 +7172,6 @@ let freeArm = null; for (const k in ent.properties) { const p = ent.properties[k
                 return;
               }
             }
-          } else {
-            const wallEntity = getEntityAtTileByProp(bp.x, bp.y, "structure");
-            if (!wallEntity && dist <= 1 && this.actionTimer >= 0.20) {
-              let resType = null;
-              for (const k in ent.properties) { const p = ent.properties[k];
-                if ((k.startsWith("arm") || k.startsWith("paw") || k.startsWith("fangs")) && p && (p.heldItem?.resourceType === "stone" || p.heldItem?.resourceType === "bone")) {
-                  resType = p.heldItem.resourceType;
-                  p.heldItem = null;
-                  break;
-                }
-              }
-              this.actionTimer = 0;
-              const wall = createWallEntity(bp.x, bp.y, group.name, "stone");
-              wall.stoneCurrent = 1;
-              wall.isConstructed = (wall.stoneCurrent >= (wall.stoneCost ?? 2));
-              entities.push(wall);
-              return;
-            } else if (wallEntity && !wallEntity.isConstructed && dist <= 1 && this.actionTimer >= 0.20) {
-              let contributed = false;
-              for (const k in ent.properties) { const p = ent.properties[k];
-                if ((k.startsWith("arm") || k.startsWith("paw") || k.startsWith("fangs")) && p && p.heldItem) {
-                  if ((p.heldItem.resourceType === "stone" || p.heldItem.resourceType === "bone") && (wallEntity.stoneCurrent || 0) < (wallEntity.stoneCost ?? 2)) {
-                    wallEntity.stoneCurrent = (wallEntity.stoneCurrent || 0) + 1;
-                    p.heldItem = null;
-                    contributed = true;
-                    break;
-                  }
-                }
-              }
-              if (contributed) {
-                this.actionTimer = 0;
-                if ((wallEntity.stoneCurrent || 0) >= (wallEntity.stoneCost ?? 2)) {
-                  wallEntity.isConstructed = true;
-                  recordWorldEvent({
-                    opcode: OP_BUILD,
-                    type: "BUILD",
-                    primaryEntityId: ent.id,
-                    location: { x: bp.x, y: bp.y },
-                    description: `${ent.properties.name} erected a Stone Wall for '${group.name}'!`,
-                    tick: currentTick,
-                    timestamp: world?.clock ? { day: world.clock.day, hour: world.clock.hour, minute: world.clock.minute } : null,
-                    metadata: { structureName: wallEntity.properties.name, clan: group.name }
-                  });
-                }
-                return;
-              }
-            }
           }
         }
 
@@ -7315,15 +7186,9 @@ let freeArm = null; for (const k in ent.properties) { const p = ent.properties[k
           } else if (bp.type === "well") {
             const wl = getEntityAtTileByProp(bp.x, bp.y, "well");
             return !wl || !wl.properties.well?.isCompleted;
-          } else if (bp.type === "gate" || bp.type === "door") {
-            const g = getEntityAtTileByProp(bp.x, bp.y, "door");
-            return !g || !g.isConstructed;
           } else if (bp.type === "house" || bp.type === "leader_house") {
             const h = getEntityAtTileByProp(bp.x, bp.y, "house");
             return !h || !h.properties.house?.isCompleted;
-          } else if (bp.type === "wall") {
-            const w = getEntityAtTileByProp(bp.x, bp.y, "structure");
-            return !w || !w.isConstructed;
           }
           return false;
         });
@@ -7333,7 +7198,7 @@ let freeArm = null; for (const k in ent.properties) { const p = ent.properties[k
           const warehouse = getGroupWarehouse(group, entities);
           if (warehouse) {
             for (const k in ent.properties) { const p = ent.properties[k];
-              if ((k.startsWith("arm") || k.startsWith("paw") || k.startsWith("fangs")) && p && p.heldItem) {
+              if ((k.startsWith("arm") || k.startsWith("paw") || k.startsWith("fangs")) && p && p.heldItem && p.heldItem.resourceType !== "basket" && !p.heldItem.container) {
                 warehouse.properties.warehouse.items.push(p.heldItem);
                 p.heldItem = null;
               }
@@ -7472,7 +7337,7 @@ let freeArm = null; for (const k in ent.properties) { const p = ent.properties[k
 
           // Deposit surplus items only (when hands hold items not immediately needed)
           for (const k in ent.properties) { const p = ent.properties[k];
-            if ((k.startsWith("arm") || k.startsWith("paw") || k.startsWith("fangs")) && p && p.heldItem && p.heldItem.resourceType !== "torch" && p.heldItem.resourceType !== "seed") {
+            if ((k.startsWith("arm") || k.startsWith("paw") || k.startsWith("fangs")) && p && p.heldItem && p.heldItem.resourceType !== "torch" && p.heldItem.resourceType !== "seed" && p.heldItem.resourceType !== "basket" && !p.heldItem.container) {
               const rType = p.heldItem.resourceType;
               const isNeededNow = (rType === "wood" && needsWood) || ((rType === "stone" || rType === "bone") && needsStone);
               if (!isNeededNow) {
@@ -7658,12 +7523,6 @@ let freeArm = null; for (const k in ent.properties) { const p = ent.properties[k
               totalWoodNeeded += Math.max(0, (hp.woodCost ?? 3) - (hp.woodCurrent || 0));
               totalStoneNeeded += Math.max(0, (hp.stoneCost ?? 2) - (hp.stoneCurrent || 0));
             }
-          } else if (bp.type === "gate" || bp.type === "door") {
-            const g = getEntityAtTileByProp(bp.x, bp.y, "door");
-            if (!g || !g.isConstructed) totalWoodNeeded += 2;
-          } else if (bp.type === "wall") {
-            const w = getEntityAtTileByProp(bp.x, bp.y, "structure");
-            if (!w || !w.isConstructed) totalStoneNeeded += 2;
           }
         }
 
@@ -8578,15 +8437,18 @@ export function evaluateAndAssignClanRoles(group, entities, world) {
     } else if (bp.type === "well") {
       const wl = getEntityAtTileByProp(bp.x, bp.y, "well");
       if (!wl || !wl.properties.well?.isCompleted) unbuiltCount++;
-    } else if (bp.type === "gate" || bp.type === "door") {
-      const hasDoor = !!getEntityAtTileByProp(bp.x, bp.y, "door");
-      if (!hasDoor) unbuiltCount++;
     } else if (bp.type === "house" || bp.type === "leader_house") {
       const h = getEntityAtTileByProp(bp.x, bp.y, "house");
       if (!h || !h.properties.house?.isCompleted) unbuiltCount++;
-    } else {
-      const hasWall = !!getEntityAtTileByProp(bp.x, bp.y, "structure");
-      if (!hasWall) unbuiltCount++;
+    } else if (bp.type === "kitchen") {
+      const k = getEntityAtTileByProp(bp.x, bp.y, "kitchen");
+      if (!k || !k.properties.kitchen?.isCompleted) unbuiltCount++;
+    } else if (bp.type === "slaughterhouse") {
+      const s = getEntityAtTileByProp(bp.x, bp.y, "slaughterhouse");
+      if (!s || !s.properties.slaughterhouse?.isCompleted) unbuiltCount++;
+    } else if (bp.type === "artisan_hut") {
+      const a = getEntityAtTileByProp(bp.x, bp.y, "artisan_hut");
+      if (!a || !a.properties.artisan_hut?.isCompleted) unbuiltCount++;
     }
   }
 
@@ -8662,15 +8524,6 @@ export function evaluateAndAssignClanRoles(group, entities, world) {
         m.properties.backpack = { type: "backpack", size: "large", capacity: 20, items: [] };
       }
       if (!m.properties.arm_left) m.properties.arm_left = createArmProp("Braço Esquerdo", "left");
-      if (!m.properties.arm_left.heldItem || m.properties.arm_left.heldItem.resourceType !== "basket") {
-        m.properties.arm_left.heldItem = {
-          name: "Cesto de Transporte",
-          resourceType: "basket",
-          skin: "Item_Bag.png",
-          container: { type: "basket", capacity: 10, items: [] },
-          weight: 1.0
-        };
-      }
     } else if (unbuiltCount > 0 && buildersNeeded > 0) {
       m.properties.role = "Builder";
       buildersNeeded--;
@@ -9470,14 +9323,24 @@ export function createLocomotionProp() {
           const completedHousesCount = getGroupCompletedHouseCount(group);
           const allMembersHoused = completedHousesCount >= Math.max(1, livingClanMembers.length);
 
+          // Count unfinished constructions in territory to prevent scattering builders
+          let clanUnfinishedCount = 0;
+          let clanUnfinishedWarehouse = false;
+          let clanHasLeaderPalace = false;
+
           // Priority 2.0: FIRST prioritize existing unfinished in-progress structures in territory!
           for (const e of entities) {
             if (!e.destroyed && isTileInClaimedZones(e.x, e.y, group.claimedZones)) {
+              if (e.properties?.leaderHouse || (e.properties?.house && (e.properties.house.isLeaderHouse || e.properties.house.ownerId === group.leaderId))) {
+                clanHasLeaderPalace = true;
+              }
+
               let needsThisMat = false;
               let buildType = null;
               let isOwn = false;
 
               if (e.properties.house && !e.properties.house.isCompleted) {
+                clanUnfinishedCount++;
                 buildType = "house";
                 const h = e.properties.house;
                 const wCost = h.woodCost ?? 3;
@@ -9489,40 +9352,47 @@ export function createLocomotionProp() {
                 if (!needsThisMat && ((h.woodCurrent || 0) < wCost || (h.stoneCurrent || 0) < sCost || (h.boneCurrent || 0) < bCost)) needsThisMat = true;
                 isOwn = (h.ownerId === ent.id || h.partnerId === ent.id);
               } else if (e.properties.warehouse && !e.properties.warehouse.isCompleted) {
+                clanUnfinishedCount++;
+                clanUnfinishedWarehouse = true;
                 buildType = "warehouse";
                 const wh = e.properties.warehouse;
                 if (heldResType === "wood" && (wh.woodCurrent || 0) < (wh.woodCost || 2)) needsThisMat = true;
                 if ((heldResType === "stone" || heldResType === "bone") && (wh.stoneCurrent || 0) < (wh.stoneCost || 2)) needsThisMat = true;
               } else if (e.properties.well && !e.properties.well.isCompleted) {
+                clanUnfinishedCount++;
                 buildType = "well";
                 const wl = e.properties.well;
                 if (heldResType === "wood" && (wl.woodCurrent || 0) < (wl.woodCost || 2)) needsThisMat = true;
                 if ((heldResType === "stone" || heldResType === "bone") && (wl.stoneCurrent || 0) < (wl.stoneCost || 4)) needsThisMat = true;
               } else if (e.properties.slaughterhouse && !e.properties.slaughterhouse.isCompleted) {
+                clanUnfinishedCount++;
                 buildType = "slaughterhouse";
                 const sh = e.properties.slaughterhouse;
                 if (heldResType === "wood" && (sh.woodCurrent || 0) < (sh.woodCost || 3)) needsThisMat = true;
                 if ((heldResType === "stone" || heldResType === "bone") && (sh.stoneCurrent || 0) < (sh.stoneCost || 2)) needsThisMat = true;
               } else if (e.properties.kitchen && !e.properties.kitchen.isCompleted) {
+                clanUnfinishedCount++;
                 buildType = "kitchen";
                 const kit = e.properties.kitchen;
                 if (heldResType === "wood" && (kit.woodCurrent || 0) < (kit.woodCost || 2)) needsThisMat = true;
                 if ((heldResType === "stone" || heldResType === "bone") && (kit.stoneCurrent || 0) < (kit.stoneCost || 3)) needsThisMat = true;
               } else if (e.properties.artisan_hut && !e.properties.artisan_hut.isCompleted) {
+                clanUnfinishedCount++;
                 buildType = "artisan_hut";
                 const art = e.properties.artisan_hut;
                 if (heldResType === "wood" && (art.woodCurrent || 0) < (art.woodCost || 6)) needsThisMat = true;
                 if ((heldResType === "stone" || heldResType === "bone") && (art.stoneCurrent || 0) < (art.stoneCost || 4)) needsThisMat = true;
               } else if (e.properties.campfire && e.isConstructed === false) {
+                clanUnfinishedCount++;
                 buildType = "campfire";
                 if (heldResType === "wood" && (e.woodCurrent || 0) < (e.woodCost || 2)) needsThisMat = true;
               }
 
               if (needsThisMat && buildType) {
                 const dist = Math.abs(e.x - ent.x) + Math.abs(e.y - ent.y);
-                // All builders swarm on incomplete constructions together based on proximity and urgency (communal priority)
+                // Incomplete communal structures (warehouses/palaces) have ultra-high priority
                 const isCommunalPriority = (buildType === "warehouse" || buildType === "campfire");
-                const weightDist = isCommunalPriority ? dist * 0.01 : dist * 0.02;
+                const weightDist = isCommunalPriority ? dist * 0.005 : dist * 0.02;
                 if (weightDist < minBuildDist) {
                   minBuildDist = weightDist;
                   targetBuild = { x: e.x, y: e.y, type: buildType, footprintW: (buildType === "warehouse" || buildType === "kitchen" || buildType === "slaughterhouse" || buildType === "artisan_hut" ? 2 : 1), footprintH: (buildType === "warehouse" || buildType === "kitchen" || buildType === "slaughterhouse" || buildType === "artisan_hut" ? 2 : 1) };
@@ -9531,10 +9401,14 @@ export function createLocomotionProp() {
             }
           }
 
-          // Priority 2.1: If no existing structure is in-progress, break ground on unstarted blueprints
-          if (!targetBuild) {
+          // Priority 2.1: ONLY break ground on unstarted blueprints if no existing structure is currently unfinished!
+          // This stops builders from opening dozens of foundations simultaneously without finishing any.
+          if (!targetBuild && clanUnfinishedCount === 0) {
             for (const bp of blueprint) {
               if (bp.type === "house" || bp.type === "leader_house") {
+                const isLeaderPlot = bp.isLeaderHouse || bp.type === "leader_house";
+                if (isLeaderPlot && clanHasLeaderPalace) continue;
+
                 const houseEnt = getEntityAtTileByProp(bp.x, bp.y, "house");
                 let needsThisMat = false;
                 if (!houseEnt) {
@@ -9552,7 +9426,6 @@ export function createLocomotionProp() {
 
                 if (needsThisMat) {
                   const dist = Math.abs(bp.x - ent.x) + Math.abs(bp.y - ent.y);
-                  const isLeaderPlot = bp.isLeaderHouse || bp.type === "leader_house";
                   // All builders cooperate on blueprints equally, prioritizing leader plot first
                   const weightDist = isLeaderPlot ? dist * 0.05 : dist * 0.10;
                   if (weightDist < minBuildDist) {
@@ -9560,7 +9433,7 @@ export function createLocomotionProp() {
                     targetBuild = { x: bp.x, y: bp.y, type: bp.type, isLeaderHouse: isLeaderPlot, footprintW: isLeaderPlot ? 3 : (bp.footprintW || 1), footprintH: isLeaderPlot ? 3 : (bp.footprintH || 1), ownerId: bp.ownerId };
                   }
                 }
-              } else if (bp.type === "warehouse") {
+              } else if (bp.type === "warehouse" && !clanUnfinishedWarehouse) {
                 const wh = getEntityAtTileByProp(bp.x, bp.y, "warehouse");
                 let needsThisMat = false;
                 if (!wh) {
@@ -9575,7 +9448,7 @@ export function createLocomotionProp() {
 
                 if (needsThisMat) {
                   const dist = Math.abs(bp.x - ent.x) + Math.abs(bp.y - ent.y);
-                  const weightDist = dist * 0.50;
+                  const weightDist = dist * 0.02; // High priority to get warehouse built first!
                   if (weightDist < minBuildDist) {
                     minBuildDist = weightDist;
                     targetBuild = { x: bp.x, y: bp.y, type: "warehouse" };
@@ -9687,39 +9560,6 @@ export function createLocomotionProp() {
             }
           }
 
-          // Priority 2.2: Defensive Walls (Stone only, after all members have completed houses)
-          if (!targetBuild && allMembersHoused && heldResType === "stone") {
-            for (let i = 0; i < blueprint.length; i++) {
-              const bp = blueprint[i];
-              if (bp.type === "wall") {
-                const bpKey = getTileKey(bp.x, bp.y);
-                const wallAtTile = globalWallCoords.has(bpKey) || globalWallCoords.has(`${bp.x},${bp.y}`);
-                if (!wallAtTile) {
-                  const dist = Math.abs(bp.x - ent.x) + Math.abs(bp.y - ent.y);
-                  if (dist < minBuildDist) {
-                    minBuildDist = dist;
-                    targetBuild = { x: bp.x, y: bp.y, type: "wall" };
-                  }
-                }
-              }
-            }
-          }
-
-          // Priority 2.3: Gates (Wood only, after houses and walls)
-          if (!targetBuild && allMembersHoused && heldResType === "wood") {
-            for (const bp of blueprint) {
-              if (bp.type === "gate" || bp.type === "door") {
-                const hasGate = !!getEntityAtTileByProp(bp.x, bp.y, "door");
-                if (!hasGate) {
-                  const dist = Math.abs(bp.x - ent.x) + Math.abs(bp.y - ent.y);
-                  if (dist < minBuildDist) {
-                    minBuildDist = dist;
-                    targetBuild = { x: bp.x, y: bp.y, type: "gate" };
-                  }
-                }
-              }
-            }
-          }
 
           if (targetBuild) {
             ent._buildTarget = { x: targetBuild.x, y: targetBuild.y, type: targetBuild.type, isLeaderHouse: targetBuild.isLeaderHouse, footprintW: targetBuild.footprintW, footprintH: targetBuild.footprintH, ownerId: targetBuild.ownerId };
@@ -9864,12 +9704,6 @@ export function createLocomotionProp() {
                 totalWoodNeeded += Math.max(0, (hp.woodCost ?? 3) - (hp.woodCurrent || 0));
                 totalStoneNeeded += Math.max(0, (hp.stoneCost ?? 2) - (hp.stoneCurrent || 0));
               }
-            } else if (bp.type === "gate" || bp.type === "door") {
-              const g = getEntityAtTileByProp(bp.x, bp.y, "door");
-              if (!g || !g.isConstructed) totalWoodNeeded += 2;
-            } else if (bp.type === "wall") {
-              const w = getEntityAtTileByProp(bp.x, bp.y, "structure");
-              if (!w || !w.isConstructed) totalStoneNeeded += 2;
             }
           }
 
